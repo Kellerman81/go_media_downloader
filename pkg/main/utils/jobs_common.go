@@ -139,6 +139,7 @@ func checkreachedflag(
 // It parses the video file, calculates priority, inserts file records, updates status flags,
 // and handles caching. Type-specific logic is handled via StringsMap queries and the handler.
 func jobImportParseCommon(
+	ctx context.Context,
 	m *database.ParseInfo,
 	pathv string,
 	cfgp *config.MediaTypeConfig,
@@ -361,7 +362,7 @@ func jobImportParseCommon(
 	// Only parse video file for video media types (movies, series)
 	// Books don't have video content; music/audiobooks are audio-only
 	if cfgp.IsType == config.MediaTypeMovie || cfgp.IsType == config.MediaTypeSeries {
-		if err := parser.ParseVideoFile(m, list.CfgQuality); err != nil {
+		if err := parser.ParseVideoFile(ctx, m, list.CfgQuality); err != nil {
 			return err
 		}
 	}

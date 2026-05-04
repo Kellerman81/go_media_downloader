@@ -235,7 +235,9 @@ func init() {
 // Subsequent calls are ignored due to sync.Once protection.
 func InitSyncOps() {
 	initOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in manager.cancel
+		ctx, cancel := context.WithCancel(
+			context.Background(),
+		)
 
 		manager = &SyncOpsManager{
 			opQueue:      make(chan SyncOperation, 10000),
@@ -1297,9 +1299,9 @@ func (m *SyncOpsManager) processSliceRemove(op SyncOperation) bool {
 
 			if found {
 				newSlice := make([]string, 0, len(current))
-				for _, item := range current {
-					if item != value {
-						newSlice = append(newSlice, item)
+				for i := range current {
+					if current[i] != value {
+						newSlice = append(newSlice, current[i])
 					}
 				}
 

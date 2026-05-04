@@ -95,11 +95,11 @@ func (p *Provider) FindMovieByIMDbID(
 
 	result := &apiexternal_v2.FindByIMDbResult{}
 
-	if strings.ToLower(response.Type) == "movie" {
+	if strings.EqualFold(response.Type, "movie") {
 		result.MovieResults = []apiexternal_v2.MovieSearchResult{
 			convertDetailsToSearchResult(&response),
 		}
-	} else if strings.ToLower(response.Type) == "series" {
+	} else if strings.EqualFold(response.Type, "series") {
 		result.TVResults = []apiexternal_v2.SeriesSearchResult{
 			convertDetailsToSeriesSearchResult(&response),
 		}

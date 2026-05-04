@@ -265,7 +265,9 @@ func renderStorageDetails(stats StorageStatistics) gomponents.Node {
 				),
 				html.Td(
 					html.Class("text-right text-dark"),
-					gomponents.Text(formatBytes(uint64(info.TotalSize))),
+					gomponents.Text(
+						formatBytes(uint64(info.TotalSize)),
+					),
 				),
 			))
 		}

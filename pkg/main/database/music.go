@@ -554,9 +554,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 				&slug,
 			)
 
-			for _, id := range ids {
-				if id > 0 && dedup.add(id) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+			for i := range ids {
+				if ids[i] > 0 && dedup.add(ids[i]) {
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 				}
 			}
 
@@ -577,9 +577,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 				&slug,
 			)
 
-			for _, id := range ids {
-				if id > 0 && dedup.add(id) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+			for i := range ids {
+				if ids[i] > 0 && dedup.add(ids[i]) {
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 				}
 			}
 		}
@@ -603,9 +603,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 					&strippedSlug,
 				)
 
-				for _, id := range ids {
-					if id > 0 && dedup.add(id) {
-						results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+				for i := range ids {
+					if ids[i] > 0 && dedup.add(ids[i]) {
+						results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 					}
 				}
 
@@ -626,9 +626,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 					&strippedSlug,
 				)
 
-				for _, id := range ids {
-					if id > 0 && dedup.add(id) {
-						results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+				for i := range ids {
+					if ids[i] > 0 && dedup.add(ids[i]) {
+						results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 					}
 				}
 			}
@@ -642,9 +642,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ?",
 			title, &slug)
 
-		for _, id := range ids {
-			if id > 0 && dedup.add(id) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+		for i := range ids {
+			if ids[i] > 0 && dedup.add(ids[i]) {
+				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 			}
 		}
 	}
@@ -656,9 +656,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ?",
 			&strippedTitle, &strippedSlug)
 
-		for _, id := range ids {
-			if id > 0 && dedup.add(id) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+		for i := range ids {
+			if ids[i] > 0 && dedup.add(ids[i]) {
+				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 			}
 		}
 	}
@@ -676,9 +676,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 			"SELECT id FROM dbalbums WHERE title LIKE ? COLLATE NOCASE",
 			&likeTitle)
 
-		for _, id := range ids {
-			if id > 0 && dedup.add(id) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+		for i := range ids {
+			if ids[i] > 0 && dedup.add(ids[i]) {
+				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 			}
 		}
 
@@ -691,9 +691,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 				title,
 			)
 
-			for _, id := range ids {
-				if id > 0 && dedup.add(id) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+			for i := range ids {
+				if ids[i] > 0 && dedup.add(ids[i]) {
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 				}
 			}
 		}
@@ -707,9 +707,9 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 				"SELECT id FROM dbalbums WHERE title LIKE ? COLLATE NOCASE",
 				&likeStripped)
 
-			for _, id := range ids {
-				if id > 0 && dedup.add(id) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}))
+			for i := range ids {
+				if ids[i] > 0 && dedup.add(ids[i]) {
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
 				}
 			}
 		}

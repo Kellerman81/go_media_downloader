@@ -150,8 +150,8 @@ func resolutionFromCategory(category string, supportedCategories []string) strin
 	case "2040", "5040":
 		// Only map HD to 1080p when we know the indexer distinguishes UHD;
 		// if the indexer has no UHD category, HD could mean anything ≥720p.
-		for _, c := range supportedCategories {
-			if c == "2045" || c == "5045" {
+		for i := range supportedCategories {
+			if supportedCategories[i] == "2045" || supportedCategories[i] == "5045" {
 				return "1080p"
 			}
 		}
@@ -859,8 +859,8 @@ func titleToWordSet(title string) []string {
 // isWordSetRedundant checks if the given word set is a subset or superset
 // of any already-searched word set. If so, the search would be redundant.
 func isWordSetRedundant(words []string, searchedSets [][]string) bool {
-	for _, searched := range searchedSets {
-		if isSubsetOrSuperset(words, searched) {
+	for i := range searchedSets {
+		if isSubsetOrSuperset(words, searchedSets[i]) {
 			return true
 		}
 	}
@@ -878,12 +878,12 @@ func isSubsetOrSuperset(a, b []string) bool {
 // Both must be sorted ascending.
 func sortedIsSubset(sub, super []string) bool {
 	j := 0
-	for _, w := range sub {
-		for j < len(super) && super[j] < w {
+	for i := range sub {
+		for j < len(super) && super[j] < sub[i] {
 			j++
 		}
 
-		if j >= len(super) || super[j] != w {
+		if j >= len(super) || super[j] != sub[i] {
 			return false
 		}
 	}

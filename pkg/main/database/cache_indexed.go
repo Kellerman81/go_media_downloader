@@ -283,9 +283,19 @@ func buildIndexTwoStringByStr1(
 		}
 	}
 
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+
+	slab := make([]*syncops.DbstaticTwoStringOneInt, total)
 	index := make(map[string][]*syncops.DbstaticTwoStringOneInt, len(counts))
+
+	pos := 0
 	for k, n := range counts {
-		index[k] = make([]*syncops.DbstaticTwoStringOneInt, 0, n)
+		index[k] = slab[pos : pos : pos+n]
+
+		pos += n
 	}
 
 	for i := range arr {
@@ -309,9 +319,9 @@ func buildIndexTwoStringByStr1(
 func buildIndexStringSet(arr []string) map[string]struct{} {
 	index := make(map[string]struct{}, len(arr))
 
-	for _, s := range arr {
-		if s != "" {
-			index[normalizeKey(s)] = struct{}{}
+	for i := range arr {
+		if arr[i] != "" {
+			index[normalizeKey(arr[i])] = struct{}{}
 		}
 	}
 
@@ -351,7 +361,7 @@ func CacheThreeStringIntIndexFuncGetYearFast(s string, id uint) uint16 {
 	indexMap := cache.indexThreeStringByNum2.GetVal(s)
 	if indexMap != nil {
 		if entry, exists := indexMap[id]; exists {
-			return uint16(entry.Num1)
+			return uint16(entry.Num1) //nolint:gosec // safe: value within target type range
 		}
 	}
 

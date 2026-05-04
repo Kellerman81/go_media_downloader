@@ -98,12 +98,12 @@ func MatchAudioFolderAsAlbum(
 		}
 
 		var audioSub string
-		for _, entry := range entries {
-			if !entry.IsDir() {
+		for i := range entries {
+			if !entries[i].IsDir() {
 				continue
 			}
 
-			subPath := filepath.Join(folder, entry.Name())
+			subPath := filepath.Join(folder, entries[i].Name())
 
 			sf, err3 := parser_v2.CollectFilesOnly(subPath, parser_v2.AudioExtensions)
 			if err3 == nil && len(sf) > 0 {
@@ -438,8 +438,8 @@ func matchAudiobookFolder(
 
 	for i := range searchPairs {
 		matches, searchErr := database.FindAudiobooksByTitleAuthor(
-			searchPairs[i].title,
-			searchPairs[i].author,
+			&searchPairs[i].title,
+			&searchPairs[i].author,
 			10,
 		)
 		if searchErr != nil || len(matches) == 0 {
@@ -1525,8 +1525,8 @@ func searchAndImportAlternativeRelease(
 
 				if !strings.EqualFold(searchArtist, VariousArtistsName) {
 					artistMatch := false
-					for _, a := range releases[i].Artists {
-						if strings.EqualFold(a.Name, searchArtist) {
+					for j := range releases[i].Artists {
+						if strings.EqualFold(releases[i].Artists[j].Name, searchArtist) {
 							artistMatch = true
 							break
 						}
@@ -1748,7 +1748,11 @@ func searchAndImportAlternativeRelease(
 
 	// ── Discogs fallback ──────────────────────────────────────────────────────────
 	if dg := providers.GetDiscogs(); dg != nil {
-		results, err := dg.SearchReleases(ctx, searchArtist+" "+*albumTitle, 5)
+		results, err := dg.SearchReleases(
+			ctx,
+			logger.JoinStrings(searchArtist, " ", *albumTitle),
+			5,
+		)
 		if err == nil {
 			for i := range results {
 				release, fetchErr := dg.GetReleaseByID(ctx, results[i].DiscogsID)
@@ -2142,7 +2146,11 @@ func MatchSingleAudiobookFile(
 		addPair(tagArtist, parsed.Title, "tag+filename")
 
 		for i := range pairs {
-			matches, err := database.FindAudiobooksByTitleAuthor(pairs[i].title, pairs[i].author, 5)
+			matches, err := database.FindAudiobooksByTitleAuthor(
+				&pairs[i].title,
+				&pairs[i].author,
+				5,
+			)
 			if err != nil || len(matches) == 0 {
 				continue
 			}

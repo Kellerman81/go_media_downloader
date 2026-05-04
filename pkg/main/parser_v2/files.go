@@ -172,13 +172,13 @@ func CollectFilesOnly(folder string, extensions []string) ([]string, error) {
 
 // HasExtension checks if a filename has one of the given extensions.
 func HasExtension(filename string, extensions []string) bool {
-	for _, ext := range extensions {
-		if len(filename) <= len(ext) {
+	for i := range extensions {
+		if len(filename) <= len(extensions[i]) {
 			continue
 		}
 
-		suffix := filename[len(filename)-len(ext):]
-		if equalFoldASCII(suffix, ext) {
+		suffix := filename[len(filename)-len(extensions[i]):]
+		if equalFoldASCII(suffix, extensions[i]) {
 			return true
 		}
 	}
@@ -641,21 +641,21 @@ func readAudioTagsCtx(ctx context.Context, filePath string) (*TrackInfo, error) 
 	}
 
 	// Parse stream-level info
-	for _, stream := range result.Streams {
-		if stream.CodecType != "audio" {
+	for i := range result.Streams {
+		if result.Streams[i].CodecType != "audio" {
 			continue
 		}
 
-		info.Format = stream.CodecName
+		info.Format = result.Streams[i].CodecName
 
-		if stream.SampleRate != "" {
-			info.SampleRate, _ = strconv.Atoi(stream.SampleRate)
+		if result.Streams[i].SampleRate != "" {
+			info.SampleRate, _ = strconv.Atoi(result.Streams[i].SampleRate)
 		}
 
-		info.Channels = stream.Channels
+		info.Channels = result.Streams[i].Channels
 
 		// Stream tags can override format tags
-		parseFFProbeTags(info, stream.Tags)
+		parseFFProbeTags(info, result.Streams[i].Tags)
 
 		break
 	}
@@ -712,15 +712,15 @@ func parseFFProbeTags(info *TrackInfo, tagMap map[string]string) {
 
 	// Helper to get tag with multiple possible keys
 	getTag := func(keys ...string) string {
-		for _, key := range keys {
+		for i := range keys {
 			// Try exact match
-			if val, ok := tagMap[key]; ok && val != "" {
+			if val, ok := tagMap[keys[i]]; ok && val != "" {
 				return val
 			}
 
 			// Try case-insensitive
 			for k, v := range tagMap {
-				if strings.EqualFold(k, key) && v != "" {
+				if strings.EqualFold(k, keys[i]) && v != "" {
 					return v
 				}
 			}
@@ -851,11 +851,11 @@ func runFFProbeAudio(ctx context.Context, filePath string) (*ffprobeAudioResult,
 func ReadAudioTagsBatch(filepaths []string) ([]*TrackInfo, error) {
 	tracks := make([]*TrackInfo, 0, len(filepaths))
 
-	for _, fp := range filepaths {
-		track, err := ReadAudioTags(fp)
+	for i := range filepaths {
+		track, err := ReadAudioTags(filepaths[i])
 		if err != nil {
 			// Use filename parsing as fallback
-			// track = ParseAudioFilename(fp)
+			// track = ParseAudioFilename(filepaths[i])
 			return nil, err
 		}
 
@@ -878,10 +878,10 @@ func IsLosslessFormat(format string) bool {
 func CollectTracksFromFiles(files []string) []TrackInfo {
 	tracks := make([]TrackInfo, 0, len(files))
 
-	for _, file := range files {
-		track := ParseAudioFilename(file)
+	for i := range files {
+		track := ParseAudioFilename(files[i])
 
-		track.Filepath = file
+		track.Filepath = files[i]
 		tracks = append(tracks, *track)
 	}
 
@@ -974,8 +974,8 @@ func normalizeFromTrackNumbers(tracks []TrackInfo) bool {
 		return false
 	}
 
-	for _, count := range encodedDiscs {
-		if count < 2 {
+	for i := range encodedDiscs {
+		if encodedDiscs[i] < 2 {
 			return false
 		}
 	}
@@ -1042,8 +1042,8 @@ func normalizeFromFilenames(tracks []TrackInfo) {
 		return
 	}
 
-	for _, count := range encodedDiscs {
-		if count < 2 {
+	for i := range encodedDiscs {
+		if encodedDiscs[i] < 2 {
 			return
 		}
 	}

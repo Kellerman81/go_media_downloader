@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -324,7 +325,13 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 					testURL += "?t=caps"
 				}
 
-				if resp, err := client.Get(testURL); err != nil {
+				testReq, _ := http.NewRequestWithContext(
+					context.Background(),
+					http.MethodGet,
+					testURL,
+					nil,
+				)
+				if resp, err := client.Do(testReq); err != nil {
 					service.Status = "timeout"
 					service.ErrorMessage = err.Error()
 				} else {
@@ -335,11 +342,7 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 						service.Status = "online"
 						service.ResponseTime = time.Since(startTime)
 
-						// Try to read some response to verify it's actually an API response
-						body, readErr := http.DefaultClient.Get(testURL)
-						if readErr == nil && body != nil {
-							body.Body.Close()
-						}
+						resp.Body.Close()
 					} else if resp.StatusCode == 401 || resp.StatusCode == 403 {
 						service.Status = "error"
 						service.ErrorMessage = fmt.Sprintf(

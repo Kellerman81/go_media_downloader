@@ -464,9 +464,44 @@ type FieldMapping struct {
 	DisplayName string
 }
 
+func buildDatabaseTableSelect() gomponents.Node {
+	tables := database.GetAllTableNames()
+	options := make([]gomponents.Node, 0, len(tables)+1)
+
+	options = append(
+		options,
+		gomponents.El("option", gomponents.Attr("value", ""), gomponents.Text("— select table —")),
+	)
+	for _, t := range tables {
+		options = append(
+			options,
+			gomponents.El("option", gomponents.Attr("value", t), gomponents.Text(t)),
+		)
+	}
+
+	return gomponents.Group([]gomponents.Node{
+		gomponents.El(
+			"select",
+			html.ID("dbTableSelect"),
+			html.Class("form-select form-select-sm"),
+			gomponents.Attr(
+				"onchange",
+				"if(this.value)window.location='/api/admin/database/'+this.value",
+			),
+			gomponents.Group(options),
+		),
+		html.Script(gomponents.Raw(
+			`(function(){` +
+				`var m=window.location.pathname.match(/\/database\/([^/?#]+)/);` +
+				`if(m)document.getElementById('dbTableSelect').value=m[1];` +
+				`})();`,
+		)),
+	})
+}
+
 func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool) gomponents.Node {
 	collapsed := "sidebar-dropdown list-unstyled listunstyle collapse "
-	uncollapsed := "sidebar-dropdown list-unstyled listunstyle collapse "
+	uncollapsed := "sidebar-dropdown list-unstyled listunstyle collapse show "
 
 	cssRootConfig := collapsed
 	cssRootDatabase := collapsed
@@ -639,310 +674,8 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 						html.ID("Database"),
 						html.Data("bs-parent", "#sidebar"),
 						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbmovies"),
-								html.I(html.Class("align-middle fa-solid fa-film")),
-								html.Span(html.Class("align-middle"), gomponents.Text("DBMovies")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbmovie_titles"),
-								html.I(html.Class("align-middle fa-solid fa-tag")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("DBMovie Titles"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbseries"),
-								html.I(html.Class("align-middle fa-solid fa-tv")),
-								html.Span(html.Class("align-middle"), gomponents.Text("DBSeries")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbserie_episodes"),
-								html.I(html.Class("align-middle fa-solid fa-play")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("DBSerie Episodes"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbserie_alternates"),
-								html.I(html.Class("align-middle fa-solid fa-exchange-alt")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("DBSerie Alternates"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/movies"),
-								html.I(html.Class("align-middle fa-solid fa-video")),
-								html.Span(html.Class("align-middle"), gomponents.Text("Movies")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/movie_files"),
-								html.I(html.Class("align-middle fa-solid fa-file-video")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Movie Files"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/movie_histories"),
-								html.I(html.Class("align-middle fa-solid fa-history")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Movie Histories"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/movie_file_unmatcheds"),
-								html.I(html.Class("align-middle fa-solid fa-question-circle")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Movie Unmatcheds"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/series"),
-								html.I(html.Class("align-middle fa-solid fa-tv")),
-								html.Span(html.Class("align-middle"), gomponents.Text("Series")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/serie_episodes"),
-								html.I(html.Class("align-middle fa-solid fa-play")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Serie Episodes"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/serie_episode_files"),
-								html.I(html.Class("align-middle fa-solid fa-file-video")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Serie Episode Files"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/serie_episode_histories"),
-								html.I(html.Class("align-middle fa-solid fa-history")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Serie Episode Histories"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/serie_file_unmatcheds"),
-								html.I(html.Class("align-middle fa-solid fa-question-circle")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Serie Episode Unmatcheds"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/qualities"),
-								html.I(html.Class("align-middle fa-solid fa-star")),
-								html.Span(html.Class("align-middle"), gomponents.Text("Qualities")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/job_histories"),
-								html.I(html.Class("align-middle fa-solid fa-tasks")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Job Histories"),
-								),
-							),
-						),
-						// Books section
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbbooks"),
-								html.I(html.Class("align-middle fa-solid fa-book")),
-								html.Span(html.Class("align-middle"), gomponents.Text("DBBooks")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbauthors"),
-								html.I(html.Class("align-middle fa-solid fa-user-pen")),
-								html.Span(html.Class("align-middle"), gomponents.Text("DBAuthors")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/books"),
-								html.I(html.Class("align-middle fa-solid fa-book-open")),
-								html.Span(html.Class("align-middle"), gomponents.Text("Books")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/book_files"),
-								html.I(html.Class("align-middle fa-solid fa-file-pdf")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Book Files"),
-								),
-							),
-						),
-						// Audiobooks section
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbaudiobooks"),
-								html.I(html.Class("align-middle fa-solid fa-headphones")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("DBAudiobooks"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbnarrators"),
-								html.I(html.Class("align-middle fa-solid fa-microphone")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("DBNarrators"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/audiobooks"),
-								html.I(html.Class("align-middle fa-solid fa-headphones-alt")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Audiobooks"),
-								),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/audiobook_files"),
-								html.I(html.Class("align-middle fa-solid fa-file-audio")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Audiobook Files"),
-								),
-							),
-						),
-						// Music section
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbalbums"),
-								html.I(html.Class("align-middle fa-solid fa-compact-disc")),
-								html.Span(html.Class("align-middle"), gomponents.Text("DBAlbums")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/dbartists"),
-								html.I(html.Class("align-middle fa-solid fa-guitar")),
-								html.Span(html.Class("align-middle"), gomponents.Text("DBArtists")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/albums"),
-								html.I(html.Class("align-middle fa-solid fa-music")),
-								html.Span(html.Class("align-middle"), gomponents.Text("Albums")),
-							),
-						),
-						html.Li(
-							html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/database/album_files"),
-								html.I(html.Class("align-middle fa-solid fa-file-audio")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Album Files"),
-								),
-							),
+							html.Class("sidebar-item px-2 py-1"),
+							buildDatabaseTableSelect(),
 						),
 					),
 				),
@@ -1494,7 +1227,7 @@ func adminButtonDescription(tableName string) gomponents.Node {
 
 	return html.Div(
 		html.Class("alert alert-info py-2 px-3 mb-3"),
-		html.StyleAttr("font-size: 0.85rem;"),
+		html.Style("font-size: 0.85rem;"),
 		html.I(html.Class("fas fa-info-circle me-2")),
 		gomponents.Text(desc),
 	)

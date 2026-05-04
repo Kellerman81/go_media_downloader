@@ -10,6 +10,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/goccy/go-json"
 )
 
@@ -220,7 +221,7 @@ func (p *Provider) ListTorrents(
 		torrent := parseTorrentInfo(torrentMap)
 		// Apply filter if specified
 		if filter == "" ||
-			strings.Contains(strings.ToLower(torrent.State), strings.ToLower(filter)) {
+			logger.ContainsI(torrent.State, filter) {
 			torrents = append(torrents, *torrent)
 		}
 	}

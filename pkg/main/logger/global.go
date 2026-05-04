@@ -491,7 +491,7 @@ func (b *AddBuffer) WriteUInt16(i uint16) {
 
 // WriteUInt writes the string representation of the given unsigned integer to the buffer.
 func (b *AddBuffer) WriteUInt(i uint) {
-	b.WriteInt(int(i))
+	b.WriteInt(int(i)) //nolint:gosec // safe: value within target type range
 }
 
 // WriteStringMap writes a string to the buffer based on the provided boolean and string parameters.
@@ -1277,7 +1277,7 @@ func StringToFileMode(s string) fs.FileMode {
 		return 0
 	}
 
-	return fs.FileMode(uint32(in))
+	return fs.FileMode(uint32(in)) //nolint:gosec // safe: value within target type range
 }
 
 // StringToInt converts the given string to an int.

@@ -1157,28 +1157,28 @@ func (d *feedResults) getplexwatchlist(cfglist *config.MediaListsConfig) error {
 		Str("server", cfglist.CfgList.PlexServerURL).
 		Msg("Processing Plex watchlist items")
 
-	for _, item := range watchlistItems {
-		if apiexternal.IsPlexItemMovie(item) {
+	for i := range watchlistItems {
+		if apiexternal.IsPlexItemMovie(watchlistItems[i]) {
 			// Process movie
-			imdbID := apiexternal.ExtractIMDBFromPlexItem(item)
+			imdbID := apiexternal.ExtractIMDBFromPlexItem(watchlistItems[i])
 			if imdbID != "" {
 				checkaddimdbfeed(&imdbID, cfglist, d)
 			} else {
 				logger.Logtype("debug", 1).
-					Str("title", item.Title).
+					Str("title", watchlistItems[i].Title).
 					Msg("No IMDB ID found for Plex movie")
 			}
-		} else if apiexternal.IsPlexItemShow(item) {
+		} else if apiexternal.IsPlexItemShow(watchlistItems[i]) {
 			// Process TV show
-			tvdbID := apiexternal.ExtractTVDBFromPlexItem(item)
+			tvdbID := apiexternal.ExtractTVDBFromPlexItem(watchlistItems[i])
 			if tvdbID != 0 {
 				d.Series = append(d.Series, config.ManualConfig{
-					Name:   item.Title,
+					Name:   watchlistItems[i].Title,
 					TvdbID: tvdbID,
 				})
 			} else {
 				logger.Logtype("debug", 1).
-					Str("title", item.Title).
+					Str("title", watchlistItems[i].Title).
 					Msg("No TVDB ID found for Plex show")
 			}
 		}
@@ -1211,28 +1211,28 @@ func (d *feedResults) getjellyfinwatchlist(cfglist *config.MediaListsConfig) err
 		Str("server", cfglist.CfgList.JellyfinServerURL).
 		Msg("Processing Jellyfin watchlist items")
 
-	for _, item := range watchlistItems {
-		if apiexternal.IsJellyfinItemMovie(item) {
+	for i := range watchlistItems {
+		if apiexternal.IsJellyfinItemMovie(watchlistItems[i]) {
 			// Process movie
-			imdbID := apiexternal.ExtractIMDBFromJellyfinItem(item)
+			imdbID := apiexternal.ExtractIMDBFromJellyfinItem(watchlistItems[i])
 			if imdbID != "" {
 				checkaddimdbfeed(&imdbID, cfglist, d)
 			} else {
 				logger.Logtype("debug", 1).
-					Str("title", apiexternal.GetJellyfinItemTitle(item)).
+					Str("title", apiexternal.GetJellyfinItemTitle(watchlistItems[i])).
 					Msg("No IMDB ID found for Jellyfin movie")
 			}
-		} else if apiexternal.IsJellyfinItemSeries(item) {
+		} else if apiexternal.IsJellyfinItemSeries(watchlistItems[i]) {
 			// Process TV series
-			tvdbID := apiexternal.ExtractTVDBFromJellyfinItem(item)
+			tvdbID := apiexternal.ExtractTVDBFromJellyfinItem(watchlistItems[i])
 			if tvdbID != 0 {
 				d.Series = append(d.Series, config.ManualConfig{
-					Name:   apiexternal.GetJellyfinItemTitle(item),
+					Name:   apiexternal.GetJellyfinItemTitle(watchlistItems[i]),
 					TvdbID: tvdbID,
 				})
 			} else {
 				logger.Logtype("debug", 1).
-					Str("title", apiexternal.GetJellyfinItemTitle(item)).
+					Str("title", apiexternal.GetJellyfinItemTitle(watchlistItems[i])).
 					Msg("No TVDB ID found for Jellyfin series")
 			}
 		}

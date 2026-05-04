@@ -93,12 +93,12 @@ func (h *handler) GetDBIDs(info *database.ParseInfo) error {
 			sourceimdb := info.Imdb
 
 			paddings := []string{"", "0", "00", "000", "0000"}
-			for _, padding := range paddings {
-				if len(sourceimdb)+len(padding) >= 7 && padding != "" {
+			for i := range paddings {
+				if len(sourceimdb)+len(paddings[i]) >= 7 && paddings[i] != "" {
 					break
 				}
 
-				info.Imdb = padding + sourceimdb
+				info.Imdb = paddings[i] + sourceimdb
 				info.MovieFindDBIDByImdbParser()
 
 				if info.DbmovieID != 0 {
@@ -132,12 +132,12 @@ func (h *handler) GetDBIDsFull(
 			sourceimdb := m.Imdb
 
 			paddings := []string{"", "0", "00", "000", "0000"}
-			for _, padding := range paddings {
-				if len(sourceimdb)+len(padding) >= 7 && padding != "" {
+			for i := range paddings {
+				if len(sourceimdb)+len(paddings[i]) >= 7 && paddings[i] != "" {
 					break
 				}
 
-				m.Imdb = padding + sourceimdb
+				m.Imdb = paddings[i] + sourceimdb
 				m.MovieFindDBIDByImdbParser()
 
 				if m.DbmovieID != 0 {

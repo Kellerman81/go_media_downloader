@@ -162,7 +162,7 @@ func ExtractYearFromDate(date sql.NullTime) uint16 {
 		return 0
 	}
 
-	return uint16(date.Time.Year())
+	return uint16(date.Time.Year()) //nolint:gosec // safe: value within target type range
 }
 
 // ExtractYearFromTime extracts the year from a time.Time.
@@ -171,7 +171,7 @@ func ExtractYearFromTime(t time.Time) uint16 {
 		return 0
 	}
 
-	return uint16(t.Year())
+	return uint16(t.Year()) //nolint:gosec // safe: value within target type range
 }
 
 // GenerateSlug creates a URL-friendly slug from a title.
@@ -487,7 +487,11 @@ func applyBookDetails(book *database.Dbbook, details *apiexternal_v2.BookDetails
 
 	UpdateInt(&book.PageCount, details.PageCount, overwrite)
 	UpdateFloat32(&book.AverageRating, float32(details.AverageRating), overwrite)
-	UpdateInt32(&book.RatingsCount, int32(details.RatingsCount), overwrite)
+	UpdateInt32(
+		&book.RatingsCount,
+		int32(details.RatingsCount),
+		overwrite,
+	)
 
 	if len(details.Genres) > 0 {
 		UpdateString(&book.Genres, BuildCommaSeparatedString(details.Genres), overwrite, nil)
@@ -595,21 +599,18 @@ func AudiobookGetMetadata(
 			); err != nil {
 				logger.Logtype("debug", 2).Err(err).Msg("Audnex lookup also failed")
 			}
-		} else {
-			// Audible succeeded, but check if we need ISBN/Goodreads ID from Audnex
-			// This gives us the book linkage data that Audible might not provide
-			if audiobook.DbbookID == 0 {
-				logger.Logtype("debug", 2).
-					Msg("Audible succeeded but no book link, trying Audnex for additional metadata")
+		} else if audiobook.DbbookID == 0 {
+			// Audible succeeded but no book link; try Audnex for ISBN/Goodreads ID.
+			logger.Logtype("debug", 2).
+				Msg("Audible succeeded but no book link, trying Audnex for additional metadata")
 
-				if err := audiobookUpdateFromAudnex(
-					ctx,
-					audible.Region(cfgp.AudibleRegion),
-					audiobook,
-					false,
-				); err != nil {
-					logger.Logtype("debug", 2).Err(err).Msg("Audnex supplemental lookup failed")
-				}
+			if err := audiobookUpdateFromAudnex(
+				ctx,
+				audible.Region(cfgp.AudibleRegion),
+				audiobook,
+				false,
+			); err != nil {
+				logger.Logtype("debug", 2).Err(err).Msg("Audnex supplemental lookup failed")
 			}
 		}
 	}
@@ -703,7 +704,7 @@ func audiobookSupplementFromGoodreads(ctx context.Context, audiobook *database.D
 	// Search Goodreads for the book - get multiple results to find best match
 	results, err := provider.SearchBooks(ctx, searchQuery, 10)
 	if err != nil {
-		return fmt.Errorf("Goodreads search error: %w", err)
+		return fmt.Errorf("goodreads search error: %w", err)
 	}
 
 	if len(results) == 0 {
@@ -724,7 +725,7 @@ func audiobookSupplementFromGoodreads(ctx context.Context, audiobook *database.D
 	// Get detailed book info from the best match
 	bookDetails, err := provider.GetBookByID(ctx, bestMatch.ID)
 	if err != nil {
-		return fmt.Errorf("Goodreads book lookup error: %w", err)
+		return fmt.Errorf("goodreads book lookup error: %w", err)
 	}
 
 	// Create a mock AudiobookDetails to use with applyAudiobookDetails
@@ -1623,7 +1624,8 @@ func applyArtistDetails(
 		return
 	}
 
-	for _, aliasName := range details.Aliases {
+	for i := range details.Aliases {
+		aliasName := details.Aliases[i]
 		if aliasName == "" || aliasName == artist.Name {
 			continue
 		}

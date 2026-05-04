@@ -287,14 +287,15 @@ func putStringBuilder(sb *strings.Builder) {
 
 // getNodeSlice gets a Node slice from the pool.
 func getNodeSlice() []gomponents.Node {
-	slice := nodeSlicePool.Get().([]gomponents.Node)
-	return slice[:0] // Reset length but keep capacity
+	p := nodeSlicePool.Get().(*[]gomponents.Node)
+	s := (*p)[:0]
+	return s
 }
 
 // putNodeSlice returns a Node slice to the pool.
 func putNodeSlice(slice []gomponents.Node) {
 	if cap(slice) <= 100 { // Only pool reasonably sized slices
-		nodeSlicePool.Put(slice)
+		nodeSlicePool.Put(&slice)
 	}
 }
 

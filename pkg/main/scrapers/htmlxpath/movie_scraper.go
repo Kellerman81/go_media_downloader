@@ -355,8 +355,8 @@ func (s *MovieScraper) extractMovieData(node *html.Node) MovieData {
 				} else {
 					// Try common formats
 					formats := []string{"2006-01-02", "Jan 2, 2006", "January 2, 2006", "2006"}
-					for _, format := range formats {
-						if t, err := time.Parse(format, movie.ReleaseDate); err == nil {
+					for i := range formats {
+						if t, err := time.Parse(formats[i], movie.ReleaseDate); err == nil {
 							movie.Year = t.Year()
 							break
 						}

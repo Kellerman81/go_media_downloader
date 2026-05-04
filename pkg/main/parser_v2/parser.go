@@ -1,6 +1,7 @@
 package parser_v2
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,8 +56,8 @@ func NewParserWithConfig(cfg ParserConfig) *Parser {
 
 	// Build audiobook extensions map for quick lookup
 	p.audiobookExtensions = make(map[string]bool)
-	for _, ext := range AudiobookExtensions {
-		p.audiobookExtensions[ext] = true
+	for i := range AudiobookExtensions {
+		p.audiobookExtensions[AudiobookExtensions[i]] = true
 	}
 
 	return p
@@ -381,8 +382,8 @@ func (p *Parser) isAudiobookFile(filename, ext string) bool {
 		"chapter", "ch.", "part",
 	}
 
-	for _, indicator := range audiobookIndicators {
-		if logger.ContainsI(filename, indicator) {
+	for i := range audiobookIndicators {
+		if logger.ContainsI(filename, audiobookIndicators[i]) {
 			return true
 		}
 	}
@@ -555,7 +556,7 @@ func Gettypeids(inval string, qualitytype []database.Qualities) uint {
 
 // ParseMusicAlbumWithAnalysis parses a music album with full media analysis.
 func (p *Parser) ParseMusicAlbumWithAnalysis(
-	dirPath string,
+	ctx context.Context, dirPath string,
 	analyzer *MediaAnalyzer,
 ) (*MusicParseResult, error) {
 	files, err := p.collectAudioFiles(dirPath)
@@ -563,7 +564,7 @@ func (p *Parser) ParseMusicAlbumWithAnalysis(
 		return nil, err
 	}
 
-	return p.musicParser.ParseAlbumWithAnalysis(dirPath, files, analyzer), nil
+	return p.musicParser.ParseAlbumWithAnalysis(ctx, dirPath, files, analyzer), nil
 }
 
 // ParseAudiobookDirectoryWithTags parses an audiobook directory with audio tag reading.
@@ -578,6 +579,7 @@ func (p *Parser) ParseAudiobookDirectoryWithTags(dirPath string) (*AudiobookPars
 
 // ParseAudiobookDirectoryWithAnalysis parses an audiobook directory with full media analysis.
 func (p *Parser) ParseAudiobookDirectoryWithAnalysis(
+	ctx context.Context,
 	dirPath string,
 	analyzer *MediaAnalyzer,
 ) (*AudiobookParseResult, error) {
@@ -586,11 +588,12 @@ func (p *Parser) ParseAudiobookDirectoryWithAnalysis(
 		return nil, err
 	}
 
-	return p.audiobookParser.ParseDirectoryWithAnalysis(dirPath, files, analyzer), nil
+	return p.audiobookParser.ParseDirectoryWithAnalysis(ctx, dirPath, files, analyzer), nil
 }
 
 // AnalyzeVideoFile analyzes a video file and updates the parse result with technical info.
 func (p *Parser) AnalyzeVideoFile(
+	ctx context.Context,
 	filePath string,
 	result *VideoParseResult,
 	analyzer *MediaAnalyzer,
@@ -599,7 +602,7 @@ func (p *Parser) AnalyzeVideoFile(
 		analyzer = DefaultMediaAnalyzer
 	}
 
-	return analyzer.AnalyzeVideo(filePath, result)
+	return analyzer.AnalyzeVideo(ctx, filePath, result)
 }
 
 // NewMediaAnalyzerFromConfig creates a MediaAnalyzer from parser config.

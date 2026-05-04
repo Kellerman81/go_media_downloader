@@ -784,7 +784,7 @@ func CalendarDayEventsHandler(c *gin.Context) {
 		}
 	}
 
-	content := html.Div()
+	var content gomponents.Node
 	if len(dayEvents) == 0 {
 		content = html.P(
 			html.Class("text-muted text-center"),

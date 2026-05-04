@@ -296,14 +296,14 @@ func convertSearchResultsToReleases(
 ) []apiexternal_v2.ReleaseSearchResult {
 	releases := make([]apiexternal_v2.ReleaseSearchResult, 0, len(results))
 
-	for _, r := range results {
-		if r.Type != "release" && r.Type != "master" {
+	for i := range results {
+		if results[i].Type != "release" && results[i].Type != "master" {
 			continue
 		}
 
 		// Discogs search returns titles as "Artist - Release Title".
 		// Split on the first " - " to populate Artists and clean up the title.
-		title := r.Title
+		title := results[i].Title
 
 		var artists []apiexternal_v2.ArtistRef
 		if idx := strings.Index(title, " - "); idx >= 0 {
@@ -312,54 +312,54 @@ func convertSearchResultsToReleases(
 		}
 
 		result := apiexternal_v2.ReleaseSearchResult{
-			ID:           strconv.Itoa(r.ID),
+			ID:           strconv.Itoa(results[i].ID),
 			Title:        title,
 			Artists:      artists,
-			Country:      r.Country,
-			DiscogsID:    r.ID,
+			Country:      results[i].Country,
+			DiscogsID:    results[i].ID,
 			ProviderType: apiexternal_v2.ProviderDiscogs,
 		}
 
 		// Year
-		if r.Year != "" {
-			result.ReleaseYear, _ = strconv.Atoi(r.Year)
+		if results[i].Year != "" {
+			result.ReleaseYear, _ = strconv.Atoi(results[i].Year)
 		}
 
 		// Master ID
-		if r.MasterID > 0 {
-			result.MasterID = r.MasterID
+		if results[i].MasterID > 0 {
+			result.MasterID = results[i].MasterID
 		}
 
 		// Labels
-		if len(r.Label) > 0 {
-			result.Label = r.Label[0]
+		if len(results[i].Label) > 0 {
+			result.Label = results[i].Label[0]
 		}
 
 		// Catalog number
-		if r.CatNo != "" {
-			result.CatalogNumber = r.CatNo
+		if results[i].CatNo != "" {
+			result.CatalogNumber = results[i].CatNo
 		}
 
 		// Format
-		if len(r.Format) > 0 {
-			result.Format = logger.JoinStringsSep(r.Format, ", ")
+		if len(results[i].Format) > 0 {
+			result.Format = logger.JoinStringsSep(results[i].Format, ", ")
 		}
 
 		// Genres
-		if len(r.Genre) > 0 {
-			result.Genres = r.Genre
+		if len(results[i].Genre) > 0 {
+			result.Genres = results[i].Genre
 		}
 
 		// Cover
-		if r.CoverImage != "" {
-			result.CoverURL = r.CoverImage
-		} else if r.Thumb != "" {
-			result.CoverURL = r.Thumb
+		if results[i].CoverImage != "" {
+			result.CoverURL = results[i].CoverImage
+		} else if results[i].Thumb != "" {
+			result.CoverURL = results[i].Thumb
 		}
 
 		// Barcode
-		if len(r.Barcode) > 0 {
-			result.Barcode = r.Barcode[0]
+		if len(results[i].Barcode) > 0 {
+			result.Barcode = results[i].Barcode[0]
 		}
 
 		releases = append(releases, result)
@@ -373,23 +373,23 @@ func convertSearchResultsToArtists(
 ) []apiexternal_v2.ArtistSearchResult {
 	artists := make([]apiexternal_v2.ArtistSearchResult, 0, len(results))
 
-	for _, r := range results {
-		if r.Type != "artist" {
+	for i := range results {
+		if results[i].Type != "artist" {
 			continue
 		}
 
 		result := apiexternal_v2.ArtistSearchResult{
-			ID:           strconv.Itoa(r.ID),
-			Name:         r.Title,
-			DiscogsID:    r.ID,
+			ID:           strconv.Itoa(results[i].ID),
+			Name:         results[i].Title,
+			DiscogsID:    results[i].ID,
 			ProviderType: apiexternal_v2.ProviderDiscogs,
 		}
 
 		// Image
-		if r.CoverImage != "" {
-			result.ImageURL = r.CoverImage
-		} else if r.Thumb != "" {
-			result.ImageURL = r.Thumb
+		if results[i].CoverImage != "" {
+			result.ImageURL = results[i].CoverImage
+		} else if results[i].Thumb != "" {
+			result.ImageURL = results[i].Thumb
 		}
 
 		artists = append(artists, result)
@@ -409,9 +409,9 @@ func convertArtistToDetails(artist *discogsArtistResponse) *apiexternal_v2.Artis
 	}
 
 	// Image
-	for _, img := range artist.Images {
-		if img.Type == "primary" {
-			details.ImageURL = img.URI
+	for i := range artist.Images {
+		if artist.Images[i].Type == "primary" {
+			details.ImageURL = artist.Images[i].URI
 			break
 		}
 	}
@@ -433,8 +433,8 @@ func convertArtistToDetails(artist *discogsArtistResponse) *apiexternal_v2.Artis
 	// Members (for groups)
 	if len(artist.Members) > 0 {
 		members := make([]string, 0, len(artist.Members))
-		for _, m := range artist.Members {
-			members = append(members, m.Name)
+		for i := range artist.Members {
+			members = append(members, artist.Members[i].Name)
 		}
 
 		details.Members = members
@@ -443,8 +443,8 @@ func convertArtistToDetails(artist *discogsArtistResponse) *apiexternal_v2.Artis
 	// Groups (for solo artists)
 	if len(artist.Groups) > 0 {
 		groups := make([]string, 0, len(artist.Groups))
-		for _, g := range artist.Groups {
-			groups = append(groups, g.Name)
+		for i := range artist.Groups {
+			groups = append(groups, artist.Groups[i].Name)
 		}
 
 		details.Groups = groups
@@ -458,7 +458,8 @@ func convertArtistReleasesToResults(
 ) []apiexternal_v2.ReleaseSearchResult {
 	results := make([]apiexternal_v2.ReleaseSearchResult, 0, len(releases))
 
-	for _, r := range releases {
+	for i := range releases {
+		r := releases[i]
 		result := apiexternal_v2.ReleaseSearchResult{
 			ID:           strconv.Itoa(r.ID),
 			Title:        r.Title,
@@ -504,10 +505,10 @@ func convertReleaseToDetails(release *discogsReleaseResponse) *apiexternal_v2.Re
 	// Artists
 	if len(release.Artists) > 0 {
 		artists := make([]apiexternal_v2.ArtistRef, 0, len(release.Artists))
-		for _, a := range release.Artists {
+		for i := range release.Artists {
 			artists = append(artists, apiexternal_v2.ArtistRef{
-				Name: a.Name,
-				ID:   strconv.Itoa(a.ID),
+				Name: release.Artists[i].Name,
+				ID:   strconv.Itoa(release.Artists[i].ID),
 			})
 		}
 
@@ -524,8 +525,8 @@ func convertReleaseToDetails(release *discogsReleaseResponse) *apiexternal_v2.Re
 	// Formats
 	if len(release.Formats) > 0 {
 		formats := make([]string, 0, len(release.Formats))
-		for _, f := range release.Formats {
-			formats = append(formats, f.Name)
+		for i := range release.Formats {
+			formats = append(formats, release.Formats[i].Name)
 		}
 
 		details.Format = logger.JoinStringsSep(formats, ", ")
@@ -543,7 +544,8 @@ func convertReleaseToDetails(release *discogsReleaseResponse) *apiexternal_v2.Re
 		tracks := make([]apiexternal_v2.Track, 0, len(release.Tracklist))
 
 		seq := 0 // 1-based sequential position across all tracks
-		for _, t := range release.Tracklist {
+		for i := range release.Tracklist {
+			t := release.Tracklist[i]
 			if t.Type != "track" && t.Type != "" {
 				continue
 			}
@@ -569,10 +571,10 @@ func convertReleaseToDetails(release *discogsReleaseResponse) *apiexternal_v2.Re
 			// Track artists
 			if len(t.Artists) > 0 {
 				trackArtists := make([]apiexternal_v2.ArtistRef, 0, len(t.Artists))
-				for _, a := range t.Artists {
+				for j := range t.Artists {
 					trackArtists = append(trackArtists, apiexternal_v2.ArtistRef{
-						Name: a.Name,
-						ID:   strconv.Itoa(a.ID),
+						Name: t.Artists[j].Name,
+						ID:   strconv.Itoa(t.Artists[j].ID),
 					})
 				}
 
@@ -587,19 +589,19 @@ func convertReleaseToDetails(release *discogsReleaseResponse) *apiexternal_v2.Re
 	}
 
 	// Identifiers (barcode, etc.)
-	for _, id := range release.Identifiers {
-		switch id.Type {
+	for i := range release.Identifiers {
+		switch release.Identifiers[i].Type {
 		case "Barcode":
 			if details.Barcode == "" {
-				details.Barcode = id.Value
+				details.Barcode = release.Identifiers[i].Value
 			}
 		}
 	}
 
 	// Cover image
-	for _, img := range release.Images {
-		if img.Type == "primary" {
-			details.CoverURL = img.URI
+	for i := range release.Images {
+		if release.Images[i].Type == "primary" {
+			details.CoverURL = release.Images[i].URI
 			break
 		}
 	}
@@ -631,10 +633,10 @@ func convertMasterToDetails(master *discogsMasterResponse) *apiexternal_v2.Relea
 	// Artists
 	if len(master.Artists) > 0 {
 		artists := make([]apiexternal_v2.ArtistRef, 0, len(master.Artists))
-		for _, a := range master.Artists {
+		for i := range master.Artists {
 			artists = append(artists, apiexternal_v2.ArtistRef{
-				Name: a.Name,
-				ID:   strconv.Itoa(a.ID),
+				Name: master.Artists[i].Name,
+				ID:   strconv.Itoa(master.Artists[i].ID),
 			})
 		}
 
@@ -648,8 +650,8 @@ func convertMasterToDetails(master *discogsMasterResponse) *apiexternal_v2.Relea
 	// Tracklist
 	if len(master.Tracklist) > 0 {
 		tracks := make([]apiexternal_v2.Track, 0, len(master.Tracklist))
-		for seq, t := range master.Tracklist {
-			disc, trackNum := parseDiscTrack(t.Position)
+		for seq := range master.Tracklist {
+			disc, trackNum := parseDiscTrack(master.Tracklist[seq].Position)
 			if disc == 0 {
 				disc = 1
 			}
@@ -659,11 +661,11 @@ func convertMasterToDetails(master *discogsMasterResponse) *apiexternal_v2.Relea
 			}
 
 			track := apiexternal_v2.Track{
-				Title:       t.Title,
+				Title:       master.Tracklist[seq].Title,
 				Position:    seq + 1,
 				TrackNumber: trackNum,
 				DiscNumber:  disc,
-				Duration:    parseDuration(t.Duration),
+				Duration:    parseDuration(master.Tracklist[seq].Duration),
 			}
 
 			tracks = append(tracks, track)
@@ -674,9 +676,9 @@ func convertMasterToDetails(master *discogsMasterResponse) *apiexternal_v2.Relea
 	}
 
 	// Cover image
-	for _, img := range master.Images {
-		if img.Type == "primary" {
-			details.CoverURL = img.URI
+	for i := range master.Images {
+		if master.Images[i].Type == "primary" {
+			details.CoverURL = master.Images[i].URI
 			break
 		}
 	}
@@ -693,22 +695,22 @@ func convertVersionsToResults(
 ) []apiexternal_v2.ReleaseSearchResult {
 	results := make([]apiexternal_v2.ReleaseSearchResult, 0, len(versions))
 
-	for _, v := range versions {
-		year, _ := strconv.Atoi(v.Year)
+	for i := range versions {
+		year, _ := strconv.Atoi(versions[i].Year)
 		result := apiexternal_v2.ReleaseSearchResult{
-			ID:            strconv.Itoa(v.ID),
-			Title:         v.Title,
-			Country:       v.Country,
+			ID:            strconv.Itoa(versions[i].ID),
+			Title:         versions[i].Title,
+			Country:       versions[i].Country,
 			ReleaseYear:   year,
-			Format:        v.Format,
-			Label:         v.Label,
-			CatalogNumber: v.CatNo,
-			DiscogsID:     v.ID,
+			Format:        versions[i].Format,
+			Label:         versions[i].Label,
+			CatalogNumber: versions[i].CatNo,
+			DiscogsID:     versions[i].ID,
 			ProviderType:  apiexternal_v2.ProviderDiscogs,
 		}
 
-		if v.Thumb != "" {
-			result.CoverURL = v.Thumb
+		if versions[i].Thumb != "" {
+			result.CoverURL = versions[i].Thumb
 		}
 
 		results = append(results, result)
@@ -722,23 +724,23 @@ func convertLabelReleasesToResults(
 ) []apiexternal_v2.ReleaseSearchResult {
 	results := make([]apiexternal_v2.ReleaseSearchResult, 0, len(releases))
 
-	for _, r := range releases {
+	for i := range releases {
 		result := apiexternal_v2.ReleaseSearchResult{
-			ID:            strconv.Itoa(r.ID),
-			Title:         r.Title,
-			ReleaseYear:   r.Year,
-			CatalogNumber: r.CatNo,
-			Format:        r.Format,
-			DiscogsID:     r.ID,
+			ID:            strconv.Itoa(releases[i].ID),
+			Title:         releases[i].Title,
+			ReleaseYear:   releases[i].Year,
+			CatalogNumber: releases[i].CatNo,
+			Format:        releases[i].Format,
+			DiscogsID:     releases[i].ID,
 			ProviderType:  apiexternal_v2.ProviderDiscogs,
 		}
 
-		if r.Artist != "" {
-			result.Artists = []apiexternal_v2.ArtistRef{{Name: r.Artist}}
+		if releases[i].Artist != "" {
+			result.Artists = []apiexternal_v2.ArtistRef{{Name: releases[i].Artist}}
 		}
 
-		if r.Thumb != "" {
-			result.CoverURL = r.Thumb
+		if releases[i].Thumb != "" {
+			result.CoverURL = releases[i].Thumb
 		}
 
 		results = append(results, result)
@@ -763,8 +765,8 @@ func parseDiscogsDate(dateStr string) time.Time {
 		"2006",
 	}
 
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, dateStr); err == nil {
+	for i := range layouts {
+		if t, err := time.Parse(layouts[i], dateStr); err == nil {
 			return t
 		}
 	}
@@ -838,9 +840,9 @@ func parseDiscTrack(pos string) (disc, track int) {
 
 	parseDigits := func(s string) int {
 		var n int
-		for _, r := range s {
-			if r >= '0' && r <= '9' {
-				n = n*10 + int(r-'0')
+		for i := range s {
+			if s[i] >= '0' && s[i] <= '9' {
+				n = n*10 + int(s[i]-'0')
 			}
 		}
 
@@ -865,8 +867,8 @@ func parseDiscTrack(pos string) (disc, track int) {
 // countDiscs counts the number of discs from formats.
 func countDiscs(formats []discogsFormat) int {
 	total := 0
-	for _, f := range formats {
-		qty, err := strconv.Atoi(f.Qty)
+	for i := range formats {
+		qty, err := strconv.Atoi(formats[i].Qty)
 		if err == nil && qty > 0 {
 			total += qty
 		} else {

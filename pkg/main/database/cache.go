@@ -194,12 +194,12 @@ func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Rege
 // with the provided expiration times and logger. It is called on startup
 // to initialize the cache before it is used.
 func InitCache() {
-	duration := time.Duration(24)
+	hours := 24
 	if s := config.GetSettingsGeneral(); s != nil {
-		duration = time.Duration(s.CacheDuration)
+		hours = s.CacheDuration
 	}
 
-	NewCache(1*time.Hour, time.Hour*duration)
+	NewCache(1*time.Hour, time.Duration(hours)*time.Hour)
 }
 
 // ClearCaches iterates over the cached string, three string two int, and two string int arrays, sets the Expire field on each cached array object to two hours in the past based on the config cache duration, and updates the cache with the expired array object. This effectively clears those cached arrays by expiring all entries.
@@ -342,8 +342,10 @@ func SlicesCacheContainsI(isType uint, query string, w *string) bool {
 	}
 
 	v := *w
-	for _, a := range GetCachedStringArr(mtstrings.GetStringsMap(isType, query), false, true) {
-		if v == a || strings.EqualFold(v, a) {
+
+	arr := GetCachedStringArr(mtstrings.GetStringsMap(isType, query), false, true)
+	for i := range arr {
+		if v == arr[i] || strings.EqualFold(v, arr[i]) {
 			return true
 		}
 	}
@@ -378,8 +380,9 @@ func SlicesCacheContainsDelete(s, v string) {
 // identified by s and calls the passed in function f on each element.
 // Returns true if f returns true for any element.
 func CacheOneStringTwoIntIndexFunc(s string, f func(*syncops.DbstaticOneStringTwoInt) bool) bool {
-	for a := range GetCachedTwoIntSeq(s, false, true) {
-		if f(a) {
+	arr := GetCachedTwoIntArr(s, false, true)
+	for i := range arr {
+		if f(&arr[i]) {
 			return true
 		}
 	}
@@ -392,9 +395,10 @@ func CacheOneStringTwoIntIndexFunc(s string, f func(*syncops.DbstaticOneStringTw
 // true for any element, the Num2 field of that element is returned. If no match is
 // found, 0 is returned.
 func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
-	for a := range GetCachedTwoIntSeq(s, false, true) {
-		if a.Num1 == id && strings.EqualFold(a.Str, listname) {
-			return a.Num2
+	arr := GetCachedTwoIntArr(s, false, true)
+	for i := range arr {
+		if arr[i].Num1 == id && strings.EqualFold(arr[i].Str, listname) {
+			return arr[i].Num2
 		}
 	}
 
@@ -406,9 +410,10 @@ func CacheOneStringTwoIntIndexFuncRet(s string, id uint, listname string) uint {
 // second int matches the passed in uint i. It stores the returned string in
 // listname. If no match is found, it sets listname to an empty string.
 func CacheOneStringTwoIntIndexFuncStr(isType uint, query string, i uint) string {
-	for a := range GetCachedTwoIntSeq(mtstrings.GetStringsMap(isType, query), false, true) {
-		if a.Num2 == i {
-			return a.Str
+	arr := GetCachedTwoIntArr(mtstrings.GetStringsMap(isType, query), false, true)
+	for j := range arr {
+		if arr[j].Num2 == i {
+			return arr[j].Str
 		}
 	}
 
@@ -424,9 +429,11 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 	}
 
 	t := *u
-	for a := range GetCachedThreeStringSeq(s, false, true) {
-		if a.Str3 == t || strings.EqualFold(a.Str3, t) {
-			return a.Num2
+
+	arr := GetCachedThreeStringArr(s, false, true)
+	for i := range arr {
+		if arr[i].Str3 == t || strings.EqualFold(arr[i].Str3, t) {
+			return arr[i].Num2
 		}
 	}
 
@@ -437,9 +444,10 @@ func CacheThreeStringIntIndexFunc(s string, u *string) uint {
 // identified by s and returns the first int value for the entry where the second int
 // matches the int str. Returns 0 if no match found.
 func CacheThreeStringIntIndexFuncGetYear(s string, i uint) uint16 {
-	for a := range GetCachedThreeStringSeq(s, false, true) {
-		if a.Num2 == i {
-			return uint16(a.Num1)
+	arr := GetCachedThreeStringArr(s, false, true)
+	for j := range arr {
+		if arr[j].Num2 == i {
+			return uint16(arr[j].Num1) //nolint:gosec // safe: value within target type range
 		}
 	}
 
@@ -475,7 +483,7 @@ func refreshCacheDBInternal[t comparable](
 		mtstrings.GetStringsMap(isType, mapcountsql),
 		&config.GetSettingsGeneral().CacheDuration,
 	)
-	if !force && len(item) == int(count) {
+	if !force && len(item) == int(count) { //nolint:gosec // safe: value within target type range
 		return
 	}
 
@@ -1315,8 +1323,8 @@ func GetCachedStringSeq(key string, checkexpire bool, retry bool) iter.Seq[strin
 	arr := GetCachedStringArr(key, checkexpire, retry)
 
 	return func(yield func(string) bool) {
-		for _, s := range arr {
-			if !yield(s) {
+		for i := range arr {
+			if !yield(arr[i]) {
 				return
 			}
 		}
@@ -1659,7 +1667,9 @@ func startJanitor() {
 		return
 	}
 
-	cache.janitorCtx, cache.janitorCancel = context.WithCancel(context.Background()) //nolint:gosec // cancel stored in cache.janitorCancel
+	cache.janitorCtx, cache.janitorCancel = context.WithCancel(
+		context.Background(),
+	)
 	cache.janitor = time.NewTimer(cache.interval)
 	janitorActive = true
 

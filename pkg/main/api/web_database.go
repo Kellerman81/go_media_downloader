@@ -396,6 +396,90 @@ func getFieldMapping(dbField string) FieldMapping {
 		return FieldMapping{"Label", "Record Label"}
 	case "barcode":
 		return FieldMapping{"Barcode", "Barcode"}
+
+	// Fields with poor auto-generated display names
+	case "upc":
+		return FieldMapping{"UPC", "UPC (Barcode)"}
+	case "isrc":
+		return FieldMapping{"ISRC", "ISRC"}
+	case "acoustid":
+		return FieldMapping{"AcoustID", "AcoustID"}
+	case "cover_url":
+		return FieldMapping{"CoverURL", "Cover URL"}
+	case "sample_url":
+		return FieldMapping{"SampleURL", "Sample URL"}
+	case "image_url":
+		return FieldMapping{"ImageURL", "Image URL"}
+	case "total_runtime_ms":
+		return FieldMapping{"TotalRuntimeMs", "Total Runtime (ms)"}
+	case "runtime_ms":
+		return FieldMapping{"RuntimeMs", "Runtime (ms)"}
+	case "identifiedby":
+		return FieldMapping{"Identifiedby", "Identified By"}
+	case "siterating":
+		return FieldMapping{"Siterating", "Site Rating"}
+	case "fanart":
+		return FieldMapping{"Fanart", "Fan Art"}
+	case "dbtrack_id":
+		return FieldMapping{"DbtrackID", "Track Reference"}
+	case "book_series_id":
+		return FieldMapping{"BookSeriesID", "Book Series ID"}
+	case "musicbrainz_release_group_id":
+		return FieldMapping{"MusicBrainzReleaseGroupID", "MusicBrainz Release Group ID"}
+	case "musicbrainz_release_id":
+		return FieldMapping{"MusicBrainzReleaseID", "MusicBrainz Release ID"}
+	case "musicbrainz_recording_id":
+		return FieldMapping{"MusicBrainzRecordingID", "MusicBrainz Recording ID"}
+	case "discogs_master_id":
+		return FieldMapping{"DiscogsMasterID", "Discogs Master ID"}
+	case "discogs_release_id":
+		return FieldMapping{"DiscogsReleaseID", "Discogs Release ID"}
+	case "spotify_id":
+		return FieldMapping{"SpotifyID", "Spotify ID"}
+	case "total_tracks":
+		return FieldMapping{"TotalTracks", "Total Tracks"}
+	case "release_type":
+		return FieldMapping{"ReleaseType", "Release Type"}
+	case "explicit":
+		return FieldMapping{"Explicit", "Explicit Content"}
+	case "track_mode":
+		return FieldMapping{"TrackMode", "Track Mode"}
+	case "aliases":
+		return FieldMapping{"Aliases", "Aliases"}
+	case "sort_name":
+		return FieldMapping{"SortName", "Sort Name"}
+	case "artist_type":
+		return FieldMapping{"ArtistType", "Artist Type"}
+	case "begin_date":
+		return FieldMapping{"BeginDate", "Begin Date"}
+	case "end_date":
+		return FieldMapping{"EndDate", "End Date"}
+	case "birth_date":
+		return FieldMapping{"BirthDate", "Birth Date"}
+	case "death_date":
+		return FieldMapping{"DeathDate", "Death Date"}
+	case "average_rating":
+		return FieldMapping{"AverageRating", "Average Rating"}
+	case "ratings_count":
+		return FieldMapping{"RatingsCount", "Ratings Count"}
+	case "file_size":
+		return FieldMapping{"FileSize", "File Size"}
+	case "sample_rate":
+		return FieldMapping{"SampleRate", "Sample Rate"}
+	case "bit_depth":
+		return FieldMapping{"BitDepth", "Bit Depth"}
+	case "album_title":
+		return FieldMapping{"Title", "Album Title"}
+	case "audiobook_title":
+		return FieldMapping{"Title", "Audiobook Title"}
+	case "book_title":
+		return FieldMapping{"Title", "Book Title"}
+	case "author_name":
+		return FieldMapping{"Name", "Author Name"}
+	case "artist_name":
+		return FieldMapping{"Name", "Artist Name"}
+	case "narrator_name":
+		return FieldMapping{"Name", "Narrator Name"}
 	default:
 		// Convert snake_case to PascalCase with proper capitalization
 		parts := strings.Split(dbField, "_")
@@ -620,6 +704,9 @@ func getReferenceTable(fieldName string) string {
 		"dbalbum_id":  "dbalbums",
 		"dbartist_id": "dbartists",
 		"album_id":    "albums",
+		"dbtrack_id":  "dbtracks",
+		// Book series
+		"book_series_id": "book_series",
 	}
 
 	if refTable, exists := referenceMap[fieldName]; exists {
@@ -1701,6 +1788,45 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 		if downloadedDate := getParamValue(ctx, "filter-downloaded_date"); downloadedDate != "" {
 			conditions = append(conditions, "DATE(downloaded_at) = ?")
 			args = append(args, downloadedDate)
+		}
+	}
+
+	// Generic _id filter: any filter-*_id query param whose column exists in the
+	// base table and is not already handled by the static map above is applied as
+	// an exact-match condition. Column names are validated against pragma_table_info
+	// so no user-supplied string is ever interpolated directly into SQL.
+	{
+		validCols := getColumnTypes(tableName)
+
+		var handledCols map[string]struct{}
+		if mappings, exists := filterMappings[tableName]; exists {
+			handledCols = make(map[string]struct{}, len(mappings))
+			for col := range mappings {
+				handledCols[col] = struct{}{}
+			}
+		}
+
+		for col := range validCols {
+			if !strings.HasSuffix(col, "_id") {
+				continue
+			}
+
+			if _, handled := handledCols[col]; handled {
+				continue
+			}
+
+			// Skip external IDs that are not FK row references
+			if getReferenceTable(col) == "" {
+				continue
+			}
+
+			val := getParamValue(ctx, "filter-"+col)
+			if val == "" {
+				continue
+			}
+
+			conditions = append(conditions, col+" = ?")
+			args = append(args, val)
 		}
 	}
 

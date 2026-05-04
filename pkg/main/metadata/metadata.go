@@ -438,8 +438,8 @@ func Getmoviemetadata(
 	priorities := generalSettings.MovieMetaSourcePriority
 
 	var errTmdb, errTrakt, errImdb error
-	for _, source := range priorities {
-		switch source {
+	for i := range priorities {
+		switch priorities[i] {
 		case logger.StrImdb:
 			errImdb = dbmovie.MovieGetImdbMetadata(refresh)
 		case "tmdb":

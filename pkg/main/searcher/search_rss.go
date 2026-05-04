@@ -502,7 +502,7 @@ func searchseason(
 	)
 
 	var err error
-	for _, season := range seasons {
+	for i := range seasons {
 		if errsub := NewSearcher(
 			cfgp,
 			cfgp.Lists[listid].CfgQuality,
@@ -513,7 +513,7 @@ func searchseason(
 			cfgp,
 			cfgp.Lists[listid].CfgQuality,
 			tvdbid,
-			season,
+			seasons[i],
 			true,
 			true,
 			true,

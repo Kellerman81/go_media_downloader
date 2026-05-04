@@ -216,14 +216,14 @@ func GetTraktMoviePopular(limit *string, extraParams string) iter.Seq[TraktMovie
 			return
 		}
 
-		for _, r := range results.Results {
+		for i := range results.Results {
 			var m TraktMovie
 
-			m.Title = r.Title
-			m.Year = r.Year
-			m.IDs.Trakt = r.ID
+			m.Title = results.Results[i].Title
+			m.Year = results.Results[i].Year
+			m.IDs.Trakt = results.Results[i].ID
 
-			m.IDs.Imdb = r.IMDbID
+			m.IDs.Imdb = results.Results[i].IMDbID
 			if !yield(m) {
 				return
 			}
@@ -245,14 +245,14 @@ func GetTraktMovieTrending(limit *string, extraParams string) iter.Seq[TraktMovi
 			return
 		}
 
-		for _, r := range results.Results {
+		for i := range results.Results {
 			var m TraktMovie
 
-			m.Title = r.Title
-			m.Year = r.Year
-			m.IDs.Trakt = r.ID
+			m.Title = results.Results[i].Title
+			m.Year = results.Results[i].Year
+			m.IDs.Trakt = results.Results[i].ID
 
-			m.IDs.Imdb = r.IMDbID
+			m.IDs.Imdb = results.Results[i].IMDbID
 			if !yield(m) {
 				return
 			}
@@ -274,14 +274,14 @@ func GetTraktMovieAnticipated(limit *string, extraParams string) iter.Seq[TraktM
 			return
 		}
 
-		for _, r := range results.Results {
+		for i := range results.Results {
 			var m TraktMovie
 
-			m.Title = r.Title
-			m.Year = r.Year
-			m.IDs.Trakt = r.ID
+			m.Title = results.Results[i].Title
+			m.Year = results.Results[i].Year
+			m.IDs.Trakt = results.Results[i].ID
 
-			m.IDs.Imdb = r.IMDbID
+			m.IDs.Imdb = results.Results[i].IMDbID
 			if !yield(m) {
 				return
 			}
@@ -575,7 +575,8 @@ func MergeTraktIntoCollectedEpisodes(showid string, episodes map[string]*Collect
 			continue
 		}
 
-		for _, ep := range seasonEpisodes {
+		for j := range seasonEpisodes {
+			ep := seasonEpisodes[j]
 			key := strconv.Itoa(ep.SeasonNumber) + "-" + strconv.Itoa(ep.EpisodeNumber)
 
 			if existing, ok := episodes[key]; ok {
@@ -843,11 +844,11 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 
 		// Convert to old format
 		result := make([]TraktUserList, 0, len(items))
-		for _, item := range items {
+		for i := range items {
 			userListItem := TraktUserList{
-				TraktType: item.Type,
+				TraktType: items[i].Type,
 			}
-			if item.Movie != nil {
+			if items[i].Movie != nil {
 				userListItem.Movie = TraktMovie{
 					IDs: struct {
 						Slug   string `json:"slug"`
@@ -857,18 +858,18 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 						Tvdb   int    `json:"tvdb"`
 						Tvrage int    `json:"tvrage"`
 					}{
-						Slug:  item.Movie.IDs.Slug,
-						Imdb:  item.Movie.IDs.IMDB,
-						Trakt: item.Movie.IDs.Trakt,
-						Tmdb:  item.Movie.IDs.TMDB,
-						Tvdb:  item.Movie.IDs.TVDB,
+						Slug:  items[i].Movie.IDs.Slug,
+						Imdb:  items[i].Movie.IDs.IMDB,
+						Trakt: items[i].Movie.IDs.Trakt,
+						Tmdb:  items[i].Movie.IDs.TMDB,
+						Tvdb:  items[i].Movie.IDs.TVDB,
 					},
-					Title: item.Movie.Title,
-					Year:  item.Movie.Year,
+					Title: items[i].Movie.Title,
+					Year:  items[i].Movie.Year,
 				}
 			}
 
-			if item.Show != nil {
+			if items[i].Show != nil {
 				userListItem.Serie = TraktSerie{
 					IDs: struct {
 						Slug   string `json:"slug"`
@@ -878,14 +879,14 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 						Tvdb   int    `json:"tvdb"`
 						Tvrage int    `json:"tvrage"`
 					}{
-						Slug:  item.Show.IDs.Slug,
-						Imdb:  item.Show.IDs.IMDB,
-						Trakt: item.Show.IDs.Trakt,
-						Tmdb:  item.Show.IDs.TMDB,
-						Tvdb:  item.Show.IDs.TVDB,
+						Slug:  items[i].Show.IDs.Slug,
+						Imdb:  items[i].Show.IDs.IMDB,
+						Trakt: items[i].Show.IDs.Trakt,
+						Tmdb:  items[i].Show.IDs.TMDB,
+						Tvdb:  items[i].Show.IDs.TVDB,
 					},
-					Title: item.Show.Title,
-					Year:  item.Show.Year,
+					Title: items[i].Show.Title,
+					Year:  items[i].Show.Year,
 				}
 			}
 
@@ -960,15 +961,15 @@ func GetTraktSeriePopular(limit *string, extraParams string) iter.Seq[TraktSerie
 			return
 		}
 
-		for _, r := range results.Results {
+		for i := range results.Results {
 			var s TraktSerie
 
-			s.Title = r.Name
-			if !r.FirstAirDate.IsZero() {
-				s.Year = r.FirstAirDate.Year()
+			s.Title = results.Results[i].Name
+			if !results.Results[i].FirstAirDate.IsZero() {
+				s.Year = results.Results[i].FirstAirDate.Year()
 			}
 
-			s.IDs.Trakt = r.ID
+			s.IDs.Trakt = results.Results[i].ID
 			if !yield(s) {
 				return
 			}
@@ -990,15 +991,15 @@ func GetTraktSerieTrending(limit *string, extraParams string) iter.Seq[TraktSeri
 			return
 		}
 
-		for _, r := range results.Results {
+		for i := range results.Results {
 			var s TraktSerie
 
-			s.Title = r.Name
-			if !r.FirstAirDate.IsZero() {
-				s.Year = r.FirstAirDate.Year()
+			s.Title = results.Results[i].Name
+			if !results.Results[i].FirstAirDate.IsZero() {
+				s.Year = results.Results[i].FirstAirDate.Year()
 			}
 
-			s.IDs.Trakt = r.ID
+			s.IDs.Trakt = results.Results[i].ID
 			if !yield(s) {
 				return
 			}
@@ -1020,15 +1021,15 @@ func GetTraktSerieAnticipated(limit *string, extraParams string) iter.Seq[TraktS
 			return
 		}
 
-		for _, r := range results.Results {
+		for i := range results.Results {
 			var s TraktSerie
 
-			s.Title = r.Name
-			if !r.FirstAirDate.IsZero() {
-				s.Year = r.FirstAirDate.Year()
+			s.Title = results.Results[i].Name
+			if !results.Results[i].FirstAirDate.IsZero() {
+				s.Year = results.Results[i].FirstAirDate.Year()
 			}
 
-			s.IDs.Trakt = r.ID
+			s.IDs.Trakt = results.Results[i].ID
 			if !yield(s) {
 				return
 			}
@@ -1076,7 +1077,7 @@ func GetTraktAuthURL() string {
 	// Use v2 provider if available
 	if provider := providers.GetTrakt(); provider != nil {
 		urlv := provider.GetAuthorizationURL("state")
-		fmt.Println("Visit the URL for the auth dialog: ", urlv)
+		logger.Logtype("info", 0).Str("url", urlv).Msg("Visit the URL for the auth dialog")
 		return urlv
 	}
 
@@ -1198,11 +1199,11 @@ func GetTraktUserListAuth(
 
 		// Convert to old format
 		result := make([]TraktUserList, 0, len(items))
-		for _, item := range items {
+		for i := range items {
 			userListItem := TraktUserList{
-				TraktType: item.Type,
+				TraktType: items[i].Type,
 			}
-			if item.Movie != nil {
+			if items[i].Movie != nil {
 				userListItem.Movie = TraktMovie{
 					IDs: struct {
 						Slug   string `json:"slug"`
@@ -1212,18 +1213,18 @@ func GetTraktUserListAuth(
 						Tvdb   int    `json:"tvdb"`
 						Tvrage int    `json:"tvrage"`
 					}{
-						Slug:  item.Movie.IDs.Slug,
-						Imdb:  item.Movie.IDs.IMDB,
-						Trakt: item.Movie.IDs.Trakt,
-						Tmdb:  item.Movie.IDs.TMDB,
-						Tvdb:  item.Movie.IDs.TVDB,
+						Slug:  items[i].Movie.IDs.Slug,
+						Imdb:  items[i].Movie.IDs.IMDB,
+						Trakt: items[i].Movie.IDs.Trakt,
+						Tmdb:  items[i].Movie.IDs.TMDB,
+						Tvdb:  items[i].Movie.IDs.TVDB,
 					},
-					Title: item.Movie.Title,
-					Year:  item.Movie.Year,
+					Title: items[i].Movie.Title,
+					Year:  items[i].Movie.Year,
 				}
 			}
 
-			if item.Show != nil {
+			if items[i].Show != nil {
 				userListItem.Serie = TraktSerie{
 					IDs: struct {
 						Slug   string `json:"slug"`
@@ -1233,14 +1234,14 @@ func GetTraktUserListAuth(
 						Tvdb   int    `json:"tvdb"`
 						Tvrage int    `json:"tvrage"`
 					}{
-						Slug:  item.Show.IDs.Slug,
-						Imdb:  item.Show.IDs.IMDB,
-						Trakt: item.Show.IDs.Trakt,
-						Tmdb:  item.Show.IDs.TMDB,
-						Tvdb:  item.Show.IDs.TVDB,
+						Slug:  items[i].Show.IDs.Slug,
+						Imdb:  items[i].Show.IDs.IMDB,
+						Trakt: items[i].Show.IDs.Trakt,
+						Tmdb:  items[i].Show.IDs.TMDB,
+						Tvdb:  items[i].Show.IDs.TVDB,
 					},
-					Title: item.Show.Title,
-					Year:  item.Show.Year,
+					Title: items[i].Show.Title,
+					Year:  items[i].Show.Year,
 				}
 			}
 

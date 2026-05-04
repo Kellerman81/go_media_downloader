@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"math"
 	"path/filepath"
@@ -746,12 +747,16 @@ func GetDBIDs(
 // It takes a FileParser, path to the video file, and quality settings.
 // It populates the FileParser with metadata parsed from the file.
 // Returns an error if both parsing methods fail.
-func ParseVideoFile(m *database.ParseInfo, quality *config.QualityConfig) error {
+func ParseVideoFile(
+	ctx context.Context,
+	m *database.ParseInfo,
+	quality *config.QualityConfig,
+) error {
 	if m.File == "" {
 		return logger.ErrNotFound
 	}
 
-	err := parsemedia(!config.GetSettingsGeneral().UseMediainfo, m, quality)
+	err := parsemedia(ctx, !config.GetSettingsGeneral().UseMediainfo, m, quality)
 	if err == nil {
 		return nil
 	}
@@ -760,7 +765,7 @@ func ParseVideoFile(m *database.ParseInfo, quality *config.QualityConfig) error 
 		return err
 	}
 
-	return parsemedia(config.GetSettingsGeneral().UseMediainfo, m, quality)
+	return parsemedia(ctx, config.GetSettingsGeneral().UseMediainfo, m, quality)
 }
 
 // parsemedia attempts to parse the metadata of a video file using either ffprobe or MediaInfo.
@@ -769,18 +774,23 @@ func ParseVideoFile(m *database.ParseInfo, quality *config.QualityConfig) error 
 // It takes a boolean indicating whether to use ffprobe, a pointer to a ParseInfo struct to populate
 // with the parsed metadata, and a pointer to a QualityConfig struct.
 // Returns an error if both parsing methods fail.
-func parsemedia(ffprobe bool, m *database.ParseInfo, quality *config.QualityConfig) error {
+func parsemedia(
+	ctx context.Context,
+	ffprobe bool,
+	m *database.ParseInfo,
+	quality *config.QualityConfig,
+) error {
 	if m.File == "" {
 		return logger.ErrNotFound
 	}
 
 	if ffprobe {
-		if ExecCmdJSON[ffProbeJSON](m.File, "ffprobe", m, quality) == nil {
+		if ExecCmdJSON[ffProbeJSON](ctx, m.File, "ffprobe", m, quality) == nil {
 			return nil
 		}
 	}
 
-	return ExecCmdJSON[mediaInfoJSON](m.File, "mediainfo", m, quality)
+	return ExecCmdJSON[mediaInfoJSON](ctx, m.File, "mediainfo", m, quality)
 }
 
 // parseffprobe parses metadata from the ffprobe JSON output and updates the provided
@@ -1347,7 +1357,7 @@ func GetPriorityMapQualBook(
 	m.Priority += calculateBookFormatPriority(m.Quality)
 
 	// Source quality bonus (retail > scan)
-	if strings.Contains(strings.ToLower(m.Quality), "retail") {
+	if logger.ContainsI(m.Quality, "retail") {
 		m.Priority += 20
 	}
 
@@ -1629,9 +1639,7 @@ func GenerateAllQualityPriorities() {
 							}
 						}
 
-						// Reset for next iteration
-						prioreso = prioresoorg
-						prioqual = prioqualorg
+						// prioreso/prioqual are re-derived from prioresoorg/prioqualorg each iteration via handleCombinedReorder
 					}
 				}
 			}

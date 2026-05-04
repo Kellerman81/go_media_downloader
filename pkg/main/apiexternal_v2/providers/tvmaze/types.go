@@ -343,8 +343,8 @@ func parseTVMazeDate(dateStr string) time.Time {
 		time.RFC3339,
 	}
 
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, dateStr); err == nil {
+	for i := range layouts {
+		if t, err := time.Parse(layouts[i], dateStr); err == nil {
 			return t
 		}
 	}

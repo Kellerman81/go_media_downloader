@@ -628,12 +628,8 @@ func HandleSearchDownload(c *gin.Context) {
 		}
 	}
 
-	var searchResults *searcher.ConfigSearcher
-	defer searchResults.Close()
-
 	// Perform the search based on type
 	results, err := performSearch(
-		searchResults,
 		searchType,
 		mediaConfig,
 		movieID,
@@ -703,11 +699,12 @@ func formatFileSize(bytes int64) string {
 
 // performSearch executes real search calls based on the specified type and parameters.
 func performSearch(
-	searchResults *searcher.ConfigSearcher,
 	searchType, mediaConfig string,
 	movieID, serieID, seasonNum, episodeID, limit int,
 	titleSearch bool,
 ) (*SearchResults, error) {
+	var searchResults *searcher.ConfigSearcher
+
 	// Get the media configuration
 	var mediaTypeConfig *config.MediaTypeConfig
 

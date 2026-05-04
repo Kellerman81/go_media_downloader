@@ -158,7 +158,7 @@ func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
 	}
 
-	s.dbserieID = uint(lastID)
+	s.dbserieID = uint(lastID) //nolint:gosec // safe: value within target type range
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("site", s.config.SiteName).
 		Str("series", s.config.SerieName).

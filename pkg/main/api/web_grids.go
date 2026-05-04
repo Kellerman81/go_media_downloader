@@ -94,7 +94,7 @@ func renderQueuePage(ctx *gin.Context) {
 
 // renderQueueGrid creates a grid showing active queue items.
 func renderQueueGrid() gomponents.Node {
-	var queueData []map[string]any
+	queueData := make([]map[string]any, 0, len(worker.GetQueues()))
 
 	for i, value := range worker.GetQueues() {
 		queueData = append(queueData, map[string]any{
@@ -1017,7 +1017,7 @@ func renderTableEditForm(
 		return strings.Join(capitalizedParts, " ")
 	}
 	// Sort keys to ensure consistent field ordering
-	var sortedKeys []string
+	sortedKeys := make([]string, 0, len(data))
 	for col := range data {
 		sortedKeys = append(sortedKeys, col)
 	}
@@ -1773,9 +1773,8 @@ func renderCustomFilters(tableName string) gomponents.Node {
 }
 
 func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
-	var header []gomponents.Node
+	header := make([]gomponents.Node, 0, len(tableInfo.Columns)+1)
 	// var footer []gomponents.Node
-	var o []Mdata
 
 	for _, col := range tableInfo.Columns {
 		var (
@@ -1815,8 +1814,6 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 				gomponents.Text(col.DisplayName),
 			),
 		)
-		// Keep original col.Name in Mdata for server-side processing
-		o = append(o, Mdata{Mdata: col.Name})
 		// footer = append(footer, html.Th(html.Role("columnfooter"), html.Input(html.Type("text"), html.Name("search_"+col.Name), html.Value("Search "+col.Name), html.Class("search_init"))))
 	}
 

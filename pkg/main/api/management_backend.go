@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -239,7 +240,7 @@ func FindMissingEpisodes(
 		)
 	} else {
 		// Get all series based on status
-		statusFilter := ""
+		var statusFilter string
 		switch status {
 		case "continuing":
 			statusFilter = "status = 'Continuing'"
@@ -808,27 +809,18 @@ func getConfiguredIndexers() []string {
 
 // testServiceHealth tests the health of an individual service.
 func testServiceHealth(serviceName string, _, _ int, detailed bool) ServiceStatus {
-	status := ServiceStatus{
-		ServiceName: serviceName,
-		Status:      "offline",
-		Details:     make(map[string]any),
-	}
-
 	switch strings.ToLower(serviceName) {
 	case "imdb":
-		status = testIMDBHealth(detailed)
+		return testIMDBHealth(detailed)
 	case "trakt":
-		status = testTraktHealth(detailed)
+		return testTraktHealth(detailed)
 	case "database":
-		status = testDatabaseHealth(detailed)
+		return testDatabaseHealth(detailed)
 	case "filesystem":
-		status = testFilesystemHealth(detailed)
+		return testFilesystemHealth(detailed)
 	default:
-		// Test generic service by checking if it's in configuration
-		status = testGenericServiceHealth(serviceName, detailed)
+		return testGenericServiceHealth(serviceName, detailed)
 	}
-
-	return status
 }
 
 // testIMDBHealth checks IMDB database connectivity.
@@ -892,7 +884,14 @@ func testTraktHealth(detailed bool) ServiceStatus {
 	// Simple connectivity test to Trakt API
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	resp, err := client.Get("https://api.trakt.tv")
+	req, _ := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"https://api.trakt.tv",
+		nil,
+	)
+
+	resp, err := client.Do(req)
 	if err != nil {
 		status.Status = "offline"
 		status.Details["error"] = err.Error()
@@ -1056,7 +1055,8 @@ func testIndexerQuery(indexer config.IndexersConfig, detailed bool) ServiceStatu
 	testURL := fmt.Sprintf("%s/api?t=caps&apikey=%s", indexer.URL, indexer.Apikey)
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(testURL)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, testURL, nil)
+	resp, err := client.Do(req)
 
 	queryDuration := time.Since(queryStart)
 

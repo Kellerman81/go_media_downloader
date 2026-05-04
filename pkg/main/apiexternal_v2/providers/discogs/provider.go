@@ -25,7 +25,8 @@ const (
 // Provider implements the music metadata provider for Discogs.
 type Provider struct {
 	*base.BaseClient
-	token string
+	token       string
+	authHeaders map[string]string
 }
 
 // NewProviderWithConfig creates a new Discogs provider with custom config.
@@ -57,10 +58,17 @@ func NewProviderWithConfig(cfg base.ClientConfig, token string) *Provider {
 		cfg.UserAgent = config.GetSettingsGeneral().UserAgent
 	}
 
-	return &Provider{
+	p := &Provider{
 		BaseClient: base.NewBaseClient(cfg),
 		token:      token,
 	}
+	if token != "" {
+		p.authHeaders = map[string]string{
+			"Authorization": logger.JoinStrings("Discogs token=", token),
+		}
+	}
+
+	return p
 }
 
 // NewProvider creates a new Discogs provider without authentication.
@@ -81,19 +89,6 @@ func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
 // GetProviderName returns the provider name.
 func (p *Provider) GetProviderName() string {
 	return "discogs"
-}
-
-// addAuth adds authentication header if token is set.
-func (p *Provider) addAuth(headers map[string]string) map[string]string {
-	if headers == nil {
-		headers = make(map[string]string)
-	}
-
-	if p.token != "" {
-		headers["Authorization"] = "Discogs token=" + p.token
-	}
-
-	return headers
 }
 
 //
@@ -142,7 +137,7 @@ func (p *Provider) Search(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -197,7 +192,7 @@ func (p *Provider) GetArtistByID(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -240,7 +235,7 @@ func (p *Provider) GetArtistReleases(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -267,7 +262,7 @@ func (p *Provider) GetReleaseByID(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -296,7 +291,7 @@ func (p *Provider) GetReleaseByBarcode(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -329,7 +324,7 @@ func (p *Provider) GetMasterByID(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -371,7 +366,7 @@ func (p *Provider) GetMasterVersions(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -395,7 +390,7 @@ func (p *Provider) GetLabelByID(ctx context.Context, id int) (*discogsLabelRespo
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}
@@ -437,7 +432,7 @@ func (p *Provider) GetLabelReleases(
 		nil,
 		&response,
 		nil,
-		p.addAuth(nil),
+		p.authHeaders,
 	); err != nil {
 		return nil, err
 	}

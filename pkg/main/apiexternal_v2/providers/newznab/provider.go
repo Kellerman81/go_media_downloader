@@ -974,59 +974,59 @@ func (p *Provider) convertJSON1Items(
 ) []apiexternal_v2.Nzbwithprio {
 	results := make([]apiexternal_v2.Nzbwithprio, 0, len(items))
 
-	for _, item := range items {
+	for i := range items {
 		nzb := apiexternal_v2.Nzb{
-			ID:             item.GUID.Text,
-			Title:          item.Title,
+			ID:             items[i].GUID.Text,
+			Title:          items[i].Title,
 			SourceEndpoint: p.GetProviderName(),
-			Size:           item.Size,
+			Size:           items[i].Size,
 			IsTorrent:      p.isTorznab,
 		}
 
 		// Parse publish date
-		if item.PubDate != "" {
-			if t, err := time.Parse(time.RFC1123Z, item.PubDate); err == nil {
+		if items[i].PubDate != "" {
+			if t, err := time.Parse(time.RFC1123Z, items[i].PubDate); err == nil {
 				nzb.PubDate = t
-			} else if t, err := time.Parse(time.RFC1123, item.PubDate); err == nil {
+			} else if t, err := time.Parse(time.RFC1123, items[i].PubDate); err == nil {
 				nzb.PubDate = t
 			}
 		}
 
 		// Extract download URL from enclosure or link
-		if item.Enclosure.Attributes.URL != "" {
-			nzb.DownloadURL = item.Enclosure.Attributes.URL
+		if items[i].Enclosure.Attributes.URL != "" {
+			nzb.DownloadURL = items[i].Enclosure.Attributes.URL
 
 			// Parse size from enclosure if not in main item
-			if nzb.Size == 0 && item.Enclosure.Attributes.Length != "" {
+			if nzb.Size == 0 && items[i].Enclosure.Attributes.Length != "" {
 				if size, err := strconv.ParseInt(
-					item.Enclosure.Attributes.Length,
+					items[i].Enclosure.Attributes.Length,
 					10,
 					64,
 				); err == nil {
 					nzb.Size = size
 				}
 			}
-		} else if item.Link != "" {
-			nzb.DownloadURL = item.Link
+		} else if items[i].Link != "" {
+			nzb.DownloadURL = items[i].Link
 		}
 
 		// Process custom attributes to populate NZB fields
-		for _, attr := range item.Attributes {
-			switch attr.Attribute.Name {
+		for j := range items[i].Attributes {
+			switch items[i].Attributes[j].Attribute.Name {
 			case "imdb", "imdbid":
-				nzb.IMDBID = attr.Attribute.Value
+				nzb.IMDBID = items[i].Attributes[j].Attribute.Value
 			case "tvdbid":
-				if id, err := strconv.Atoi(attr.Attribute.Value); err == nil {
+				if id, err := strconv.Atoi(items[i].Attributes[j].Attribute.Value); err == nil {
 					nzb.TVDBID = id
 				}
 
 			case "season":
-				nzb.Season = attr.Attribute.Value
+				nzb.Season = items[i].Attributes[j].Attribute.Value
 			case "episode":
-				nzb.Episode = attr.Attribute.Value
+				nzb.Episode = items[i].Attributes[j].Attribute.Value
 			case "category":
 				if nzb.Category == "" {
-					nzb.Category = attr.Attribute.Value
+					nzb.Category = items[i].Attributes[j].Attribute.Value
 				}
 			}
 		}
@@ -1043,7 +1043,7 @@ func (p *Provider) convertJSON1Items(
 
 		results = append(results, apiexternal_v2.Nzbwithprio{
 			NZB:         nzb,
-			WantedTitle: item.Title,
+			WantedTitle: items[i].Title,
 		})
 	}
 
@@ -1057,45 +1057,53 @@ func (p *Provider) convertJSON2Items(
 ) []apiexternal_v2.Nzbwithprio {
 	results := make([]apiexternal_v2.Nzbwithprio, 0, len(items))
 
-	for _, item := range items {
+	for i := range items {
 		nzb := apiexternal_v2.Nzb{
-			ID:             item.GUID.Text,
-			Title:          item.Title,
+			ID:             items[i].GUID.Text,
+			Title:          items[i].Title,
 			SourceEndpoint: p.GetProviderName(),
-			Size:           item.Size,
+			Size:           items[i].Size,
 			IsTorrent:      p.isTorznab,
 		}
 
 		// Parse publish date
-		if item.PubDate != "" {
-			if t, err := time.Parse(time.RFC1123Z, item.PubDate); err == nil {
+		if items[i].PubDate != "" {
+			if t, err := time.Parse(time.RFC1123Z, items[i].PubDate); err == nil {
 				nzb.PubDate = t
-			} else if t, err := time.Parse(time.RFC1123, item.PubDate); err == nil {
+			} else if t, err := time.Parse(time.RFC1123, items[i].PubDate); err == nil {
 				nzb.PubDate = t
 			}
 		}
 
 		// Extract download URL from enclosure or link
-		if item.Enclosure.URL != "" {
-			nzb.DownloadURL = item.Enclosure.URL
+		if items[i].Enclosure.URL != "" {
+			nzb.DownloadURL = items[i].Enclosure.URL
 
 			// Parse size from enclosure if not in main item
-			if nzb.Size == 0 && item.Enclosure.Length != "" {
-				if size, err := strconv.ParseInt(item.Enclosure.Length, 10, 64); err == nil {
+			if nzb.Size == 0 && items[i].Enclosure.Length != "" {
+				if size, err := strconv.ParseInt(items[i].Enclosure.Length, 10, 64); err == nil {
 					nzb.Size = size
 				}
 			}
-		} else if item.Link != "" {
-			nzb.DownloadURL = item.Link
+		} else if items[i].Link != "" {
+			nzb.DownloadURL = items[i].Link
 		}
 
 		// Process custom attributes from both possible attribute fields to populate NZB fields
-		for _, attr := range item.Attributes {
-			p.processAttributeForNzb(&nzb, attr.Name, attr.Value)
+		for j := range items[i].Attributes {
+			p.processAttributeForNzb(
+				&nzb,
+				items[i].Attributes[j].Name,
+				items[i].Attributes[j].Value,
+			)
 		}
 
-		for _, attr := range item.Attributes2 {
-			p.processAttributeForNzb(&nzb, attr.Name, attr.Value)
+		for j := range items[i].Attributes2 {
+			p.processAttributeForNzb(
+				&nzb,
+				items[i].Attributes2[j].Name,
+				items[i].Attributes2[j].Value,
+			)
 		}
 
 		// Check if this is the tillid entry - if so, stop processing
@@ -1110,7 +1118,7 @@ func (p *Provider) convertJSON2Items(
 
 		results = append(results, apiexternal_v2.Nzbwithprio{
 			NZB:         nzb,
-			WantedTitle: item.Title,
+			WantedTitle: items[i].Title,
 		})
 	}
 

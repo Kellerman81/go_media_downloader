@@ -95,7 +95,7 @@ func RefreshAudiobook(cfgp *config.MediaTypeConfig, id *string) error {
 
 // RetagAudiobook re-writes audio tags for a single audiobook by its dbaudiobook ID.
 // It uses existing DB metadata (from the original Audnex import) rather than re-matching.
-func RetagAudiobook(cfgp *config.MediaTypeConfig, dbID uint) error {
+func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint) error {
 	// Get audiobook metadata from DB
 	var dbAudiobook database.Dbaudiobook
 	if err := dbAudiobook.GetDbaudiobookByIDP(&dbID); err != nil {
@@ -199,11 +199,11 @@ func RetagAudiobook(cfgp *config.MediaTypeConfig, dbID uint) error {
 		}
 	}
 
-	return structure.TagAlbumFiles(config.MediaTypeAudiobook, embedArt, embedLyrics, album)
+	return structure.TagAlbumFiles(ctx, config.MediaTypeAudiobook, embedArt, embedLyrics, album)
 }
 
 // RetagAuthorAudiobooks re-writes audio tags for all audiobooks by a given dbauthor ID.
-func RetagAuthorAudiobooks(cfgp *config.MediaTypeConfig, authorID uint) error {
+func RetagAuthorAudiobooks(ctx context.Context, cfgp *config.MediaTypeConfig, authorID uint) error {
 	ids := database.Getrowssize[uint](
 		false,
 		"SELECT count(DISTINCT ab.dbaudiobook_id) FROM audiobooks ab JOIN dbaudiobook_authors aba ON ab.dbaudiobook_id = aba.dbaudiobook_id WHERE aba.dbauthor_id = ?",
@@ -212,11 +212,11 @@ func RetagAuthorAudiobooks(cfgp *config.MediaTypeConfig, authorID uint) error {
 	)
 
 	var lastErr error
-	for _, id := range ids {
-		if err := RetagAudiobook(cfgp, id); err != nil {
+	for i := range ids {
+		if err := RetagAudiobook(ctx, cfgp, ids[i]); err != nil {
 			lastErr = err
 			logger.Logtype("error", 1).
-				Uint("dbaudiobook_id", id).
+				Uint("dbaudiobook_id", ids[i]).
 				Err(err).
 				Msg("Failed to retag audiobook")
 		}
@@ -226,17 +226,17 @@ func RetagAuthorAudiobooks(cfgp *config.MediaTypeConfig, authorID uint) error {
 }
 
 // RetagAllAudiobooks re-writes audio tags for all audiobooks that have files.
-func RetagAllAudiobooks(cfgp *config.MediaTypeConfig) error {
+func RetagAllAudiobooks(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	ids := database.Getrowssize[uint](false,
 		"SELECT count(DISTINCT dbaudiobook_id) FROM audiobook_files",
 		"SELECT DISTINCT dbaudiobook_id FROM audiobook_files")
 
 	var lastErr error
-	for _, id := range ids {
-		if err := RetagAudiobook(cfgp, id); err != nil {
+	for i := range ids {
+		if err := RetagAudiobook(ctx, cfgp, ids[i]); err != nil {
 			lastErr = err
 			logger.Logtype("error", 1).
-				Uint("dbaudiobook_id", id).
+				Uint("dbaudiobook_id", ids[i]).
 				Err(err).
 				Msg("Failed to retag audiobook")
 		}

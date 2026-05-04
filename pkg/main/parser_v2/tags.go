@@ -64,18 +64,18 @@ func (tr *TagReader) ReadAlbumTags(filePaths []string) (*MusicParseResult, error
 		firstTags    *tags.AudioTags
 	)
 
-	for _, filePath := range filePaths {
-		audioTags, err := tr.manager.ReadTags(filePath)
+	for i := range filePaths {
+		audioTags, err := tr.manager.ReadTags(filePaths[i])
 		if err != nil {
 			// Still add a basic track entry even if we can't read tags
 			result.Tracks = append(result.Tracks, TrackInfo{
-				Filename: filepath.Base(filePath),
+				Filename: filepath.Base(filePaths[i]),
 			})
 			continue
 		}
 
 		track := TrackInfo{
-			Filename:               filepath.Base(filePath),
+			Filename:               filepath.Base(filePaths[i]),
 			Title:                  audioTags.Title,
 			TrackNumber:            audioTags.TrackNumber,
 			DiscNumber:             audioTags.DiscNumber,
@@ -185,11 +185,11 @@ func (tr *TagReader) ReadAudiobookTags(filePaths []string) (*AudiobookParseResul
 		firstTags    *tags.AudioTags
 	)
 
-	for i, filePath := range filePaths {
-		audioTags, err := tr.manager.ReadTags(filePath)
+	for i := range filePaths {
+		audioTags, err := tr.manager.ReadTags(filePaths[i])
 		if err != nil {
 			result.Files = append(result.Files, AudiobookFileInfo{
-				Filename:   filepath.Base(filePath),
+				Filename:   filepath.Base(filePaths[i]),
 				PartNumber: i + 1,
 			})
 
@@ -197,7 +197,7 @@ func (tr *TagReader) ReadAudiobookTags(filePaths []string) (*AudiobookParseResul
 		}
 
 		fileInfo := AudiobookFileInfo{
-			Filename:     filepath.Base(filePath),
+			Filename:     filepath.Base(filePaths[i]),
 			PartNumber:   audioTags.TrackNumber,
 			DiscNumber:   audioTags.DiscNumber,
 			ChapterTitle: audioTags.Title,

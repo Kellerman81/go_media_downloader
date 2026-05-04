@@ -496,8 +496,8 @@ func IsLosslessAudioExtension(ext string) bool {
 
 // containsIgnoreCase checks if the slice contains the string (case-insensitive).
 func containsIgnoreCase(slice []string, str string) bool {
-	for _, s := range slice {
-		if len(s) == len(str) && (s == str || equalFoldASCII(s, str)) {
+	for i := range slice {
+		if len(slice[i]) == len(str) && (slice[i] == str || equalFoldASCII(slice[i], str)) {
 			return true
 		}
 	}

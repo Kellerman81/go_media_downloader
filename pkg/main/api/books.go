@@ -64,12 +64,21 @@ func apiBooksDBList(ctx *gin.Context) {
 	}
 
 	if params.Limit > 0 {
-		query += " limit " + itoa(int(params.Limit)) + " offset " + itoa(int(params.Offset))
+		query += " limit " + itoa(
+			int(params.Limit),
+		) + " offset " + itoa(
+			int(params.Offset),
+		)
 	}
 
 	data := database.StructscanT[database.Dbbook](false, params.Limit, query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      List Books by List Name
@@ -99,12 +108,21 @@ func apiBooksListGet(ctx *gin.Context) {
 	}
 
 	if params.Limit > 0 {
-		query += " limit " + itoa(int(params.Limit)) + " offset " + itoa(int(params.Offset))
+		query += " limit " + itoa(
+			int(params.Limit),
+		) + " offset " + itoa(
+			int(params.Offset),
+		)
 	}
 
 	data := database.StructscanT[database.Book](false, params.Limit, query, &name)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Book

@@ -140,7 +140,7 @@ func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
 	}
 
-	s.dbserieID = uint(lastID)
+	s.dbserieID = uint(lastID) //nolint:gosec // safe: value within target type range
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("site", s.config.SiteName).
 		Str("series", s.config.SerieName).
@@ -407,11 +407,11 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			break
 		}
 
-		for _, release := range releases {
-			if err := s.createEpisode(ctx, &release); err != nil {
+		for i := range releases {
+			if err := s.createEpisode(ctx, &releases[i]); err != nil {
 				logger.Logtype(logger.StatusError, 0).
 					Err(err).
-					Str("title", release.Title).
+					Str("title", releases[i].Title).
 					Msg("Failed to create episode")
 
 				continue

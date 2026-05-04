@@ -352,7 +352,7 @@ func HandleNamingTest(c *gin.Context) {
 		}
 
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		s.ParseFileAdditional(c, &orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
 		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
 		c.String(
@@ -425,7 +425,7 @@ func HandleNamingTest(c *gin.Context) {
 		}
 
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		s.ParseFileAdditional(c, &orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
 
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID

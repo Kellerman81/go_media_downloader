@@ -719,9 +719,187 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultQueryParamCount = 3
 		q.DefaultOrderBy = " order by authors.id desc"
 		q.Object = Author{}
+
+	case "dbbook_titles":
+		q.Table = "dbbook_titles LEFT JOIN dbbooks ON dbbook_titles.dbbook_id = dbbooks.id"
+		q.DefaultColumns = "dbbook_titles.id as id,dbbook_titles.created_at as created_at,dbbook_titles.updated_at as updated_at,dbbook_titles.title as title,dbbook_titles.slug as slug,dbbook_titles.region as region,dbbook_titles.dbbook_id as dbbook_id,dbbooks.title as book_title"
+		q.DefaultQuery = " where dbbook_titles.id like ? or dbbook_titles.title like ? or dbbook_titles.slug like ? or dbbook_titles.region like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by dbbook_titles.id desc"
+		q.Object = DbbookTitle{}
+
+	case "dbbook_series":
+		q.Table = "dbbook_series"
+		q.DefaultColumns = "id,created_at,updated_at,name,description,goodreads_id,openlibrary_id"
+		q.DefaultQuery = " where id like ? or name like ? or goodreads_id like ? or openlibrary_id like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = DbbookSeries{}
+
+	case "book_histories":
+		q.Table = "book_histories LEFT JOIN dbbooks ON book_histories.dbbook_id = dbbooks.id"
+		q.DefaultColumns = "book_histories.id as id,book_histories.created_at as created_at,book_histories.updated_at as updated_at,book_histories.downloaded_at as downloaded_at,book_histories.title as title,book_histories.url as url,book_histories.indexer as indexer,book_histories.type as type,book_histories.target as target,book_histories.quality_profile as quality_profile,book_histories.blacklisted as blacklisted,book_histories.book_id as book_id,book_histories.dbbook_id as dbbook_id,dbbooks.title as book_title"
+		q.DefaultQuery = " where book_histories.id like ? or book_histories.title like ? or book_histories.indexer like ? or book_histories.quality_profile like ? or book_histories.book_id like ? or book_histories.dbbook_id like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by book_histories.downloaded_at desc"
+		q.Object = BookHistory{}
+
+	case "dbaudiobook_titles":
+		q.Table = "dbaudiobook_titles LEFT JOIN dbaudiobooks ON dbaudiobook_titles.dbaudiobook_id = dbaudiobooks.id"
+		q.DefaultColumns = "dbaudiobook_titles.id as id,dbaudiobook_titles.created_at as created_at,dbaudiobook_titles.updated_at as updated_at,dbaudiobook_titles.title as title,dbaudiobook_titles.slug as slug,dbaudiobook_titles.region as region,dbaudiobook_titles.dbaudiobook_id as dbaudiobook_id,dbaudiobooks.title as audiobook_title"
+		q.DefaultQuery = " where dbaudiobook_titles.id like ? or dbaudiobook_titles.title like ? or dbaudiobook_titles.slug like ? or dbaudiobook_titles.region like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by dbaudiobook_titles.id desc"
+		q.Object = DbaudiobookTitle{}
+
+	case "audiobook_histories":
+		q.Table = "audiobook_histories LEFT JOIN dbaudiobooks ON audiobook_histories.dbaudiobook_id = dbaudiobooks.id"
+		q.DefaultColumns = "audiobook_histories.id as id,audiobook_histories.created_at as created_at,audiobook_histories.updated_at as updated_at,audiobook_histories.downloaded_at as downloaded_at,audiobook_histories.title as title,audiobook_histories.url as url,audiobook_histories.indexer as indexer,audiobook_histories.type as type,audiobook_histories.target as target,audiobook_histories.quality_profile as quality_profile,audiobook_histories.blacklisted as blacklisted,audiobook_histories.audiobook_id as audiobook_id,audiobook_histories.dbaudiobook_id as dbaudiobook_id,dbaudiobooks.title as audiobook_title"
+		q.DefaultQuery = " where audiobook_histories.id like ? or audiobook_histories.title like ? or audiobook_histories.indexer like ? or audiobook_histories.quality_profile like ? or audiobook_histories.audiobook_id like ? or audiobook_histories.dbaudiobook_id like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by audiobook_histories.downloaded_at desc"
+		q.Object = AudiobookHistory{}
+
+	case "dbalbum_titles":
+		q.Table = "dbalbum_titles LEFT JOIN dbalbums ON dbalbum_titles.dbalbum_id = dbalbums.id"
+		q.DefaultColumns = "dbalbum_titles.id as id,dbalbum_titles.created_at as created_at,dbalbum_titles.updated_at as updated_at,dbalbum_titles.title as title,dbalbum_titles.slug as slug,dbalbum_titles.region as region,dbalbum_titles.dbalbum_id as dbalbum_id,dbalbums.title as album_title"
+		q.DefaultQuery = " where dbalbum_titles.id like ? or dbalbum_titles.title like ? or dbalbum_titles.slug like ? or dbalbum_titles.region like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by dbalbum_titles.id desc"
+		q.Object = DbalbumTitle{}
+
+	case "dbtracks":
+		q.Table = "dbtracks LEFT JOIN dbalbums ON dbtracks.dbalbum_id = dbalbums.id"
+		q.DefaultColumns = "dbtracks.id as id,dbtracks.created_at as created_at,dbtracks.updated_at as updated_at,dbtracks.title as title,dbtracks.disc_number as disc_number,dbtracks.track_number as track_number,dbtracks.runtime_ms as runtime_ms,dbtracks.explicit as explicit,dbtracks.isrc as isrc,dbtracks.acoustid as acoustid,dbtracks.musicbrainz_recording_id as musicbrainz_recording_id,dbtracks.dbalbum_id as dbalbum_id,dbalbums.title as album_title"
+		q.DefaultQuery = " where dbtracks.id like ? or dbtracks.title like ? or dbtracks.isrc like ? or dbtracks.dbalbum_id like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by dbtracks.dbalbum_id, dbtracks.disc_number, dbtracks.track_number"
+		q.Object = Dbtrack{}
+
+	case "album_histories":
+		q.Table = "album_histories LEFT JOIN dbalbums ON album_histories.dbalbum_id = dbalbums.id"
+		q.DefaultColumns = "album_histories.id as id,album_histories.created_at as created_at,album_histories.updated_at as updated_at,album_histories.downloaded_at as downloaded_at,album_histories.title as title,album_histories.url as url,album_histories.indexer as indexer,album_histories.type as type,album_histories.target as target,album_histories.quality_profile as quality_profile,album_histories.blacklisted as blacklisted,album_histories.album_id as album_id,album_histories.dbalbum_id as dbalbum_id,dbalbums.title as album_title"
+		q.DefaultQuery = " where album_histories.id like ? or album_histories.title like ? or album_histories.indexer like ? or album_histories.quality_profile like ? or album_histories.album_id like ? or album_histories.dbalbum_id like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by album_histories.downloaded_at desc"
+		q.Object = AlbumHistory{}
+
+	case "audiobook_file_unmatcheds":
+		q.Table = "audiobook_file_unmatcheds"
+		q.DefaultColumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
+		q.DefaultQuery = " where id like ? or listname like ? or filepath like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = AudiobookFileUnmatched{}
+
+	case "album_file_unmatcheds":
+		q.Table = "album_file_unmatcheds"
+		q.DefaultColumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
+		q.DefaultQuery = " where id like ? or listname like ? or filepath like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = AlbumFileUnmatched{}
+
+	case "book_file_unmatcheds":
+		q.Table = "book_file_unmatcheds"
+		q.DefaultColumns = "id,created_at,updated_at,listname,filepath,last_checked,parsed_data"
+		q.DefaultQuery = " where id like ? or listname like ? or filepath like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = BookFileUnmatched{}
+
+	case "book_series":
+		q.Table = "book_series LEFT JOIN dbbook_series ON book_series.dbbook_series_id = dbbook_series.id"
+		q.DefaultColumns = "book_series.id as id,book_series.created_at as created_at,book_series.updated_at as updated_at,book_series.listname as listname,book_series.dbbook_series_id as dbbook_series_id,book_series.author_id as author_id,book_series.dont_search as dont_search,dbbook_series.name as series_name"
+		q.DefaultQuery = " where book_series.id like ? or book_series.listname like ? or book_series.dbbook_series_id like ? or book_series.author_id like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by book_series.id desc"
+		q.Object = BookSeries{}
+
+	case "dbalbum_artists":
+		q.Table = "dbalbum_artists LEFT JOIN dbalbums ON dbalbum_artists.dbalbum_id = dbalbums.id LEFT JOIN dbartists ON dbalbum_artists.dbartist_id = dbartists.id"
+		q.DefaultColumns = "dbalbum_artists.id as id,dbalbum_artists.created_at as created_at,dbalbum_artists.updated_at as updated_at,dbalbum_artists.dbalbum_id as dbalbum_id,dbalbum_artists.dbartist_id as dbartist_id,dbalbum_artists.join_phrase as join_phrase,dbalbum_artists.position as position,dbalbums.title as album_title,dbartists.name as artist_name"
+		q.DefaultQuery = " where dbalbum_artists.id like ? or dbalbum_artists.dbalbum_id like ? or dbalbum_artists.dbartist_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbalbum_artists.dbalbum_id, dbalbum_artists.position"
+		q.Object = DbalbumArtist{}
+
+	case "dbartist_aliases":
+		q.Table = "dbartist_aliases LEFT JOIN dbartists ON dbartist_aliases.dbartist_id = dbartists.id"
+		q.DefaultColumns = "dbartist_aliases.id as id,dbartist_aliases.created_at as created_at,dbartist_aliases.updated_at as updated_at,dbartist_aliases.alias as alias,dbartist_aliases.locale as locale,dbartist_aliases.alias_type as alias_type,dbartist_aliases.is_primary as is_primary,dbartist_aliases.dbartist_id as dbartist_id,dbartists.name as artist_name"
+		q.DefaultQuery = " where dbartist_aliases.id like ? or dbartist_aliases.alias like ? or dbartist_aliases.dbartist_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbartist_aliases.dbartist_id, dbartist_aliases.is_primary desc"
+		q.Object = DbartistAlias{}
+
+	case "dbaudiobook_authors":
+		q.Table = "dbaudiobook_authors LEFT JOIN dbaudiobooks ON dbaudiobook_authors.dbaudiobook_id = dbaudiobooks.id LEFT JOIN dbauthors ON dbaudiobook_authors.dbauthor_id = dbauthors.id"
+		q.DefaultColumns = "dbaudiobook_authors.id as id,dbaudiobook_authors.created_at as created_at,dbaudiobook_authors.updated_at as updated_at,dbaudiobook_authors.dbaudiobook_id as dbaudiobook_id,dbaudiobook_authors.dbauthor_id as dbauthor_id,dbaudiobook_authors.role as role,dbaudiobook_authors.position as position,dbaudiobooks.title as audiobook_title,dbauthors.name as author_name"
+		q.DefaultQuery = " where dbaudiobook_authors.id like ? or dbaudiobook_authors.dbaudiobook_id like ? or dbaudiobook_authors.dbauthor_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbaudiobook_authors.dbaudiobook_id, dbaudiobook_authors.position"
+		q.Object = DbaudiobookAuthor{}
+
+	case "dbaudiobook_chapters":
+		q.Table = "dbaudiobook_chapters LEFT JOIN dbaudiobooks ON dbaudiobook_chapters.dbaudiobook_id = dbaudiobooks.id"
+		q.DefaultColumns = "dbaudiobook_chapters.id as id,dbaudiobook_chapters.created_at as created_at,dbaudiobook_chapters.updated_at as updated_at,dbaudiobook_chapters.dbaudiobook_id as dbaudiobook_id,dbaudiobook_chapters.title as title,dbaudiobook_chapters.chapter_number as chapter_number,dbaudiobook_chapters.position as position,dbaudiobook_chapters.start_time_ms as start_time_ms,dbaudiobook_chapters.end_time_ms as end_time_ms,dbaudiobook_chapters.runtime_ms as runtime_ms,dbaudiobooks.title as audiobook_title"
+		q.DefaultQuery = " where dbaudiobook_chapters.id like ? or dbaudiobook_chapters.dbaudiobook_id like ? or dbaudiobook_chapters.title like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbaudiobook_chapters.dbaudiobook_id, dbaudiobook_chapters.position"
+		q.Object = DbaudiobookChapter{}
+
+	case "dbaudiobook_narrators":
+		q.Table = "dbaudiobook_narrators LEFT JOIN dbaudiobooks ON dbaudiobook_narrators.dbaudiobook_id = dbaudiobooks.id LEFT JOIN dbnarrators ON dbaudiobook_narrators.dbnarrator_id = dbnarrators.id"
+		q.DefaultColumns = "dbaudiobook_narrators.id as id,dbaudiobook_narrators.created_at as created_at,dbaudiobook_narrators.updated_at as updated_at,dbaudiobook_narrators.dbaudiobook_id as dbaudiobook_id,dbaudiobook_narrators.dbnarrator_id as dbnarrator_id,dbaudiobook_narrators.position as position,dbaudiobooks.title as audiobook_title,dbnarrators.name as narrator_name"
+		q.DefaultQuery = " where dbaudiobook_narrators.id like ? or dbaudiobook_narrators.dbaudiobook_id like ? or dbaudiobook_narrators.dbnarrator_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbaudiobook_narrators.dbaudiobook_id, dbaudiobook_narrators.position"
+		q.Object = DbaudiobookNarrator{}
+
+	case "dbbook_authors":
+		q.Table = "dbbook_authors LEFT JOIN dbbooks ON dbbook_authors.dbbook_id = dbbooks.id LEFT JOIN dbauthors ON dbbook_authors.dbauthor_id = dbauthors.id"
+		q.DefaultColumns = "dbbook_authors.id as id,dbbook_authors.created_at as created_at,dbbook_authors.updated_at as updated_at,dbbook_authors.dbbook_id as dbbook_id,dbbook_authors.dbauthor_id as dbauthor_id,dbbook_authors.role as role,dbbook_authors.position as position,dbbooks.title as book_title,dbauthors.name as author_name"
+		q.DefaultQuery = " where dbbook_authors.id like ? or dbbook_authors.dbbook_id like ? or dbbook_authors.dbauthor_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbbook_authors.dbbook_id, dbbook_authors.position"
+		q.Object = DbbookAuthor{}
+
+	case "dbtrack_artists":
+		q.Table = "dbtrack_artists LEFT JOIN dbtracks ON dbtrack_artists.dbtrack_id = dbtracks.id LEFT JOIN dbartists ON dbtrack_artists.dbartist_id = dbartists.id"
+		q.DefaultColumns = "dbtrack_artists.id as id,dbtrack_artists.created_at as created_at,dbtrack_artists.updated_at as updated_at,dbtrack_artists.dbtrack_id as dbtrack_id,dbtrack_artists.dbartist_id as dbartist_id,dbtrack_artists.role as role,dbtrack_artists.position as position,dbtracks.title as track_title,dbartists.name as artist_name"
+		q.DefaultQuery = " where dbtrack_artists.id like ? or dbtrack_artists.dbtrack_id like ? or dbtrack_artists.dbartist_id like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by dbtrack_artists.dbtrack_id, dbtrack_artists.position"
+		q.Object = DbtrackArtist{}
+
+	case "indexer_fails":
+		q.Table = "indexer_fails"
+		q.DefaultColumns = "id,created_at,updated_at,indexer,last_fail"
+		q.DefaultQuery = " where id like ? or indexer like ?"
+		q.DefaultQueryParamCount = 2
+		q.DefaultOrderBy = " order by last_fail desc"
+		q.Object = IndexerFail{}
+
+	case "r_sshistories":
+		q.Table = "r_sshistories"
+		q.DefaultColumns = "id,created_at,updated_at,config,list,indexer,last_id"
+		q.DefaultQuery = " where id like ? or config like ? or list like ? or indexer like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by id desc"
+		q.Object = RSSHistory{}
 	}
 
 	return q
+}
+
+// GetAllTableNames returns all user-created table names from the main database,
+// sorted alphabetically. Used to populate the Database sidebar dropdown.
+func GetAllTableNames() []string {
+	return GetrowsN[string](
+		false,
+		0,
+		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+	)
 }
 
 // QueryDbmovieTitle queries the dbmovie_titles table using the provided Querywithargs struct and arguments.

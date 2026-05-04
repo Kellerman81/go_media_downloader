@@ -203,7 +203,7 @@ func getUnpackCommand(archivePath, extractPath string) (string, []string, error)
 }
 
 // extractArchive extracts a single archive file to the specified directory.
-func extractArchive(archivePath, extractPath string) error {
+func extractArchive(ctx context.Context, archivePath, extractPath string) error {
 	// Create extraction directory if it doesn't exist
 	if err := os.MkdirAll(extractPath, 0o755); err != nil {
 		return err
@@ -218,7 +218,7 @@ func extractArchive(archivePath, extractPath string) error {
 		Str(logger.StrFile, archivePath).
 		Msg("Extracting archive")
 
-	cmd := exec.Command(command, args...)
+	cmd := exec.CommandContext(ctx, command, args...)
 
 	cmd.Dir = filepath.Dir(archivePath)
 
@@ -300,14 +300,17 @@ func unpackArchivesInFolder(
 		Msg("Found archives to extract")
 
 	// Extract each archive
-	for _, archivePath := range archiveFiles {
+	for i := range archiveFiles {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
 		// Create extraction path: <archive_dir>/<archive_name>_unpack/
-		archiveDir := filepath.Dir(archivePath)
-		archiveName := strings.TrimSuffix(filepath.Base(archivePath), filepath.Ext(archivePath))
+		archiveDir := filepath.Dir(archiveFiles[i])
+		archiveName := strings.TrimSuffix(
+			filepath.Base(archiveFiles[i]),
+			filepath.Ext(archiveFiles[i]),
+		)
 
 		// Handle compound extensions like .tar.gz and multipart names
 		for ext := range archiveExtensions {
@@ -328,14 +331,14 @@ func unpackArchivesInFolder(
 		// Skip if already extracted
 		if scanner.CheckFileExist(extractPath) {
 			logger.Logtype("info", 1).
-				Str(logger.StrFile, archivePath).
+				Str(logger.StrFile, archiveFiles[i]).
 				Msg("Archive already extracted, skipping")
 			continue
 		}
 
-		if err := extractArchive(archivePath, extractPath); err != nil {
+		if err := extractArchive(ctx, archiveFiles[i], extractPath); err != nil {
 			logger.Logtype("error", 1).
-				Str(logger.StrFile, archivePath).
+				Str(logger.StrFile, archiveFiles[i]).
 				Err(err).
 				Msg("Failed to extract archive")
 

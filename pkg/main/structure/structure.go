@@ -531,6 +531,7 @@ func folderHasRecentFiles(folder string) bool {
 // It checks the runtime, language, and quality against configured values and cleans up the file if needed.
 // It is used after initial parsing to enforce business logic around file properties.
 func (s *Organizer) ParseFileAdditional(
+	ctx context.Context,
 	o *Organizerdata,
 	m *database.ParseInfo,
 	runtime uint,
@@ -547,7 +548,7 @@ func (s *Organizer) ParseFileAdditional(
 
 	// Only parse video file for video media types (movies, series)
 	if mediatype.SupportsVideoFile(s.Cfgp.IsType) {
-		if err := parser.ParseVideoFile(m, cfgQuality); err != nil {
+		if err := parser.ParseVideoFile(ctx, m, cfgQuality); err != nil {
 			if errors.Is(err, logger.ErrTracksEmpty) {
 				s.fileCleanup(o.Folder, o.MediaFile, o.Rootpath)
 			}
@@ -589,7 +590,12 @@ func (s *Organizer) validateRuntime(
 		return nil
 	}
 
-	wantedruntime := int(runtime) * mediatype.GetRuntimeMultiplier(s.Cfgp.IsType, m)
+	wantedruntime := int(
+		runtime,
+	) * mediatype.GetRuntimeMultiplier(
+		s.Cfgp.IsType,
+		m,
+	)
 
 	targetruntime := m.Runtime / 60
 	if targetruntime == wantedruntime {
@@ -659,8 +665,9 @@ func (s *Organizer) validateLanguage(
 	}
 
 	lenlang := len(m.Languages)
-	for _, allowedLang := range s.targetpathCfg.AllowedLanguages {
-		if (lenlang == 0 && allowedLang == "") || logger.SlicesContainsI(m.Languages, allowedLang) {
+	for i := range s.targetpathCfg.AllowedLanguages {
+		if (lenlang == 0 && s.targetpathCfg.AllowedLanguages[i] == "") ||
+			logger.SlicesContainsI(m.Languages, s.targetpathCfg.AllowedLanguages[i]) {
 			return nil
 		}
 	}
@@ -1126,6 +1133,7 @@ func (s *Organizer) getDataConfig() *config.MediaDataConfig {
 // updating the database, removing old lower quality files, and sending notifications.
 // It uses switch on s.Cfgp.IsType to handle type-specific logic.
 func (s *Organizer) Organize(
+	ctx context.Context,
 	o *Organizerdata,
 	m *database.ParseInfo,
 	cfgquality *config.QualityConfig,
@@ -1247,7 +1255,7 @@ func (s *Organizer) Organize(
 	// Parse runtime string to uint
 	if m.RuntimeStr != "" && m.RuntimeStr != "0" {
 		if getrun, err := strconv.Atoi(m.RuntimeStr); err == nil {
-			runtime = uint(getrun)
+			runtime = uint(getrun) //nolint:gosec // safe: value within target type range
 		}
 	}
 
@@ -1268,7 +1276,7 @@ func (s *Organizer) Organize(
 	}
 
 	// Parse file additional info
-	err := s.ParseFileAdditional(o, m, runtime, deletewronglanguage, checkruntime, cfgquality)
+	err := s.ParseFileAdditional(ctx, o, m, runtime, deletewronglanguage, checkruntime, cfgquality)
 	if err != nil {
 		return err
 	}
@@ -2134,7 +2142,13 @@ func OrganizeSingleFolder(
 			return nil
 		}
 
-		organized, moveReason, result := s.walkorganizefolder(fpath, folder, cfgp, importAddFound)
+		organized, moveReason, result := s.walkorganizefolder(
+			ctx,
+			fpath,
+			folder,
+			cfgp,
+			importAddFound,
+		)
 		if organized {
 			anyOrganized = true
 		}
@@ -2171,6 +2185,7 @@ func OrganizeSingleFolder(
 // It performs various checks and validations on the file, such as checking for disallowed subtitle files, minimum video size, and valid IDs. It then updates the media item's metadata and organizes the file accordingly.
 // If any errors occur during the process, it logs the errors and adds the file to the unmatched list.
 func (s *Organizer) walkorganizefolder(
+	ctx context.Context,
 	fpath, folder string,
 	cfgp *config.MediaTypeConfig,
 	addFound bool,
@@ -2344,6 +2359,7 @@ func (s *Organizer) walkorganizefolder(
 	h := mediatype.Get(s.Cfgp.IsType)
 
 	err = s.Organize(
+		ctx,
 		&o,
 		m,
 		s.Cfgp.Lists[m.ListID].CfgQuality,

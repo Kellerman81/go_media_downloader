@@ -54,13 +54,14 @@ func Slepping(random bool, seconds int) {
 // new config types.
 func LoadCfgDB(reload bool) error {
 	if _, err := os.Stat(Configfile); errors.Is(err, os.ErrNotExist) {
-		fmt.Println("Config file not found. Creating new config file.")
+		fmt.Println("Config file not found. Creating new config file.") //nolint:forbidigo // logger not initialized yet
 		ClearCfg()
 		WriteCfg()
-		fmt.Println("Config file created. Please edit it and run the application again.")
-	} else {
-		fmt.Println("Config file found. Loading config.")
+		fmt.Println("Config file created. Please edit it and run the application again.") //nolint:forbidigo // logger not initialized yet
+		os.Exit(0)
 	}
+
+	fmt.Println("Config file found. Loading config.") //nolint:forbidigo // logger not initialized yet
 
 	// Load all settings first (this acquires and releases the config lock)
 	return Loadallsettings(reload)
@@ -73,13 +74,14 @@ func LoadCfgDB(reload bool) error {
 func Loadallsettings(reload bool) error {
 	defaultConfig, err := Readconfigtoml()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println(err) //nolint:forbidigo // logger not initialized yet during config loading
 		return err
 	}
 
 	// Build snapshot from default config
 	snapshot, err := buildConfigSnapshot(defaultConfig, reload)
 	if err != nil {
+		fmt.Println(err) //nolint:forbidigo // logger not initialized yet
 		return err
 	}
 
@@ -1230,6 +1232,7 @@ func ClearCfg() {
 		Indexers: []IndexersConfig{{
 			Name:           "initial",
 			IndexerType:    "newznab",
+			URL:            "https://your-indexer-url.example.com",
 			Limitercalls:   5,
 			Limiterseconds: 20,
 			MaxEntries:     100,
@@ -1317,7 +1320,7 @@ func WriteCfg() {
 
 	cnt, err := toml.Marshal(bla)
 	if err != nil {
-		fmt.Println("Error loading config. " + err.Error())
+		logger.Logtype("error", 1).Err(err).Msg("Error loading config")
 	}
 
 	if err := os.WriteFile(Configfile, cnt, 0o600); err != nil {
@@ -1339,7 +1342,7 @@ func WriteCfgToml() error {
 
 	cnt, err := toml.Marshal(&settings.cachetoml)
 	if err != nil {
-		fmt.Println("Error loading config. " + err.Error())
+		logger.Logtype("error", 1).Err(err).Msg("Error loading config")
 	} else {
 		err = os.WriteFile(Configfile, cnt, 0o777)
 	}

@@ -238,8 +238,8 @@ func WrapWithOptions(
 	classified := Wrap(class, operation, err)
 
 	option := &ErrorOptions{}
-	for _, loption := range options {
-		loption(option)
+	for i := range options {
+		options[i](option)
 	}
 
 	if option.Message != "" {
@@ -274,8 +274,8 @@ func NewWithOptions(class ErrorClass, operation string, options ...errorOption) 
 	}
 
 	option := &ErrorOptions{}
-	for _, loption := range options {
-		loption(option)
+	for i := range options {
+		options[i](option)
 	}
 
 	if option.Message != "" {

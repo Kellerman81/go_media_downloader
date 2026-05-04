@@ -72,10 +72,7 @@ var (
 // parseServerURL extracts host, port, and SSL from a server URL string
 // Example: "https://gotify.example.com:8080" -> ("gotify.example.com", 8080, true).
 func parseServerURL(serverURL string) (host string, port int, useSSL bool) {
-	// Default values
-	host = serverURL
 	port = 80
-	useSSL = false
 
 	// Check for SSL/HTTPS
 	if strings.HasPrefix(serverURL, "https://") {
@@ -494,13 +491,17 @@ func main() {
 
 	err := config.LoadCfgDB(false)
 	if err != nil {
+		fmt.Println("Fatal: failed to load config:", err) //nolint:forbidigo // logger not initialized yet
 		os.Exit(1)
 	}
 
 	if config.GetSettingsGeneral().EnableFileWatcher {
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
-			fmt.Printf("creating a new watcher: %s", err)
+			fmt.Printf(
+				"creating a new watcher: %s",
+				err,
+			) //nolint:forbidigo // logger not initialized yet
 			return
 		}
 		defer watcher.Close()
@@ -508,19 +509,26 @@ func main() {
 		// Add all files from the commandline.
 		st, err := os.Lstat(config.Configfile)
 		if err != nil {
-			fmt.Printf("%s", err)
+			fmt.Printf("%s", err) //nolint:forbidigo // logger not initialized yet
 			return
 		}
 
 		if st.IsDir() {
-			fmt.Printf("%q is a directory, not a file", config.Configfile)
+			fmt.Printf(
+				"%q is a directory, not a file",
+				config.Configfile,
+			) //nolint:forbidigo // logger not initialized yet
 			return
 		}
 
 		// Watch the directory, not the file itself.
 		err = watcher.Add(filepath.Dir(config.Configfile))
 		if err != nil {
-			fmt.Printf("%q: %s", config.Configfile, err)
+			fmt.Printf(
+				"%q: %s",
+				config.Configfile,
+				err,
+			) //nolint:forbidigo // logger not initialized yet
 			return
 		}
 
@@ -534,7 +542,7 @@ func main() {
 						return
 					}
 
-					fmt.Printf("ERROR: %s", err)
+					fmt.Printf("ERROR: %s", err) //nolint:forbidigo // logger not initialized yet
 
 				// Read from Events.
 				case e, ok := <-watcher.Events:
@@ -665,9 +673,12 @@ func main() {
 	}
 
 	if database.DBQuickCheck() != "ok" {
-		logger.Logtype("fatal", 0).Msg("integrity check failed")
+		// Use error level so we can call os.Exit with the intended code (100).
+		// log.Fatal would call os.Exit(1) internally and skip the explicit exit below.
+		// The OS releases any pending defers (e.g. watcher.Close) when the process exits.
+		logger.Logtype("error", 0).Msg("integrity check failed")
 		database.DBClose()
-		os.Exit(100)
+		os.Exit(100) //nolint:gocritic // intentional early exit; OS frees resources
 	}
 
 	logger.Logtype("info", 0).Msg("Set Vars")
@@ -794,10 +805,6 @@ func main() {
 	// 	docs.SwaggerInfo.BasePath = "/"
 	// 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	// }
-
-	if general.WebPortalEnabled {
-		// goadmin.Init(router)
-	}
 
 	if strings.EqualFold(general.LogLevel, logger.StrDebug) {
 		ginpprof.Wrap(router)

@@ -3,6 +3,7 @@ package tags
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -78,7 +79,7 @@ func (h *FLACHandler) readTags(filepath string, withCover bool) (*AudioTags, err
 // PICTURE blocks are skipped without any body allocation when withCover is false.
 func (h *FLACHandler) parseFLACMeta(r io.Reader, withCover bool) (*AudioTags, error) {
 	br := bufio.NewReader(r)
-
+	defer br.Reset(nil) // release buffer on return
 	// Verify "fLaC" signature.
 	var sig [4]byte
 	if _, err := io.ReadFull(br, sig[:]); err != nil {
@@ -158,9 +159,9 @@ func (h *FLACHandler) parseFLACMeta(r io.Reader, withCover bool) (*AudioTags, er
 
 // parseVorbisComments extracts tag values from Vorbis Comment fields.
 func (h *FLACHandler) parseVorbisComments(comments [][2]string, tags *AudioTags) {
-	for _, comment := range comments {
-		key := strings.ToUpper(comment[0])
-		value := comment[1]
+	for i := range comments {
+		key := strings.ToUpper(comments[i][0])
+		value := comments[i][1]
 
 		switch key {
 		// Standard tags
@@ -234,7 +235,7 @@ func (h *FLACHandler) parseVorbisComments(comments [][2]string, tags *AudioTags)
 
 // WriteTags writes Vorbis Comment tags to a FLAC file using metaflac.
 // Requires the metaflac command-line tool to be installed and available in PATH.
-func (h *FLACHandler) WriteTags(filepath string, tags *AudioTags) error {
+func (h *FLACHandler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
 	metaflac := h.getMetaflacPath()
 
 	// Check if metaflac is available
@@ -248,7 +249,7 @@ func (h *FLACHandler) WriteTags(filepath string, tags *AudioTags) error {
 	// First, remove all existing vorbis comments
 	var stderr bytes.Buffer
 
-	removeCmd := exec.Command(metaflac, "--remove-all-tags", filepath)
+	removeCmd := exec.CommandContext(ctx, metaflac, "--remove-all-tags", filepath)
 
 	removeCmd.Stderr = &stderr
 	if err := removeCmd.Run(); err != nil {
@@ -264,7 +265,7 @@ func (h *FLACHandler) WriteTags(filepath string, tags *AudioTags) error {
 	if len(tagArgs) > 0 {
 		// Add all new tags
 		args := append(tagArgs, filepath)
-		setCmd := exec.Command(metaflac, args...)
+		setCmd := exec.CommandContext(ctx, metaflac, args...)
 
 		stderr.Reset()
 
@@ -279,7 +280,7 @@ func (h *FLACHandler) WriteTags(filepath string, tags *AudioTags) error {
 
 	// Handle cover art
 	if len(tags.CoverData) > 0 {
-		if err := h.writeCoverArt(filepath, tags); err != nil {
+		if err := h.writeCoverArt(ctx, filepath, tags); err != nil {
 			return err
 		}
 	}
@@ -366,7 +367,7 @@ func (h *FLACHandler) buildTagArgs(tags *AudioTags) []string {
 }
 
 // writeCoverArt writes cover art to a FLAC file using metaflac.
-func (h *FLACHandler) writeCoverArt(filepath string, tags *AudioTags) error {
+func (h *FLACHandler) writeCoverArt(ctx context.Context, filepath string, tags *AudioTags) error {
 	metaflac := h.getMetaflacPath()
 
 	// Write cover data to a temporary file
@@ -393,14 +394,16 @@ func (h *FLACHandler) writeCoverArt(filepath string, tags *AudioTags) error {
 	tmpFile.Close()
 
 	// Remove existing pictures first
-	removeCmd := exec.Command(metaflac, "--remove", "--block-type=PICTURE", filepath)
-	removeCmd.Run() // Ignore error - might not have pictures
+	exec.CommandContext(ctx, metaflac, "--remove", "--block-type=PICTURE", filepath).
+		Run()
+
+		//nolint:errcheck // ignore: might not have pictures
 
 	// Import the new picture
 	// Format: --import-picture-from=TYPE|MIME|DESC|WIDTHxHEIGHTxDEPTH/COLORS|FILE
 	// Type 3 = Front Cover, we can use simplified format
 	pictureSpec := logger.JoinStrings("3|", tags.CoverMIME, "|Front Cover||", tmpPath)
-	importCmd := exec.Command(
+	importCmd := exec.CommandContext(ctx,
 		metaflac,
 		logger.JoinStrings("--import-picture-from=", pictureSpec),
 		filepath,

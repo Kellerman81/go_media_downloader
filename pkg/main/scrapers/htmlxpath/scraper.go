@@ -148,7 +148,7 @@ func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
 	}
 
-	s.dbserieID = uint(lastID)
+	s.dbserieID = uint(lastID) //nolint:gosec // safe: value within target type range
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("site", s.config.SiteName).
 		Str("series", s.config.SerieName).
@@ -172,7 +172,7 @@ func (s *Scraper) fetchPage(ctx context.Context, pageNum int) (*html.Node, error
 	var url string
 	if s.config.PageURLPattern != "" {
 		// Use custom pattern
-		pageValue := pageNum
+		var pageValue int
 		if s.config.PaginationType == "offset" {
 			pageValue = pageNum * s.config.PageIncrement
 		} else {
@@ -226,9 +226,9 @@ func (s *Scraper) extractText(node *html.Node, xpath, attribute string) string {
 	}
 
 	if attribute != "" {
-		for _, attr := range targetNode.Attr {
-			if attr.Key == attribute {
-				return strings.TrimSpace(attr.Val)
+		for i := range targetNode.Attr {
+			if targetNode.Attr[i].Key == attribute {
+				return strings.TrimSpace(targetNode.Attr[i].Val)
 			}
 		}
 

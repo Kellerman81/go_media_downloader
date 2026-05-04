@@ -480,8 +480,8 @@ func ForEach(fn func(Handler)) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
-	for _, h := range registry {
-		fn(h)
+	for i := range registry {
+		fn(registry[i])
 	}
 }
 

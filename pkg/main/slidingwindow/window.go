@@ -370,8 +370,8 @@ func (l *Limiter) Check() (bool, time.Duration) {
 	cutoff := now.Add(-l.interval)
 
 	activeRequests := int64(0)
-	for _, reqTime := range l.requests {
-		if reqTime.After(cutoff) {
+	for i := range l.requests {
+		if l.requests[i].After(cutoff) {
 			activeRequests++
 		}
 	}
@@ -384,12 +384,12 @@ func (l *Limiter) Check() (bool, time.Duration) {
 	// Calculate when next slot becomes available
 	if len(l.requests) > 0 {
 		// Find oldest active request
-		for _, reqTime := range l.requests {
-			if !reqTime.After(cutoff) {
+		for i := range l.requests {
+			if !l.requests[i].After(cutoff) {
 				continue
 			}
 
-			waitTime := reqTime.Add(l.interval).Sub(now)
+			waitTime := l.requests[i].Add(l.interval).Sub(now)
 			if waitTime > 0 {
 				return false, waitTime
 			}
@@ -461,8 +461,8 @@ func (l *Limiter) Stats() (activeRequests, reservations int64, nextAvailable tim
 
 	// Count active requests without modifying the slice
 	activeCount := 0
-	for _, reqTime := range l.requests {
-		if reqTime.After(cutoff) {
+	for i := range l.requests {
+		if l.requests[i].After(cutoff) {
 			activeCount++
 		}
 	}
@@ -674,8 +674,8 @@ func (l *Limiter) GetMetrics() LimiterMetrics {
 
 	// Calculate window utilization
 	activeCount := 0
-	for _, reqTime := range l.requests {
-		if reqTime.After(cutoff) {
+	for i := range l.requests {
+		if l.requests[i].After(cutoff) {
 			activeCount++
 		}
 	}

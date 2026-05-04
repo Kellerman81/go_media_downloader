@@ -149,42 +149,42 @@ func writeMatchReportFile(targetFolder string, report *importfeed.MatchReport) {
 	buf.WriteString(matchReportDuration(report.ActualRuntimeMS))
 	buf.WriteString(" runtime\n\n")
 
-	for i, cr := range report.Candidates {
+	for i := range report.Candidates {
 		buf.WriteString("Candidate ")
 		buf.WriteInt(i + 1)
 		buf.WriteString("  (album dist: ")
-		buf.WriteString(strconv.FormatFloat(cr.AlbumDist, 'f', 3, 64))
+		buf.WriteString(strconv.FormatFloat(report.Candidates[i].AlbumDist, 'f', 3, 64))
 
-		if cr.FullDist > 0 {
+		if report.Candidates[i].FullDist > 0 {
 			buf.WriteString(", full dist: ")
-			buf.WriteString(strconv.FormatFloat(cr.FullDist, 'f', 3, 64))
+			buf.WriteString(strconv.FormatFloat(report.Candidates[i].FullDist, 'f', 3, 64))
 		}
 
 		buf.WriteString(")\n  Title:    ")
-		buf.WriteString(cr.Title)
+		buf.WriteString(report.Candidates[i].Title)
 		buf.WriteString("\n  Artist:   ")
-		buf.WriteString(cr.Artist)
+		buf.WriteString(report.Candidates[i].Artist)
 		buf.WriteByte('\n')
 
-		if cr.MBID != "" {
+		if report.Candidates[i].MBID != "" {
 			buf.WriteString("  ID:       ")
-			buf.WriteString(cr.MBID)
+			buf.WriteString(report.Candidates[i].MBID)
 			buf.WriteByte('\n')
 		}
 
-		if cr.Year > 0 {
+		if report.Candidates[i].Year > 0 {
 			buf.WriteString("  Year:     ")
-			buf.WriteInt(cr.Year)
+			buf.WriteInt(report.Candidates[i].Year)
 			buf.WriteByte('\n')
 		}
 
 		buf.WriteString("  Expected: ")
-		buf.WriteInt(cr.ExpectedTracks)
+		buf.WriteInt(report.Candidates[i].ExpectedTracks)
 		buf.WriteString(" tracks, ")
-		buf.WriteString(matchReportDuration(int64(cr.ExpectedRuntimeMS)))
+		buf.WriteString(matchReportDuration(int64(report.Candidates[i].ExpectedRuntimeMS)))
 		buf.WriteString(" runtime\n")
 
-		if len(cr.Tracks) > 0 {
+		if len(report.Candidates[i].Tracks) > 0 {
 			buf.WriteString("  ")
 			rptColStr(buf, "Track", 5)
 			rptColStr(buf, "Disc", 4)
@@ -193,33 +193,57 @@ func writeMatchReportFile(targetFolder string, report *importfeed.MatchReport) {
 			rptColStr(buf, "Local", 11)
 			buf.WriteString("Dist\n")
 
-			for _, tr := range cr.Tracks {
-				title := tr.Title
+			for j := range report.Candidates[i].Tracks {
+				title := report.Candidates[i].Tracks[j].Title
 				if len(title) > 32 {
 					title = title[:29] + "..."
 				}
 
 				buf.WriteString("  ")
-				rptColInt(buf, tr.TrackNumber, 5)
-				rptColInt(buf, tr.DiscNumber, 4)
+				rptColInt(buf, report.Candidates[i].Tracks[j].TrackNumber, 5)
+				rptColInt(buf, report.Candidates[i].Tracks[j].DiscNumber, 4)
 				rptColStr(buf, title, 32)
 
 				switch {
-				case tr.LocalOnly:
+				case report.Candidates[i].Tracks[j].LocalOnly:
 					rptColStr(buf, "---", 11)
-					rptColStr(buf, matchReportDuration(tr.LocalRuntimeMS), 11)
+					rptColStr(
+						buf,
+						matchReportDuration(report.Candidates[i].Tracks[j].LocalRuntimeMS),
+						11,
+					)
 					buf.WriteString("(local only)")
 
-				case tr.Unmatched:
-					rptColStr(buf, matchReportDuration(tr.DBRuntimeMS), 11)
-					rptColStr(buf, matchReportDuration(tr.LocalRuntimeMS), 11)
-					buf.WriteString(strconv.FormatFloat(tr.TrackDist, 'f', 3, 64))
+				case report.Candidates[i].Tracks[j].Unmatched:
+					rptColStr(
+						buf,
+						matchReportDuration(report.Candidates[i].Tracks[j].DBRuntimeMS),
+						11,
+					)
+					rptColStr(
+						buf,
+						matchReportDuration(report.Candidates[i].Tracks[j].LocalRuntimeMS),
+						11,
+					)
+					buf.WriteString(
+						strconv.FormatFloat(report.Candidates[i].Tracks[j].TrackDist, 'f', 3, 64),
+					)
 					buf.WriteString(" (unmatched)")
 
 				default:
-					rptColStr(buf, matchReportDuration(tr.DBRuntimeMS), 11)
-					rptColStr(buf, matchReportDuration(tr.LocalRuntimeMS), 11)
-					buf.WriteString(strconv.FormatFloat(tr.TrackDist, 'f', 3, 64))
+					rptColStr(
+						buf,
+						matchReportDuration(report.Candidates[i].Tracks[j].DBRuntimeMS),
+						11,
+					)
+					rptColStr(
+						buf,
+						matchReportDuration(report.Candidates[i].Tracks[j].LocalRuntimeMS),
+						11,
+					)
+					buf.WriteString(
+						strconv.FormatFloat(report.Candidates[i].Tracks[j].TrackDist, 'f', 3, 64),
+					)
 				}
 
 				buf.WriteByte('\n')
@@ -419,7 +443,7 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	m := database.ParseInfo{}
 
 	m.Title = album.Title
-	m.Year = uint16(album.Year)
+	m.Year = uint16(album.Year) //nolint:gosec // safe: value within target type range
 
 	// Set the database ID based on media type
 	switch cfgp.IsType {
@@ -497,7 +521,7 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	o.Filenames = s.generateTrackFilenames(o, &m, album, cfgp)
 
 	// Step 5: Tag files with proper metadata
-	if err := s.tagAlbumFiles(album); err != nil {
+	if err := s.tagAlbumFiles(ctx, album); err != nil {
 		logger.Logtype("error", 1).
 			Str("folder", folder).
 			Err(err).
@@ -633,7 +657,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 
 	var matchedCount, unmatchedCount int
 
-	for _, filePath := range files {
+	for i := range files {
 		if err := ctx.Err(); err != nil {
 			return "cancelled", err
 		}
@@ -641,27 +665,27 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 		// Match this single file as its own audiobook
 		album, matchReason := importfeed.MatchSingleAudiobookFile(
 			ctx,
-			filePath,
+			files[i],
 			cfgp,
 			dataCfg,
 			false,
 		)
 		if matchReason != "" || album == nil {
 			logger.Logtype("debug", 0).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Str("reason", matchReason).
 				Msg("Multi-episode: file not matched - skipping")
 
 			unmatchedCount++
 
-			um := database.ParseInfo{TempTitle: filePath}
+			um := database.ParseInfo{TempTitle: files[i]}
 			um.AddUnmatched(cfgp, &logger.StrStructure, errors.New("multi_episode_"+matchReason))
 
 			continue
 		}
 
 		logger.Logtype("info", 1).
-			Str("file", filePath).
+			Str("file", files[i]).
 			Str("title", album.Title).
 			Str("artist", album.Artist).
 			Uint("dbID", album.DatabaseID).
@@ -674,7 +698,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 		m := database.ParseInfo{}
 
 		m.Title = album.Title
-		m.Year = uint16(album.Year)
+		m.Year = uint16(album.Year) //nolint:gosec // safe: value within target type range
 		m.DbaudiobookID = album.DatabaseID
 		m.AudiobookID = album.DatabaseID
 
@@ -701,7 +725,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 
 		if o.Foldername == "" && (o.Rootpath == "" || o.Rootpath == s.targetpathCfg.Path) {
 			logger.Logtype("error", 1).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Msg("Multi-episode: failed to generate folder name")
 
 			unmatchedCount++
@@ -711,7 +735,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 
 		if o.Filename == "" {
 			logger.Logtype("error", 1).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Msg("Multi-episode: failed to generate file name")
 
 			unmatchedCount++
@@ -723,9 +747,9 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 		o.Filenames = s.generateTrackFilenames(o, &m, album, cfgp)
 
 		// Tag the file
-		if err := s.tagAlbumFiles(album); err != nil {
+		if err := s.tagAlbumFiles(ctx, album); err != nil {
 			logger.Logtype("error", 1).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Err(err).
 				Msg("Multi-episode: failed to tag file")
 		}
@@ -746,7 +770,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 		newpath, err := s.moveMediaFile(o)
 		if err != nil {
 			logger.Logtype("error", 1).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Err(err).
 				Msg("Multi-episode: failed to move file")
 
@@ -774,7 +798,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 		album.SourceFolder = targetPath
 
 		logger.Logtype("info", 1).
-			Str("file", filePath).
+			Str("file", files[i]).
 			Str("newpath", newpath).
 			Str("title", album.Title).
 			Msg("Multi-episode: organized audiobook")
@@ -1065,25 +1089,25 @@ func (s *Organizer) removeOldAlbumFiles(ctx context.Context, albumID uint, media
 		querycount,
 		albumID), query, albumID)
 
-	for _, file := range files {
+	for i := range files {
 		if err := ctx.Err(); err != nil {
 			return
 		}
 
-		if file == s.targetpathCfg.Path {
+		if files[i] == s.targetpathCfg.Path {
 			continue // Skip target path itself
 		}
 
 		// Delete from filesystem
-		if scanner.CheckFileExist(file) {
-			if err := os.Remove(file); err != nil {
+		if scanner.CheckFileExist(files[i]) {
+			if err := os.Remove(files[i]); err != nil {
 				logger.Logtype("error", 1).
-					Str("file", file).
+					Str("file", files[i]).
 					Err(err).
 					Msg("Failed to remove old file")
 			} else {
 				logger.Logtype("info", 1).
-					Str("file", file).
+					Str("file", files[i]).
 					Msg("Removed old file")
 			}
 		}
@@ -1091,9 +1115,9 @@ func (s *Organizer) removeOldAlbumFiles(ctx context.Context, albumID uint, media
 		// Delete from database
 		switch mediaType {
 		case config.MediaTypeMusic:
-			database.ExecN("DELETE FROM album_files WHERE location = ?", file)
+			database.ExecN("DELETE FROM album_files WHERE location = ?", files[i])
 		case config.MediaTypeAudiobook:
-			database.ExecN("DELETE FROM audiobook_files WHERE location = ?", file)
+			database.ExecN("DELETE FROM audiobook_files WHERE location = ?", files[i])
 		}
 	}
 }
@@ -1266,13 +1290,13 @@ func (s *Organizer) generateTrackFilenames(
 		}
 
 		dbtrackByNum = make(map[int64]database.Dbtrack, len(dbtracks))
-		for _, t := range dbtracks {
-			disc := int64(t.DiscNumber)
+		for i := range dbtracks {
+			disc := int64(dbtracks[i].DiscNumber)
 			if disc == 0 {
 				disc = 1
 			}
 
-			dbtrackByNum[disc*10000+int64(t.TrackNumber)] = t
+			dbtrackByNum[disc*10000+int64(dbtracks[i].TrackNumber)] = dbtracks[i]
 		}
 	}
 
@@ -1281,9 +1305,9 @@ func (s *Organizer) generateTrackFilenames(
 	totalDiscs := album.DiscCount
 	if totalDiscs == 0 {
 		seen := make(map[int]struct{}, 4)
-		for _, t := range album.Tracks {
-			if t.DiscNumber > 0 {
-				seen[t.DiscNumber] = struct{}{}
+		for i := range album.Tracks {
+			if album.Tracks[i].DiscNumber > 0 {
+				seen[album.Tracks[i].DiscNumber] = struct{}{}
 			}
 		}
 
@@ -1357,10 +1381,8 @@ func (s *Organizer) generateTrackFilenames(
 					forparser.Title = dt.Title
 				}
 			}
-		} else {
-			if idx < len(dbTrackTitles) && dbTrackTitles[idx] != "" {
-				forparser.Title = dbTrackTitles[idx]
-			}
+		} else if idx < len(dbTrackTitles) && dbTrackTitles[idx] != "" {
+			forparser.Title = dbTrackTitles[idx]
 		}
 
 		// Parse the filename template
@@ -1580,7 +1602,22 @@ func fetchCoverArt(coverURL string) ([]byte, string) {
 		return nil, ""
 	}
 
-	resp, err := http.Get(coverURL)
+	req, err := http.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		coverURL,
+		nil,
+	)
+	if err != nil {
+		logger.Logtype("warn", 1).
+			Str("url", coverURL).
+			Err(err).
+			Msg("Failed to create cover art request")
+
+		return nil, ""
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logger.Logtype("warn", 1).Str("url", coverURL).Err(err).Msg("Failed to fetch cover art")
 		return nil, ""
@@ -1606,7 +1643,7 @@ func fetchCoverArt(coverURL string) ([]byte, string) {
 
 // tagAlbumFiles writes proper metadata tags to all tracks in an album.
 // It uses the tags package to write tags based on the album and track information.
-func (s *Organizer) tagAlbumFiles(album *parser_v2.AlbumInfo) error {
+func (s *Organizer) tagAlbumFiles(ctx context.Context, album *parser_v2.AlbumInfo) error {
 	embedArt := false
 
 	embedLyrics := false
@@ -1620,14 +1657,19 @@ func (s *Organizer) tagAlbumFiles(album *parser_v2.AlbumInfo) error {
 		}
 	}
 
-	return TagAlbumFiles(s.Cfgp.IsType, embedArt, embedLyrics, album)
+	return TagAlbumFiles(ctx, s.Cfgp.IsType, embedArt, embedLyrics, album)
 }
 
 // TagAlbumFiles writes metadata tags to all audio files in an album.
 // It looks up artist/author, album metadata, and cover art from the database,
 // then writes tags to each track file. This is exported so it can be called
 // from API endpoints for re-tagging existing files.
-func TagAlbumFiles(mediaType uint, embedArt, embedLyrics bool, album *parser_v2.AlbumInfo) error {
+func TagAlbumFiles(
+	ctx context.Context,
+	mediaType uint,
+	embedArt, embedLyrics bool,
+	album *parser_v2.AlbumInfo,
+) error {
 	// Determine album artist from DB first (more reliable than file tags),
 	// then fall back to file tags.
 	var (
@@ -1804,7 +1846,7 @@ func TagAlbumFiles(mediaType uint, embedArt, embedLyrics bool, album *parser_v2.
 		}
 
 		// Write tags to file
-		if err := tags.WriteTags(album.Tracks[i].Filepath, audioTags); err != nil {
+		if err := tags.WriteTags(ctx, album.Tracks[i].Filepath, audioTags); err != nil {
 			logger.Logtype("error", 1).
 				Str("file", album.Tracks[i].Filepath).
 				Err(err).

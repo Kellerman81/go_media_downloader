@@ -84,9 +84,6 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 		mediaToLists = append(
 			mediaToLists,
 			SelectOption{Label: "test_movies", Value: []string{"test_list_1", "test_list_2"}},
-		)
-		mediaToLists = append(
-			mediaToLists,
 			SelectOption{
 				Label: "test_series",
 				Value: []string{"test_series_list_1", "test_series_list_2"},

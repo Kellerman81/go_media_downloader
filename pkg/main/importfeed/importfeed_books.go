@@ -304,7 +304,7 @@ func addBookToDatabase(
 	var dbbookID uint
 
 	slug := logger.StringToSlug(book.Title)
-	year := uint16(book.PublishYear)
+	year := uint16(book.PublishYear) //nolint:gosec // safe: value within target type range
 
 	if existingID > 0 {
 		dbbookID = existingID
@@ -1306,9 +1306,9 @@ func addAudiobookDetailToDatabase(
 	if details.Language != "" && cfgp.MetadataTitleLanguagesLen > 0 {
 		languageAllowed := false
 
-		for _, allowedLang := range cfgp.MetadataTitleLanguages {
-			if strings.EqualFold(details.Language, allowedLang) ||
-				logger.HasPrefixI(details.Language, allowedLang+"-") {
+		for i := range cfgp.MetadataTitleLanguages {
+			if strings.EqualFold(details.Language, cfgp.MetadataTitleLanguages[i]) ||
+				logger.HasPrefixI(details.Language, cfgp.MetadataTitleLanguages[i]+"-") {
 				languageAllowed = true
 				break
 			}
@@ -1347,7 +1347,7 @@ func addAudiobookDetailToDatabase(
 	var dbaudiobookID uint
 
 	slug := logger.StringToSlug(details.Title)
-	year := uint16(details.ReleaseYear)
+	year := uint16(details.ReleaseYear) //nolint:gosec // safe: value within target type range
 
 	if existingID > 0 {
 		dbaudiobookID = existingID
@@ -1710,7 +1710,7 @@ func addAudiobookFromBookToDatabase(
 	var dbaudiobookID uint
 
 	slug := logger.StringToSlug(book.Title)
-	year := uint16(book.PublishYear)
+	year := uint16(book.PublishYear) //nolint:gosec // safe: value within target type range
 
 	if existingID > 0 {
 		dbaudiobookID = existingID

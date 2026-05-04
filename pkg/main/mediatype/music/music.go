@@ -376,8 +376,8 @@ func (h *handler) SearchConfigByName(
 		}
 
 		// Check alternate names
-		for _, altName := range configs[idx].AlternateName {
-			if strings.EqualFold(strings.TrimSpace(altName), searchName) {
+		for i := range configs[idx].AlternateName {
+			if strings.EqualFold(strings.TrimSpace(configs[idx].AlternateName[i]), searchName) {
 				return &configs[idx], true
 			}
 		}

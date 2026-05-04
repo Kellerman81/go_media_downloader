@@ -941,7 +941,7 @@ func apiParseFile(ctx *gin.Context) {
 	parse := parser_v2.ParseFile(getcfg.Path, true, false, cfgp, -1)
 	// parse := parser.NewFileParser(filepath.Base(getcfg.Path), cfgp, false, -1)
 	parse.File = getcfg.Path
-	parser.ParseVideoFile(parse, config.GetSettingsQuality(getcfg.Quality))
+	parser.ParseVideoFile(ctx, parse, config.GetSettingsQuality(getcfg.Quality))
 	parser.GetPriorityMapQual(parse, cfgp, config.GetSettingsQuality(getcfg.Quality), true, true)
 	parser.GetDBIDs(parse, cfgp, true, false)
 	ctx.JSON(http.StatusOK, gin.H{"data": parse})
@@ -1649,7 +1649,15 @@ func apiNamingGenerate(ctx *gin.Context) {
 		)
 
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		s.ParseFileAdditional(
+			ctx,
+			&orgadata2,
+			m,
+			0,
+			false,
+			false,
+			s.Cfgp.Lists[m.ListID].CfgQuality,
+		)
 
 		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
 		ctx.JSON(
@@ -1688,7 +1696,15 @@ func apiNamingGenerate(ctx *gin.Context) {
 		)
 
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(&orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		s.ParseFileAdditional(
+			ctx,
+			&orgadata2,
+			m,
+			0,
+			false,
+			false,
+			s.Cfgp.Lists[m.ListID].CfgQuality,
+		)
 
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID

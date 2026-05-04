@@ -267,8 +267,9 @@ func (bp *BookParser) normalizeISBN(isbn string) string {
 // extractASIN extracts the ASIN from a match.
 func (bp *BookParser) extractASIN(match string) string {
 	// Remove "ASIN:" prefix if present
-	match = database.GetCachedRegexp(reBookStripASIN).ReplaceAllString(match, "")
-	return strings.ToUpper(strings.TrimSpace(match))
+	return strings.ToUpper(
+		strings.TrimSpace(database.GetCachedRegexp(reBookStripASIN).ReplaceAllString(match, "")),
+	)
 }
 
 // calculateConfidence calculates the confidence score based on extracted data.

@@ -80,15 +80,20 @@ func apiMusicDBList(ctx *gin.Context) {
 
 	if params.Limit > 0 {
 		query += " limit " + strconv.Itoa(
-			int(params.Limit),
+			int(params.Limit), //nolint:gosec // safe: value within target type range
 		) + " offset " + strconv.Itoa(
-			int(params.Offset),
+			int(params.Offset), //nolint:gosec // safe: value within target type range
 		)
 	}
 
 	data := database.StructscanT[database.Dbalbum](false, params.Limit, query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      List Albums by List Name
@@ -119,15 +124,20 @@ func apiMusicListGet(ctx *gin.Context) {
 
 	if params.Limit > 0 {
 		query += " limit " + strconv.Itoa(
-			int(params.Limit),
+			int(params.Limit), //nolint:gosec // safe: value within target type range
 		) + " offset " + strconv.Itoa(
-			int(params.Offset),
+			int(params.Offset), //nolint:gosec // safe: value within target type range
 		)
 	}
 
 	data := database.StructscanT[database.Album](false, params.Limit, query, &name)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Album
@@ -174,15 +184,20 @@ func apiArtistsList(ctx *gin.Context) {
 
 	if params.Limit > 0 {
 		query += " limit " + strconv.Itoa(
-			int(params.Limit),
+			int(params.Limit), //nolint:gosec // safe: value within target type range
 		) + " offset " + strconv.Itoa(
-			int(params.Offset),
+			int(params.Offset), //nolint:gosec // safe: value within target type range
 		)
 	}
 
 	data := database.StructscanT[database.Dbartist](false, params.Limit, query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Start All Music Jobs
@@ -669,7 +684,7 @@ func apiRetagAlbum(c *gin.Context) {
 		"Retag Album_"+id,
 		func(_ uint32, _ context.Context) error {
 			dbID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagAlbum(cfgp, uint(dbID))
+			return utils.RetagAlbum(c, cfgp, uint(dbID))
 		},
 		"Feeds",
 	)
@@ -692,7 +707,7 @@ func apiRetagArtistAlbums(c *gin.Context) {
 		"Retag Artist Albums_"+id,
 		func(_ uint32, _ context.Context) error {
 			artistID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagArtistAlbums(cfgp, uint(artistID))
+			return utils.RetagArtistAlbums(c, cfgp, uint(artistID))
 		},
 		"Feeds",
 	)
@@ -713,7 +728,7 @@ func apiRetagAllAlbums(c *gin.Context) {
 	worker.Dispatch(
 		"Retag All Albums",
 		func(_ uint32, _ context.Context) error {
-			return utils.RetagAllAlbums(cfgp)
+			return utils.RetagAllAlbums(c, cfgp)
 		},
 		"Feeds",
 	)

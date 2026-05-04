@@ -405,8 +405,11 @@ func (h *handler) SearchConfigByName(
 		}
 
 		// Also check alternate names
-		for _, altName := range seriesConfigs[idx].AlternateName {
-			if strings.EqualFold(strings.TrimSpace(altName), searchName) {
+		for i := range seriesConfigs[idx].AlternateName {
+			if strings.EqualFold(
+				strings.TrimSpace(seriesConfigs[idx].AlternateName[i]),
+				searchName,
+			) {
 				return &seriesConfigs[idx], true
 			}
 		}

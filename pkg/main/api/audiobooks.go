@@ -73,15 +73,20 @@ func apiAudiobooksDBList(ctx *gin.Context) {
 
 	if params.Limit > 0 {
 		query += " limit " + strconv.Itoa(
-			int(params.Limit),
+			int(params.Limit), //nolint:gosec // safe: value within target type range
 		) + " offset " + strconv.Itoa(
-			int(params.Offset),
+			int(params.Offset), //nolint:gosec // safe: value within target type range
 		)
 	}
 
 	data := database.StructscanT[database.Dbaudiobook](false, params.Limit, query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      List Audiobooks by List Name
@@ -116,15 +121,20 @@ func apiAudiobooksListGet(ctx *gin.Context) {
 
 	if params.Limit > 0 {
 		query += " limit " + strconv.Itoa(
-			int(params.Limit),
+			int(params.Limit), //nolint:gosec // safe: value within target type range
 		) + " offset " + strconv.Itoa(
-			int(params.Offset),
+			int(params.Offset), //nolint:gosec // safe: value within target type range
 		)
 	}
 
 	data := database.StructscanT[database.Audiobook](false, params.Limit, query, &name)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Audiobook
@@ -682,7 +692,7 @@ func apiRetagAudiobook(c *gin.Context) {
 		"Retag Audiobook_"+id,
 		func(_ uint32, _ context.Context) error {
 			dbID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagAudiobook(cfgp, uint(dbID))
+			return utils.RetagAudiobook(c, cfgp, uint(dbID))
 		},
 		"Feeds",
 	)
@@ -705,7 +715,7 @@ func apiRetagAuthorAudiobooks(c *gin.Context) {
 		"Retag Author Audiobooks_"+id,
 		func(_ uint32, _ context.Context) error {
 			authorID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagAuthorAudiobooks(cfgp, uint(authorID))
+			return utils.RetagAuthorAudiobooks(c, cfgp, uint(authorID))
 		},
 		"Feeds",
 	)
@@ -726,7 +736,7 @@ func apiRetagAllAudiobooks(c *gin.Context) {
 	worker.Dispatch(
 		"Retag All Audiobooks",
 		func(_ uint32, _ context.Context) error {
-			return utils.RetagAllAudiobooks(cfgp)
+			return utils.RetagAllAudiobooks(c, cfgp)
 		},
 		"Feeds",
 	)

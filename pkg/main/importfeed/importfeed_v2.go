@@ -1587,8 +1587,8 @@ func FindBookByTitle(
 		// Check author if provided
 		if author != "" && len(results[i].Authors) > 0 {
 			found := false
-			for _, a := range results[i].Authors {
-				if logger.ContainsI(a, author) {
+			for j := range results[i].Authors {
+				if logger.ContainsI(results[i].Authors[j], author) {
 					found = true
 					break
 				}
@@ -1606,7 +1606,9 @@ func FindBookByTitle(
 
 		dbbook.OpenlibraryID = results[i].ID
 		if results[i].PublishYear != 0 {
-			dbbook.Year = uint16(results[i].PublishYear)
+			dbbook.Year = uint16(
+				results[i].PublishYear,
+			)
 		}
 
 		return &dbbook, nil
@@ -1645,8 +1647,8 @@ func FindAudiobookByTitle(
 		// Check author if provided
 		if author != "" && len(results[i].Authors) > 0 {
 			found := false
-			for _, a := range results[i].Authors {
-				if logger.ContainsI(a, author) {
+			for j := range results[i].Authors {
+				if logger.ContainsI(results[i].Authors[j], author) {
 					found = true
 					break
 				}
@@ -1664,7 +1666,9 @@ func FindAudiobookByTitle(
 
 		dbaudiobook.RuntimeMinutes = results[i].RuntimeMinutes
 		if results[i].ReleaseYear != 0 {
-			dbaudiobook.Year = uint16(results[i].ReleaseYear)
+			dbaudiobook.Year = uint16(
+				results[i].ReleaseYear,
+			)
 		}
 
 		return &dbaudiobook, nil

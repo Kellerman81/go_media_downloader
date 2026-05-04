@@ -220,9 +220,11 @@ func (p *Provider) BatchLookup(
 		results[i] = make([]apiexternal_v2.RecordingMatch, 0)
 	}
 
-	for _, r := range response.Results {
-		if r.Index < len(results) {
-			results[r.Index] = append(results[r.Index], convertResult(&r)...)
+	for i := range response.Results {
+		if response.Results[i].Index < len(results) {
+			results[response.Results[i].Index] = append(
+				results[response.Results[i].Index],
+				convertResult(&response.Results[i])...)
 		}
 	}
 

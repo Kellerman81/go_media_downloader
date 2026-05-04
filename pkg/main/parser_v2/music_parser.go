@@ -1,6 +1,7 @@
 package parser_v2
 
 import (
+	"context"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -80,6 +81,15 @@ const (
 	reMusicSceneTags   = `(?i)-(?:FLAC|MP3|AAC|OGG|OPUS|WAV|ALAC|APE|WMA|AIFF|M4A|WEB|CD|VINYL|TAPE|CABLE|HDTV|SAT|DVDRip|BDRip|16BIT|24BIT|320|256|192|128|96|88|48|44|V0|V2|OST|EP|LP|SINGLE|ALBUM|LIVE|BOOTLEG|DEMO|REMIX|DELUXE|REMASTERED?|REISSUE|PROPER|REPACK|READNFO|INT|iNT|RETAIL|ADVANCE|PROMO|LIMITED|19\d{2}|20\d{2})(?:-|$)`
 	reMusicSceneGroup  = `(?i)-[A-Z0-9_]{2,12}(?:\s+INT)?$`
 )
+
+var validWords = map[string]bool{
+	"I": true, "II": true, "III": true, "IV": true, "V": true,
+	"VI": true, "VII": true, "VIII": true, "IX": true, "X": true,
+	"EP": true, "LP": true, "DJ": true, "MC": true, "MR": true,
+	"VS": true, "USA": true, "NYC": true, "LA": true, "UK": true,
+	"OK": true, "TV": true, "CD": true, "DNA": true, "UFO": true,
+	"AC": true, "DC": true,
+}
 
 // compileMusicPatterns returns the shared music pattern set, fetching each
 // compiled regexp from the global cache (compiled once, reused on every call).
@@ -217,20 +227,20 @@ func (mp *MusicParser) ParseAlbum(dirPath string, files []string) *MusicParseRes
 	discSet := make(map[int]bool)
 	formatSet := make(map[string]bool)
 
-	for _, file := range files {
-		ext := filepath.Ext(file)
+	for i := range files {
+		ext := filepath.Ext(files[i])
 		if !IsAudioExtension(ext) {
 			continue
 		}
 
-		trackResult := mp.Parse(filepath.Base(file))
+		trackResult := mp.Parse(filepath.Base(files[i]))
 		if len(trackResult.Tracks) == 0 {
 			continue
 		}
 
 		track := trackResult.Tracks[0]
 
-		track.Filename = file
+		track.Filename = files[i]
 		result.Tracks = append(result.Tracks, track)
 
 		if track.DiscNumber > 0 {
@@ -613,15 +623,6 @@ func cleanAlbumTitle(album string) string {
 // looksLikeAlbumWord returns true if the word could be part of an album title.
 func looksLikeAlbumWord(word string) bool {
 	// Common uppercase words that are valid album title parts
-	validWords := map[string]bool{
-		"I": true, "II": true, "III": true, "IV": true, "V": true,
-		"VI": true, "VII": true, "VIII": true, "IX": true, "X": true,
-		"EP": true, "LP": true, "DJ": true, "MC": true, "MR": true,
-		"VS": true, "USA": true, "NYC": true, "LA": true, "UK": true,
-		"OK": true, "TV": true, "CD": true, "DNA": true, "UFO": true,
-		"AC": true, "DC": true,
-	}
-
 	return validWords[strings.ToUpper(word)]
 }
 
@@ -690,8 +691,8 @@ func (mp *MusicParser) checkCompleteness(result *MusicParseResult) {
 
 	// Check each disc for missing tracks
 	result.MissingTracks = nil
-	for disc, tracks := range discTracks {
-		if len(tracks) == 0 {
+	for disc := range discTracks {
+		if len(discTracks[disc]) == 0 {
 			continue
 		}
 
@@ -699,12 +700,12 @@ func (mp *MusicParser) checkCompleteness(result *MusicParseResult) {
 		maxTrack := 0
 
 		trackSet := make(map[int]bool)
-		for _, t := range tracks {
-			if t > maxTrack {
-				maxTrack = t
+		for i := range discTracks[disc] {
+			if discTracks[disc][i] > maxTrack {
+				maxTrack = discTracks[disc][i]
 			}
 
-			trackSet[t] = true
+			trackSet[discTracks[disc][i]] = true
 		}
 
 		// Check for gaps (only if reasonable track count)
@@ -779,8 +780,8 @@ func (mp *MusicParser) calculateAlbumConfidence(result *MusicParseResult) float6
 
 		// Tracks have numbers
 		hasNumbers := false
-		for _, t := range result.Tracks {
-			if t.TrackNumber > 0 {
+		for i := range result.Tracks {
+			if result.Tracks[i].TrackNumber > 0 {
 				hasNumbers = true
 				break
 			}
@@ -854,6 +855,7 @@ func (mp *MusicParser) ParseAlbumWithTags(dirPath string, files []string) *Music
 
 // ParseAlbumWithAnalysis parses an album with full media analysis.
 func (mp *MusicParser) ParseAlbumWithAnalysis(
+	ctx context.Context,
 	dirPath string,
 	files []string,
 	analyzer *MediaAnalyzer,
@@ -866,7 +868,7 @@ func (mp *MusicParser) ParseAlbumWithAnalysis(
 
 	// Analyze files for runtime info
 	if analyzer != nil {
-		_ = analyzer.AnalyzeMusic(files, result)
+		_ = analyzer.AnalyzeMusic(ctx, files, result)
 	}
 
 	return result
@@ -1038,8 +1040,8 @@ func splitArtists(s string) []string {
 	parts := strings.Split(s, ",")
 
 	var artists []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
+	for i := range parts {
+		p := strings.TrimSpace(parts[i])
 		if p != "" {
 			artists = append(artists, p)
 		}

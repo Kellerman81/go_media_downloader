@@ -361,7 +361,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 		if searchFilter == "" {
 			searchFilter = " WHERE 1=1" + typeFilter
 		} else {
-			searchFilter = searchFilter + typeFilter
+			searchFilter += typeFilter
 		}
 
 		query := fmt.Sprintf(

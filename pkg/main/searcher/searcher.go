@@ -485,13 +485,6 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 			Str("quality", s.Quality.Name).
 			Err(errjobs).
 			Msg("Failed to search indexers - all indexers failed")
-	} else {
-		// Some indexers failed, but at least one succeeded
-		// logger.Logtype("warning", 2).
-		// 	Str("search_type", s.searchActionType).
-		// 	Str("quality", s.Quality.Name).
-		// 	Err(errjobs).
-		// 	Msg("Some indexers failed during search")
 	}
 }
 
@@ -1026,8 +1019,7 @@ func (s *ConfigSearcher) getmediadatarss(
 
 	handler.SetRSSIDs(entry)
 
-	mediaID := handler.GetRSSMediaID(entry)
-	getrssdata(&mediaID, s.Cfgp.IsType, entry)
+	getrssdata(s.Cfgp.IsType, entry)
 
 	entry.Info.ListID = s.Cfgp.GetMediaListsEntryListID(entry.Listname)
 
@@ -1154,10 +1146,12 @@ func (s *ConfigSearcher) handleMovieImport(
 // DontSearch, DontUpgrade, Listname, Quality, and WantedTitle fields.
 // If isType is true, the function will use a different set of query
 // parameters to retrieve the data.
-func getrssdata(id *uint, isType uint, entry *apiexternal_v2.Nzbwithprio) {
+func getrssdata(isType uint, entry *apiexternal_v2.Nzbwithprio) {
+	handler := mediatype.Get(isType)
+	mediaID := handler.GetRSSMediaID(entry)
 	database.GetdatarowArgs(
 		mtstrings.GetStringsMap(isType, "GetRSSData"),
-		id,
+		&mediaID,
 		&entry.DontSearch,
 		&entry.DontUpgrade,
 		&entry.Listname,
@@ -1450,7 +1444,7 @@ func searchArtistsOrAuthors(
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
 
-	var listnames []string
+	listnames := make([]string, 0, len(cfgp.ListsMap))
 	for _, lst := range cfgp.ListsMap {
 		name := lst.Name // copy to avoid pointer issues
 
@@ -1639,12 +1633,12 @@ func searchSingleArtistOrAuthor(
 			"SELECT DISTINCT series_name FROM dbaudiobooks JOIN dbaudiobook_authors ON dbaudiobooks.id = dbaudiobook_authors.dbaudiobook_id WHERE dbaudiobook_authors.dbauthor_id = ? AND dbaudiobooks.series_name != ''",
 			&row.Num,
 		)
-		for _, sn := range seriesNames {
-			p.e.SearchFor = sn
+		for i := range seriesNames {
+			p.e.SearchFor = seriesNames[i]
 			s.searchindexers(ctx, false, p)
 			logger.Logtype("info", 3).
 				Str("author", row.Str).
-				Str("series", sn).
+				Str("series", seriesNames[i]).
 				Msg("Searching by series name")
 		}
 	}
@@ -1657,12 +1651,12 @@ func searchSingleArtistOrAuthor(
 			"SELECT DISTINCT series_name FROM dbalbums JOIN dbalbum_artists ON dbalbums.id = dbalbum_artists.dbalbum_id WHERE dbalbum_artists.dbartist_id = ? AND dbalbums.series_name != ''",
 			&row.Num,
 		)
-		for _, sn := range seriesNames {
-			p.e.SearchFor = sn
+		for i := range seriesNames {
+			p.e.SearchFor = seriesNames[i]
 			s.searchindexers(ctx, false, p)
 			logger.Logtype("info", 3).
 				Str("artist", row.Str).
-				Str("series", sn).
+				Str("series", seriesNames[i]).
 				Msg("Searching by series name")
 		}
 	}

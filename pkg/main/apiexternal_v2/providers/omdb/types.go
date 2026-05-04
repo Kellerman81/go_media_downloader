@@ -82,7 +82,7 @@ func convertSearchResults(
 	results := make([]apiexternal_v2.MovieSearchResult, 0, len(omdbResults))
 
 	for i := range omdbResults {
-		if strings.ToLower(omdbResults[i].Type) == "movie" {
+		if strings.EqualFold(omdbResults[i].Type, "movie") {
 			results = append(results, apiexternal_v2.MovieSearchResult{
 				ID:           0, // OMDB doesn't use numeric IDs
 				Title:        omdbResults[i].Title,
@@ -104,7 +104,7 @@ func convertSearchToSeriesResults(
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(omdbResults))
 
 	for i := range omdbResults {
-		if strings.ToLower(omdbResults[i].Type) == "series" {
+		if strings.EqualFold(omdbResults[i].Type, "series") {
 			results = append(results, apiexternal_v2.SeriesSearchResult{
 				ID:           0, // OMDB doesn't use numeric IDs
 				Name:         omdbResults[i].Title,
@@ -301,8 +301,8 @@ func parseOMDBDate(dateStr string) time.Time {
 		"2006",
 	}
 
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, dateStr); err == nil {
+	for i := range layouts {
+		if t, err := time.Parse(layouts[i], dateStr); err == nil {
 			return t
 		}
 	}

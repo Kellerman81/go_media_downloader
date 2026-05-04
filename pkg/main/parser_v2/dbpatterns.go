@@ -211,13 +211,13 @@ func (ps *DBPatternStore) MatchString(
 	patterns := ps.getPatterns(patternType)
 
 	for i := range patterns {
-		for _, s := range patterns[i].Strings {
-			idx := strings.Index(inputLower, s)
+		for j := range patterns[i].Strings {
+			idx := strings.Index(inputLower, patterns[i].Strings[j])
 			if idx == -1 {
 				continue
 			}
 
-			endIdx := idx + len(s)
+			endIdx := idx + len(patterns[i].Strings[j])
 
 			// Word boundary check (similar to checkDigitLetter in original)
 			if endIdx < len(inputLower) && isDigitOrLetter(inputLower[endIdx]) {
@@ -246,18 +246,18 @@ func (ps *DBPatternStore) MatchRegex(
 
 	patterns := ps.getPatterns(patternType)
 
-	for _, p := range patterns {
-		if !p.UseRegex || p.Regex == nil {
+	for i := range patterns {
+		if !patterns[i].UseRegex || patterns[i].Regex == nil {
 			continue
 		}
 
-		loc := p.Regex.FindStringSubmatchIndex(input)
+		loc := patterns[i].Regex.FindStringSubmatchIndex(input)
 		if loc == nil {
 			continue
 		}
 
 		// Get the capture group value
-		groupIdx := p.RegexGroup
+		groupIdx := patterns[i].RegexGroup
 		if groupIdx == 0 {
 			groupIdx = 1 // Default to first capture group
 		}
@@ -274,7 +274,7 @@ func (ps *DBPatternStore) MatchRegex(
 			capturedValue = input[loc[groupStart]:loc[groupEnd]]
 		}
 
-		return p.Name, capturedValue, startIdx, endIdx
+		return patterns[i].Name, capturedValue, startIdx, endIdx
 	}
 
 	return "", "", -1, -1

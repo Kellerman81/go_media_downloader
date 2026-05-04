@@ -3,6 +3,7 @@
 package tags
 
 import (
+	"context"
 	"time"
 )
 
@@ -71,7 +72,7 @@ type TagReader interface {
 // TagWriter defines the interface for writing audio tags to files.
 type TagWriter interface {
 	// WriteTags writes metadata tags to the specified audio file.
-	WriteTags(filepath string, tags *AudioTags) error
+	WriteTags(ctx context.Context, filepath string, tags *AudioTags) error
 
 	// SupportedFormats returns a list of file extensions this writer supports.
 	// Extensions should include the leading dot (e.g., ".mp3", ".flac").

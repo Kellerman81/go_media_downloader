@@ -261,12 +261,12 @@ func (s *Service) findSeriesConfig(serieName string) (*config.ManualConfig, erro
 	}
 
 	// Search through each series file
-	for _, filePath := range files {
-		content, err := os.ReadFile(filePath)
+	for i := range files {
+		content, err := os.ReadFile(files[i])
 		if err != nil {
 			logger.Logtype(logger.StatusWarning, 0).
 				Err(err).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Msg("Failed to read series configuration file")
 
 			continue
@@ -276,7 +276,7 @@ func (s *Service) findSeriesConfig(serieName string) (*config.ManualConfig, erro
 		if err := toml.Unmarshal(content, &seriesConfig); err != nil {
 			logger.Logtype(logger.StatusWarning, 0).
 				Err(err).
-				Str("file", filePath).
+				Str("file", files[i]).
 				Msg("Failed to parse series configuration file")
 
 			continue
@@ -287,7 +287,7 @@ func (s *Service) findSeriesConfig(serieName string) (*config.ManualConfig, erro
 			if strings.EqualFold(seriesConfig.Config[idx].Name, serieName) {
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("series", serieName).
-					Str("file", filePath).
+					Str("file", files[i]).
 					Msg("Found series configuration")
 
 				return &seriesConfig.Config[idx], nil

@@ -126,10 +126,10 @@ func releaseMatchesMBFormats(r *apiexternal_v2.ReleaseSearchResult, formats []st
 		return false
 	}
 
-	for _, discFmt := range r.MediaFormats {
+	for i := range r.MediaFormats {
 		matched := false
-		for _, want := range formats {
-			if strings.EqualFold(discFmt, want) {
+		for j := range formats {
+			if strings.EqualFold(r.MediaFormats[i], formats[j]) {
 				matched = true
 				break
 			}
@@ -242,8 +242,8 @@ func importAlbumsBySeries(
 		query := seriesName
 		if len(mediaFormats) > 0 {
 			var fmtParts []string
-			for _, f := range mediaFormats {
-				fmtParts = append(fmtParts, "format:"+f)
+			for i := range mediaFormats {
+				fmtParts = append(fmtParts, "format:"+mediaFormats[i])
 			}
 
 			query = logger.JoinStrings(
@@ -316,8 +316,8 @@ func importSingleAlbum(
 		for i := range releases {
 			if !isVA && album.ArtistName != "" {
 				artistMatch := false
-				for _, a := range releases[i].Artists {
-					if strings.EqualFold(a.Name, album.ArtistName) {
+				for j := range releases[i].Artists {
+					if strings.EqualFold(releases[i].Artists[j].Name, album.ArtistName) {
 						artistMatch = true
 						break
 					}
@@ -407,7 +407,9 @@ func addAlbumToDatabase(
 	// Last-resort dedup: same title + same release year prevents duplicate rows when
 	// different MB search runs return different release objects for the same album.
 	if existingID == 0 && release.Title != "" && release.ReleaseYear > 0 {
-		releaseYear := uint16(release.ReleaseYear)
+		releaseYear := uint16(
+			release.ReleaseYear,
+		)
 		database.Scanrowsdyn(false,
 			"SELECT id FROM dbalbums WHERE LOWER(title) = LOWER(?) AND year = ?",
 			&existingID,
@@ -418,7 +420,7 @@ func addAlbumToDatabase(
 	var dbalbumID uint
 
 	slug := logger.StringToSlug(release.Title)
-	year := uint16(release.ReleaseYear)
+	year := uint16(release.ReleaseYear) //nolint:gosec // safe: value within target type range
 
 	// Convert genres slice to comma-separated string
 	genres := ""
@@ -536,6 +538,7 @@ func addAlbumToDatabase(
 	// Add tracks to the database if we have release details
 	if releaseDetails != nil && len(releaseDetails.Tracks) > 0 {
 		var existingTrack, dbtrackID uint
+		var runtimeMs int64
 		for i := range releaseDetails.Tracks {
 			existingTrack = 0
 			dbtrackID = 0
@@ -550,7 +553,7 @@ func addAlbumToDatabase(
 			)
 
 			if existingTrack == 0 {
-				runtimeMs := releaseDetails.Tracks[i].Duration.Milliseconds()
+				runtimeMs = releaseDetails.Tracks[i].Duration.Milliseconds()
 
 				result, err := database.ExecNid(
 					`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
@@ -572,12 +575,15 @@ func addAlbumToDatabase(
 			// Add track artists if available
 			if dbtrackID > 0 && len(releaseDetails.Tracks[i].Artists) > 0 {
 				var artistID uint
-				for idx, artistRef := range releaseDetails.Tracks[i].Artists {
-					if artistRef.Name == "" {
+				for idx := range releaseDetails.Tracks[i].Artists {
+					if releaseDetails.Tracks[i].Artists[idx].Name == "" {
 						continue
 					}
 
-					artistID = addOrGetArtist(&artistRef.Name, &artistRef.ID)
+					artistID = addOrGetArtist(
+						&releaseDetails.Tracks[i].Artists[idx].Name,
+						&releaseDetails.Tracks[i].Artists[idx].ID,
+					)
 					if artistID > 0 {
 						var existingRelation uint
 						database.Scanrowsdyn(
@@ -603,12 +609,12 @@ func addAlbumToDatabase(
 
 	// Add artists to the database and create relationships
 	var artistID uint
-	for idx, artistRef := range release.Artists {
-		if artistRef.Name == "" {
+	for idx := range release.Artists {
+		if release.Artists[idx].Name == "" {
 			continue
 		}
 
-		artistID = addOrGetArtist(&artistRef.Name, &artistRef.ID)
+		artistID = addOrGetArtist(&release.Artists[idx].Name, &release.Artists[idx].ID)
 		if artistID > 0 {
 			// Check if relationship already exists
 			var existingRelation uint
@@ -678,7 +684,8 @@ func addAlbumToDatabase(
 			artistSlugSearch              string
 		)
 
-		for _, relArtistRef := range release.Artists {
+		for i := range release.Artists {
+			relArtistRef := release.Artists[i]
 			if relArtistRef.Name == "" {
 				continue
 			}
@@ -1152,21 +1159,21 @@ func DiscoverAndAddSeriesAlbums(
 	albumsAdded := 0
 
 	// For each release group in the series, get one release and add it
-	for _, rgID := range releaseGroupIDs {
+	for j := range releaseGroupIDs {
 		if err := ctx.Err(); err != nil {
 			break
 		}
 
 		// Skip the original release group we already have
-		if rgID == releaseGroupID {
+		if releaseGroupIDs[j] == releaseGroupID {
 			continue
 		}
 
 		// Get the release group details
-		releaseGroupDetails, err := mbProvider.GetReleaseGroupByID(ctx, rgID)
+		releaseGroupDetails, err := mbProvider.GetReleaseGroupByID(ctx, releaseGroupIDs[j])
 		if err != nil {
 			logger.Logtype("debug", 2).
-				Str("release_group_id", rgID).
+				Str("release_group_id", releaseGroupIDs[j]).
 				Err(err).
 				Msg("Failed to get release group details")
 
@@ -1179,7 +1186,7 @@ func DiscoverAndAddSeriesAlbums(
 			false,
 			"SELECT id FROM dbalbums WHERE musicbrainz_release_group_id = ?",
 			&existingID,
-			&rgID,
+			&releaseGroupIDs[j],
 		)
 
 		if existingID > 0 {
@@ -1208,13 +1215,13 @@ func DiscoverAndAddSeriesAlbums(
 			// Search for individual releases in this group and pick the first one matching the format filter.
 			rgReleases, _, rgErr := mbProvider.SearchReleases(
 				ctx,
-				fmt.Sprintf("rgid:%s", rgID),
+				fmt.Sprintf("rgid:%s", releaseGroupIDs[j]),
 				50,
 				0,
 			)
 			if rgErr != nil || len(rgReleases) == 0 {
 				logger.Logtype("debug", 2).
-					Str("release_group_id", rgID).
+					Str("release_group_id", releaseGroupIDs[j]).
 					Msg("No individual releases found for format check, skipping")
 				continue
 			}
@@ -1242,7 +1249,7 @@ func DiscoverAndAddSeriesAlbums(
 				ID:             releaseGroupDetails.ID,
 				Title:          releaseGroupDetails.Title,
 				MusicBrainzID:  releaseGroupDetails.MusicBrainzID,
-				ReleaseGroupID: rgID,
+				ReleaseGroupID: releaseGroupIDs[j],
 				Artists:        releaseGroupDetails.Artists,
 				ReleaseYear:    releaseGroupDetails.ReleaseYear,
 				ProviderType:   apiexternal_v2.ProviderMusicBrainz,

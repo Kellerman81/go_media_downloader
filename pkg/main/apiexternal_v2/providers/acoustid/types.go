@@ -107,8 +107,8 @@ type acoustidSubmission struct {
 func convertLookupResults(results []acoustidResult) []apiexternal_v2.RecordingMatch {
 	matches := make([]apiexternal_v2.RecordingMatch, 0)
 
-	for _, r := range results {
-		matches = append(matches, convertResult(&r)...)
+	for i := range results {
+		matches = append(matches, convertResult(&results[i])...)
 	}
 
 	return matches
@@ -117,25 +117,25 @@ func convertLookupResults(results []acoustidResult) []apiexternal_v2.RecordingMa
 func convertResult(result *acoustidResult) []apiexternal_v2.RecordingMatch {
 	matches := make([]apiexternal_v2.RecordingMatch, 0, len(result.Recordings))
 
-	for _, rec := range result.Recordings {
+	for i := range result.Recordings {
 		match := apiexternal_v2.RecordingMatch{
 			AcoustID:      result.ID,
 			Score:         result.Score,
-			MusicBrainzID: rec.ID,
-			Title:         rec.Title,
-			Duration:      time.Duration(rec.Duration) * time.Millisecond,
-			Sources:       rec.Sources,
+			MusicBrainzID: result.Recordings[i].ID,
+			Title:         result.Recordings[i].Title,
+			Duration:      time.Duration(result.Recordings[i].Duration) * time.Millisecond,
+			Sources:       result.Recordings[i].Sources,
 			ProviderType:  apiexternal_v2.ProviderAcoustID,
 		}
 
 		// Artists
-		if len(rec.Artists) > 0 {
-			artists := make([]string, 0, len(rec.Artists))
+		if len(result.Recordings[i].Artists) > 0 {
+			artists := make([]string, 0, len(result.Recordings[i].Artists))
 
-			artistIDs := make([]string, 0, len(rec.Artists))
-			for _, a := range rec.Artists {
-				artists = append(artists, a.Name)
-				artistIDs = append(artistIDs, a.ID)
+			artistIDs := make([]string, 0, len(result.Recordings[i].Artists))
+			for j := range result.Recordings[i].Artists {
+				artists = append(artists, result.Recordings[i].Artists[j].Name)
+				artistIDs = append(artistIDs, result.Recordings[i].Artists[j].ID)
 			}
 
 			match.Artists = artists
@@ -143,8 +143,8 @@ func convertResult(result *acoustidResult) []apiexternal_v2.RecordingMatch {
 		}
 
 		// Release groups (albums)
-		if len(rec.ReleaseGroups) > 0 {
-			rg := rec.ReleaseGroups[0]
+		if len(result.Recordings[i].ReleaseGroups) > 0 {
+			rg := result.Recordings[i].ReleaseGroups[0]
 
 			match.Album = rg.Title
 			match.AlbumID = rg.ID
@@ -153,8 +153,8 @@ func convertResult(result *acoustidResult) []apiexternal_v2.RecordingMatch {
 			// Album artists if different from track artists
 			if len(rg.Artists) > 0 {
 				albumArtists := make([]string, 0, len(rg.Artists))
-				for _, a := range rg.Artists {
-					albumArtists = append(albumArtists, a.Name)
+				for j := range rg.Artists {
+					albumArtists = append(albumArtists, rg.Artists[j].Name)
 				}
 
 				match.AlbumArtists = albumArtists
@@ -162,29 +162,28 @@ func convertResult(result *acoustidResult) []apiexternal_v2.RecordingMatch {
 		}
 
 		// Releases (specific editions)
-		if len(rec.Releases) > 0 {
-			release := rec.Releases[0]
-
-			match.ReleaseID = release.ID
-			match.Country = release.Country
+		if len(result.Recordings[i].Releases) > 0 {
+			match.ReleaseID = result.Recordings[i].Releases[0].ID
+			match.Country = result.Recordings[i].Releases[0].Country
 
 			// Release date
-			if release.Date.Year > 0 {
-				match.ReleaseYear = release.Date.Year
-				match.ReleaseDate = convertDate(release.Date)
+			if result.Recordings[i].Releases[0].Date.Year > 0 {
+				match.ReleaseYear = result.Recordings[i].Releases[0].Date.Year
+				match.ReleaseDate = convertDate(result.Recordings[i].Releases[0].Date)
 			}
 
 			// Track position from mediums
-			for _, medium := range release.Mediums {
-				for _, track := range medium.Tracks {
+			for k := range result.Recordings[i].Releases[0].Mediums {
+				for j := range result.Recordings[i].Releases[0].Mediums[k].Tracks {
 					// Find matching track by title or position
-					if track.Title != rec.Title && len(medium.Tracks) != 1 {
+					if result.Recordings[i].Releases[0].Mediums[k].Tracks[j].Title != result.Recordings[i].Title &&
+						len(result.Recordings[i].Releases[0].Mediums[k].Tracks) != 1 {
 						continue
 					}
 
-					match.TrackNumber = track.Position
-					match.DiscNumber = medium.Position
-					match.TotalTracks = medium.TrackCount
+					match.TrackNumber = result.Recordings[i].Releases[0].Mediums[k].Tracks[j].Position
+					match.DiscNumber = result.Recordings[i].Releases[0].Mediums[k].Position
+					match.TotalTracks = result.Recordings[i].Releases[0].Mediums[k].TrackCount
 
 					break
 				}
@@ -194,7 +193,7 @@ func convertResult(result *acoustidResult) []apiexternal_v2.RecordingMatch {
 				}
 			}
 
-			match.TotalDiscs = release.MediumCount
+			match.TotalDiscs = result.Recordings[i].Releases[0].MediumCount
 		}
 
 		matches = append(matches, match)

@@ -322,12 +322,12 @@ func SetVars() {
 	globalCache.setStaticRegexp(strRegexSeriesTitle)
 	globalCache.setStaticRegexp(strRegexSeriesTitleDate)
 	config.RangeSettingsRegex(func(_ string, cfgregex *config.RegexConfig) {
-		for _, val := range cfgregex.Rejected {
-			globalCache.setStaticRegexp(val)
+		for i := range cfgregex.Rejected {
+			globalCache.setStaticRegexp(cfgregex.Rejected[i])
 		}
 
-		for _, val := range cfgregex.Required {
-			globalCache.setStaticRegexp(val)
+		for i := range cfgregex.Required {
+			globalCache.setStaticRegexp(cfgregex.Required[i])
 		}
 	})
 
@@ -1286,7 +1286,10 @@ func UpgradeDB() error {
 
 	versionAfter, _, _ := m.Version()
 
-	DBVersion = strconv.FormatInt(int64(versionAfter), 10)
+	DBVersion = strconv.FormatInt(
+		int64(versionAfter),
+		10,
+	)
 
 	return nil
 }
@@ -1361,12 +1364,12 @@ func UpgradeIMDB() {
 		"sqlite://./databases/imdb.db?_fk=1&_mutex=no&_cslike=0",
 	)
 	if err != nil {
-		fmt.Println(fmt.Errorf("migration failed... %w", err))
+		logger.Logtype("error", 1).Err(err).Msg("migration failed")
 	}
 
 	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		fmt.Println(fmt.Errorf("an error occurred while syncing the database.. %w", err))
+		logger.Logtype("error", 1).Err(err).Msg("error syncing database")
 	}
 }
 

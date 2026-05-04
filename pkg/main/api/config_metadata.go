@@ -405,7 +405,7 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 				&dbmovie.ImdbID,
 			)
 			if err == nil {
-				dbmovie.ID = uint(dbresult)
+				dbmovie.ID = uint(dbresult) //nolint:gosec // safe: value within target type range
 			}
 		}
 

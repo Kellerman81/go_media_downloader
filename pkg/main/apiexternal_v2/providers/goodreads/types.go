@@ -428,8 +428,8 @@ func parseGRDate(dateStr string) time.Time {
 		"2006",
 	}
 
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, dateStr); err == nil {
+	for i := range layouts {
+		if t, err := time.Parse(layouts[i], dateStr); err == nil {
 			return t
 		}
 	}

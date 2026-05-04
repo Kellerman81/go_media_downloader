@@ -192,11 +192,11 @@ func convertSearchResults(docs []olSearchDoc) []apiexternal_v2.BookSearchResult 
 
 		// Get ISBNs
 		if len(docs[i].ISBN) > 0 {
-			for _, isbn := range docs[i].ISBN {
-				if len(isbn) == 13 && result.ISBN13 == "" {
-					result.ISBN13 = isbn
-				} else if len(isbn) == 10 && result.ISBN10 == "" {
-					result.ISBN10 = isbn
+			for j := range docs[i].ISBN {
+				if len(docs[i].ISBN[j]) == 13 && result.ISBN13 == "" {
+					result.ISBN13 = docs[i].ISBN[j]
+				} else if len(docs[i].ISBN[j]) == 10 && result.ISBN10 == "" {
+					result.ISBN10 = docs[i].ISBN[j]
 				}
 			}
 		}
@@ -465,8 +465,8 @@ func parseOLDate(dateStr string) time.Time {
 		"02 Jan 2006",
 	}
 
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, dateStr); err == nil {
+	for i := range layouts {
+		if t, err := time.Parse(layouts[i], dateStr); err == nil {
 			return t
 		}
 	}

@@ -1,6 +1,7 @@
 package tags
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -92,7 +93,7 @@ func (h *MP3Handler) extractTags(tag *id3v2.Tag) (*AudioTags, error) {
 		Artist:      tag.Artist(),
 		Album:       tag.Album(),
 		Genre:       tag.Genre(),
-		Year:        parseYear(tag.Year()),
+		Year:        parseYearFallback(tag),
 		AlbumArtist: getTextFrame(tag, "TPE2"),
 		Composer:    getTextFrame(tag, "TCOM"),
 		Conductor:   getTextFrame(tag, "TPE3"),
@@ -134,28 +135,29 @@ func (h *MP3Handler) extractTags(tag *id3v2.Tag) (*AudioTags, error) {
 			continue
 		}
 
-		switch strings.ToUpper(txxx.Description) {
-		case "MUSICBRAINZ ALBUM ID", "MUSICBRAINZ_ALBUMID":
+		desc := txxx.Description
+		switch {
+		case strings.EqualFold(desc, "MUSICBRAINZ ALBUM ID") || strings.EqualFold(desc, "MUSICBRAINZ_ALBUMID"):
 			tags.MBReleaseID = txxx.Value
-		case "MUSICBRAINZ ARTIST ID", "MUSICBRAINZ_ARTISTID":
+		case strings.EqualFold(desc, "MUSICBRAINZ ARTIST ID") || strings.EqualFold(desc, "MUSICBRAINZ_ARTISTID"):
 			tags.MBArtistID = txxx.Value
-		case "MUSICBRAINZ ALBUM ARTIST ID", "MUSICBRAINZ_ALBUMARTISTID":
+		case strings.EqualFold(desc, "MUSICBRAINZ ALBUM ARTIST ID") || strings.EqualFold(desc, "MUSICBRAINZ_ALBUMARTISTID"):
 			tags.MBAlbumArtistID = txxx.Value
-		case "MUSICBRAINZ TRACK ID", "MUSICBRAINZ_TRACKID", "MUSICBRAINZ RECORDING ID":
+		case strings.EqualFold(desc, "MUSICBRAINZ TRACK ID") || strings.EqualFold(desc, "MUSICBRAINZ_TRACKID") || strings.EqualFold(desc, "MUSICBRAINZ RECORDING ID"):
 			tags.MBRecordingID = txxx.Value
-		case "MUSICBRAINZ RELEASE GROUP ID", "MUSICBRAINZ_RELEASEGROUPID":
+		case strings.EqualFold(desc, "MUSICBRAINZ RELEASE GROUP ID") || strings.EqualFold(desc, "MUSICBRAINZ_RELEASEGROUPID"):
 			tags.MBReleaseGroupID = txxx.Value
-		case "ACOUSTID_ID", "ACOUSTID ID":
+		case strings.EqualFold(desc, "ACOUSTID_ID") || strings.EqualFold(desc, "ACOUSTID ID"):
 			tags.AcoustID = txxx.Value
-		case "CATALOGNUMBER", "CATALOG NUMBER":
+		case strings.EqualFold(desc, "CATALOGNUMBER") || strings.EqualFold(desc, "CATALOG NUMBER"):
 			tags.CatalogNum = txxx.Value
-		case "REPLAYGAIN_TRACK_GAIN":
+		case strings.EqualFold(desc, "REPLAYGAIN_TRACK_GAIN"):
 			tags.ReplayGainTrack = parseReplayGain(txxx.Value)
-		case "REPLAYGAIN_TRACK_PEAK":
+		case strings.EqualFold(desc, "REPLAYGAIN_TRACK_PEAK"):
 			tags.ReplayGainTrackPeak = parseReplayGainPeak(txxx.Value)
-		case "REPLAYGAIN_ALBUM_GAIN":
+		case strings.EqualFold(desc, "REPLAYGAIN_ALBUM_GAIN"):
 			tags.ReplayGainAlbum = parseReplayGain(txxx.Value)
-		case "REPLAYGAIN_ALBUM_PEAK":
+		case strings.EqualFold(desc, "REPLAYGAIN_ALBUM_PEAK"):
 			tags.ReplayGainAlbumPeak = parseReplayGainPeak(txxx.Value)
 		}
 	}
@@ -195,7 +197,7 @@ func (h *MP3Handler) extractTags(tag *id3v2.Tag) (*AudioTags, error) {
 // Opening with ParseFrames avoids loading existing APIC into memory —
 // callers that need to preserve cover art should use ReadTagsWithCover
 // to populate tags.CoverData before calling WriteTags.
-func (h *MP3Handler) WriteTags(filepath string, tags *AudioTags) error {
+func (h *MP3Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
 	tag, err := id3v2.Open(filepath, id3v2.Options{Parse: true, ParseFrames: mp3ParseFrames})
 	if err != nil {
 		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
@@ -211,6 +213,8 @@ func (h *MP3Handler) WriteTags(filepath string, tags *AudioTags) error {
 	tag.SetAlbum(tags.Album)
 	tag.SetGenre(tags.Genre)
 
+	// Remove legacy TYER (v2.3) before writing TDRC (v2.4) to avoid dual year frames.
+	tag.DeleteFrames("TYER")
 	if tags.Year > 0 {
 		tag.SetYear(strconv.Itoa(tags.Year))
 	}
@@ -368,6 +372,16 @@ func parseYear(s string) int {
 	}
 
 	return 0
+}
+
+// parseYearFallback reads TDRC (v2.4) and falls back to TYER (v2.3) when
+// TDRC is absent — handles files that were tagged by old software or that
+// carry both frames.
+func parseYearFallback(tag *id3v2.Tag) int {
+	if y := parseYear(tag.Year()); y > 0 {
+		return y
+	}
+	return parseYear(getTextFrame(tag, "TYER"))
 }
 
 // parseTrackNum parses "track/total" format strings.

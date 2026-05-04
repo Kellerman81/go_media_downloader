@@ -175,7 +175,7 @@ func FillImdb() {
 		&logger.StrMovie,
 	)
 
-	data, err := parser.ExecCmdString[[]byte]("", logger.StrImdb)
+	data, err := parser.ExecCmdString[[]byte](context.Background(), "", logger.StrImdb)
 	if err == nil {
 		logger.Logtype("info", 1).
 			Str("response", data).
@@ -320,7 +320,7 @@ func newfilesloop(
 					return // errors.New("listid not found")
 				}
 
-				err = jobImportParseCommon(m, fpath, cfgp, &cfgp.Lists[listid], data.AddFound)
+				err = jobImportParseCommon(ctx, m, fpath, cfgp, &cfgp.Lists[listid], data.AddFound)
 				if err != nil {
 					logger.Logtype("error", 1).
 						Str(logger.StrFile, fpath).
@@ -507,11 +507,8 @@ func newfilesloopGrouped(
 ) error {
 	rootPath := data.CfgPath.Path
 
-	// Create a map to track processed directories within this scan
-	processedDirs := &sync.Map{}
-
 	// Process the root path recursively
-	return processAudioDirectory(ctx, &rootPath, cfgp, data, processedDirs)
+	return processAudioDirectory(ctx, &rootPath, cfgp, data, &sync.Map{})
 }
 
 // processAudioDirectory recursively processes a directory for audio files.
@@ -709,13 +706,13 @@ var multiDiscPatterns = []string{
 
 // isMultiDiscSubfolder checks if a folder name indicates a multi-disc/part structure.
 func isMultiDiscSubfolder(name string) bool {
-	for _, pattern := range multiDiscPatterns {
+	for i := range multiDiscPatterns {
 		// Check for patterns like "CD1", "CD 1", "CD-1", "Disc 01", etc.
-		if !logger.HasPrefixI(name, pattern) {
+		if !logger.HasPrefixI(name, multiDiscPatterns[i]) {
 			continue
 		}
 
-		rest := name[len(pattern):]
+		rest := name[len(multiDiscPatterns[i]):]
 
 		rest = strings.TrimLeft(rest, " -_")
 		if len(rest) > 0 && rest[0] >= '0' && rest[0] <= '9' {
@@ -1042,8 +1039,8 @@ func searchMusicBrainzByMetadata(
 		// Filter by artist client-side (server-side artist: field is unreliable for variant names).
 		if !isVASearch && artist != "" {
 			artistMatch := false
-			for _, a := range result.Artists {
-				if strings.EqualFold(a.Name, artist) {
+			for j := range result.Artists {
+				if strings.EqualFold(result.Artists[j].Name, artist) {
 					artistMatch = true
 					break
 				}
@@ -1274,8 +1271,8 @@ func processMusicFolder(
 
 		// Calculate total runtime from all files
 		var totalRuntimeMS int64
-		for _, file := range files {
-			if audioTags := parser_v2.ReadTagsForFirstFile([]string{file}); audioTags != nil {
+		for i := range files {
+			if audioTags := parser_v2.ReadTagsForFirstFile([]string{files[i]}); audioTags != nil {
 				totalRuntimeMS += audioTags.RuntimeMS
 			}
 		}
@@ -1333,10 +1330,10 @@ func processMusicFolder(
 			reasons = append(reasons, "listid is -1")
 		}
 
-		// logger.Logtype("debug", 0).
-		// 	Str("folder", folder).
-		// 	Strs("skip_reasons", reasons).
-		// 	Msg("DEBUG: Skipping MusicBrainz search")
+		logger.Logtype("debug", 0).
+			Str("folder", folder).
+			Strs("skip_reasons", reasons).
+			Msg("Skipping MusicBrainz search")
 	}
 
 	if album.DatabaseID == 0 && data.AddFound && musicBrainzID != "" && listid != -1 {
@@ -1372,8 +1369,8 @@ func processMusicFolder(
 			// Discover and add related albums if AddFound is enabled
 			if data.AddFound {
 				trackInfos := make([]parser_v2.TrackInfo, 0, len(files))
-				for _, f := range files {
-					if tags := parser_v2.ReadTagsForFirstFile([]string{f}); tags != nil {
+				for i := range files {
+					if tags := parser_v2.ReadTagsForFirstFile([]string{files[i]}); tags != nil {
 						trackInfos = append(trackInfos, parser_v2.TrackInfo{Artist: tags.Artist})
 					}
 				}
@@ -1515,9 +1512,9 @@ func verifyAndSortTracks(album *parser_v2.AlbumInfo) bool {
 
 // coalesceStr returns the first non-empty string.
 func coalesceStr(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
+	for i := range values {
+		if values[i] != "" {
+			return values[i]
 		}
 	}
 
@@ -2206,8 +2203,8 @@ var allCacheTypes = []string{
 // The isType parameter determines if it should refresh for series
 // or movies.
 func Refreshcache(isType uint) {
-	for _, str := range cacheRefreshKeys {
-		database.RefreshCached(mtstrings.GetStringsMap(isType, str), false)
+	for i := range cacheRefreshKeys {
+		database.RefreshCached(mtstrings.GetStringsMap(isType, cacheRefreshKeys[i]), false)
 	}
 }
 
@@ -2505,16 +2502,21 @@ func jobsearchmedia(
 	// album may exist with different track counts or editions
 	searchedQueries := make(map[string]struct{})
 
-	for _, tbl := range database.GetrowsNuncached[database.DbstaticOneStringOneUInt](database.Getdatarow[uint](false, logger.JoinStrings("select count() ", str), args.Arr...), logger.JoinStrings(mtstrings.GetStringsMap(cfgp.IsType, logger.SearchGenSelect), str), args.Arr) {
+	arr := database.GetrowsNuncached[database.DbstaticOneStringOneUInt](
+		database.Getdatarow[uint](false, logger.JoinStrings("select count() ", str), args.Arr...),
+		logger.JoinStrings(mtstrings.GetStringsMap(cfgp.IsType, logger.SearchGenSelect), str),
+		args.Arr,
+	)
+	for i := range arr {
 		// For music and audiobooks, check if we've already searched for this title+artist
 		// to avoid redundant searches for different releases of the same album
 		if cfgp.IsType == config.MediaTypeMusic || cfgp.IsType == config.MediaTypeAudiobook {
-			searchQuery := getSearchQueryForMedia(cfgp.IsType, tbl.Num)
+			searchQuery := getSearchQueryForMedia(cfgp.IsType, arr[i].Num)
 			if searchQuery != "" {
 				queryLower := strings.ToLower(searchQuery)
 				if _, exists := searchedQueries[queryLower]; exists {
 					logger.Logtype("debug", 2).
-						Uint("mediaid", tbl.Num).
+						Uint("mediaid", arr[i].Num).
 						Str("query", searchQuery).
 						Msg("Skipping duplicate search - same title already searched")
 
@@ -2525,8 +2527,8 @@ func jobsearchmedia(
 			}
 		}
 
-		if errsub := searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(tbl.Str), "", nil).
-			MediaSearch(ctx, cfgp, tbl.Num, searchtitle, true, true); errsub != nil {
+		if errsub := searcher.NewSearcher(cfgp, cfgp.GetMediaQualityConfigStr(arr[i].Str), "", nil).
+			MediaSearch(ctx, cfgp, arr[i].Num, searchtitle, true, true); errsub != nil {
 			err = errsub
 		}
 	}
@@ -2714,9 +2716,9 @@ func LoadGlobalSchedulerConfig() {
 		"RefreshCache": func(key uint32, ctx context.Context) error {
 			logger.Logtype("info", 0).Msg("Starting scheduled cache refresh")
 
-			for _, cacheType := range allCacheTypes {
-				logger.Logtype("debug", 0).Str("type", cacheType).Msg("Refreshing cache")
-				database.RefreshCached(cacheType, true)
+			for i := range allCacheTypes {
+				logger.Logtype("debug", 0).Str("type", allCacheTypes[i]).Msg("Refreshing cache")
+				database.RefreshCached(allCacheTypes[i], true)
 			}
 
 			logger.Logtype("info", 0).Msg("Completed scheduled cache refresh")
@@ -2739,8 +2741,10 @@ func LoadSchedulerConfig() {
 		}
 
 		cfgp.Jobs = make(map[string]func(uint32, context.Context) error)
-		for _, jobPair := range h.GetSchedulerJobNames() {
-			schedulerName, singleJobName := jobPair[0], jobPair[1]
+
+		arr := h.GetSchedulerJobNames()
+		for i := range arr {
+			schedulerName, singleJobName := arr[i][0], arr[i][1]
 
 			cfgp.Jobs[schedulerName] = makeJobFunc(singleJobName, cfgp.NamePrefix)
 		}

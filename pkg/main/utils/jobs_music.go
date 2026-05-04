@@ -96,7 +96,7 @@ func RefreshAlbum(cfgp *config.MediaTypeConfig, id *string) error {
 
 // RetagAlbum re-writes audio tags for a single album by its dbalbum ID.
 // It uses existing DB metadata (from the original MusicBrainz import) rather than re-matching.
-func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
+func RetagAlbum(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint) error {
 	// Get album metadata from DB
 	var dbAlbum database.Dbalbum
 	if err := dbAlbum.GetDbalbumByIDP(&dbID); err != nil {
@@ -158,7 +158,7 @@ func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
 		Title:       dbAlbum.Title,
 		Year:        int(dbAlbum.Year),
 		DatabaseID:  dbID,
-		TrackCount:  int(dbAlbum.TotalTracks),
+		TrackCount:  dbAlbum.TotalTracks,
 		Label:       dbAlbum.Label,
 		Genre:       dbAlbum.Genres,
 		ReleaseType: dbAlbum.ReleaseType,
@@ -214,11 +214,11 @@ func RetagAlbum(cfgp *config.MediaTypeConfig, dbID uint) error {
 		}
 	}
 
-	return structure.TagAlbumFiles(config.MediaTypeMusic, embedArt, embedLyrics, album)
+	return structure.TagAlbumFiles(ctx, config.MediaTypeMusic, embedArt, embedLyrics, album)
 }
 
 // RetagArtistAlbums re-writes audio tags for all albums by a given dbartist ID.
-func RetagArtistAlbums(cfgp *config.MediaTypeConfig, artistID uint) error {
+func RetagArtistAlbums(ctx context.Context, cfgp *config.MediaTypeConfig, artistID uint) error {
 	ids := database.Getrowssize[uint](
 		false,
 		"SELECT count(DISTINCT a.dbalbum_id) FROM albums a JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ?",
@@ -227,10 +227,13 @@ func RetagArtistAlbums(cfgp *config.MediaTypeConfig, artistID uint) error {
 	)
 
 	var lastErr error
-	for _, id := range ids {
-		if err := RetagAlbum(cfgp, id); err != nil {
+	for i := range ids {
+		if err := RetagAlbum(ctx, cfgp, ids[i]); err != nil {
 			lastErr = err
-			logger.Logtype("error", 1).Uint("dbalbum_id", id).Err(err).Msg("Failed to retag album")
+			logger.Logtype("error", 1).
+				Uint("dbalbum_id", ids[i]).
+				Err(err).
+				Msg("Failed to retag album")
 		}
 	}
 
@@ -238,16 +241,19 @@ func RetagArtistAlbums(cfgp *config.MediaTypeConfig, artistID uint) error {
 }
 
 // RetagAllAlbums re-writes audio tags for all albums that have files.
-func RetagAllAlbums(cfgp *config.MediaTypeConfig) error {
+func RetagAllAlbums(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	ids := database.Getrowssize[uint](false,
 		"SELECT count(DISTINCT dbalbum_id) FROM album_files",
 		"SELECT DISTINCT dbalbum_id FROM album_files")
 
 	var lastErr error
-	for _, id := range ids {
-		if err := RetagAlbum(cfgp, id); err != nil {
+	for i := range ids {
+		if err := RetagAlbum(ctx, cfgp, ids[i]); err != nil {
 			lastErr = err
-			logger.Logtype("error", 1).Uint("dbalbum_id", id).Err(err).Msg("Failed to retag album")
+			logger.Logtype("error", 1).
+				Uint("dbalbum_id", ids[i]).
+				Err(err).
+				Msg("Failed to retag album")
 		}
 	}
 

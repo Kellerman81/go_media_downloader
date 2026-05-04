@@ -72,7 +72,12 @@ func apiMovieList(ctx *gin.Context) {
 	rows := database.Getdatarow[uint](false, "select count() from dbmovies")
 	data := database.QueryDbmovie(query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      List Unmatched Movies
@@ -92,7 +97,12 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 	rows := database.Getdatarow[uint](false, "select count() from movie_file_unmatcheds")
 	data := database.QueryMovieFileUnmatched(query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Movies
@@ -145,7 +155,12 @@ func apiMovieListGet(ctx *gin.Context) {
 	)
 	data := database.QueryResultMovies(query, listName)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Get Movie Metadata
@@ -189,7 +204,7 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 				&dbmovie.ImdbID,
 			)
 			if err == nil {
-				dbmovie.ID = uint(dbresult)
+				dbmovie.ID = uint(dbresult) //nolint:gosec // safe: value within target type range
 			}
 		}
 
@@ -857,7 +872,9 @@ func apimoviesSearch(c *gin.Context) {
 		for idxlist = range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				worker.Dispatch(
-					"searchmovie_movies_"+media.Name+"_"+strconv.Itoa(int(movie.ID)),
+					"searchmovie_movies_"+media.Name+"_"+strconv.Itoa(
+						int(movie.ID),
+					),
 					func(_ uint32, ctx context.Context) error {
 						searchvar := searcher.NewSearcher(media, nil, "", nil)
 

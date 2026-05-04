@@ -111,28 +111,28 @@ type deezerTrack struct {
 
 func convertSearchToReleases(results []deezerAlbumResult) []apiexternal_v2.ReleaseSearchResult {
 	out := make([]apiexternal_v2.ReleaseSearchResult, 0, len(results))
-	for _, r := range results {
+	for i := range results {
 		rel := apiexternal_v2.ReleaseSearchResult{
-			ID:           strconv.Itoa(r.ID),
-			Title:        r.Title,
-			TrackCount:   r.NbTracks,
-			CoverURL:     r.CoverXL,
-			DeezerID:     r.ID,
+			ID:           strconv.Itoa(results[i].ID),
+			Title:        results[i].Title,
+			TrackCount:   results[i].NbTracks,
+			CoverURL:     results[i].CoverXL,
+			DeezerID:     results[i].ID,
 			ProviderType: apiexternal_v2.ProviderDeezer,
 		}
 		if rel.CoverURL == "" {
-			rel.CoverURL = r.CoverBig
+			rel.CoverURL = results[i].CoverBig
 		}
 
-		if r.Artist.Name != "" {
+		if results[i].Artist.Name != "" {
 			rel.Artists = []apiexternal_v2.ArtistRef{{
-				Name: r.Artist.Name,
-				ID:   strconv.Itoa(r.Artist.ID),
+				Name: results[i].Artist.Name,
+				ID:   strconv.Itoa(results[i].Artist.ID),
 			}}
 		}
 
-		if r.ReleaseDate != "" {
-			if year, _, ok := parseYear(r.ReleaseDate); ok {
+		if results[i].ReleaseDate != "" {
+			if year, _, ok := parseYear(results[i].ReleaseDate); ok {
 				rel.ReleaseYear = year
 			}
 		}
@@ -170,8 +170,8 @@ func convertAlbumToDetails(album *deezerAlbumDetail) *apiexternal_v2.ReleaseDeta
 		}}
 	}
 
-	for _, g := range album.Genres.Data {
-		details.Genres = append(details.Genres, g.Name)
+	for i := range album.Genres.Data {
+		details.Genres = append(details.Genres, album.Genres.Data[i].Name)
 	}
 
 	tracks := make([]apiexternal_v2.Track, 0, len(album.Tracks.Data))

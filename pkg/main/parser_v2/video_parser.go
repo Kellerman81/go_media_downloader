@@ -8,6 +8,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 // VideoParser handles parsing of video filenames for movies and TV series.
@@ -108,8 +109,8 @@ const (
 )
 
 var (
-	sharedVideoPatterns     *videoPatterns
-	sharedVideoPatternOnce  sync.Once
+	sharedVideoPatterns    *videoPatterns
+	sharedVideoPatternOnce sync.Once
 )
 
 // compileVideoPatterns returns the shared video pattern set.
@@ -141,6 +142,7 @@ func compileVideoPatterns() *videoPatterns {
 			language:          database.GetCachedRegexp(reVideoLanguage),
 		}
 	})
+
 	return sharedVideoPatterns
 }
 
@@ -378,7 +380,7 @@ func parseAudiobookFileToParseInfo(
 			result.SeriesPosition = dirResult.SeriesPosition
 		}
 
-		// Also check parent directories for ASIN (audiobooks often have ASIN in folder name)
+		// Also check parent directories for ASIN (audiobooks often have ASIN in folder name) //nolint:gosec // safe: value within target type range
 		if result.ASIN == "" {
 			result.ASIN = extractASINFromPath(filepath_)
 		}
@@ -477,7 +479,7 @@ func parseBookFileToParseInfo(
 		}
 	}
 
-	// Populate ParseInfo from BookParseResult
+	// Populate ParseInfo from BookParseResult //nolint:gosec // safe: value within target type range
 	m.Title = result.Title
 	m.Artist = result.Author
 
@@ -676,7 +678,7 @@ func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 		month := matches[2]
 		day := matches[3]
 
-		m.Date = year + "-" + month + "-" + day
+		m.Date = logger.JoinStrings(year, "-", month, "-", day)
 		m.Identifier = m.Date
 
 		return
@@ -993,12 +995,12 @@ func (vp *VideoParser) buildIdentifier(season, episode int) string {
 
 // formatIdentifier creates an episode identifier string (e.g., "S01E05").
 func formatIdentifier(season, episode int) string {
-	return "S" + padInt(season, 2) + "E" + padInt(episode, 2)
+	return logger.JoinStrings("S", padInt(season), "E", padInt(episode))
 }
 
 // buildMultiIdentifier creates a multi-episode identifier string.
 func (vp *VideoParser) buildMultiIdentifier(season, startEp, endEp int) string {
-	return "S" + padInt(season, 2) + "E" + padInt(startEp, 2) + "-E" + padInt(endEp, 2)
+	return logger.JoinStrings("S", padInt(season), "E", padInt(startEp), "-E", padInt(endEp))
 }
 
 // calculateConfidence calculates the confidence score for the parse.
@@ -1062,150 +1064,142 @@ func normalizeIMDB(imdb string) string {
 
 // normalizeResolution normalizes resolution strings.
 func normalizeResolution(res string) string {
-	res = strings.ToLower(strings.TrimSpace(res))
 	switch {
-	case strings.Contains(res, "2160") || strings.Contains(res, "4k") || strings.Contains(res, "uhd"):
+	case logger.ContainsI(res, "2160") || logger.ContainsI(res, "4k") || logger.ContainsI(res, "uhd"):
 		return "2160p"
-	case strings.Contains(res, "1080"):
+	case logger.ContainsI(res, "1080"):
 		return "1080p"
-	case strings.Contains(res, "720"):
+	case logger.ContainsI(res, "720"):
 		return "720p"
-	case strings.Contains(res, "576"):
+	case logger.ContainsI(res, "576"):
 		return "576p"
-	case strings.Contains(res, "480"):
+	case logger.ContainsI(res, "480"):
 		return "480p"
-	case strings.Contains(res, "sd"):
+	case logger.ContainsI(res, "sd"):
 		return "SD"
-	case strings.Contains(res, "hd"):
+	case logger.ContainsI(res, "hd"):
 		return "HD"
 	default:
-		return strings.ToUpper(res)
+		return strings.ToUpper(strings.TrimSpace(res))
 	}
 }
 
 // normalizeQuality normalizes quality source strings.
 func normalizeQuality(quality string) string {
-	q := strings.ToUpper(strings.TrimSpace(quality))
-
-	q = strings.ReplaceAll(q, " ", "-")
-	q = strings.ReplaceAll(q, "_", "-")
-
-	// Normalize common patterns
 	switch {
-	case strings.Contains(q, "BLURAY") || strings.Contains(q, "BLU-RAY"):
+	case logger.ContainsI(quality, "bluray") || logger.ContainsI(quality, "blu-ray") ||
+		logger.ContainsI(quality, "blu ray") || logger.ContainsI(quality, "blu_ray"):
 		return "BluRay"
-	case strings.Contains(q, "BDRIP") || strings.Contains(q, "BRRIP"):
+	case logger.ContainsI(quality, "bdrip") || logger.ContainsI(quality, "brrip"):
 		return "BDRip"
-	case strings.Contains(q, "WEB-DL") || strings.Contains(q, "WEBDL"):
+	case logger.ContainsI(quality, "web-dl") || logger.ContainsI(quality, "webdl") ||
+		logger.ContainsI(quality, "web dl") || logger.ContainsI(quality, "web_dl"):
 		return "WEB-DL"
-	case strings.Contains(q, "WEBRIP"):
+	case logger.ContainsI(quality, "webrip"):
 		return "WEBRip"
-	case strings.Contains(q, "HDTV"):
+	case logger.ContainsI(quality, "hdtv"):
 		return "HDTV"
-	case strings.Contains(q, "DVDRIP"):
+	case logger.ContainsI(quality, "dvdrip"):
 		return "DVDRip"
-	case strings.Contains(q, "AMZN") || strings.Contains(q, "AMAZON"):
+	case logger.ContainsI(quality, "amzn") || logger.ContainsI(quality, "amazon"):
 		return "AMZN"
-	case strings.Contains(q, "NETFLIX") || strings.Contains(q, "NF"):
+	case logger.ContainsI(quality, "netflix") || logger.ContainsI(quality, "nf"):
 		return "NF"
-	case strings.Contains(q, "DSNP") || strings.Contains(q, "DISNEY"):
+	case logger.ContainsI(quality, "dsnp") || logger.ContainsI(quality, "disney"):
 		return "DSNP"
-	case strings.Contains(q, "HMAX") || strings.Contains(q, "HBO"):
+	case logger.ContainsI(quality, "hmax") || logger.ContainsI(quality, "hbo"):
 		return "HMAX"
 	default:
+		q := strings.ToUpper(strings.TrimSpace(quality))
+		q = strings.ReplaceAll(q, " ", "-")
+		q = strings.ReplaceAll(q, "_", "-")
 		return q
 	}
 }
 
 // normalizeCodec normalizes codec strings.
 func normalizeCodec(codec string) string {
-	c := strings.ToUpper(strings.TrimSpace(codec))
-
-	c = strings.ReplaceAll(c, ".", "")
-	c = strings.ReplaceAll(c, " ", "")
-
 	switch {
-	case strings.Contains(c, "X264") || strings.Contains(c, "H264") || strings.Contains(c, "AVC"):
+	case logger.ContainsI(codec, "x264") || logger.ContainsI(codec, "x.264") || logger.ContainsI(codec, "x 264") ||
+		logger.ContainsI(codec, "h264") || logger.ContainsI(codec, "h.264") || logger.ContainsI(codec, "h 264") ||
+		logger.ContainsI(codec, "avc"):
 		return "x264"
-	case strings.Contains(c, "X265") || strings.Contains(c, "H265") || strings.Contains(c, "HEVC"):
+	case logger.ContainsI(codec, "x265") || logger.ContainsI(codec, "x.265") || logger.ContainsI(codec, "x 265") ||
+		logger.ContainsI(codec, "h265") || logger.ContainsI(codec, "h.265") || logger.ContainsI(codec, "h 265") ||
+		logger.ContainsI(codec, "hevc"):
 		return "x265"
-	case strings.Contains(c, "XVID"):
+	case logger.ContainsI(codec, "xvid"):
 		return "XviD"
-	case strings.Contains(c, "DIVX"):
+	case logger.ContainsI(codec, "divx"):
 		return "DivX"
-	case strings.Contains(c, "AV1"):
+	case logger.ContainsI(codec, "av1"):
 		return "AV1"
 	default:
+		c := strings.ToUpper(strings.TrimSpace(codec))
+		c = strings.ReplaceAll(c, ".", "")
+		c = strings.ReplaceAll(c, " ", "")
 		return c
 	}
 }
 
 // normalizeAudio normalizes audio codec strings.
 func normalizeAudio(audio string) string {
-	a := strings.ToUpper(strings.TrimSpace(audio))
-
-	a = strings.ReplaceAll(a, " ", "-")
-
 	switch {
-	case strings.Contains(a, "DTS-HD-MA") || strings.Contains(a, "DTSHDMA"):
+	case logger.ContainsI(audio, "dts-hd-ma") || logger.ContainsI(audio, "dtshdma") ||
+		logger.ContainsI(audio, "dts hd ma") || logger.ContainsI(audio, "dts-hd ma") ||
+		logger.ContainsI(audio, "dts hd-ma"):
 		return "DTS-HD MA"
-	case strings.Contains(a, "DTS-HD") || strings.Contains(a, "DTSHD"):
+	case logger.ContainsI(audio, "dts-hd") || logger.ContainsI(audio, "dtshd") ||
+		logger.ContainsI(audio, "dts hd"):
 		return "DTS-HD"
-	case strings.Contains(a, "DTS-X") || strings.Contains(a, "DTSX"):
+	case logger.ContainsI(audio, "dts-x") || logger.ContainsI(audio, "dtsx") ||
+		logger.ContainsI(audio, "dts x"):
 		return "DTS:X"
-	case strings.Contains(a, "DTS"):
+	case logger.ContainsI(audio, "dts"):
 		return "DTS"
-	case strings.Contains(a, "ATMOS"):
+	case logger.ContainsI(audio, "atmos"):
 		return "Atmos"
-	case strings.Contains(a, "TRUEHD"):
+	case logger.ContainsI(audio, "truehd"):
 		return "TrueHD"
-	case strings.Contains(a, "DD+") || strings.Contains(a, "DDP") || strings.Contains(a, "EAC3"):
+	case logger.ContainsI(audio, "dd+") || logger.ContainsI(audio, "ddp") || logger.ContainsI(audio, "eac3"):
 		return "DD+"
-	case strings.Contains(a, "DD") || strings.Contains(a, "AC3"):
+	case logger.ContainsI(audio, "dd") || logger.ContainsI(audio, "ac3"):
 		return "DD"
-	case strings.Contains(a, "AAC"):
+	case logger.ContainsI(audio, "aac"):
 		return "AAC"
-	case strings.Contains(a, "FLAC"):
+	case logger.ContainsI(audio, "flac"):
 		return "FLAC"
 	default:
+		a := strings.ToUpper(strings.TrimSpace(audio))
+		a = strings.ReplaceAll(a, " ", "-")
 		return a
 	}
 }
 
 // normalizeHDR normalizes HDR format strings.
 func normalizeHDR(hdr string) string {
-	// Trim any boundary characters that might be included in the match
-	h := strings.ToUpper(strings.Trim(strings.TrimSpace(hdr), "._- "))
-
 	switch {
-	case strings.Contains(h, "HDR10+") || strings.Contains(h, "HDR10PLUS"):
+	case logger.ContainsI(hdr, "hdr10+") || logger.ContainsI(hdr, "hdr10plus"):
 		return "HDR10+"
-	case strings.Contains(h, "HDR10"):
+	case logger.ContainsI(hdr, "hdr10"):
 		return "HDR10"
-	case strings.Contains(h, "DOLBY") || strings.Contains(h, "VISION") || h == "DV":
+	case logger.ContainsI(hdr, "dolby") || logger.ContainsI(hdr, "vision") ||
+		strings.EqualFold(strings.Trim(strings.TrimSpace(hdr), "._- "), "DV"):
 		return "DV"
-	case strings.Contains(h, "HLG"):
+	case logger.ContainsI(hdr, "hlg"):
 		return "HLG"
-	case strings.Contains(h, "HDR"):
+	case logger.ContainsI(hdr, "hdr"):
 		return "HDR"
 	default:
-		return h
+		return strings.ToUpper(strings.Trim(strings.TrimSpace(hdr), "._- "))
 	}
 }
 
-// padInt pads an integer with leading zeros to the specified width.
-func padInt(n, width int) string {
-	s := ""
-	for range width {
-		s += "0"
-	}
-
-	num := s + strings.TrimLeft(strings.Repeat("0", width)+string(rune('0'+n%10)), "0")
+// padInt pads an integer to 2 digits with a leading zero.
+func padInt(n int) string {
 	if n >= 10 {
-		num = s[:width-2] + string(rune('0'+n/10)) + string(rune('0'+n%10))
-	} else {
-		num = s[:width-1] + string(rune('0'+n))
+		return string(rune('0'+n/10)) + string(rune('0'+n%10))
 	}
 
-	return num[len(num)-width:]
+	return "0" + string(rune('0'+n))
 }

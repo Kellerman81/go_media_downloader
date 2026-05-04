@@ -41,8 +41,12 @@ func mbTracksToDbTracks(tracks []apiexternal_v2.Track) []database.DbtrackWithArt
 				MusicbrainzRecordingID: t.MusicBrainzID,
 				ISRC:                   t.ISRC,
 				RuntimeMs:              runtimeMs,
-				TrackNumber:            uint16(trackNum),
-				DiscNumber:             uint16(t.DiscNumber),
+				TrackNumber: uint16(
+					trackNum,
+				),
+				DiscNumber: uint16(
+					t.DiscNumber,
+				),
 			},
 			Artist: artist,
 		}
@@ -72,7 +76,7 @@ func audnexChaptersToDbTracks(
 			Dbtrack: database.Dbtrack{
 				Title:       ch.Title,
 				RuntimeMs:   runtimeMs,
-				TrackNumber: uint16(num),
+				TrackNumber: uint16(num), //nolint:gosec // safe: value within target type range
 				DiscNumber:  1,
 			},
 		}
@@ -154,13 +158,13 @@ func resolveTracksForMatching(
 						mbTracks := mbTracksToDbTracks(release.Tracks)
 
 						mbByNum := make(map[uint32]int64, len(mbTracks))
-						for _, t := range mbTracks {
-							disc := uint32(t.DiscNumber)
+						for i := range mbTracks {
+							disc := uint32(mbTracks[i].DiscNumber)
 							if disc == 0 {
 								disc = 1
 							}
 
-							mbByNum[disc*10000+uint32(t.TrackNumber)] = t.RuntimeMs
+							mbByNum[disc*10000+uint32(mbTracks[i].TrackNumber)] = mbTracks[i].RuntimeMs
 						}
 
 						for i := range dbTracks {
@@ -276,8 +280,8 @@ func allRuntimesZero(runtimes []int64) bool {
 		return false
 	}
 
-	for _, r := range runtimes {
-		if r != 0 {
+	for i := range runtimes {
+		if runtimes[i] != 0 {
 			return false
 		}
 	}
@@ -356,8 +360,8 @@ func findASINByTitleAuthor(
 			if authorLower != "" {
 				authorMatched := false
 				// Exact substring check against Authors.
-				for _, a := range entry.results[j].Authors {
-					aLower := strings.ToLower(a)
+				for k := range entry.results[j].Authors {
+					aLower := strings.ToLower(entry.results[j].Authors[k])
 					if strings.Contains(aLower, authorLower) ||
 						strings.Contains(authorLower, aLower) {
 						authorMatched = true
@@ -376,16 +380,22 @@ func findASINByTitleAuthor(
 							continue
 						}
 
-						for _, a := range entry.results[j].Authors {
-							if strings.Contains(strings.ToLower(a), word) {
+						for k := range entry.results[j].Authors {
+							if strings.Contains(
+								strings.ToLower(entry.results[j].Authors[k]),
+								word,
+							) {
 								authorMatched = true
 								break
 							}
 						}
 
 						if !authorMatched {
-							for _, sn := range []string{entry.results[j].SeriesName, entry.results[j].Series} {
-								if strings.Contains(strings.ToLower(sn), word) {
+							for _, series := range []string{entry.results[j].SeriesName, entry.results[j].Series} {
+								if strings.Contains(
+									strings.ToLower(series),
+									word,
+								) {
 									authorMatched = true
 									break
 								}
@@ -432,24 +442,24 @@ func findASINByTitleAuthor(
 		return candidates[0]
 	}
 
-	for _, asin := range candidates {
-		chapters, err := audnexProvider.GetChaptersByASIN(ctx, asin, region)
+	for i := range candidates {
+		chapters, err := audnexProvider.GetChaptersByASIN(ctx, candidates[i], region)
 		if err != nil || len(chapters) == 0 {
 			continue
 		}
 
 		if len(chapters) == fileCount {
 			logger.Logtype("debug", 0).
-				Str("asin", asin).
+				Str("asin", candidates[i]).
 				Int("audnexChapters", len(chapters)).
 				Int("fileCount", fileCount).
 				Msg("Audible ASIN verified by chapter count via Audnex")
 
-			return asin
+			return candidates[i]
 		}
 
 		logger.Logtype("debug", 0).
-			Str("asin", asin).
+			Str("asin", candidates[i]).
 			Int("audnexChapters", len(chapters)).
 			Int("fileCount", fileCount).
 			Msg("Audible ASIN chapter count mismatch — skipping candidate")
@@ -513,9 +523,9 @@ func BuildArtistAlbumSearch(album, artist string) []byte {
 
 // coalesceStr returns the first non-empty string.
 func coalesceStr(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
+	for i := range values {
+		if values[i] != "" {
+			return values[i]
 		}
 	}
 
@@ -849,8 +859,8 @@ func resolveAlbumMBID(
 
 				lookedUp++
 
-				for _, id := range ids {
-					releaseCounts[id]++
+				for i := range ids {
+					releaseCounts[ids[i]]++
 				}
 			}
 
@@ -934,8 +944,8 @@ func resolveAlbumMBID(
 
 		fingerprintedFiles++
 
-		for _, id := range releaseIDs {
-			releaseCounts[id]++
+		for j := range releaseIDs {
+			releaseCounts[releaseIDs[j]]++
 		}
 	}
 

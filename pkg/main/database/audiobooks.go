@@ -270,10 +270,10 @@ func FindAudiobookByTitleAuthor(title, author *string) (*AudiobookSearchResult, 
 // This allows callers to try multiple matches and pick the best one (e.g., by chapter count).
 // Returns up to maxResults matches, ordered by best match quality.
 func FindAudiobooksByTitleAuthor(
-	title, author string,
+	title, author *string,
 	maxResults int,
 ) ([]*AudiobookSearchResult, error) {
-	if title == "" {
+	if title == nil || *title == "" {
 		return nil, logger.ErrNotFoundDbaudiobook
 	}
 
@@ -293,13 +293,15 @@ func FindAudiobooksByTitleAuthor(
 	}
 
 	remaining := func() uint {
-		return uint(maxResults - len(results))
+		return uint(
+			maxResults - len(results),
+		)
 	}
 
-	slug := logger.StringToSlug(title)
+	slug := logger.StringToSlug(*title)
 	// If we have an author, try author-first lookup (more accurate)
-	if author != "" {
-		authorSlug := logger.StringToSlug(author)
+	if author != nil && *author != "" {
+		authorSlug := logger.StringToSlug(*author)
 
 		// Find author IDs (search by name or slug)
 		authorIDs := Getrowssize[uint](
@@ -307,10 +309,10 @@ func FindAudiobooksByTitleAuthor(
 			"SELECT count() FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
 			"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
 			author,
-			authorSlug,
+			&authorSlug,
 		)
 		// For each author, look for albums with matching title
-		for _, authorID := range authorIDs {
+		for i := range authorIDs {
 			if len(results) >= maxResults {
 				break
 			}
@@ -322,19 +324,19 @@ func FindAudiobooksByTitleAuthor(
 				`SELECT ab.id FROM dbaudiobooks ab
 				JOIN dbaudiobook_authors aba ON ab.id = aba.dbaudiobook_id
 				WHERE aba.dbauthor_id = ? AND (ab.title = ? COLLATE NOCASE OR ab.slug = ? COLLATE NOCASE)`,
-				authorID, title, slug)
+				&authorIDs[i], title, &slug)
 
-			for _, id := range ids {
-				addResult(id)
+			for j := range ids {
+				addResult(ids[j])
 			}
 		}
 
 		// Also try LIKE match with author
 		if len(results) < maxResults {
-			titlePattern := logger.JoinStrings("%", title, "%")
+			titlePattern := logger.JoinStrings("%", *title, "%")
 			slugPattern := logger.JoinStrings("%", slug, "%")
 
-			for _, authorID := range authorIDs {
+			for i := range authorIDs {
 				if len(results) >= maxResults {
 					break
 				}
@@ -345,10 +347,10 @@ func FindAudiobooksByTitleAuthor(
 					`SELECT ab.id FROM dbaudiobooks ab
 					JOIN dbaudiobook_authors aba ON ab.id = aba.dbaudiobook_id
 					WHERE aba.dbauthor_id = ? AND (ab.title LIKE ? OR ab.slug LIKE ?)`,
-					authorID, titlePattern, slugPattern)
+					&authorIDs[i], &titlePattern, &slugPattern)
 
-				for _, id := range ids {
-					addResult(id)
+				for j := range ids {
+					addResult(ids[j])
 				}
 			}
 		}
@@ -362,24 +364,24 @@ func FindAudiobooksByTitleAuthor(
 			"SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
 			title, slug)
 
-		for _, id := range ids {
-			addResult(id)
+		for i := range ids {
+			addResult(ids[i])
 		}
 	}
 
 	// Try LIKE pattern match on title
 	if len(results) < maxResults {
-		titlePattern := logger.JoinStrings("%", title, "%")
+		titlePattern := logger.JoinStrings("%", *title, "%")
 		slugPattern := logger.JoinStrings("%", slug, "%")
 
 		ids := GetrowsN[uint](
 			false,
 			remaining(),
 			"SELECT id FROM dbaudiobooks WHERE title LIKE ? OR slug LIKE ?",
-			titlePattern, slugPattern)
+			&titlePattern, &slugPattern)
 
-		for _, id := range ids {
-			addResult(id)
+		for i := range ids {
+			addResult(ids[i])
 		}
 	}
 
@@ -389,8 +391,8 @@ func FindAudiobooksByTitleAuthor(
 
 	if len(results) > 1 {
 		logger.Logtype("debug", 0).
-			Str("title", title).
-			Str("author", author).
+			Str("title", *title).
+			Str("author", *author).
 			Int("count", len(results)).
 			Msg("DEBUG: FindAudiobooksByTitleAuthor - found multiple potential matches")
 	}

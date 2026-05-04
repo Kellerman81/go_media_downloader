@@ -2,6 +2,7 @@ package tags
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -112,7 +113,9 @@ func (h *OGGHandler) readPage(r io.Reader) (*oggPage, error) {
 
 	page.Version = header[0]
 	page.HeaderType = header[1]
-	page.GranulePos = int64(binary.LittleEndian.Uint64(header[2:10]))
+	page.GranulePos = int64(
+		binary.LittleEndian.Uint64(header[2:10]),
+	)
 	page.BitstreamSerial = binary.LittleEndian.Uint32(header[10:14])
 	page.PageSequence = binary.LittleEndian.Uint32(header[14:18])
 	page.Checksum = binary.LittleEndian.Uint32(header[18:22])
@@ -126,8 +129,8 @@ func (h *OGGHandler) readPage(r io.Reader) (*oggPage, error) {
 
 	// Calculate total data size
 	var dataSize int
-	for _, seg := range page.SegmentTable {
-		dataSize += int(seg)
+	for i := range page.SegmentTable {
+		dataSize += int(page.SegmentTable[i])
 	}
 
 	// Read page data
@@ -350,7 +353,7 @@ func detectImageMIME(data []byte) string {
 // WriteTags writes Vorbis Comment tags to an OGG Vorbis file.
 // Note: This is a complex operation that requires rewriting the entire file.
 // For production use, consider using a library like github.com/jfreymuth/oggvorbis.
-func (h *OGGHandler) WriteTags(filepath string, tags *AudioTags) error {
+func (h *OGGHandler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
 	// Read the entire file
 	fileData, err := os.ReadFile(filepath)
 	if err != nil {
@@ -433,19 +436,31 @@ func (h *OGGHandler) buildVorbisCommentPacket(tags *AudioTags) []byte {
 
 	// Vendor string
 	vendor := "go-media-downloader"
-	binary.Write(&buf, binary.LittleEndian, uint32(len(vendor)))
+	binary.Write(
+		&buf,
+		binary.LittleEndian,
+		uint32(len(vendor)),
+	)
 	buf.WriteString(vendor)
 
 	// Build comment list
 	comments := h.buildCommentList(tags)
 
 	// Comment count
-	binary.Write(&buf, binary.LittleEndian, uint32(len(comments)))
+	binary.Write(
+		&buf,
+		binary.LittleEndian,
+		uint32(len(comments)),
+	)
 
 	// Write each comment
-	for _, comment := range comments {
-		binary.Write(&buf, binary.LittleEndian, uint32(len(comment)))
-		buf.WriteString(comment)
+	for i := range comments {
+		binary.Write(
+			&buf,
+			binary.LittleEndian,
+			uint32(len(comments[i])),
+		)
+		buf.WriteString(comments[i])
 	}
 
 	// Framing bit
@@ -551,12 +566,20 @@ func (h *OGGHandler) buildPictureBlock(tags *AudioTags) []byte {
 		mime = "image/jpeg"
 	}
 
-	binary.Write(&buf, binary.BigEndian, uint32(len(mime)))
+	binary.Write(
+		&buf,
+		binary.BigEndian,
+		uint32(len(mime)),
+	)
 	buf.WriteString(mime)
 
 	// Description
 	desc := "Front Cover"
-	binary.Write(&buf, binary.BigEndian, uint32(len(desc)))
+	binary.Write(
+		&buf,
+		binary.BigEndian,
+		uint32(len(desc)),
+	)
 	buf.WriteString(desc)
 
 	// Width, height, depth, colors (unknown = 0)
@@ -566,7 +589,11 @@ func (h *OGGHandler) buildPictureBlock(tags *AudioTags) []byte {
 	binary.Write(&buf, binary.BigEndian, uint32(0)) // colors
 
 	// Picture data
-	binary.Write(&buf, binary.BigEndian, uint32(len(tags.CoverData)))
+	binary.Write(
+		&buf,
+		binary.BigEndian,
+		uint32(len(tags.CoverData)),
+	)
 	buf.Write(tags.CoverData)
 
 	return buf.Bytes()
@@ -619,7 +646,7 @@ func (h *OGGHandler) buildPage(page *oggPage) []byte {
 	}
 
 	// Page segments count
-	buf.WriteByte(byte(len(segments)))
+	buf.WriteByte(byte(len(segments))) //nolint:gosec // safe: value within target type range
 
 	// Segment table
 	buf.Write(segments)
@@ -639,8 +666,8 @@ func (h *OGGHandler) buildPage(page *oggPage) []byte {
 func (h *OGGHandler) calculateCRC32(data []byte) uint32 {
 	// OGG uses a specific CRC32 polynomial
 	var crc uint32 = 0
-	for _, b := range data {
-		crc = oggCRCTable[byte(crc)^b] ^ (crc >> 8)
+	for i := range data {
+		crc = oggCRCTable[byte(crc)^data[i]] ^ (crc >> 8)
 	}
 
 	return crc

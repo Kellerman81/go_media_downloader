@@ -137,21 +137,29 @@ func getMovieStatistics(_ context.Context) (MovieStatistics, error) {
 	}
 
 	// Total movies
-	stats.TotalMovies = int(database.Getdatarow[uint](false, "SELECT COUNT(*) FROM movies"))
+	stats.TotalMovies = int(
+		database.Getdatarow[uint](false, "SELECT COUNT(*) FROM movies"),
+	)
 
 	// Available movies (with files)
-	stats.AvailableMovies = int(database.Getdatarow[uint](false,
-		`SELECT COUNT(DISTINCT m.id) FROM movies m
-		INNER JOIN movie_files mf ON mf.movie_id = m.id`))
+	stats.AvailableMovies = int(
+		database.Getdatarow[uint](false,
+			`SELECT COUNT(DISTINCT m.id) FROM movies m
+		INNER JOIN movie_files mf ON mf.movie_id = m.id`),
+	)
 	stats.MissingMovies = stats.TotalMovies - stats.AvailableMovies
 
 	// Quality reached
-	stats.QualityReached = int(database.Getdatarow[uint](false,
-		"SELECT COUNT(*) FROM movies WHERE quality_reached = 1"))
+	stats.QualityReached = int(
+		database.Getdatarow[uint](false,
+			"SELECT COUNT(*) FROM movies WHERE quality_reached = 1"),
+	)
 
 	// Upgrade available
-	stats.UpgradeAvailable = int(database.Getdatarow[uint](false,
-		"SELECT COUNT(*) FROM movies WHERE quality_reached = 0 AND missing = 0"))
+	stats.UpgradeAvailable = int(
+		database.Getdatarow[uint](false,
+			"SELECT COUNT(*) FROM movies WHERE quality_reached = 0 AND missing = 0"),
+	)
 
 	// Movies by quality profile
 	qualityData := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 0,
@@ -162,7 +170,9 @@ func getMovieStatistics(_ context.Context) (MovieStatistics, error) {
 		ORDER BY count DESC`)
 	for _, q := range qualityData {
 		if q.Str != "" {
-			stats.ByQuality[q.Str] = int(q.Num)
+			stats.ByQuality[q.Str] = int(
+				q.Num,
+			)
 		}
 	}
 
@@ -175,7 +185,7 @@ func getMovieStatistics(_ context.Context) (MovieStatistics, error) {
 		ORDER BY count DESC`)
 	for _, l := range listData {
 		if l.Str != "" {
-			stats.ByList[l.Str] = int(l.Num)
+			stats.ByList[l.Str] = int(l.Num) //nolint:gosec // safe: value within target type range
 		}
 	}
 
@@ -193,33 +203,43 @@ func getSeriesStatistics(_ context.Context) (SeriesStatistics, error) {
 	}
 
 	// Total series
-	stats.TotalSeries = int(database.Getdatarow[uint](false, "SELECT COUNT(*) FROM series"))
+	stats.TotalSeries = int(
+		database.Getdatarow[uint](false, "SELECT COUNT(*) FROM series"),
+	)
 
 	// Available series (with at least one episode file)
-	stats.AvailableSeries = int(database.Getdatarow[uint](false,
-		`SELECT COUNT(DISTINCT s.id) FROM series s
+	stats.AvailableSeries = int(
+		database.Getdatarow[uint](false,
+			`SELECT COUNT(DISTINCT s.id) FROM series s
 		INNER JOIN serie_episodes se ON se.serie_id = s.id
-		INNER JOIN serie_episode_files sef ON sef.serie_episode_id = se.id`))
+		INNER JOIN serie_episode_files sef ON sef.serie_episode_id = se.id`),
+	)
 	stats.MissingSeries = stats.TotalSeries - stats.AvailableSeries
 
 	// Total episodes
-	stats.TotalEpisodes = int(
+	stats.TotalEpisodes = int( //nolint:gosec // safe: value within target type range
 		database.Getdatarow[uint](false, "SELECT COUNT(*) FROM serie_episodes"),
 	)
 
 	// Available episodes (with files)
-	stats.AvailableEpisodes = int(database.Getdatarow[uint](false,
-		`SELECT COUNT(DISTINCT se.id) FROM serie_episodes se
-		INNER JOIN serie_episode_files sef ON sef.serie_episode_id = se.id`))
+	stats.AvailableEpisodes = int(
+		database.Getdatarow[uint](false,
+			`SELECT COUNT(DISTINCT se.id) FROM serie_episodes se
+		INNER JOIN serie_episode_files sef ON sef.serie_episode_id = se.id`),
+	)
 	stats.MissingEpisodes = stats.TotalEpisodes - stats.AvailableEpisodes
 
 	// Quality reached
-	stats.QualityReached = int(database.Getdatarow[uint](false,
-		"SELECT COUNT(*) FROM serie_episodes WHERE quality_reached = 1"))
+	stats.QualityReached = int(
+		database.Getdatarow[uint](false,
+			"SELECT COUNT(*) FROM serie_episodes WHERE quality_reached = 1"),
+	)
 
 	// Upgrade available
-	stats.UpgradeAvailable = int(database.Getdatarow[uint](false,
-		"SELECT COUNT(*) FROM serie_episodes WHERE quality_reached = 0 AND missing = 0"))
+	stats.UpgradeAvailable = int(
+		database.Getdatarow[uint](false,
+			"SELECT COUNT(*) FROM serie_episodes WHERE quality_reached = 0 AND missing = 0"),
+	)
 
 	// Episodes by quality profile
 	qualityData := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 0,
@@ -230,7 +250,9 @@ func getSeriesStatistics(_ context.Context) (SeriesStatistics, error) {
 		ORDER BY count DESC`)
 	for _, q := range qualityData {
 		if q.Str != "" {
-			stats.ByQuality[q.Str] = int(q.Num)
+			stats.ByQuality[q.Str] = int(
+				q.Num,
+			)
 		}
 	}
 
@@ -243,7 +265,7 @@ func getSeriesStatistics(_ context.Context) (SeriesStatistics, error) {
 		ORDER BY count DESC`)
 	for _, l := range listData {
 		if l.Str != "" {
-			stats.ByList[l.Str] = int(l.Num)
+			stats.ByList[l.Str] = int(l.Num) //nolint:gosec // safe: value within target type range
 		}
 	}
 
@@ -251,9 +273,11 @@ func getSeriesStatistics(_ context.Context) (SeriesStatistics, error) {
 	stats.TotalSizeBytes = 0
 
 	// Total seasons
-	stats.TotalSeasons = int(database.Getdatarow[uint](false,
-		`SELECT COUNT(DISTINCT identifier) FROM dbserie_episodes
-		WHERE identifier != '' AND identifier IS NOT NULL`))
+	stats.TotalSeasons = int(
+		database.Getdatarow[uint](false,
+			`SELECT COUNT(DISTINCT identifier) FROM dbserie_episodes
+		WHERE identifier != '' AND identifier IS NOT NULL`),
+	)
 
 	return stats, nil
 }

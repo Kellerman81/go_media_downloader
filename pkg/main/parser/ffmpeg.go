@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"path/filepath"
@@ -143,8 +144,9 @@ func getFFProbeFilename() string {
 // buildFFProbeCmd creates an *exec.Cmd for running ffprobe with specific JSON output options on the specified file.
 // It sets the log level to fatal, output format to JSON, and selects specific entries to show including
 // format duration, stream details, and stream language tags.
-func buildFFProbeCmd(file string) *exec.Cmd {
-	return exec.Command(
+func buildFFProbeCmd(ctx context.Context, file string) *exec.Cmd {
+	return exec.CommandContext(
+		ctx,
 		getFFProbeFilename(),
 		"-loglevel",
 		"fatal",
@@ -159,8 +161,12 @@ func buildFFProbeCmd(file string) *exec.Cmd {
 // buildMediaInfoCmd creates an *exec.Cmd for running mediainfo with JSON output on the specified file.
 // It uses getmediainfoFilename() to determine the path to the mediainfo executable
 // and adds the "--Output=JSON" flag to generate JSON-formatted output.
-func buildMediaInfoCmd(file string) *exec.Cmd {
-	return exec.Command(getmediainfoFilename(), "--Output=JSON", file)
+func buildMediaInfoCmd(ctx context.Context, file string) *exec.Cmd {
+	return exec.CommandContext(ctx,
+		getmediainfoFilename(),
+		"--Output=JSON",
+		file,
+	)
 }
 
 // getcmd returns an *exec.Cmd for the specified file and command type.
@@ -169,24 +175,26 @@ func buildMediaInfoCmd(file string) *exec.Cmd {
 // print format set to "json", and specific entries to show.
 // For "mediainfo" type, it returns a command with the mediainfo executable and "--Output=JSON" option.
 // For any other type, it returns a command with the getImdbFilename() executable.
-func getcmd(file, typ string) *exec.Cmd {
+func getcmd(ctx context.Context, file, typ string) *exec.Cmd {
 	switch typ {
 	case "ffprobe":
 		if file == "" {
 			return nil
 		}
 
-		return buildFFProbeCmd(file)
+		return buildFFProbeCmd(ctx, file)
 
 	case "mediainfo":
 		if file == "" {
 			return nil
 		}
 
-		return buildMediaInfoCmd(file)
+		return buildMediaInfoCmd(ctx, file)
 
 	default:
-		return exec.Command(getImdbFilename())
+		return exec.CommandContext(ctx,
+			getImdbFilename(),
+		)
 	}
 }
 
@@ -196,11 +204,12 @@ func getcmd(file, typ string) *exec.Cmd {
 // The 'file' parameter is the path to the file to analyze.
 // The 'm' and 'quality' parameters are used to pass additional context to the parsemediainfo and parseffprobe functions.
 func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
+	ctx context.Context,
 	file, typ string,
 	m *database.ParseInfo,
 	quality *config.QualityConfig,
 ) error {
-	cmd := getcmd(file, typ)
+	cmd := getcmd(ctx, file, typ)
 	if cmd == nil {
 		return logger.ErrNotFound
 	}
@@ -245,8 +254,11 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 // the stdout as a string, and any error that occurred. The command type is specified
 // by the 'typ' parameter, which can be either "ffprobe" or "mediainfo". The 'file'
 // parameter is the path to the file to analyze.
-func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](file, typ string) (string, error) {
-	cmd := getcmd(file, typ)
+func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](
+	ctx context.Context,
+	file, typ string,
+) (string, error) {
+	cmd := getcmd(ctx, file, typ)
 	if cmd == nil {
 		return "", logger.ErrNotFound
 	}

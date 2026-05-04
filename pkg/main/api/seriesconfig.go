@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -1071,7 +1072,7 @@ func detectScraperType(startURL string) string {
 		},
 	}
 
-	req, err := http.NewRequest(http.MethodGet, startURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, startURL, nil)
 	if err != nil {
 		return "" // Can't detect, let user choose
 	}
@@ -1230,7 +1231,7 @@ func getAlgoliaCredentials(resp *http.Response) (string, string, error) {
 func discoverAlgoliaConfig(startURL string, data *ScraperDiscoveryData) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	req, err := http.NewRequest(http.MethodGet, startURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, startURL, nil)
 	if err != nil {
 		data.Error = "Failed to create request: " + err.Error()
 		return
@@ -1319,7 +1320,7 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 			indexName,
 		)
 
-		req, err := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(requestBody))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, apiURL, strings.NewReader(requestBody))
 		if err != nil {
 			lastError = fmt.Sprintf("Failed to create request for index '%s': %v", indexName, err)
 			continue // Try next index
@@ -1478,7 +1479,7 @@ func discoverProject1ServiceConfig(startURL string, data *ScraperDiscoveryData) 
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Fetch the start URL to get instance token
-	req, err := http.NewRequest(http.MethodGet, startURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, startURL, nil)
 	if err != nil {
 		data.Error = "Failed to create request: " + err.Error()
 		return
@@ -1515,7 +1516,7 @@ func discoverProject1ServiceConfig(startURL string, data *ScraperDiscoveryData) 
 	// Fetch collections from API
 	apiURL := "https://site-api.project1service.com/v1/collections?limit=100"
 
-	req, err = http.NewRequest(http.MethodGet, apiURL, nil)
+	req, err = http.NewRequestWithContext(context.Background(), http.MethodGet, apiURL, nil)
 	if err != nil {
 		data.Error = "Failed to create API request: " + err.Error()
 		return
@@ -1560,7 +1561,7 @@ func discoverProject1ServiceConfig(startURL string, data *ScraperDiscoveryData) 
 func discoverCSRFAPIConfig(startURL string, data *ScraperDiscoveryData) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	req, err := http.NewRequest(http.MethodGet, startURL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, startURL, nil)
 	if err != nil {
 		data.Error = "Failed to create request: " + err.Error()
 		return

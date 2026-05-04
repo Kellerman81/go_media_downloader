@@ -212,6 +212,7 @@ var stringBuilderPool = sync.Pool{
 // Node slice pooling for better memory management.
 var nodeSlicePool = sync.Pool{
 	New: func() any {
-		return make([]gomponents.Node, 0, 10) // Pre-allocate capacity for common use cases
+		s := make([]gomponents.Node, 0, 10)
+		return &s
 	},
 }

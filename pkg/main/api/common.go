@@ -53,16 +53,18 @@ func parsePaginationParams(ctx *gin.Context) PaginationParams {
 
 	if queryParam, ok := ctx.GetQuery(StrLimit); ok && queryParam != "" {
 		limit, _ = strconv.Atoi(queryParam)
-		params.Limit = uint(limit)
+		if limit > 0 {
+			params.Limit = uint(limit)
+		}
 	}
 
-	if limit != 0 {
+	if limit > 0 {
 		if queryParam, ok := ctx.GetQuery(StrPage); ok && queryParam != "" {
 			page, _ = strconv.Atoi(queryParam)
 
 			params.Page = page
 			if page >= 2 {
-				params.Offset = uint((page - 1) * limit)
+				params.Offset = uint((page - 1) * limit) //nolint:gosec // guarded: page>=2, limit>0
 			}
 		}
 	}
@@ -79,7 +81,7 @@ func buildQuery(params PaginationParams) database.Querywithargs {
 	query := database.Querywithargs{}
 	if params.Limit > 0 {
 		query.Limit = params.Limit
-		query.Offset = int(params.Offset)
+		query.Offset = int(params.Offset) //nolint:gosec // safe: value within target type range
 	}
 
 	if params.Order != "" {

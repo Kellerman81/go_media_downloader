@@ -56,6 +56,10 @@ var (
 
 	vaForms = []string{"va", "v.a.", "v.a"}
 
+	episodeSplitChars    = []string{"E", "e", "X", "x", logger.StrDash}
+	titleCleanSeps       = []string{" ", "-"}
+	losslessAudioFormats = []string{"flac", "alac", "wav", "aiff", "ape", "wv", "wavpack", "dsd", "dsf"}
+
 	// Pre-computed slugs — parallel to the name slices above, populated in init().
 	variousArtistSlugs []string
 	variousAuthorSlugs []string
@@ -241,8 +245,8 @@ func (m *ParseInfo) StripTitlePrefixPostfixGetQual(quality *config.QualityConfig
 		return
 	}
 
-	for _, suffix := range quality.TitleStripSuffixForSearch {
-		if idx := logger.IndexI(m.Title, suffix); idx != -1 {
+	for i := range quality.TitleStripSuffixForSearch {
+		if idx := logger.IndexI(m.Title, quality.TitleStripSuffixForSearch[i]); idx != -1 {
 			if newTitle := m.Title[:idx]; newTitle != "" {
 				switch newTitle[len(newTitle)-1] {
 				case '-', '.', ' ':
@@ -256,10 +260,10 @@ func (m *ParseInfo) StripTitlePrefixPostfixGetQual(quality *config.QualityConfig
 		}
 	}
 
-	for _, prefix := range quality.TitleStripPrefixForSearch {
-		if logger.HasPrefixI(m.Title, prefix) {
-			if idx := logger.IndexI(m.Title, prefix); idx != -1 {
-				if newTitle := m.Title[idx+len(prefix):]; newTitle != "" {
+	for i := range quality.TitleStripPrefixForSearch {
+		if logger.HasPrefixI(m.Title, quality.TitleStripPrefixForSearch[i]) {
+			if idx := logger.IndexI(m.Title, quality.TitleStripPrefixForSearch[i]); idx != -1 {
+				if newTitle := m.Title[idx+len(quality.TitleStripPrefixForSearch[i]):]; newTitle != "" {
 					switch newTitle[0] {
 					case '-', '.', ' ':
 						m.Title = logger.TrimLeft(newTitle, '-', '.', ' ')
@@ -549,9 +553,9 @@ func (m *ParseInfo) Getepisodestoimport() error {
 // It checks for common episode separators like 'E', 'e', 'X', 'x', or a dash.
 // Returns the first matching separator character, or an empty string if no separator is found.
 func (m *ParseInfo) determineSplitChar(str1 string) string {
-	for _, char := range []string{"E", "e", "X", "x", logger.StrDash} {
-		if strings.ContainsRune(str1, rune(char[0])) {
-			return char
+	for i := range episodeSplitChars {
+		if strings.ContainsRune(str1, rune(episodeSplitChars[i][0])) {
+			return episodeSplitChars[i]
 		}
 	}
 
@@ -838,19 +842,22 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 			}
 		}
 
+		arr := GetCachedThreeStringArr(logger.CacheDBSeries, false, true)
 		// Fallback to linear search if indexed lookup not enabled or not found
-		for a := range GetCachedThreeStringSeq(logger.CacheDBSeries, false, true) {
-			if strings.EqualFold(a.Str1, m.TempTitle) ||
-				strings.EqualFold(a.Str2, m.TempTitle) {
-				m.DbserieID = a.Num2
+		for i := range arr {
+			if strings.EqualFold(arr[i].Str1, m.TempTitle) ||
+				strings.EqualFold(arr[i].Str2, m.TempTitle) {
+				m.DbserieID = arr[i].Num2
 				return
 			}
 		}
 
-		for b := range GetCachedTwoStringSeq(logger.CacheDBSeriesAlt, false, true) {
-			if strings.EqualFold(b.Str1, m.TempTitle) ||
-				strings.EqualFold(b.Str2, m.TempTitle) {
-				m.DbserieID = b.Num
+		brr := GetCachedTwoStringArr(logger.CacheDBSeriesAlt, false, true)
+		// Fallback to linear search if indexed lookup not enabled or not found
+		for i := range brr {
+			if strings.EqualFold(brr[i].Str1, m.TempTitle) ||
+				strings.EqualFold(brr[i].Str2, m.TempTitle) {
+				m.DbserieID = brr[i].Num
 				return
 			}
 		}
@@ -1071,7 +1078,10 @@ func cachedResolveAuthor(cache map[string][]resolvedAuthor, name string) []resol
 func resolveArtistNamesForAlbum(artistName string) []resolvedArtist {
 	single, names := splitMultiArtist(artistName)
 	if single != "" {
-		names = []string{single}
+		var singleBuf [1]string
+
+		singleBuf[0] = single
+		names = singleBuf[:]
 	}
 
 	names = expandVANames(names)
@@ -1233,8 +1243,8 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 	sluggedTitle := logger.StringToSlug(bookTitle)
 	bookWords := strings.Fields(bookTitle)
 
-	for _, ra := range resolved {
-		for _, authorID := range ra.ids {
+	for i := range resolved {
+		for j := range resolved[i].ids {
 			// Try main books table with author filter
 			Scanrowsdyn(false,
 				`SELECT b.id FROM dbbooks b
@@ -1242,10 +1252,10 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 				 WHERE ba.dbauthor_id = ?
 				 AND (b.title = ? COLLATE NOCASE OR b.slug = ?)
 				 LIMIT 1`,
-				&m.DbbookID, &authorID, &bookTitle, &sluggedTitle)
+				&m.DbbookID, &resolved[i].ids[j], &bookTitle, &sluggedTitle)
 
 			if m.DbbookID != 0 {
-				m.Artist = ra.name
+				m.Artist = resolved[i].name
 				return true
 			}
 
@@ -1256,10 +1266,10 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 				 WHERE ba.dbauthor_id = ?
 				 AND (bt.title = ? COLLATE NOCASE OR bt.slug = ?)
 				 LIMIT 1`,
-				&m.DbbookID, &authorID, &bookTitle, &sluggedTitle)
+				&m.DbbookID, &resolved[i].ids[j], &bookTitle, &sluggedTitle)
 
 			if m.DbbookID != 0 {
-				m.Artist = ra.name
+				m.Artist = resolved[i].name
 				return true
 			}
 
@@ -1274,10 +1284,10 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 					 WHERE ba.dbauthor_id = ?
 					 AND (b.title = ? COLLATE NOCASE OR b.slug = ?)
 					 LIMIT 1`,
-					&m.DbbookID, &authorID, &shorterTitle, &shorterSlug)
+					&m.DbbookID, &resolved[i].ids[j], &shorterTitle, &shorterSlug)
 
 				if m.DbbookID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					return true
 				}
 
@@ -1288,10 +1298,10 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 					 WHERE ba.dbauthor_id = ?
 					 AND (bt.title = ? COLLATE NOCASE OR bt.slug = ?)
 					 LIMIT 1`,
-					&m.DbbookID, &authorID, &shorterTitle, &shorterSlug)
+					&m.DbbookID, &resolved[i].ids[j], &shorterTitle, &shorterSlug)
 
 				if m.DbbookID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					return true
 				}
 			}
@@ -1372,8 +1382,8 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 	sluggedTitle := logger.StringToSlug(bookTitle)
 	bookWords := strings.Fields(bookTitle)
 
-	for _, ra := range resolved {
-		for _, authorID := range ra.ids {
+	for i := range resolved {
+		for k := range resolved[i].ids {
 			for j := range listnames {
 				// Try exact match in wanted list
 				Scanrowsdyn(false,
@@ -1384,10 +1394,10 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 					 AND bk.listname = ? COLLATE NOCASE
 					 AND (db.title = ? COLLATE NOCASE OR db.slug = ?)
 					 LIMIT 1`,
-					&m.DbbookID, &authorID, &listnames[j], &bookTitle, &sluggedTitle)
+					&m.DbbookID, &resolved[i].ids[k], &listnames[j], &bookTitle, &sluggedTitle)
 
 				if m.DbbookID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					m.BookID = m.getBookIDByDbbookAndList(listnames[j])
 					return true
 				}
@@ -1397,7 +1407,8 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 					shorterTitle := logger.JoinStringsSep(bookWords[:wordsToKeep], " ")
 					shorterSlug := logger.StringToSlug(shorterTitle)
 
-					Scanrowsdyn(false,
+					Scanrowsdyn(
+						false,
 						`SELECT bk.dbbook_id FROM books bk
 						 JOIN dbbook_authors ba ON bk.dbbook_id = ba.dbbook_id
 						 JOIN dbbooks db ON db.id = bk.dbbook_id
@@ -1405,13 +1416,18 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 						 AND bk.listname = ? COLLATE NOCASE
 						 AND (db.title = ? COLLATE NOCASE OR db.slug = ?)
 						 LIMIT 1`,
-						&m.DbbookID, &authorID, &listnames[j], &shorterTitle, &shorterSlug)
+						&m.DbbookID,
+						&resolved[i].ids[k],
+						&listnames[j],
+						&shorterTitle,
+						&shorterSlug,
+					)
 
 					if m.DbbookID == 0 {
 						continue
 					}
 
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					m.BookID = m.getBookIDByDbbookAndList(listnames[j])
 
 					return true
@@ -1448,8 +1464,10 @@ func (m *ParseInfo) FindDbbookByTitle() {
 	if m.Artist != "" {
 		if config.GetSettingsGeneral().UseMediaCache {
 			// Search in main book cache with author filtering
-			for a := range GetCachedThreeStringSeq(logger.CacheDBBook, false, true) {
-				if !strings.EqualFold(a.Str1, m.Title) && !strings.EqualFold(a.Str2, sluggedTitle) {
+			books := GetCachedThreeStringArr(logger.CacheDBBook, false, true)
+			for i := range books {
+				if !strings.EqualFold(books[i].Str1, m.Title) &&
+					!strings.EqualFold(books[i].Str2, sluggedTitle) {
 					continue
 				}
 
@@ -1461,17 +1479,19 @@ func (m *ParseInfo) FindDbbookByTitle() {
 						WHERE id = (SELECT dbauthor_id FROM dbbooks WHERE id = ?)
 						AND name = ? COLLATE NOCASE
 					)`,
-					&authorMatches, &a.Num2, &m.Artist)
+					&authorMatches, &books[i].Num2, &m.Artist)
 
 				if authorMatches {
-					m.DbbookID = a.Num2
+					m.DbbookID = books[i].Num2
 					return
 				}
 			}
 
 			// Search in book titles cache with author filtering
-			for b := range GetCachedTwoStringSeq(logger.CacheTitlesBook, false, true) {
-				if !strings.EqualFold(b.Str1, m.Title) && !strings.EqualFold(b.Str2, sluggedTitle) {
+			bookTitles := GetCachedTwoStringArr(logger.CacheTitlesBook, false, true)
+			for i := range bookTitles {
+				if !strings.EqualFold(bookTitles[i].Str1, m.Title) &&
+					!strings.EqualFold(bookTitles[i].Str2, sluggedTitle) {
 					continue
 				}
 
@@ -1483,10 +1503,10 @@ func (m *ParseInfo) FindDbbookByTitle() {
 						WHERE id = (SELECT dbauthor_id FROM dbbooks WHERE id = ?)
 						AND name = ? COLLATE NOCASE
 					)`,
-					&authorMatches, &b.Num, &m.Artist)
+					&authorMatches, &bookTitles[i].Num, &m.Artist)
 
 				if authorMatches {
-					m.DbbookID = b.Num
+					m.DbbookID = bookTitles[i].Num
 					return
 				}
 			}
@@ -1525,17 +1545,21 @@ func (m *ParseInfo) FindDbbookByTitle() {
 	// Fallback to title-only search if no artist provided
 	if config.GetSettingsGeneral().UseMediaCache {
 		// Search in main book cache
-		for a := range GetCachedThreeStringSeq(logger.CacheDBBook, false, true) {
-			if strings.EqualFold(a.Str1, m.Title) || strings.EqualFold(a.Str2, sluggedTitle) {
-				m.DbbookID = a.Num2
+		arr := GetCachedThreeStringArr(logger.CacheDBBook, false, true)
+		for i := range arr {
+			if strings.EqualFold(arr[i].Str1, m.Title) ||
+				strings.EqualFold(arr[i].Str2, sluggedTitle) {
+				m.DbbookID = arr[i].Num2
 				return
 			}
 		}
 
 		// Search in book titles cache
-		for b := range GetCachedTwoStringSeq(logger.CacheTitlesBook, false, true) {
-			if strings.EqualFold(b.Str1, m.Title) || strings.EqualFold(b.Str2, sluggedTitle) {
-				m.DbbookID = b.Num
+		bookTitles := GetCachedTwoStringArr(logger.CacheTitlesBook, false, true)
+		for i := range bookTitles {
+			if strings.EqualFold(bookTitles[i].Str1, m.Title) ||
+				strings.EqualFold(bookTitles[i].Str2, sluggedTitle) {
+				m.DbbookID = bookTitles[i].Num
 				return
 			}
 		}
@@ -1583,8 +1607,10 @@ func (m *ParseInfo) FindDbaudiobookByTitle() {
 	if m.Artist != "" {
 		if config.GetSettingsGeneral().UseMediaCache {
 			// Search in main audiobook cache with author filtering
-			for a := range GetCachedThreeStringSeq(logger.CacheDBAudiobook, false, true) {
-				if !strings.EqualFold(a.Str1, m.Title) && !strings.EqualFold(a.Str2, sluggedTitle) {
+			audiobooks := GetCachedThreeStringArr(logger.CacheDBAudiobook, false, true)
+			for i := range audiobooks {
+				if !strings.EqualFold(audiobooks[i].Str1, m.Title) &&
+					!strings.EqualFold(audiobooks[i].Str2, sluggedTitle) {
 					continue
 				}
 
@@ -1596,17 +1622,19 @@ func (m *ParseInfo) FindDbaudiobookByTitle() {
 						JOIN dbauthors a ON aa.dbauthor_id = a.id
 						WHERE aa.dbaudiobook_id = ? AND a.name = ? COLLATE NOCASE
 					)`,
-					&authorMatches, &a.Num2, &m.Artist)
+					&authorMatches, &audiobooks[i].Num2, &m.Artist)
 
 				if authorMatches {
-					m.DbaudiobookID = a.Num2
+					m.DbaudiobookID = audiobooks[i].Num2
 					return
 				}
 			}
 
 			// Search in audiobook titles cache with author filtering
-			for b := range GetCachedTwoStringSeq(logger.CacheTitlesAudiobook, false, true) {
-				if !strings.EqualFold(b.Str1, m.Title) && !strings.EqualFold(b.Str2, sluggedTitle) {
+			audiobookTitles := GetCachedTwoStringArr(logger.CacheTitlesAudiobook, false, true)
+			for i := range audiobookTitles {
+				if !strings.EqualFold(audiobookTitles[i].Str1, m.Title) &&
+					!strings.EqualFold(audiobookTitles[i].Str2, sluggedTitle) {
 					continue
 				}
 
@@ -1618,10 +1646,10 @@ func (m *ParseInfo) FindDbaudiobookByTitle() {
 						JOIN dbauthors a ON aa.dbauthor_id = a.id
 						WHERE aa.dbaudiobook_id = ? AND a.name = ? COLLATE NOCASE
 					)`,
-					&authorMatches, &b.Num, &m.Artist)
+					&authorMatches, &audiobookTitles[i].Num, &m.Artist)
 
 				if authorMatches {
-					m.DbaudiobookID = b.Num
+					m.DbaudiobookID = audiobookTitles[i].Num
 					return
 				}
 			}
@@ -1661,17 +1689,21 @@ func (m *ParseInfo) FindDbaudiobookByTitle() {
 	// Fallback to title-only search if no artist provided
 	if config.GetSettingsGeneral().UseMediaCache {
 		// Search in main audiobook cache
-		for a := range GetCachedThreeStringSeq(logger.CacheDBAudiobook, false, true) {
-			if strings.EqualFold(a.Str1, m.Title) || strings.EqualFold(a.Str2, sluggedTitle) {
-				m.DbaudiobookID = a.Num2
+		audiobooks := GetCachedThreeStringArr(logger.CacheDBAudiobook, false, true)
+		for i := range audiobooks {
+			if strings.EqualFold(audiobooks[i].Str1, m.Title) ||
+				strings.EqualFold(audiobooks[i].Str2, sluggedTitle) {
+				m.DbaudiobookID = audiobooks[i].Num2
 				return
 			}
 		}
 
 		// Search in audiobook titles cache
-		for b := range GetCachedTwoStringSeq(logger.CacheTitlesAudiobook, false, true) {
-			if strings.EqualFold(b.Str1, m.Title) || strings.EqualFold(b.Str2, sluggedTitle) {
-				m.DbaudiobookID = b.Num
+		audiobookTitles := GetCachedTwoStringArr(logger.CacheTitlesAudiobook, false, true)
+		for i := range audiobookTitles {
+			if strings.EqualFold(audiobookTitles[i].Str1, m.Title) ||
+				strings.EqualFold(audiobookTitles[i].Str2, sluggedTitle) {
+				m.DbaudiobookID = audiobookTitles[i].Num
 				return
 			}
 		}
@@ -1718,8 +1750,10 @@ func (m *ParseInfo) FindDbalbumByTitle() {
 	if m.Artist != "" {
 		if config.GetSettingsGeneral().UseMediaCache {
 			// Search in main album cache with artist filtering
-			for a := range GetCachedThreeStringSeq(logger.CacheDBAlbum, false, true) {
-				if !strings.EqualFold(a.Str1, m.Title) && !strings.EqualFold(a.Str2, sluggedTitle) {
+			albums := GetCachedThreeStringArr(logger.CacheDBAlbum, false, true)
+			for i := range albums {
+				if !strings.EqualFold(albums[i].Str1, m.Title) &&
+					!strings.EqualFold(albums[i].Str2, sluggedTitle) {
 					continue
 				}
 
@@ -1731,17 +1765,19 @@ func (m *ParseInfo) FindDbalbumByTitle() {
 						JOIN dbartists ar ON aa.dbartist_id = ar.id
 						WHERE aa.dbalbum_id = ? AND (ar.name = ? COLLATE NOCASE OR ar.sort_name = ? COLLATE NOCASE)
 					)`,
-					&artistMatches, &a.Num2, &m.Artist, &m.Artist)
+					&artistMatches, &albums[i].Num2, &m.Artist, &m.Artist)
 
 				if artistMatches {
-					m.DbalbumID = a.Num2
+					m.DbalbumID = albums[i].Num2
 					return
 				}
 			}
 
 			// Search in album titles cache with artist filtering
-			for b := range GetCachedTwoStringSeq(logger.CacheTitlesAlbum, false, true) {
-				if !strings.EqualFold(b.Str1, m.Title) && !strings.EqualFold(b.Str2, sluggedTitle) {
+			albumTitles := GetCachedTwoStringArr(logger.CacheTitlesAlbum, false, true)
+			for i := range albumTitles {
+				if !strings.EqualFold(albumTitles[i].Str1, m.Title) &&
+					!strings.EqualFold(albumTitles[i].Str2, sluggedTitle) {
 					continue
 				}
 
@@ -1753,10 +1789,10 @@ func (m *ParseInfo) FindDbalbumByTitle() {
 						JOIN dbartists ar ON aa.dbartist_id = ar.id
 						WHERE aa.dbalbum_id = ? AND (ar.name = ? COLLATE NOCASE OR ar.sort_name = ? COLLATE NOCASE)
 					)`,
-					&artistMatches, &b.Num, &m.Artist, &m.Artist)
+					&artistMatches, &albumTitles[i].Num, &m.Artist, &m.Artist)
 
 				if artistMatches {
-					m.DbalbumID = b.Num
+					m.DbalbumID = albumTitles[i].Num
 					return
 				}
 			}
@@ -1808,17 +1844,21 @@ func (m *ParseInfo) FindDbalbumByTitle() {
 	// Fallback to title-only search if no artist provided
 	if config.GetSettingsGeneral().UseMediaCache {
 		// Search in main album cache
-		for a := range GetCachedThreeStringSeq(logger.CacheDBAlbum, false, true) {
-			if strings.EqualFold(a.Str1, m.Title) || strings.EqualFold(a.Str2, sluggedTitle) {
-				m.DbalbumID = a.Num2
+		albums := GetCachedThreeStringArr(logger.CacheDBAlbum, false, true)
+		for i := range albums {
+			if strings.EqualFold(albums[i].Str1, m.Title) ||
+				strings.EqualFold(albums[i].Str2, sluggedTitle) {
+				m.DbalbumID = albums[i].Num2
 				return
 			}
 		}
 
 		// Search in album titles cache
-		for b := range GetCachedTwoStringSeq(logger.CacheTitlesAlbum, false, true) {
-			if strings.EqualFold(b.Str1, m.Title) || strings.EqualFold(b.Str2, sluggedTitle) {
-				m.DbalbumID = b.Num
+		albumTitles := GetCachedTwoStringArr(logger.CacheTitlesAlbum, false, true)
+		for i := range albumTitles {
+			if strings.EqualFold(albumTitles[i].Str1, m.Title) ||
+				strings.EqualFold(albumTitles[i].Str2, sluggedTitle) {
+				m.DbalbumID = albumTitles[i].Num
 				return
 			}
 		}
@@ -1908,8 +1948,8 @@ func fixMojibake(s string) string {
 		{"Ã¿", "ÿ"}, // ÿ
 	}
 
-	for _, r := range replacements {
-		s = strings.ReplaceAll(s, r.broken, r.correct)
+	for i := range replacements {
+		s = strings.ReplaceAll(s, replacements[i].broken, replacements[i].correct)
 	}
 
 	return s
@@ -1948,17 +1988,17 @@ func cleanRawNZBTitle(title string) string {
 	}
 
 	upperTitle := strings.ToUpper(title)
-	for _, pattern := range cleanPatterns {
+	for i := range cleanPatterns {
 		// Remove pattern surrounded by spaces, dashes, or at end
-		for _, sep := range []string{" ", "-"} {
+		for j := range titleCleanSeps {
 			// Pattern at end with separator before
-			idx := strings.LastIndex(upperTitle, sep+pattern)
+			idx := strings.LastIndex(upperTitle, titleCleanSeps[j]+cleanPatterns[i])
 			if idx == -1 {
 				continue
 			}
 
 			// Check if it's at the end or followed by separator/end
-			endIdx := idx + len(sep) + len(pattern)
+			endIdx := idx + len(titleCleanSeps[j]) + len(cleanPatterns[i])
 			if endIdx == len(title) ||
 				(endIdx < len(title) && (title[endIdx] == ' ' || title[endIdx] == '-')) {
 				title = title[:idx]
@@ -1983,7 +2023,7 @@ func cleanRawNZBTitle(title string) string {
 	// while the DB stores "58" as the album number). Replace with just the number.
 	if loc := globalCache.setRegexp(`(?i)\bVol(?:ume)?\.?\s*(\d+)\b`, 0).
 		FindStringSubmatchIndex(title); loc != nil {
-		title = title[:loc[0]] + title[loc[2]:loc[3]] + title[loc[1]:]
+		title = logger.JoinStrings(title[:loc[0]], title[loc[2]:loc[3]], title[loc[1]:])
 	}
 
 	// Note: Don't remove scene groups here - they're handled during artist/album splitting
@@ -2019,11 +2059,13 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 
 	artistCache := make(map[string][]resolvedArtist)
 
+	var potentialArtist, potentialAlbum string
+
 	// Try " - " first (standard format: "Artist - Album")
 	if before, after, ok := strings.Cut(rawTitle, " - "); ok {
-		potentialArtist := strings.TrimSpace(before)
+		potentialArtist = strings.TrimSpace(before)
 
-		potentialAlbum := strings.TrimSpace(after)
+		potentialAlbum = strings.TrimSpace(after)
 		if m.tryFindArtistAndAlbum(
 			cachedResolveArtist(artistCache, potentialArtist),
 			&potentialAlbum,
@@ -2034,8 +2076,8 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 
 	// Try "-" without spaces (scene format: "Artist-Album-Quality-Year-Group")
 	if before, after, ok := strings.Cut(rawTitle, "-"); ok {
-		potentialArtist := strings.TrimSpace(before)
-		potentialAlbum := strings.TrimSpace(after)
+		potentialArtist = strings.TrimSpace(before)
+		potentialAlbum = strings.TrimSpace(after)
 		// Replace dots with spaces for scene format
 		potentialArtist = strings.ReplaceAll(potentialArtist, ".", " ")
 		potentialAlbum = strings.ReplaceAll(potentialAlbum, ".", " ")
@@ -2051,9 +2093,9 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 
 	// Try comma separator (some formats use "Artist, Album")
 	if before, after, ok := strings.Cut(rawTitle, ","); ok {
-		potentialArtist := strings.TrimSpace(before)
+		potentialArtist = strings.TrimSpace(before)
 
-		potentialAlbum := strings.TrimSpace(after)
+		potentialAlbum = strings.TrimSpace(after)
 		if m.tryFindArtistAndAlbum(
 			cachedResolveArtist(artistCache, potentialArtist),
 			&potentialAlbum,
@@ -2066,9 +2108,9 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 	words := strings.Fields(rawTitle)
 	if len(words) >= 3 {
 		// Try "FirstName LastName" as artist, rest as album
-		potentialArtist := logger.JoinStrings(words[0], " ", words[1])
+		potentialArtist = logger.JoinStrings(words[0], " ", words[1])
 
-		potentialAlbum := logger.JoinStringsSep(words[2:], " ")
+		potentialAlbum = logger.JoinStringsSep(words[2:], " ")
 		if m.tryFindArtistAndAlbum(
 			cachedResolveArtist(artistCache, potentialArtist),
 			&potentialAlbum,
@@ -2170,8 +2212,8 @@ func splitMultiArtist(artistStr string) (string, []string) {
 
 	// Fast path: skip replacement loop if no separator is present.
 	hasSep := false
-	for _, sep := range multiArtistSeparators {
-		if logger.ContainsI(normalized, sep) {
+	for i := range multiArtistSeparators {
+		if logger.ContainsI(normalized, multiArtistSeparators[i]) {
 			hasSep = true
 			break
 		}
@@ -2189,19 +2231,23 @@ func splitMultiArtist(artistStr string) (string, []string) {
 	// Search case-insensitively (lowerNormalized) but replace in original-case (normalized).
 	// Both strings are kept in sync so lowerNormalized is only computed once.
 	lowerNormalized := strings.ToLower(normalized)
-	for _, sep := range multiArtistSeparators {
+	for i := range multiArtistSeparators {
 		// All separators are already lowercase, so no ToLower(sep) needed.
 		for {
-			idx := strings.Index(lowerNormalized, sep)
+			idx := strings.Index(lowerNormalized, multiArtistSeparators[i])
 			if idx == -1 {
 				break
 			}
 
-			normalized = logger.JoinStrings(normalized[:idx], "|", normalized[idx+len(sep):])
+			normalized = logger.JoinStrings(
+				normalized[:idx],
+				"|",
+				normalized[idx+len(multiArtistSeparators[i]):],
+			)
 			lowerNormalized = logger.JoinStrings(
 				lowerNormalized[:idx],
 				"|",
-				lowerNormalized[idx+len(sep):],
+				lowerNormalized[idx+len(multiArtistSeparators[i]):],
 			)
 		}
 	}
@@ -2230,18 +2276,18 @@ func expandVANames(artists []string) []string {
 	const fullForm = "Various Artists"
 
 	expanded := make([]string, 0, len(artists)*2)
-	for _, a := range artists {
-		expanded = append(expanded, a)
+	for i := range artists {
+		expanded = append(expanded, artists[i])
 
-		trimmed := strings.TrimSpace(a)
-		for _, vf := range vaForms {
-			if strings.EqualFold(trimmed, vf) {
+		trimmed := strings.TrimSpace(artists[i])
+		for j := range vaForms {
+			if strings.EqualFold(trimmed, vaForms[j]) {
 				expanded = append(expanded, fullForm)
 				break
 			}
 		}
 
-		if strings.EqualFold(a, fullForm) {
+		if strings.EqualFold(artists[i], fullForm) {
 			expanded = append(expanded, "VA")
 		}
 	}
@@ -2312,20 +2358,20 @@ func (m *ParseInfo) tryFindArtistAndAlbum(resolved []resolvedArtist, albumTitle 
 				)
 
 				prefixCandidates = append(prefixCandidates, altPrefixCandidates...)
-				for _, cand := range prefixCandidates {
-					if strings.Count(cand.Str, " ") < 1 {
+				for i := range prefixCandidates {
+					if strings.Count(prefixCandidates[i].Str, " ") < 1 {
 						continue
 					}
 
-					cs := logger.StringToSlug(cand.Str)
+					cs := logger.StringToSlug(prefixCandidates[i].Str)
 
-					titleMatch := logger.HasPrefixI(*albumTitle, cand.Str) &&
-						(len(*albumTitle) == len(cand.Str) || (*albumTitle)[len(cand.Str)] == ' ')
+					titleMatch := logger.HasPrefixI(*albumTitle, prefixCandidates[i].Str) &&
+						(len(*albumTitle) == len(prefixCandidates[i].Str) || (*albumTitle)[len(prefixCandidates[i].Str)] == ' ')
 
 					slugMatch := strings.HasPrefix(sluggedAlbum, cs) &&
 						(len(sluggedAlbum) == len(cs) || sluggedAlbum[len(cs)] == '-')
 					if titleMatch || slugMatch {
-						m.DbalbumID = cand.Num
+						m.DbalbumID = prefixCandidates[i].Num
 						m.Artist = resolved[resolveid].name
 						return true
 					}
@@ -2355,18 +2401,18 @@ func (m *ParseInfo) tryFindArtistAndAlbumStripped(
 
 	sluggedAlbum := logger.StringToSlug(*albumTitle)
 
-	for _, ra := range resolved {
-		for artistID := range ra.ids {
+	for i := range resolved {
+		for artistID := range resolved[i].ids {
 			Scanrowsdyn(false,
 				`SELECT a.id FROM dbalbums a
 				 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
 				 AND (a.title = ? COLLATE NOCASE OR a.slug = ?)
 				 LIMIT 1`,
-				&m.DbalbumID, &ra.ids[artistID], albumTitle, &sluggedAlbum)
+				&m.DbalbumID, &resolved[i].ids[artistID], albumTitle, &sluggedAlbum)
 
 			if m.DbalbumID != 0 {
-				m.Artist = ra.name
+				m.Artist = resolved[i].name
 				return true
 			}
 
@@ -2376,10 +2422,10 @@ func (m *ParseInfo) tryFindArtistAndAlbumStripped(
 				 WHERE aa.dbartist_id = ?
 				 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)
 				 LIMIT 1`,
-				&m.DbalbumID, &ra.ids[artistID], albumTitle, &sluggedAlbum)
+				&m.DbalbumID, &resolved[i].ids[artistID], albumTitle, &sluggedAlbum)
 
 			if m.DbalbumID != 0 {
-				m.Artist = ra.name
+				m.Artist = resolved[i].name
 				return true
 			}
 		}
@@ -2414,11 +2460,13 @@ func (m *ParseInfo) FindDbalbumByArtistFirstFromWantedList(listnames []string) {
 
 	artistCache := make(map[string][]resolvedArtist)
 
+	var potentialArtist, potentialAlbum string
+
 	// Try " - " first (standard format: "Artist - Album")
 	if before, after, ok := strings.Cut(rawTitle, " - "); ok {
-		potentialArtist := strings.TrimSpace(before)
+		potentialArtist = strings.TrimSpace(before)
 
-		potentialAlbum := strings.TrimSpace(after)
+		potentialAlbum = strings.TrimSpace(after)
 		if m.tryFindArtistAndAlbumFromWantedList(
 			cachedResolveArtist(artistCache, potentialArtist),
 			&potentialAlbum,
@@ -2430,8 +2478,8 @@ func (m *ParseInfo) FindDbalbumByArtistFirstFromWantedList(listnames []string) {
 
 	// Try "-" without spaces (scene format: "Artist-Album-Quality-Year-Group")
 	if before, after, ok := strings.Cut(rawTitle, "-"); ok {
-		potentialArtist := strings.TrimSpace(before)
-		potentialAlbum := strings.TrimSpace(after)
+		potentialArtist = strings.TrimSpace(before)
+		potentialAlbum = strings.TrimSpace(after)
 
 		potentialArtist = strings.ReplaceAll(potentialArtist, ".", " ")
 		potentialAlbum = strings.ReplaceAll(potentialAlbum, ".", " ")
@@ -2464,11 +2512,11 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 	// Hoist constants out of the triple loop — albumTitle never changes.
 	doPrefixMatch := strings.Count(*albumTitle, " ") >= 2
 
-	for _, ra := range resolved {
+	for i := range resolved {
 		// Try each artist ID until we find an album in the wanted list.
-		// Use index-based range so &ra.ids[k] points into the backing array already
+		// Use index-based range so &resolved[i].ids[k] points into the backing array already
 		// on the heap, avoiding the range-copy variable escaping to heap.
-		for k := range ra.ids {
+		for k := range resolved[i].ids {
 			for j := range listnames {
 				// Try exact match first
 				Scanrowsdyn(false,
@@ -2479,10 +2527,10 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 					 AND a.listname = ? COLLATE NOCASE
 					 AND (db.title = ? COLLATE NOCASE OR db.slug = ?)
 					 LIMIT 1`,
-					&m.DbalbumID, &ra.ids[k], &listnames[j], albumTitle, &sluggedAlbum)
+					&m.DbalbumID, &resolved[i].ids[k], &listnames[j], albumTitle, &sluggedAlbum)
 
 				if m.DbalbumID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					m.AlbumID = m.getAlbumIDByDbalbumAndList(listnames[j])
 					return true
 				}
@@ -2496,10 +2544,10 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 					 AND a.listname = ? COLLATE NOCASE
 					 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)
 					 LIMIT 1`,
-					&m.DbalbumID, &ra.ids[k], &listnames[j], albumTitle, &sluggedAlbum)
+					&m.DbalbumID, &resolved[i].ids[k], &listnames[j], albumTitle, &sluggedAlbum)
 
 				if m.DbalbumID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					m.AlbumID = m.getAlbumIDByDbalbumAndList(listnames[j])
 					return true
 				}
@@ -2515,7 +2563,7 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 						 JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id
 						 JOIN dbalbums db ON db.id = a.dbalbum_id
 						 WHERE aa.dbartist_id = ? AND a.listname = ? COLLATE NOCASE`,
-						&ra.ids[k],
+						&resolved[i].ids[k],
 						&listnames[j],
 					)
 					altPrefixCandidates := Getrowssize[syncops.DbstaticTwoStringOneInt](
@@ -2525,26 +2573,26 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 						 JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id
 						 JOIN dbalbum_titles at ON at.dbalbum_id = a.dbalbum_id
 						 WHERE aa.dbartist_id = ? AND a.listname = ? COLLATE NOCASE`,
-						&ra.ids[k],
+						&resolved[i].ids[k],
 						&listnames[j],
 					)
 
 					prefixCandidates = append(prefixCandidates, altPrefixCandidates...)
-					for _, cand := range prefixCandidates {
-						if !strings.Contains(cand.Str1, " ") {
+					for l := range prefixCandidates {
+						if !strings.Contains(prefixCandidates[l].Str1, " ") {
 							continue // stored title is a single word, skip
 						}
 
-						cl := len(cand.Str1)
+						cl := len(prefixCandidates[l].Str1)
 						titleMatch := len(*albumTitle) >= cl &&
-							strings.EqualFold((*albumTitle)[:cl], cand.Str1) &&
+							strings.EqualFold((*albumTitle)[:cl], prefixCandidates[l].Str1) &&
 							(len(*albumTitle) == cl || (*albumTitle)[cl] == ' ')
 
-						slugMatch := strings.HasPrefix(sluggedAlbum, cand.Str2) &&
-							(len(sluggedAlbum) == len(cand.Str2) || sluggedAlbum[len(cand.Str2)] == '-')
+						slugMatch := strings.HasPrefix(sluggedAlbum, prefixCandidates[l].Str2) &&
+							(len(sluggedAlbum) == len(prefixCandidates[l].Str2) || sluggedAlbum[len(prefixCandidates[l].Str2)] == '-')
 						if titleMatch || slugMatch {
-							m.DbalbumID = cand.Num
-							m.Artist = ra.name
+							m.DbalbumID = prefixCandidates[l].Num
+							m.Artist = resolved[i].name
 							m.AlbumID = m.getAlbumIDByDbalbumAndList(listnames[j])
 							return true
 						}
@@ -2576,8 +2624,8 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedListStripped(
 
 	sluggedAlbum := logger.StringToSlug(*albumTitle)
 
-	for _, ra := range resolved {
-		for raid := range ra.ids {
+	for i := range resolved {
+		for raid := range resolved[i].ids {
 			for j := range listnames {
 				Scanrowsdyn(false,
 					`SELECT a.dbalbum_id FROM albums a
@@ -2587,10 +2635,10 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedListStripped(
 					 AND a.listname = ? COLLATE NOCASE
 					 AND (db.title = ? COLLATE NOCASE OR db.slug = ?)
 					 LIMIT 1`,
-					&m.DbalbumID, ra.ids[raid], &listnames[j], albumTitle, &sluggedAlbum)
+					&m.DbalbumID, &resolved[i].ids[raid], &listnames[j], albumTitle, &sluggedAlbum)
 
 				if m.DbalbumID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					m.AlbumID = m.getAlbumIDByDbalbumAndList(listnames[j])
 					return true
 				}
@@ -2603,13 +2651,13 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedListStripped(
 					 AND a.listname = ? COLLATE NOCASE
 					 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)
 					 LIMIT 1`,
-					&m.DbalbumID, ra.ids[raid], &listnames[j], albumTitle, &sluggedAlbum)
+					&m.DbalbumID, &resolved[i].ids[raid], &listnames[j], albumTitle, &sluggedAlbum)
 
 				if m.DbalbumID == 0 {
 					continue
 				}
 
-				m.Artist = ra.name
+				m.Artist = resolved[i].name
 				m.AlbumID = m.getAlbumIDByDbalbumAndList(listnames[j])
 
 				return true
@@ -2940,11 +2988,12 @@ func (m *ParseInfo) tryFindAuthorAndAudiobookFromWantedList(
 	sluggedTitle := logger.StringToSlug(*bookTitle)
 	doPrefixMatch := strings.Count(*bookTitle, " ") >= 2
 
-	for _, ra := range resolved {
-		for raid := range ra.ids {
+	for i := range resolved {
+		for raid := range resolved[i].ids {
 			for j := range listnames {
 				// Try exact match in wanted list
-				Scanrowsdyn(false,
+				Scanrowsdyn(
+					false,
 					`SELECT a.dbaudiobook_id FROM audiobooks a
 					 JOIN dbaudiobook_authors aa ON a.dbaudiobook_id = aa.dbaudiobook_id
 					 JOIN dbaudiobooks db ON db.id = a.dbaudiobook_id
@@ -2952,10 +3001,15 @@ func (m *ParseInfo) tryFindAuthorAndAudiobookFromWantedList(
 					 AND a.listname = ? COLLATE NOCASE
 					 AND (db.title = ? COLLATE NOCASE OR db.slug = ?)
 					 LIMIT 1`,
-					&m.DbaudiobookID, &ra.ids[raid], &listnames[j], bookTitle, &sluggedTitle)
+					&m.DbaudiobookID,
+					&resolved[i].ids[raid],
+					&listnames[j],
+					bookTitle,
+					&sluggedTitle,
+				)
 
 				if m.DbaudiobookID != 0 {
-					m.Artist = ra.name
+					m.Artist = resolved[i].name
 					m.AudiobookID = m.getAudiobookIDByDbaudiobookAndList(listnames[j])
 					return true
 				}
@@ -2970,24 +3024,24 @@ func (m *ParseInfo) tryFindAuthorAndAudiobookFromWantedList(
 						 JOIN dbaudiobook_authors aa ON a.dbaudiobook_id = aa.dbaudiobook_id
 						 JOIN dbaudiobooks db ON db.id = a.dbaudiobook_id
 						 WHERE aa.dbauthor_id = ? AND a.listname = ? COLLATE NOCASE`,
-						&ra.ids[raid],
+						&resolved[i].ids[raid],
 						&listnames[j],
 					)
-					for _, cand := range prefixCandidates {
-						if !strings.Contains(cand.Str1, " ") {
+					for l := range prefixCandidates {
+						if !strings.Contains(prefixCandidates[l].Str1, " ") {
 							continue
 						}
 
-						cl := len(cand.Str1)
+						cl := len(prefixCandidates[l].Str1)
 						titleMatch := len(*bookTitle) >= cl &&
-							strings.EqualFold((*bookTitle)[:cl], cand.Str1) &&
+							strings.EqualFold((*bookTitle)[:cl], prefixCandidates[l].Str1) &&
 							(len(*bookTitle) == cl || (*bookTitle)[cl] == ' ')
 
-						slugMatch := strings.HasPrefix(sluggedTitle, cand.Str2) &&
-							(len(sluggedTitle) == len(cand.Str2) || sluggedTitle[len(cand.Str2)] == '-')
+						slugMatch := strings.HasPrefix(sluggedTitle, prefixCandidates[l].Str2) &&
+							(len(sluggedTitle) == len(prefixCandidates[l].Str2) || sluggedTitle[len(prefixCandidates[l].Str2)] == '-')
 						if titleMatch || slugMatch {
-							m.DbaudiobookID = cand.Num
-							m.Artist = ra.name
+							m.DbaudiobookID = prefixCandidates[l].Num
+							m.Artist = resolved[i].name
 							m.AudiobookID = m.getAudiobookIDByDbaudiobookAndList(listnames[j])
 							return true
 						}
@@ -3111,9 +3165,10 @@ func (m *ParseInfo) Cleanimdbdbmovie() {
 
 // CacheThreeStringIntIndexFuncGetImdb retrieves the IMDB value from a cached array of DbstaticThreeStringTwoInt objects that match the provided string and uint values. If a matching object is found, the IMDB value is stored in the ParseInfo struct. If no matching object is found, this method does nothing.
 func (m *ParseInfo) CacheThreeStringIntIndexFuncGetImdb() {
-	for a := range GetCachedThreeStringSeq(logger.CacheDBMovie, false, true) {
-		if a.Num2 == m.DbmovieID {
-			m.Imdb = a.Str3
+	movies := GetCachedThreeStringArr(logger.CacheDBMovie, false, true)
+	for i := range movies {
+		if movies[i].Num2 == m.DbmovieID {
+			m.Imdb = movies[i].Str3
 			return
 		}
 	}
@@ -3156,8 +3211,8 @@ func (m *ParseInfo) IsAudioFormatWanted(quality *config.QualityConfig) bool {
 		return false // No format detected, reject
 	}
 
-	for _, wanted := range quality.WantedAudioFormats {
-		if strings.EqualFold(m.AudioFormat, wanted) {
+	for i := range quality.WantedAudioFormats {
+		if strings.EqualFold(m.AudioFormat, quality.WantedAudioFormats[i]) {
 			return true
 		}
 	}
@@ -3173,9 +3228,7 @@ func (m *ParseInfo) IsAudioBitrateAcceptable(quality *config.QualityConfig) bool
 	}
 
 	// For lossless formats, always accept (bitrate varies with content)
-	format := strings.ToLower(m.AudioFormat)
-	switch format {
-	case "flac", "alac", "wav", "aiff", "ape", "wv", "wavpack", "dsd", "dsf":
+	if logger.SlicesContainsI(losslessAudioFormats, m.AudioFormat) {
 		return true
 	}
 
@@ -3210,13 +3263,13 @@ func (m *ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
 // If the matched substring is not empty and is not part of a larger word, the function updates the corresponding field in the ParseInfo struct based on the name parameter. If onlyifempty is true, the function will only update the field if it is currently empty.
 // The function supports the following names: "audio", "codec", "quality", "resolution", "extended", "proper", and "repack".
 func (m *ParseInfo) Parsegroup(name string, onlyifempty bool, group []string) {
-	for _, groupItem := range group {
-		index := logger.IndexI(m.Str, groupItem)
+	for i := range group {
+		index := logger.IndexI(m.Str, group[i])
 		if index == -1 {
 			continue
 		}
 
-		indexmax := index + len(groupItem)
+		indexmax := index + len(group[i])
 
 		if m.Str[index:indexmax] == "" {
 			continue
@@ -3470,8 +3523,7 @@ func looksLikeSceneTag(s string) bool {
 		"DELUXE", "REMASTERED", "LIMITED",
 	}
 
-	upperS := strings.ToUpper(s)
-	if slices.Contains(commonTags, upperS) {
+	if slices.Contains(commonTags, strings.ToUpper(s)) {
 		return true
 	}
 

@@ -1,7 +1,7 @@
 package parser_v2
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // SHA1 is mandated by the MusicBrainz DiscID specification; not used for security
 	"encoding/base64"
 	"fmt"
 	"math"
@@ -40,15 +40,15 @@ func CalculateDiscID(files []string) (string, error) {
 
 	entries := make([]trackEntry, 0, len(files))
 
-	for _, f := range files {
-		info := ReadTagsForFirstFile([]string{f})
+	for i := range files {
+		info := ReadTagsForFirstFile([]string{files[i]})
 		if info == nil || info.Runtime == 0 {
-			return "", fmt.Errorf("could not read duration from %s", f)
+			return "", fmt.Errorf("could not read duration from %s", files[i])
 		}
 
 		sectors := int64(math.Round(info.Runtime.Seconds() * 75))
 		if sectors <= 0 {
-			return "", fmt.Errorf("invalid duration for %s", f)
+			return "", fmt.Errorf("invalid duration for %s", files[i])
 		}
 
 		entries = append(entries, trackEntry{
@@ -88,19 +88,21 @@ func CalculateDiscID(files []string) (string, error) {
 	defer logger.PlAddBuffer.Put(buf)
 
 	buf.WriteHex2(1)
-	buf.WriteHex2(byte(len(entries)))
-	buf.WriteHex8(uint32(leadout))
+	buf.WriteHex2(byte(len(entries))) //nolint:gosec // CD spec: ≤99 tracks, always fits in byte
+	buf.WriteHex8(
+		uint32(leadout),
+	)
 
 	for i := range 99 {
 		if i < len(entries) {
-			buf.WriteHex8(uint32(offsets[i]))
+			buf.WriteHex8(uint32(offsets[i])) //nolint:gosec // CD frame offset fits in uint32
 		} else {
 			buf.WriteString("00000000")
 		}
 	}
 
-	// SHA1 → base64 with MusicBrainz substitutions: + → .   / → _   = → -
-	h := sha1.Sum(buf.Bytes())
+	// SHA1 is required by the MusicBrainz DiscID specification (not used for security).
+	h := sha1.Sum(buf.Bytes()) //nolint:gosec
 	enc := base64.StdEncoding.EncodeToString(h[:])
 
 	enc = discIDBase64Replacer.Replace(enc)

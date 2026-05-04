@@ -1,6 +1,7 @@
 package parser_v2
 
 import (
+	"context"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -255,8 +256,8 @@ func (ap *AudiobookParser) ParseDirectory(dirPath string, files []string) *Audio
 
 	// Parse all files to get part information
 	result.Files = make([]AudiobookFileInfo, 0, len(files))
-	for _, file := range files {
-		fileInfo := ap.parseFileInfo(file)
+	for i := range files {
+		fileInfo := ap.parseFileInfo(files[i])
 
 		result.Files = append(result.Files, fileInfo)
 	}
@@ -446,8 +447,9 @@ func (ap *AudiobookParser) extractAuthorTitle(name string, result *AudiobookPars
 
 // extractASIN extracts the ASIN from a match.
 func (ap *AudiobookParser) extractASIN(match string) string {
-	match = database.GetCachedRegexp(reAudioStripASIN).ReplaceAllString(match, "")
-	return strings.ToUpper(strings.TrimSpace(match))
+	return strings.ToUpper(
+		strings.TrimSpace(database.GetCachedRegexp(reAudioStripASIN).ReplaceAllString(match, "")),
+	)
 }
 
 // calculateConfidence calculates the confidence score.
@@ -547,6 +549,7 @@ func (ap *AudiobookParser) ParseDirectoryWithTags(
 
 // ParseDirectoryWithAnalysis parses an audiobook directory with full media analysis.
 func (ap *AudiobookParser) ParseDirectoryWithAnalysis(
+	ctx context.Context,
 	dirPath string,
 	files []string,
 	analyzer *MediaAnalyzer,
@@ -559,7 +562,7 @@ func (ap *AudiobookParser) ParseDirectoryWithAnalysis(
 
 	// Analyze files for runtime info
 	if analyzer != nil {
-		_ = analyzer.AnalyzeAudiobook(files, result)
+		_ = analyzer.AnalyzeAudiobook(ctx, files, result)
 	}
 
 	return result
@@ -671,8 +674,8 @@ func splitAuthors(s string) []string {
 	parts := strings.Split(s, ",")
 
 	var authors []string
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
+	for i := range parts {
+		p := strings.TrimSpace(parts[i])
 		if p != "" {
 			authors = append(authors, p)
 		}

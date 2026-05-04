@@ -312,9 +312,9 @@ type ChartEntry struct {
 func bestImage(images []lfmImage) string {
 	// Prefer "extralarge" → "large" → "medium" → first available
 	prefer := []string{"extralarge", "large", "medium", "small"}
-	for _, size := range prefer {
+	for j := range prefer {
 		for i := range images {
-			if images[i].Size == size && images[i].URL != "" {
+			if images[i].Size == prefer[j] && images[i].URL != "" {
 				return images[i].URL
 			}
 		}

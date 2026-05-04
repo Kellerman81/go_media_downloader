@@ -359,6 +359,30 @@ func GetAllMetadataProviders() map[string]any {
 		}
 	}
 
+	if acoustidProvider != nil {
+		providers["acoustid"] = acoustidProvider
+	}
+
+	if lastfmProvider != nil {
+		providers["lastfm"] = lastfmProvider
+	}
+
+	if discogsProvider != nil {
+		providers["discogs"] = discogsProvider
+	}
+
+	if deezerProvider != nil {
+		providers["deezer"] = deezerProvider
+	}
+
+	if theaudiodbProvider != nil {
+		providers["theaudiodb"] = theaudiodbProvider
+	}
+
+	if itunesProvider != nil {
+		providers["itunes"] = itunesProvider
+	}
+
 	return providers
 }
 

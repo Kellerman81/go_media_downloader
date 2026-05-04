@@ -95,7 +95,12 @@ func apiSeriesGet(ctx *gin.Context) {
 	rows := database.Getdatarow[uint](false, "select count() from dbseries")
 	data := database.QueryDbserie(query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Series
@@ -152,7 +157,12 @@ func apiSeriesListGet(ctx *gin.Context) {
 	)
 	data := database.QueryResultSeries(query, listName)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Series (List)
@@ -195,7 +205,12 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 	rows := database.Getdatarow[uint](false, "select count() from serie_file_unmatcheds")
 	data := database.QuerySerieFileUnmatched(query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      List Series Episodes
@@ -215,7 +230,12 @@ func apiSeriesEpisodesGet(ctx *gin.Context) {
 	rows := database.Getdatarow[uint](false, "select count() from dbserie_episodes")
 	data := database.QueryDbserieEpisodes(query)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      List Series Episodes (Single)
@@ -241,7 +261,12 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	rows := database.Getdatarow[uint](false, "select count() from series where dbserie_id = ?", &id)
 	data := database.QueryDbserieEpisodes(query, id)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Episode
@@ -296,7 +321,12 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 	)
 	data := database.QueryResultSerieEpisodes(query, id)
 
-	sendJSONResponse(ctx, http.StatusOK, data, int(rows))
+	sendJSONResponse(
+		ctx,
+		http.StatusOK,
+		data,
+		int(rows),
+	)
 }
 
 // @Summary      Delete Episode (List)
@@ -1092,7 +1122,9 @@ func apiSeriesSearch(c *gin.Context) {
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch(
-					"searchseries_series_"+media.Name+"_"+strconv.Itoa(int(serie.ID)),
+					"searchseries_series_"+media.Name+"_"+strconv.Itoa(
+						int(serie.ID),
+					),
 					func(_ uint32, ctx context.Context) error {
 						episodes := database.GetrowsN[uint](
 							false,
@@ -1178,7 +1210,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch(
 					"searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(
-						int(serie.ID),
+						int(serie.ID), //nolint:gosec // safe: value within target type range
 					)+"_"+c.Param(
 						"season",
 					),
@@ -1271,7 +1303,7 @@ func apiSeriesSearchRSS(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch(
 					"searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(
-						int(serie.ID),
+						int(serie.ID), //nolint:gosec // safe: value within target type range
 					)+"_"+c.Param(
 						"season",
 					),
@@ -1372,7 +1404,7 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				worker.Dispatch(
 					"searchseriesseason_series_"+media.Name+"_"+strconv.Itoa(
-						int(serie.ID),
+						int(serie.ID), //nolint:gosec // safe: value within target type range
 					)+"_"+c.Param(
 						"season",
 					),
@@ -1411,7 +1443,7 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 // @Router       /api/series/episodes/search/id/{id} [get].
 func apiSeriesEpisodeSearch(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param(logger.StrID))
-	uid := uint(id)
+	uid := uint(id) //nolint:gosec // safe: value within target type range
 	dbid := c.Param(logger.StrID)
 	serieid := database.Getdatarow[uint](false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)

@@ -294,8 +294,8 @@ func (s *MovieScraper) scrapePage(ctx context.Context, apiURL string) ([]MovieDa
 	}
 
 	var movies []MovieData
-	for _, result := range results {
-		movie := s.extractMovieData(result)
+	for i := range results {
+		movie := s.extractMovieData(results[i])
 		if movie.Title != "" {
 			movies = append(movies, movie)
 		}
@@ -312,8 +312,8 @@ func (s *MovieScraper) extractResultsArray(
 	if !strings.Contains(s.config.ResultsArrayPath, ".") {
 		if arr, ok := data[s.config.ResultsArrayPath].([]any); ok {
 			results := make([]map[string]any, 0, len(arr))
-			for _, item := range arr {
-				if m, ok := item.(map[string]any); ok {
+			for i := range arr {
+				if m, ok := arr[i].(map[string]any); ok {
 					results = append(results, m)
 				}
 			}
@@ -340,8 +340,8 @@ func (s *MovieScraper) extractResultsArray(
 
 	if arr, ok := current.([]any); ok {
 		results := make([]map[string]any, 0, len(arr))
-		for _, item := range arr {
-			if m, ok := item.(map[string]any); ok {
+		for i := range arr {
+			if m, ok := arr[i].(map[string]any); ok {
 				results = append(results, m)
 			}
 		}
@@ -414,8 +414,8 @@ func (s *MovieScraper) extractMovieData(data map[string]any) MovieData {
 				movie.Genre = v
 			case []any:
 				var genres []string
-				for _, g := range v {
-					if gs, ok := g.(string); ok {
+				for i := range v {
+					if gs, ok := v[i].(string); ok {
 						genres = append(genres, gs)
 					}
 				}

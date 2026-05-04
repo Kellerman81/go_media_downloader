@@ -164,7 +164,7 @@ func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
 	}
 
-	s.dbserieID = uint(lastID)
+	s.dbserieID = uint(lastID) //nolint:gosec // safe: value within target type range
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("site", s.config.SiteName).
 		Str("series", s.config.SerieName).
@@ -340,8 +340,8 @@ func (s *Scraper) extractActors(obj map[string]any) string {
 	}
 
 	var names []string
-	for _, actorRaw := range actors {
-		actor, ok := actorRaw.(map[string]any)
+	for i := range actors {
+		actor, ok := actors[i].(map[string]any)
 		if !ok {
 			continue
 		}
@@ -533,8 +533,8 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			Msg("Processing results")
 
 		processedInPage := false
-		for _, resultRaw := range results {
-			result, ok := resultRaw.(map[string]any)
+		for i := range results {
+			result, ok := results[i].(map[string]any)
 			if !ok {
 				continue
 			}

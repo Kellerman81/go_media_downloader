@@ -253,8 +253,8 @@ func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 	}
 
 	s.mu.Lock()
-	for _, key := range toDelete {
-		s.delete(key)
+	for i := range toDelete {
+		s.delete(toDelete[i])
 	}
 
 	s.mu.Unlock()
@@ -280,8 +280,8 @@ func (s *SyncMap[T]) DeleteFuncExpires(fn func(int64) bool) {
 	}
 
 	s.mu.Lock()
-	for _, key := range toDelete {
-		s.delete(key)
+	for i := range toDelete {
+		s.delete(toDelete[i])
 	}
 
 	s.mu.Unlock()
@@ -456,8 +456,8 @@ func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 	}
 
 	s.mu.Lock()
-	for _, key := range toDelete {
-		delete(s.m, key)
+	for i := range toDelete {
+		delete(s.m, toDelete[i])
 	}
 
 	s.mu.Unlock()
@@ -560,9 +560,9 @@ func AtomicRemoveFromStringSlice(sm *SyncMap[[]string], key, value string) {
 	}
 
 	newSlice := make([]string, 0, len(current))
-	for _, item := range current {
-		if item != value {
-			newSlice = append(newSlice, item)
+	for i := range current {
+		if current[i] != value {
+			newSlice = append(newSlice, current[i])
 		}
 	}
 

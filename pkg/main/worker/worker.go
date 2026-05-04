@@ -209,10 +209,12 @@ func GetStats() Stats {
 //   - RunningWorkers shows current resource utilization
 func GetWorkerStats(w pond.Pool) StatsDetail {
 	return StatsDetail{
-		CompletedTasks:  w.CompletedTasks(),
-		FailedTasks:     w.FailedTasks(),
-		DroppedTasks:    w.DroppedTasks(),
-		RunningWorkers:  uint64(w.RunningWorkers()),
+		CompletedTasks: w.CompletedTasks(),
+		FailedTasks:    w.FailedTasks(),
+		DroppedTasks:   w.DroppedTasks(),
+		RunningWorkers: uint64(
+			w.RunningWorkers(),
+		),
 		SubmittedTasks:  w.SubmittedTasks(),
 		SuccessfulTasks: w.SuccessfulTasks(),
 		WaitingTasks:    w.WaitingTasks(),
@@ -816,7 +818,9 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 	updateLastAdded(queue)
 
 	id := newUUID()
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in Job.CancelFunc
+	ctx, cancel := context.WithCancel(
+		context.Background(),
+	)
 
 	logger.Logtype("debug", 0).
 		Str("job_name", name).
@@ -1068,9 +1072,9 @@ func CloseWorkerPools() {
 		WorkerPoolParse,
 	}
 
-	for _, pool := range pools {
-		if pool != nil {
-			pool.Stop()
+	for i := range pools {
+		if pools[i] != nil {
+			pools[i].Stop()
 		}
 	}
 
@@ -1273,8 +1277,8 @@ func checkQueueStarted(jobname string, checkalternatives bool, prefix string, su
 	}
 
 	// Check each alternative name with O(1) lookups instead of O(n) iteration
-	for _, alt := range alternatives {
-		altName := alt + suffix
+	for i := range alternatives {
+		altName := alternatives[i] + suffix
 		if jobNameIndex.Check(altName) {
 			return true
 		}

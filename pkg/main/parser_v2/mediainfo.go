@@ -1,6 +1,7 @@
 package parser_v2
 
 import (
+	"context"
 	"errors"
 	"math"
 	"os/exec"
@@ -207,7 +208,7 @@ func defaultMediainfoPath() string {
 }
 
 // Analyze extracts technical metadata from a media file.
-func (ma *MediaAnalyzer) Analyze(filePath string) (*MediaInfo, error) {
+func (ma *MediaAnalyzer) Analyze(ctx context.Context, filePath string) (*MediaInfo, error) {
 	if filePath == "" {
 		return nil, errors.New("file path is empty")
 	}
@@ -218,33 +219,37 @@ func (ma *MediaAnalyzer) Analyze(filePath string) (*MediaInfo, error) {
 	)
 
 	if ma.useMediainfo {
-		info, err = ma.analyzeWithMediainfo(filePath)
+		info, err = ma.analyzeWithMediainfo(ctx, filePath)
 		if err == nil {
 			return info, nil
 		}
 
 		if ma.useFallback {
-			return ma.analyzeWithFFprobe(filePath)
+			return ma.analyzeWithFFprobe(ctx, filePath)
 		}
 
 		return nil, err
 	}
 
-	info, err = ma.analyzeWithFFprobe(filePath)
+	info, err = ma.analyzeWithFFprobe(ctx, filePath)
 	if err == nil {
 		return info, nil
 	}
 
 	if ma.useFallback {
-		return ma.analyzeWithMediainfo(filePath)
+		return ma.analyzeWithMediainfo(ctx, filePath)
 	}
 
 	return nil, err
 }
 
 // AnalyzeVideo analyzes a video file and updates the VideoParseResult with technical info.
-func (ma *MediaAnalyzer) AnalyzeVideo(filePath string, result *VideoParseResult) error {
-	info, err := ma.Analyze(filePath)
+func (ma *MediaAnalyzer) AnalyzeVideo(
+	ctx context.Context,
+	filePath string,
+	result *VideoParseResult,
+) error {
+	info, err := ma.Analyze(ctx, filePath)
 	if err != nil {
 		return err
 	}
@@ -281,11 +286,15 @@ func (ma *MediaAnalyzer) AnalyzeVideo(filePath string, result *VideoParseResult)
 }
 
 // AnalyzeAudiobook analyzes audiobook files and updates the result with runtime info.
-func (ma *MediaAnalyzer) AnalyzeAudiobook(files []string, result *AudiobookParseResult) error {
+func (ma *MediaAnalyzer) AnalyzeAudiobook(
+	ctx context.Context,
+	files []string,
+	result *AudiobookParseResult,
+) error {
 	var totalRuntime int64
 
 	for i, filePath := range files {
-		info, err := ma.Analyze(filePath)
+		info, err := ma.Analyze(ctx, filePath)
 		if err != nil {
 			continue
 		}
@@ -314,11 +323,15 @@ func (ma *MediaAnalyzer) AnalyzeAudiobook(files []string, result *AudiobookParse
 }
 
 // AnalyzeMusic analyzes music files and updates the result with technical info.
-func (ma *MediaAnalyzer) AnalyzeMusic(files []string, result *MusicParseResult) error {
+func (ma *MediaAnalyzer) AnalyzeMusic(
+	ctx context.Context,
+	files []string,
+	result *MusicParseResult,
+) error {
 	var totalRuntime int64
 
 	for i, filePath := range files {
-		info, err := ma.Analyze(filePath)
+		info, err := ma.Analyze(ctx, filePath)
 		if err != nil {
 			continue
 		}
@@ -353,8 +366,8 @@ func (ma *MediaAnalyzer) AnalyzeMusic(files []string, result *MusicParseResult) 
 }
 
 // GetAudioRuntime returns the duration of an audio file in milliseconds.
-func (ma *MediaAnalyzer) GetAudioRuntime(filePath string) (int64, error) {
-	info, err := ma.Analyze(filePath)
+func (ma *MediaAnalyzer) GetAudioRuntime(ctx context.Context, filePath string) (int64, error) {
+	info, err := ma.Analyze(ctx, filePath)
 	if err != nil {
 		return 0, err
 	}
@@ -363,8 +376,12 @@ func (ma *MediaAnalyzer) GetAudioRuntime(filePath string) (int64, error) {
 }
 
 // analyzeWithFFprobe uses ffprobe to analyze the file.
-func (ma *MediaAnalyzer) analyzeWithFFprobe(filePath string) (*MediaInfo, error) {
-	cmd := exec.Command(
+func (ma *MediaAnalyzer) analyzeWithFFprobe(
+	ctx context.Context,
+	filePath string,
+) (*MediaInfo, error) {
+	cmd := exec.CommandContext(
+		ctx,
 		ma.ffprobePath,
 		"-loglevel",
 		"fatal",
@@ -393,8 +410,15 @@ func (ma *MediaAnalyzer) analyzeWithFFprobe(filePath string) (*MediaInfo, error)
 }
 
 // analyzeWithMediainfo uses mediainfo to analyze the file.
-func (ma *MediaAnalyzer) analyzeWithMediainfo(filePath string) (*MediaInfo, error) {
-	cmd := exec.Command(ma.mediainfoPath, "--Output=JSON", filePath)
+func (ma *MediaAnalyzer) analyzeWithMediainfo(
+	ctx context.Context,
+	filePath string,
+) (*MediaInfo, error) {
+	cmd := exec.CommandContext(ctx,
+		ma.mediainfoPath,
+		"--Output=JSON",
+		filePath,
+	)
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -441,8 +465,8 @@ func (ma *MediaAnalyzer) parseFFprobeResult(ffprobe *ffProbeJSON) *MediaInfo {
 	for i := range ffprobe.Streams {
 		stream := &ffprobe.Streams[i]
 
-		switch strings.ToLower(stream.CodecType) {
-		case "video":
+		switch {
+		case strings.EqualFold(stream.CodecType, "video"):
 			if info.Video != nil {
 				break
 			}
@@ -471,7 +495,7 @@ func (ma *MediaAnalyzer) parseFFprobeResult(ffprobe *ffProbeJSON) *MediaInfo {
 			// Detect HDR
 			info.Video.HDRType = ma.detectHDR(stream)
 
-		case "audio":
+		case strings.EqualFold(stream.CodecType, "audio"):
 			audio := AudioStreamInfo{
 				Codec:     stream.CodecName,
 				Language:  stream.Tags.Language,
@@ -604,16 +628,15 @@ func (ma *MediaAnalyzer) parseMediainfoResult(mediainfo *mediaInfoJSON) *MediaIn
 // detectHDR determines the HDR type from ffprobe stream info.
 func (ma *MediaAnalyzer) detectHDR(stream *ffProbeStream) string {
 	// Check color transfer characteristics
-	switch strings.ToLower(stream.ColorTransfer) {
-	case "smpte2084":
-		// Could be HDR10 or Dolby Vision
+	switch {
+	case strings.EqualFold(stream.ColorTransfer, "smpte2084"):
 		return "HDR10"
-	case "arib-std-b67":
+	case strings.EqualFold(stream.ColorTransfer, "arib-std-b67"):
 		return "HLG"
 	}
 
 	// Check color primaries for BT.2020
-	if strings.ToLower(stream.ColorPrimaries) == "bt2020" {
+	if strings.EqualFold(stream.ColorPrimaries, "bt2020") {
 		return "HDR"
 	}
 
@@ -665,6 +688,6 @@ func parseFrameRate(s string) float64 {
 var DefaultMediaAnalyzer = NewMediaAnalyzer()
 
 // Analyze uses the default analyzer to extract metadata.
-func Analyze(filePath string) (*MediaInfo, error) {
-	return DefaultMediaAnalyzer.Analyze(filePath)
+func Analyze(ctx context.Context, filePath string) (*MediaInfo, error) {
+	return DefaultMediaAnalyzer.Analyze(ctx, filePath)
 }

@@ -54,22 +54,45 @@ Inspirations: Radarr/Sonarr and Flexget
 ### Supported
 #### Feed Sources
 
-- IMDB Public List (Movies) - CSV Only!
+- IMDB Public List (Movies) - CSV via URL (`imdbcsv`) or local file (`imdbfile`)
 - Trakt Public+Private List (Movies + Shows)
 - Trakt Popular (Movies, Shows)
 - Trakt Trending (Movies, Shows)
 - Trakt Anticipated (Movies, Shows)
-- local wanted file (Shows)
-- TMDB Lists (Movies)
-- TMDB Discover (Movies)
+- TMDB Lists (Movies + Shows)
+- TMDB Discover (Movies + Shows)
+- TMDB Popular (Movies + Shows)
+- TMDB Trending (Movies + Shows)
+- TMDB Upcoming (Movies)
+- Newznab RSS feed (Movies + Shows)
+- Plex Watchlist (Movies + Shows)
+- Jellyfin Watchlist (Movies + Shows)
+- Movie Web Scraper - HTML/XPath or CSRF API (`moviescraper`)
+- local TOML config file (Shows, Audiobooks, Books, Music)
+- Music Charts scraper - offiziellecharts.de, officialcharts.com, or any HTML chart page (`musiccharts`)
+- Last.fm Top Artists (`lastfmtopartists`)
+- Book Bestsellers scraper - Thalia, Spiegel, or any HTML bestseller page (`bookbestsellers`)
 
 #### External Meta Sources
 
 - IMDB (mostly Movies)
-- TMDB (Movies)
+- TMDB (Movies + Shows)
 - OMDB (Movies)
 - TRAKT (Movies + Shows)
 - TVDB (Shows)
+- TVmaze (Shows)
+- Audnex (Audiobooks)
+- Audible (Audiobooks, per region)
+- OpenLibrary (Books)
+- Goodreads (Books)
+- MusicBrainz (Music)
+- AcoustID (Music fingerprinting)
+- Last.fm (Music)
+- Discogs (Music)
+- Deezer (Music)
+- TheAudioDB (Music)
+- iTunes (Music)
+
 #### Indexers
 
 - Newznab
@@ -105,8 +128,8 @@ Inspirations: Radarr/Sonarr and Flexget
 - Configure which Meta Sources to use
 - Configure your Qualities and their priorities (use parse/quality api to test this) including wanted and Defaults
 - Use FProbe or mediainfo to get Media Information (dimensions, runtime, audio language)
-- Currently completly API and Scheduler controlled - basic webinterface which needs to be replace is included
-- Webinterface V2 in Development and can be accessed by /api/admin - Username admin - Password is the WebApiKey   -  BUT: It is in Development Backup Config and Database before using - it could break
+- Currently completly API and Scheduler controlled
+- Webinterface V2 can be accessed by /api/admin - Username admin - Password is the WebApiKey   -  BUT: It is in Development Backup Config and Database before using - it could break
 
 ### Under Consideration
 
@@ -114,13 +137,12 @@ Inspirations: Radarr/Sonarr and Flexget
 - Downloading of images from Meta Sites (unlikely)
 - Handle multi media releases (ex. -CD1 -CD2) (maybe even joining those) (at the bottom of the list)
 - Maybe also add the ability to download non matched episodes (which could't be found on a meta source site - risky since you might get a lot unwanted stuff) (at the bottom of the list) - using the download API you can Download excluded releases
-- Unpacking of Downloaded stuff? Currently I let the downloaders do that and don't care about it that much - but added a first version anyway
-- Other Media Type Support (i could think of music but don't want to include this currently)
+- Other Media Type Support 
 - Switch to db only configuration if I include a full webinterface
 - Other Feed Sources (currently i don't need more - start a discussion if you want one specific - also you can add stuff using the API)
 - Other Indexer Sources (currently i don't need more - start a discussion if you want one specific)
 - Other Downloaders (currently i don't need more - start a discussion if you want one specific - ex qBittorrent)
-- Other Notifications (currently i don't need more - start a discussion if you want one specific) - added a few
+- Other Notifications (currently i don't need more - start a discussion if you want one specific) - added a few generic ones
 - Always: Add Additional Logging (currently mostly debugging stuff)
 - Always: API Changes
 
@@ -200,15 +222,47 @@ https://go-media-downloader.readme.io/
 - V0.1.1: Performance and Ram Usage Changes - rewrite a lot of functions
 - v0.2.3: Added Tmdb List retrieve + tmdbdiscover
 - v0.2.7: Added new Webinterface /api/admin - username is admin and password is the WebApiKey
+- v0.3.0: Added Music and Audiobook support
 
 ## References
 
 This Program uses the following API's (if wanted and if you register your own API key)
-- [Omdb](https://www.omdbapi.com/)
+
+Movies / Shows
+- [IMDB](https://www.imdb.com/)
+- [OMDB](https://www.omdbapi.com/)
 - [TheMovieDB](https://www.themoviedb.org/)
 - [Trakt.tv](https://www.trakt.tv/)
 - [TheTVDB](https://thetvdb.com/)
-- [pushover.net](https://www.pushover.net)
+- [TVmaze](https://www.tvmaze.com/)
+- [Plex](https://www.plex.tv/)
+- [Jellyfin](https://jellyfin.org/)
+
+Music
+- [MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API)
+- [AcoustID](https://acoustid.org/webservice)
+- [Last.fm](https://www.last.fm/api)
+- [Discogs](https://www.discogs.com/developers)
+- [Deezer](https://developers.deezer.com/api)
+- [TheAudioDB](https://www.theaudiodb.com/api.php)
+- [iTunes](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI)
+- [Spotify](https://developer.spotify.com/documentation/web-api)
+- [Lyrics.ovh](https://lyrics.ovh/)
+- [LRCLib](https://lrclib.net/)
+
+Audiobooks
+- [Audnex](https://api.audnex.us/)
+- [Audible](https://www.audible.com/)
+
+Books
+- [OpenLibrary](https://openlibrary.org/)
+- [Goodreads](https://www.goodreads.com/)
+
+Notifications
+- [Pushover](https://www.pushover.net/)
+- [Pushbullet](https://www.pushbullet.com/)
+- [Gotify](https://gotify.net/)
+- [Apprise](https://github.com/caronc/apprise)
 
 For a list of the used Go Modules please look into the go.mod File in pkg/main and pkg/imdb
 

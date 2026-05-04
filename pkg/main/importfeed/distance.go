@@ -242,12 +242,12 @@ func (d *beetsDistance) rawDistance() float64 {
 }
 
 func (d *beetsDistance) maxDistance() float64 {
-	var max float64
+	var total float64
 	for key, e := range d.penalties {
-		max += float64(e.count) * d.weight(key)
+		total += float64(e.count) * d.weight(key)
 	}
 
-	return max
+	return total
 }
 
 func (d *beetsDistance) distance() float64 {
@@ -362,22 +362,22 @@ func stringDist(str1, str2 string) float64 {
 	baseDist := stringDistBasic(str1, str2)
 
 	penalty := 0.0
-	for _, pat := range sdPatterns {
-		match1 := pat.re.MatchString(str1)
+	for i := range sdPatterns {
+		match1 := sdPatterns[i].re.MatchString(str1)
 
-		match2 := pat.re.MatchString(str2)
+		match2 := sdPatterns[i].re.MatchString(str2)
 		if !match1 && !match2 {
 			continue
 		}
 
 		case1 := str1
 		if match1 {
-			case1 = pat.re.ReplaceAllString(str1, "")
+			case1 = sdPatterns[i].re.ReplaceAllString(str1, "")
 		}
 
 		case2 := str2
 		if match2 {
-			case2 = pat.re.ReplaceAllString(str2, "")
+			case2 = sdPatterns[i].re.ReplaceAllString(str2, "")
 		}
 
 		caseDist := stringDistBasic(case1, case2)
@@ -390,7 +390,7 @@ func stringDist(str1, str2 string) float64 {
 		str1, str2 = case1, case2
 		baseDist = caseDist
 
-		penalty += pat.weight * caseDelta
+		penalty += sdPatterns[i].weight * caseDelta
 	}
 
 	return baseDist + penalty
@@ -850,8 +850,8 @@ func DetectVA(artist string, tracks []parser_v2.TrackInfo) bool {
 
 	if len(counts) >= 3 {
 		// One artist holding > 60 % of tracks → not a VA release.
-		for _, c := range counts {
-			if float64(c)/float64(len(tracks)) > 0.6 {
+		for i := range counts {
+			if float64(counts[i])/float64(len(tracks)) > 0.6 {
 				return false
 			}
 		}
@@ -929,15 +929,11 @@ func albumMatchDistance(
 		}
 	}
 
-	// Label (weight 0.5) — temporarily disabled.
-	// if label != "" && c.Label != "" {
-	// 	dist.addString("label", c.Label, label)
-	// }
+	// Label (weight 0.5) — temporarily disabled; keep parameter for future re-enablement.
+	_ = label
 
-	// Country (weight 0.5) — temporarily disabled.
-	// if country != "" && c.Country != "" {
-	// 	dist.addString("country", c.Country, country)
-	// }
+	// Country (weight 0.5) — temporarily disabled; keep parameter for future re-enablement.
+	_ = country
 
 	allowMissing := data != nil && data.AllowMissingTracks
 

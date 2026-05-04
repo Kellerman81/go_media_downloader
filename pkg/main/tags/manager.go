@@ -1,6 +1,7 @@
 package tags
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -108,7 +109,7 @@ func (m *Manager) ReadTags(path string) (*AudioTags, error) {
 
 // WriteTags writes metadata tags to an audio file.
 // The appropriate handler is selected based on the file extension.
-func (m *Manager) WriteTags(path string, tags *AudioTags) error {
+func (m *Manager) WriteTags(ctx context.Context, path string, tags *AudioTags) error {
 	ext := strings.ToLower(filepath.Ext(path))
 
 	m.mu.RLock()
@@ -120,14 +121,14 @@ func (m *Manager) WriteTags(path string, tags *AudioTags) error {
 		return &ErrUnsupportedFormat{Format: ext}
 	}
 
-	return handler.WriteTags(path, tags)
+	return handler.WriteTags(ctx, path, tags)
 }
 
 // CopyTags copies tags from a source file to a destination file.
 // Both files must be in supported formats (can be different formats).
 // Cover art is preserved: if the source handler implements CoverTagReader,
 // ReadTagsWithCover is used; otherwise ReadTags is used as fallback.
-func (m *Manager) CopyTags(srcPath, dstPath string) error {
+func (m *Manager) CopyTags(ctx context.Context, srcPath, dstPath string) error {
 	ext := strings.ToLower(filepath.Ext(srcPath))
 
 	m.mu.RLock()
@@ -154,7 +155,7 @@ func (m *Manager) CopyTags(srcPath, dstPath string) error {
 		return err
 	}
 
-	return m.WriteTags(dstPath, t)
+	return m.WriteTags(ctx, dstPath, t)
 }
 
 // MergeTags merges source tags into destination tags.
@@ -287,8 +288,8 @@ func ReadTags(path string) (*AudioTags, error) {
 }
 
 // WriteTags is a convenience function that uses the default manager.
-func WriteTags(path string, tags *AudioTags) error {
-	return DefaultManager.WriteTags(path, tags)
+func WriteTags(ctx context.Context, path string, tags *AudioTags) error {
+	return DefaultManager.WriteTags(ctx, path, tags)
 }
 
 // IsSupported is a convenience function that uses the default manager.

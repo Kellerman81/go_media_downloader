@@ -286,14 +286,14 @@ func structureFolderRecursive(
 	}
 
 	// Otherwise recurse into subdirectories
-	for _, subDir := range subDirs {
+	for i := range subDirs {
 		if ctx.Err() != nil {
 			return
 		}
 
 		structureFolderRecursive(
 			ctx,
-			subDir,
+			subDirs[i],
 			cfgp,
 			dataimport,
 			defaulttemplate,

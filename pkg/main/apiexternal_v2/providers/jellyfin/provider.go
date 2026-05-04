@@ -91,25 +91,25 @@ func (p *Provider) GetWatchlist(
 	}
 
 	items := make([]apiexternal_v2.WatchlistItem, 0, len(response.Items))
-	for _, item := range response.Items {
+	for i := range response.Items {
 		itemType := "movie"
-		if item.Type == "Series" {
+		if response.Items[i].Type == "Series" {
 			itemType = "tv"
 		}
 
 		watchlistItem := apiexternal_v2.WatchlistItem{
 			Type:         itemType,
-			Title:        item.Name,
-			Year:         item.ProductionYear,
+			Title:        response.Items[i].Name,
+			Year:         response.Items[i].ProductionYear,
 			ProviderName: "jellyfin",
 		}
 
 		// Extract IMDb and TVDB IDs from ProviderIds
-		if imdbID, ok := item.ProviderIds["Imdb"]; ok {
+		if imdbID, ok := response.Items[i].ProviderIds["Imdb"]; ok {
 			watchlistItem.IMDbID = imdbID
 		}
 
-		if tvdbIDStr, ok := item.ProviderIds["Tvdb"]; ok {
+		if tvdbIDStr, ok := response.Items[i].ProviderIds["Tvdb"]; ok {
 			if tvdbID, err := strconv.Atoi(tvdbIDStr); err == nil {
 				watchlistItem.TVDbID = tvdbID
 			}
