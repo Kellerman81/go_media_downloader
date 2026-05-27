@@ -82,6 +82,57 @@ func TestTimeAfter(t *testing.T) {
 	}
 }
 
+func TestLastIndexI(t *testing.T) {
+	tests := []struct {
+		name     string
+		a        string
+		b        string
+		expected int
+	}{
+		// Basic exact matches (fast path via strings.LastIndex)
+		{"empty both", "", "", 0},
+		{"empty needle", "hello", "", 5},
+		{"needle longer than haystack", "hi", "hello", -1},
+		{"exact match only occurrence", "hello", "hello", 0},
+		{"exact match at start", "foobar", "foo", 0},
+		{"exact match at end", "foobar", "bar", 3},
+		{"exact match multiple occurrences", "abcabc", "abc", 3},
+		{"no match", "hello", "xyz", -1},
+
+		// Case-insensitive: haystack upper, needle lower
+		{"upper haystack lower needle", "FLAC", "flac", 0},
+		{"upper in middle", "title FLAC end", "flac", 6},
+		{"last of two upper", "FLAC stuff FLAC", "flac", 11},
+
+		// Case-insensitive: haystack lower, needle upper
+		{"lower haystack upper needle", "flac", "FLAC", 0},
+		{"lower haystack upper needle mid", "title flac end", "FLAC", 6},
+
+		// Case-insensitive: mixed case both
+		{"mixed case match", "Title Flac", "fLaC", 6},
+		{"mixed last occurrence", "Flac stuff flac", "FLAC", 11},
+
+		// Separator + pattern (the cleanRawNZBTitle use-case)
+		{" +pattern at end", "Some Album FLAC", " FLAC", 10},
+		{"- +pattern at end", "Some Album-FLAC", "-FLAC", 10},
+		{" +pattern not at end", "FLAC in middle", " FLAC", -1},
+		{"last sep+pattern", "A FLAC B FLAC", " FLAC", 8},
+
+		// No match cases
+		{"partial overlap no match", "FLA", "FLAC", -1},
+		{"different content", "hello world", "FLAC", -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := LastIndexI(tt.a, tt.b)
+			if result != tt.expected {
+				t.Errorf("LastIndexI(%q, %q) = %d, expected %d", tt.a, tt.b, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestCheckContextEnded(t *testing.T) {
 	tests := []struct {
 		name        string

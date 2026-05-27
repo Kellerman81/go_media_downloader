@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,6 +117,12 @@ var (
 
 	// "(01) Chapter Title.mp3" - common audiobook format.
 	audiobookPatternParenNum = regexp.MustCompile(`(?i)^\((\d+)\)\s*(.+?)\.(\w+)$`)
+
+	// losslessFormats lists all lossless audio format names (lowercase, without dot).
+	losslessFormats = []string{"flac", "alac", "wav", "aiff", "ape", "wv", "wavpack", "dsd", "dsf"}
+
+	// musicParserInstance is a singleton MusicParser for folder name parsing.
+	musicParserInstance *MusicParser
 )
 
 // WalkFiles walks a directory and returns all files matching the given extensions.
@@ -185,9 +190,6 @@ func HasExtension(filename string, extensions []string) bool {
 
 	return false
 }
-
-// musicParserInstance is a singleton MusicParser for folder name parsing.
-var musicParserInstance *MusicParser
 
 // getMusicParser returns a singleton MusicParser instance.
 func getMusicParser() *MusicParser {
@@ -408,7 +410,7 @@ func parseArtistAlbumTrackPattern(filename string, info *TrackInfo) bool {
 	// Extract year from album if present
 	if yearMatches := yearInNamePattern.FindStringSubmatch(info.Album); len(yearMatches) > 1 {
 		info.Year, _ = strconv.Atoi(yearMatches[1])
-		info.Album = strings.TrimSpace(yearInNamePattern.ReplaceAllString(info.Album, ""))
+		info.Album = strings.TrimSpace(yearInNamePattern.ReplaceAllLiteralString(info.Album, ""))
 	}
 
 	return true
@@ -679,10 +681,8 @@ func readAudioTagsCtx(ctx context.Context, filePath string) (*TrackInfo, error) 
 
 // deriveQualityProfile determines a quality profile string based on audio properties.
 func deriveQualityProfile(info *TrackInfo) string {
-	format := strings.ToLower(info.Format)
-
 	// Lossless formats
-	if IsLosslessFormat(format) {
+	if IsLosslessFormat(info.Format) {
 		if info.BitDepth >= 24 {
 			return "lossless-hires"
 		}
@@ -867,10 +867,7 @@ func ReadAudioTagsBatch(filepaths []string) ([]*TrackInfo, error) {
 
 // IsLosslessFormat returns true if the format is lossless audio.
 func IsLosslessFormat(format string) bool {
-	format = strings.ToLower(format)
-
-	lossless := []string{"flac", "alac", "wav", "aiff", "ape", "wv", "wavpack"}
-	return slices.Contains(lossless, format)
+	return logger.SlicesContainsI(losslessFormats, format)
 }
 
 // CollectTracksFromFiles creates TrackInfo from file paths using filename parsing only.
@@ -1009,20 +1006,20 @@ func normalizeFromFilenames(tracks []TrackInfo) {
 		base := filepath.Base(t.Filepath)
 
 		// Extract leading number from filename
-		var numStr string
+		var numStr strings.Builder
 		for _, c := range base {
 			if c < '0' || c > '9' {
 				break
 			}
 
-			numStr += string(c)
+			numStr.WriteString(string(c))
 		}
 
-		if len(numStr) < 3 {
+		if len(numStr.String()) < 3 {
 			return // Need at least 3 digits for disc+track encoding
 		}
 
-		num, err := strconv.Atoi(numStr)
+		num, err := strconv.Atoi(numStr.String())
 		if err != nil || num < 100 || num >= 1000 {
 			return
 		}

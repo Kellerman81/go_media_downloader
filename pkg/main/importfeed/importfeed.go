@@ -26,6 +26,9 @@ var (
 	errVoteRateLow           = errors.New("error average vote too low")
 	errIncludedGenreNotFound = errors.New("included genre not found")
 	errSeriesSkipped         = errors.New("series skip for")
+	errListidNotSet          = errors.New("listid not set")
+	errLoadingConfig         = errors.New("loading config")
+	errJobnameMissing        = errors.New("jobname missing")
 	importJobRunning         = syncops.NewSyncMap[struct{}](10)
 	defaultproviders         = []string{"imdb", "tmdb", "omdb"}
 )
@@ -138,7 +141,7 @@ func MovieFindImdbIDByTitle(
 		return
 	}
 
-	slug := logger.StringToSlug(m.Title)
+	slug := logger.StringToSlugCached(m.Title)
 
 	for _, val := range getsearchprovider(false) {
 		if processprovider(val, m, cfgp, &slug) {
@@ -310,7 +313,7 @@ func JobImportMoviesByList(
 	addnew bool,
 ) error {
 	if listid == -1 {
-		return errors.New("listid not set")
+		return errListidNotSet
 	}
 
 	if err := logger.CheckContextEnded(ctx); err != nil {
@@ -736,7 +739,7 @@ func getsearchprovider(searchtyperss bool) []string {
 func LoadSeriesConfig(file string) ([]config.ManualConfig, error) {
 	content, err := os.Open(file)
 	if err != nil {
-		return nil, errors.New("loading config")
+		return nil, errLoadingConfig
 	}
 	defer content.Close()
 
@@ -767,7 +770,7 @@ func findSerieConfigByName(seriesName string) (*config.ManualConfig, *config.Med
 	foundListID := -1
 
 	// Normalize search name for case-insensitive comparison
-	searchName := strings.ToLower(strings.TrimSpace(seriesName))
+	searchName := strings.TrimSpace(seriesName)
 
 	// Search across all media configurations
 	config.RangeSettingsMedia(func(_ string, mediaCfg *config.MediaTypeConfig) error {
@@ -888,7 +891,7 @@ func jobImportDBSeries(
 	}
 
 	if jobName == "" {
-		return errors.New("jobname missing")
+		return errJobnameMissing
 	}
 
 	if importJobRunning.Check(jobName) {
@@ -1400,7 +1403,7 @@ func insertdbserie(serieconfig *config.ManualConfig, dbserie *database.Dbserie) 
 			logger.CacheDBSeries,
 			syncops.DbstaticThreeStringTwoInt{
 				Str1: serieconfig.Name,
-				Str2: logger.StringToSlug(serieconfig.Name),
+				Str2: logger.StringToSlugCached(serieconfig.Name),
 				Num2: dbserie.ID,
 			},
 		)
@@ -1429,7 +1432,7 @@ func addalternateserietitle(dbserieid *uint, title *string, regionin ...*string)
 		dbserieid,
 		title,
 	) == 0 {
-		slug := logger.StringToSlug(*title)
+		slug := logger.StringToSlugCachedP(title)
 
 		if len(regionin) > 0 {
 			database.ExecN(

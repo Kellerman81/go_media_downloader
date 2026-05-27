@@ -5,7 +5,6 @@ package movies
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 
@@ -31,8 +30,87 @@ type handler struct {
 	dataFullFunc mediatype.DataFullFunc
 }
 
-// Handler is the singleton instance.
-var Handler = &handler{}
+var (
+	// Handler is the singleton instance.
+	Handler = &handler{}
+
+	// StringsMap contains all movie-specific string mappings for SQL queries, cache names, etc.
+	// Exported so mtstrings package can access it without going through Handler (avoids import cycle).
+	StringsMap = map[string]string{
+		"CacheDBMedia":             "CacheDBMovie",
+		"DBCountDBMedia":           "select count() from dbmovies",
+		"DBCacheDBMedia":           "select title, slug, imdb_id, year, id from dbmovies",
+		"CacheMedia":               "CacheMovie",
+		"DBCountMedia":             "select count() from movies",
+		"DBCacheMedia":             "select lower(listname), dbmovie_id, id from movies",
+		"CacheHistoryTitle":        "CacheHistoryTitleMovie",
+		"CacheHistoryUrl":          "CacheHistoryUrlMovie",
+		"DBHistoriesUrl":           "select distinct url from movie_histories",
+		"DBHistoriesTitle":         "select distinct title from movie_histories",
+		"DBCountHistoriesUrl":      "select count() from (select distinct url from movie_histories)",
+		"DBCountHistoriesTitle":    "select count() from (select distinct title from movie_histories)",
+		"CacheMediaTitles":         "CacheTitlesMovie",
+		"DBCountDBTitles":          "select count() from dbmovie_titles where title != ''",
+		"DBCacheDBTitles":          "select title, slug, dbmovie_id from dbmovie_titles where title != ''",
+		"CacheFiles":               "CacheFilesMovie",
+		"DBCountFiles":             "select count() from movie_files",
+		"DBCacheFiles":             "select location from movie_files",
+		"CacheUnmatched":           "CacheUnmatchedMovie",
+		"DBCountUnmatched":         "select count() from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBRemoveUnmatched":        "delete from movie_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
+		"DBCacheUnmatched":         "select filepath from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBCountFilesLocation":     "select count() from movie_files where location = ?",
+		"DBCountUnmatchedPath":     "select count() from movie_file_unmatcheds where filepath = ?",
+		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbmovie_titles where dbmovie_id = ? and title != '')",
+		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbmovie_id from dbmovie_titles where dbmovie_id = ? and title != ''",
+		"DBMediaTitlesID":          "select year, title, slug from dbmovies where id = ?",
+		"DBFilesQuality":           "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from movie_files where id = ?",
+		"DBCountFilesByList":       "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
+		"DBLocationFilesByList":    "select location from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
+		"DBIDsFilesByLocation":     "select location, id, movie_id from movie_files",
+		"DBCountFilesByMediaID":    "select count() from movie_files where movie_id = ?",
+		"DBCountFilesByLocation":   "select count() from movie_files",
+		"TableFiles":               "movie_files",
+		"TableMedia":               "movies",
+		"DBCountMediaByList":       "select count() from movies where listname = ? COLLATE NOCASE",
+		"DBIDMissingMediaByList":   "select id,missing from movies where listname = ? COLLATE NOCASE",
+		"DBUpdateMissing":          "update movies set missing = ? where id = ?",
+		"DBListnameByMediaID":      "select listname from movies where id = ?",
+		"DBRootPathFromMediaID":    "select rootpath from movies where id = ?",
+		"DBDeleteFileByIDLocation": "delete from movie_files where movie_id = ? and location = ?",
+		"DBCountHistoriesByTitle":  "select count() from movie_histories where title = ?",
+		"DBCountHistoriesByUrl":    "select count() from movie_histories where url = ?",
+		"DBLocationIDFilesByID":    "select location, id from movie_files where movie_id = ?",
+		"DBFilePrioFilesByID":      "select location, movie_id, id, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended from movie_files where movie_id = ?",
+		"UpdateMediaLastscan":      "update movies set lastscan = datetime('now','localtime') where id = ?",
+		"DBQualityMediaByID":       "select quality_profile from movies where id = ?",
+		"SearchGenSelect":          "select movies.quality_profile, movies.id ",
+		"SearchGenTable":           " from movies inner join dbmovies on dbmovies.id=movies.dbmovie_id where ",
+		"SearchGenMissing":         "dbmovies.year != 0 and movies.missing = 1 and movies.listname in (?",
+		"SearchGenMissingEnd":      ")",
+		"SearchGenReached":         "dbmovies.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenLastScan":        " and (movies.lastscan is null or movies.Lastscan < ?)",
+		"SearchGenDate":            " and (dbmovies.release_date < ? or dbmovies.release_date is null)",
+		"SearchGenOrder":           " order by movies.Lastscan asc",
+		"DBIDUnmatchedPathList":    "select id from movie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
+		"InsertUnmatched":          "Insert into movie_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
+		"UpdateUnmatched":          "update movie_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
+		"GetRSSData":               "select movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?",
+		"GetOrganizeData":          "select dbmovie_id, rootpath, listname from movies where id = ?",
+		"ClearHistoryByList":       "delete from movie_histories where movie_id in (Select id from movies where listname = ? COLLATE NOCASE)",
+		"QueryMediaByList":         "select id, quality_reached, quality_profile from movies where listname = ? COLLATE NOCASE",
+		"QueryMediaCountByList":    "select count() from movies where listname = ? COLLATE NOCASE",
+		"UpdateQualityReached":     "update movies set quality_reached = ? where id = ?",
+		"SelectRootpath":           "select rootpath from movies where id = ?",
+		"InsertFile":               "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"UpdateMissingByID":        "update movies set missing = 0 where id = ?",
+		"UpdateQualityReachedByID": "update movies set quality_reached = ? where id = ?",
+		"DeleteUnmatchedByPath":    "delete from movie_file_unmatcheds where filepath = ?",
+		"SelectRuntime":            "select runtime from dbmovies where id = ?",
+		"InsertFileOrganize":       "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"UpdateMissingReached":     "update movies SET missing = 0, quality_reached = ? where id = ?",
+	}
+)
 
 func init() {
 	mediatype.Register(Handler)
@@ -718,7 +796,7 @@ func (h *handler) CleanupAfterRemove(
 	_ func(),
 ) error {
 	if pathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(folder) {
@@ -734,7 +812,7 @@ func (h *handler) CleanupAfterRemove(
 // For movies: validates path config and folder, calls walkcleanup, then notify and cleanup.
 func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(params.Folder) {
@@ -815,85 +893,6 @@ func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesMovie }
 
 // UsesListNameAsQualityProfile returns false - movies use quality config name.
 func (h *handler) UsesListNameAsQualityProfile() bool { return false }
-
-var errNotFoundPathTemplate = errors.New("path template not found")
-
-// StringsMap contains all movie-specific string mappings for SQL queries, cache names, etc.
-// Exported so mtstrings package can access it without going through Handler (avoids import cycle).
-var StringsMap = map[string]string{
-	"CacheDBMedia":             "CacheDBMovie",
-	"DBCountDBMedia":           "select count() from dbmovies",
-	"DBCacheDBMedia":           "select title, slug, imdb_id, year, id from dbmovies",
-	"CacheMedia":               "CacheMovie",
-	"DBCountMedia":             "select count() from movies",
-	"DBCacheMedia":             "select lower(listname), dbmovie_id, id from movies",
-	"CacheHistoryTitle":        "CacheHistoryTitleMovie",
-	"CacheHistoryUrl":          "CacheHistoryUrlMovie",
-	"DBHistoriesUrl":           "select distinct url from movie_histories",
-	"DBHistoriesTitle":         "select distinct title from movie_histories",
-	"DBCountHistoriesUrl":      "select count() from (select distinct url from movie_histories)",
-	"DBCountHistoriesTitle":    "select count() from (select distinct title from movie_histories)",
-	"CacheMediaTitles":         "CacheTitlesMovie",
-	"DBCountDBTitles":          "select count() from dbmovie_titles where title != ''",
-	"DBCacheDBTitles":          "select title, slug, dbmovie_id from dbmovie_titles where title != ''",
-	"CacheFiles":               "CacheFilesMovie",
-	"DBCountFiles":             "select count() from movie_files",
-	"DBCacheFiles":             "select location from movie_files",
-	"CacheUnmatched":           "CacheUnmatchedMovie",
-	"DBCountUnmatched":         "select count() from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBRemoveUnmatched":        "delete from movie_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
-	"DBCacheUnmatched":         "select filepath from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBCountFilesLocation":     "select count() from movie_files where location = ?",
-	"DBCountUnmatchedPath":     "select count() from movie_file_unmatcheds where filepath = ?",
-	"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbmovie_titles where dbmovie_id = ? and title != '')",
-	"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbmovie_id from dbmovie_titles where dbmovie_id = ? and title != ''",
-	"DBMediaTitlesID":          "select year, title, slug from dbmovies where id = ?",
-	"DBFilesQuality":           "select resolution_id, quality_id, codec_id, audio_id, proper, extended, repack from movie_files where id = ?",
-	"DBCountFilesByList":       "select count() from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
-	"DBLocationFilesByList":    "select location from movie_files where movie_id in (select id from movies where listname = ? COLLATE NOCASE)",
-	"DBIDsFilesByLocation":     "select location, id, movie_id from movie_files",
-	"DBCountFilesByMediaID":    "select count() from movie_files where movie_id = ?",
-	"DBCountFilesByLocation":   "select count() from movie_files",
-	"TableFiles":               "movie_files",
-	"TableMedia":               "movies",
-	"DBCountMediaByList":       "select count() from movies where listname = ? COLLATE NOCASE",
-	"DBIDMissingMediaByList":   "select id,missing from movies where listname = ? COLLATE NOCASE",
-	"DBUpdateMissing":          "update movies set missing = ? where id = ?",
-	"DBListnameByMediaID":      "select listname from movies where id = ?",
-	"DBRootPathFromMediaID":    "select rootpath from movies where id = ?",
-	"DBDeleteFileByIDLocation": "delete from movie_files where movie_id = ? and location = ?",
-	"DBCountHistoriesByTitle":  "select count() from movie_histories where title = ?",
-	"DBCountHistoriesByUrl":    "select count() from movie_histories where url = ?",
-	"DBLocationIDFilesByID":    "select location, id from movie_files where movie_id = ?",
-	"DBFilePrioFilesByID":      "select location, movie_id, id, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended from movie_files where movie_id = ?",
-	"UpdateMediaLastscan":      "update movies set lastscan = datetime('now','localtime') where id = ?",
-	"DBQualityMediaByID":       "select quality_profile from movies where id = ?",
-	"SearchGenSelect":          "select movies.quality_profile, movies.id ",
-	"SearchGenTable":           " from movies inner join dbmovies on dbmovies.id=movies.dbmovie_id where ",
-	"SearchGenMissing":         "dbmovies.year != 0 and movies.missing = 1 and movies.listname in (?",
-	"SearchGenMissingEnd":      ")",
-	"SearchGenReached":         "dbmovies.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
-	"SearchGenLastScan":        " and (movies.lastscan is null or movies.Lastscan < ?)",
-	"SearchGenDate":            " and (dbmovies.release_date < ? or dbmovies.release_date is null)",
-	"SearchGenOrder":           " order by movies.Lastscan asc",
-	"DBIDUnmatchedPathList":    "select id from movie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
-	"InsertUnmatched":          "Insert into movie_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
-	"UpdateUnmatched":          "update movie_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-	"GetRSSData":               "select movies.dont_search, movies.dont_upgrade, movies.listname, movies.quality_profile, dbmovies.title from movies inner join dbmovies ON dbmovies.id=movies.dbmovie_id where movies.id = ?",
-	"GetOrganizeData":          "select dbmovie_id, rootpath, listname from movies where id = ?",
-	"ClearHistoryByList":       "delete from movie_histories where movie_id in (Select id from movies where listname = ? COLLATE NOCASE)",
-	"QueryMediaByList":         "select id, quality_reached, quality_profile from movies where listname = ? COLLATE NOCASE",
-	"QueryMediaCountByList":    "select count() from movies where listname = ? COLLATE NOCASE",
-	"UpdateQualityReached":     "update movies set quality_reached = ? where id = ?",
-	"SelectRootpath":           "select rootpath from movies where id = ?",
-	"InsertFile":               "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-	"UpdateMissingByID":        "update movies set missing = 0 where id = ?",
-	"UpdateQualityReachedByID": "update movies set quality_reached = ? where id = ?",
-	"DeleteUnmatchedByPath":    "delete from movie_file_unmatcheds where filepath = ?",
-	"SelectRuntime":            "select runtime from dbmovies where id = ?",
-	"InsertFileOrganize":       "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-	"UpdateMissingReached":     "update movies SET missing = 0, quality_reached = ? where id = ?",
-}
 
 // GetStringsMap returns a movie-specific string for the given key.
 func (h *handler) GetStringsMap(key string) string {

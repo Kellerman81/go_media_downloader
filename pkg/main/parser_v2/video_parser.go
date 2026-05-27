@@ -3,6 +3,7 @@ package parser_v2
 import (
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -171,29 +172,29 @@ func (vp *VideoParser) Parse(filename string) *VideoParseResult {
 	originalName := name
 
 	// Extract IMDB ID first
-	if matches := vp.patterns.imdb.FindStringSubmatch(originalName); len(matches) > 0 {
-		result.Imdb = normalizeIMDB(matches[0])
+	if loc := vp.patterns.imdb.FindStringSubmatchIndex(originalName); len(loc) > 0 {
+		result.Imdb = normalizeIMDB(originalName[loc[0]:loc[1]])
 	}
 
 	// Extract TVDB ID
-	if matches := vp.patterns.tvdb.FindStringSubmatch(originalName); len(matches) > 1 {
-		result.Tvdb = matches[1]
+	if loc := vp.patterns.tvdb.FindStringSubmatchIndex(originalName); len(loc) > 2 {
+		result.Tvdb = originalName[loc[2]:loc[3]]
 	}
 
 	// Detect media type and extract season/episode info
 	result.MediaType = vp.detectMediaType(originalName, result)
 
 	// Extract year
-	if matches := vp.patterns.year.FindStringSubmatch(originalName); len(matches) > 1 {
-		result.Year = parseInt(matches[1])
+	if loc := vp.patterns.year.FindStringSubmatchIndex(originalName); len(loc) > 2 {
+		result.Year = parseInt(originalName[loc[2]:loc[3]])
 	}
 
 	// Extract quality attributes
 	vp.extractQualityInfo(originalName, result)
 
 	// Extract release group
-	if matches := vp.patterns.group.FindStringSubmatch(originalName); len(matches) > 1 {
-		result.ReleaseGroup = matches[1]
+	if loc := vp.patterns.group.FindStringSubmatchIndex(originalName); len(loc) > 2 {
+		result.ReleaseGroup = originalName[loc[2]:loc[3]]
 	}
 
 	// Extract title
@@ -224,8 +225,8 @@ func (vp *VideoParser) ParseWithPath(fullpath string) *VideoParseResult {
 
 	// If we didn't find a year, check parent directory
 	if result.Year == 0 {
-		if matches := vp.patterns.year.FindStringSubmatch(parentDir); len(matches) > 1 {
-			result.Year = parseInt(matches[1])
+		if loc := vp.patterns.year.FindStringSubmatchIndex(parentDir); len(loc) > 2 {
+			result.Year = parseInt(parentDir[loc[2]:loc[3]])
 		}
 	}
 
@@ -238,8 +239,8 @@ func (vp *VideoParser) ParseWithPath(fullpath string) *VideoParseResult {
 			dirName = strings.ReplaceAll(dirName, "_", " ")
 
 			// Remove year if present
-			if matches := vp.patterns.year.FindStringSubmatch(dirName); len(matches) > 0 {
-				dirName = strings.Replace(dirName, matches[0], "", 1)
+			if loc := vp.patterns.year.FindStringSubmatchIndex(dirName); len(loc) > 0 {
+				dirName = strings.Replace(dirName, dirName[loc[0]:loc[1]], "", 1)
 			}
 
 			cleaned := cleanTitle(dirName)
@@ -408,8 +409,8 @@ func extractASINFromPath(folderPath string) string {
 	}
 
 	// Check each path component for ASIN (starting from the end)
-	for i := len(parts) - 1; i >= 0; i-- {
-		if asin := extractASINFromString(parts[i]); asin != "" {
+	for _, part := range slices.Backward(parts) {
+		if asin := extractASINFromString(part); asin != "" {
 			return asin
 		}
 	}
@@ -595,15 +596,15 @@ func parseFileToParseInfo(
 
 	// Extract IMDB ID
 	if !onlyIfEmpty || m.Imdb == "" {
-		if matches := vp.patterns.imdb.FindStringSubmatch(originalName); len(matches) > 0 {
-			m.Imdb = normalizeIMDB(matches[0])
+		if loc := vp.patterns.imdb.FindStringSubmatchIndex(originalName); len(loc) > 0 {
+			m.Imdb = normalizeIMDB(originalName[loc[0]:loc[1]])
 		}
 	}
 
 	// Extract TVDB ID
 	if !onlyIfEmpty || m.Tvdb == "" {
-		if matches := vp.patterns.tvdb.FindStringSubmatch(originalName); len(matches) > 1 {
-			m.Tvdb = matches[1]
+		if loc := vp.patterns.tvdb.FindStringSubmatchIndex(originalName); len(loc) > 2 {
+			m.Tvdb = originalName[loc[2]:loc[3]]
 		}
 	}
 
@@ -614,8 +615,8 @@ func parseFileToParseInfo(
 
 	// Extract year
 	if !onlyIfEmpty || m.Year == 0 {
-		if matches := vp.patterns.year.FindStringSubmatch(originalName); len(matches) > 1 {
-			m.Year = uint16(parseInt(matches[1]))
+		if loc := vp.patterns.year.FindStringSubmatchIndex(originalName); len(loc) > 2 {
+			m.Year = uint16(parseInt(originalName[loc[2]:loc[3]]))
 		}
 	}
 
@@ -641,20 +642,20 @@ func parseFileToParseInfo(
 // extractEpisodeInfo extracts season/episode information from a filename.
 func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 	// Check for season/episode pattern
-	if matches := vp.patterns.seasonEpisode.FindStringSubmatch(name); len(matches) > 0 {
-		if matches[1] != "" && matches[2] != "" {
+	if loc := vp.patterns.seasonEpisode.FindStringSubmatchIndex(name); len(loc) > 0 {
+		if loc[2] != -1 && loc[4] != -1 {
 			// Standard SxxExx format
-			m.SeasonStr = matches[1]
-			m.EpisodeStr = matches[2]
-			m.Season = parseInt(matches[1])
-			m.Episode = parseInt(matches[2])
+			m.SeasonStr = name[loc[2]:loc[3]]
+			m.EpisodeStr = name[loc[4]:loc[5]]
+			m.Season = parseInt(m.SeasonStr)
+			m.Episode = parseInt(m.EpisodeStr)
 			m.Identifier = formatIdentifier(m.Season, m.Episode)
-		} else if len(matches) > 4 && matches[4] != "" && matches[5] != "" {
+		} else if len(loc) > 10 && loc[8] != -1 && loc[10] != -1 {
 			// NxNN format
-			m.SeasonStr = matches[4]
-			m.EpisodeStr = matches[5]
-			m.Season = parseInt(matches[4])
-			m.Episode = parseInt(matches[5])
+			m.SeasonStr = name[loc[8]:loc[9]]
+			m.EpisodeStr = name[loc[10]:loc[11]]
+			m.Season = parseInt(m.SeasonStr)
+			m.Episode = parseInt(m.EpisodeStr)
 			m.Identifier = formatIdentifier(m.Season, m.Episode)
 		}
 
@@ -662,21 +663,21 @@ func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 	}
 
 	// Check alternative format
-	if matches := vp.patterns.seasonEpisodeAlt.FindStringSubmatch(name); len(matches) > 2 {
-		m.SeasonStr = matches[1]
-		m.EpisodeStr = matches[2]
-		m.Season = parseInt(matches[1])
-		m.Episode = parseInt(matches[2])
+	if loc := vp.patterns.seasonEpisodeAlt.FindStringSubmatchIndex(name); len(loc) > 4 {
+		m.SeasonStr = name[loc[2]:loc[3]]
+		m.EpisodeStr = name[loc[4]:loc[5]]
+		m.Season = parseInt(m.SeasonStr)
+		m.Episode = parseInt(m.EpisodeStr)
 		m.Identifier = formatIdentifier(m.Season, m.Episode)
 
 		return
 	}
 
 	// Check date-based episodes
-	if matches := vp.patterns.seasonEpisodeDate.FindStringSubmatch(name); len(matches) > 3 {
-		year := matches[1]
-		month := matches[2]
-		day := matches[3]
+	if loc := vp.patterns.seasonEpisodeDate.FindStringSubmatchIndex(name); len(loc) > 6 {
+		year := name[loc[2]:loc[3]]
+		month := name[loc[4]:loc[5]]
+		day := name[loc[6]:loc[7]]
 
 		m.Date = logger.JoinStrings(year, "-", month, "-", day)
 		m.Identifier = m.Date
@@ -685,15 +686,16 @@ func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 	}
 
 	// Check for episode-only pattern (e.g., "E02", "E643")
-	matches := vp.patterns.episodeOnly.FindStringSubmatch(name)
-	if len(matches) <= 1 {
+	loc := vp.patterns.episodeOnly.FindStringSubmatchIndex(name)
+	if len(loc) <= 2 {
 		return
 	}
 
-	epNum := parseInt(matches[1])
+	epStr := name[loc[2]:loc[3]]
+	epNum := parseInt(epStr)
 
 	m.Episode = epNum
-	m.EpisodeStr = matches[1]
+	m.EpisodeStr = epStr
 	// Only populate AbsoluteEpisode when no season was found
 	if m.Season == 0 {
 		m.AbsoluteEpisode = epNum
@@ -709,15 +711,15 @@ func extractQualityToParseInfo(
 ) {
 	// Extract resolution
 	if !onlyIfEmpty || m.Resolution == "" {
-		if matches := vp.patterns.resolution.FindStringSubmatch(name); len(matches) > 0 {
-			m.Resolution = normalizeResolution(matches[0])
+		if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 0 {
+			m.Resolution = normalizeResolution(name[loc[0]:loc[1]])
 		}
 	}
 
 	// Extract quality source
 	if !onlyIfEmpty || m.Quality == "" {
-		if matches := vp.patterns.quality.FindStringSubmatch(name); len(matches) > 1 {
-			m.Quality = normalizeQuality(matches[1])
+		if loc := vp.patterns.quality.FindStringSubmatchIndex(name); len(loc) > 2 {
+			m.Quality = normalizeQuality(name[loc[2]:loc[3]])
 		}
 	}
 
@@ -728,15 +730,15 @@ func extractQualityToParseInfo(
 
 	// Extract codec
 	if !onlyIfEmpty || m.Codec == "" {
-		if matches := vp.patterns.codec.FindStringSubmatch(name); len(matches) > 1 {
-			m.Codec = normalizeCodec(matches[1])
+		if loc := vp.patterns.codec.FindStringSubmatchIndex(name); len(loc) > 2 {
+			m.Codec = normalizeCodec(name[loc[2]:loc[3]])
 		}
 	}
 
 	// Extract audio
 	if !onlyIfEmpty || m.Audio == "" {
-		if matches := vp.patterns.audio.FindStringSubmatch(name); len(matches) > 1 {
-			m.Audio = normalizeAudio(matches[1])
+		if loc := vp.patterns.audio.FindStringSubmatchIndex(name); len(loc) > 2 {
+			m.Audio = normalizeAudio(name[loc[2]:loc[3]])
 		}
 	}
 
@@ -757,24 +759,24 @@ func extractQualityToParseInfo(
 // detectMediaType determines if content is movie or series and extracts episode info.
 func (vp *VideoParser) detectMediaType(name string, result *VideoParseResult) MediaType {
 	// Check for season/episode pattern
-	if matches := vp.patterns.seasonEpisode.FindStringSubmatch(name); len(matches) > 0 {
+	if loc := vp.patterns.seasonEpisode.FindStringSubmatchIndex(name); len(loc) > 0 {
 		// Pattern has two capture groups: standard S01E02 format OR NxNN format
-		if matches[1] != "" && matches[2] != "" {
+		if loc[2] != -1 && loc[4] != -1 {
 			// Standard SxxExx format
-			result.Season = parseInt(matches[1])
-			result.Episode = parseInt(matches[2])
-		} else if len(matches) > 4 && matches[4] != "" && matches[5] != "" {
+			result.Season = parseInt(name[loc[2]:loc[3]])
+			result.Episode = parseInt(name[loc[4]:loc[5]])
+		} else if len(loc) > 10 && loc[8] != -1 && loc[10] != -1 {
 			// NxNN format (e.g., 1x01)
-			result.Season = parseInt(matches[4])
-			result.Episode = parseInt(matches[5])
+			result.Season = parseInt(name[loc[8]:loc[9]])
+			result.Episode = parseInt(name[loc[10]:loc[11]])
 		}
 
 		if result.Season > 0 || result.Episode > 0 {
 			result.Identifier = vp.buildIdentifier(result.Season, result.Episode)
 
 			// Check for multi-episode
-			if len(matches) > 3 && matches[3] != "" {
-				endEp := parseInt(matches[3])
+			if len(loc) > 6 && loc[6] != -1 {
+				endEp := parseInt(name[loc[6]:loc[7]])
 				if endEp > result.Episode {
 					result.Identifier = vp.buildMultiIdentifier(
 						result.Season,
@@ -789,16 +791,16 @@ func (vp *VideoParser) detectMediaType(name string, result *VideoParseResult) Me
 	}
 
 	// Check alternative pattern
-	if matches := vp.patterns.seasonEpisodeAlt.FindStringSubmatch(name); len(matches) > 2 {
-		result.Season = parseInt(matches[1])
-		result.Episode = parseInt(matches[2])
+	if loc := vp.patterns.seasonEpisodeAlt.FindStringSubmatchIndex(name); len(loc) > 4 {
+		result.Season = parseInt(name[loc[2]:loc[3]])
+		result.Episode = parseInt(name[loc[4]:loc[5]])
 		result.Identifier = vp.buildIdentifier(result.Season, result.Episode)
 		return MediaTypeSeries
 	}
 
 	// Check for date-based episode
-	if matches := vp.patterns.seasonEpisodeDate.FindStringSubmatch(name); len(matches) > 3 {
-		result.Identifier = matches[1] + "-" + matches[2] + "-" + matches[3]
+	if loc := vp.patterns.seasonEpisodeDate.FindStringSubmatchIndex(name); len(loc) > 6 {
+		result.Identifier = name[loc[2]:loc[3]] + "-" + name[loc[4]:loc[5]] + "-" + name[loc[6]:loc[7]]
 		return MediaTypeSeries
 	}
 
@@ -818,8 +820,8 @@ func (vp *VideoParser) detectMediaType(name string, result *VideoParseResult) Me
 	}
 
 	// Check for episode-only pattern (less reliable)
-	if matches := vp.patterns.episodeOnly.FindStringSubmatch(name); len(matches) > 1 {
-		epNum := parseInt(matches[1])
+	if loc := vp.patterns.episodeOnly.FindStringSubmatchIndex(name); len(loc) > 2 {
+		epNum := parseInt(name[loc[2]:loc[3]])
 
 		result.Episode = epNum
 		// Only populate AbsoluteEpisode when no season was found
@@ -854,9 +856,8 @@ func (vp *VideoParser) extractQualityInfo(name string, result *VideoParseResult)
 	}
 
 	// Check for HDR (always use builtin pattern)
-	if matches := vp.patterns.hdr.FindStringSubmatch(name); len(matches) > 1 {
-		// Append HDR info to resolution if present
-		hdr := normalizeHDR(matches[1])
+	if loc := vp.patterns.hdr.FindStringSubmatchIndex(name); len(loc) > 2 {
+		hdr := normalizeHDR(name[loc[2]:loc[3]])
 		if hdr != "" && result.Resolution != "" {
 			result.Resolution = result.Resolution + " " + hdr
 		}
@@ -871,13 +872,13 @@ func (vp *VideoParser) extractQualityInfo(name string, result *VideoParseResult)
 // extractQualityInfoBuiltin uses the hardcoded regex patterns.
 func (vp *VideoParser) extractQualityInfoBuiltin(name string, result *VideoParseResult) {
 	// Extract resolution
-	if matches := vp.patterns.resolution.FindStringSubmatch(name); len(matches) > 0 {
-		result.Resolution = normalizeResolution(matches[0])
+	if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 0 {
+		result.Resolution = normalizeResolution(name[loc[0]:loc[1]])
 	}
 
 	// Extract quality source
-	if matches := vp.patterns.quality.FindStringSubmatch(name); len(matches) > 1 {
-		result.Quality = normalizeQuality(matches[1])
+	if loc := vp.patterns.quality.FindStringSubmatchIndex(name); len(loc) > 2 {
+		result.Quality = normalizeQuality(name[loc[2]:loc[3]])
 	}
 
 	// Check for REMUX (high quality indicator)
@@ -886,13 +887,13 @@ func (vp *VideoParser) extractQualityInfoBuiltin(name string, result *VideoParse
 	}
 
 	// Extract codec
-	if matches := vp.patterns.codec.FindStringSubmatch(name); len(matches) > 1 {
-		result.Codec = normalizeCodec(matches[1])
+	if loc := vp.patterns.codec.FindStringSubmatchIndex(name); len(loc) > 2 {
+		result.Codec = normalizeCodec(name[loc[2]:loc[3]])
 	}
 
 	// Extract audio
-	if matches := vp.patterns.audio.FindStringSubmatch(name); len(matches) > 1 {
-		result.Audio = normalizeAudio(matches[1])
+	if loc := vp.patterns.audio.FindStringSubmatchIndex(name); len(loc) > 2 {
+		result.Audio = normalizeAudio(name[loc[2]:loc[3]])
 	}
 }
 
@@ -983,7 +984,7 @@ func (vp *VideoParser) extractTitle(cleanName string, _ *VideoParseResult) strin
 	}
 
 	// Strip any remaining language codes from the title
-	title = vp.patterns.language.ReplaceAllString(title, " ")
+	title = vp.patterns.language.ReplaceAllLiteralString(title, " ")
 
 	return cleanTitle(title)
 }
@@ -1052,11 +1053,16 @@ func (vp *VideoParser) calculateConfidence(result *VideoParseResult) float64 {
 // normalizeIMDB normalizes an IMDB ID to the tt0000000 format.
 func normalizeIMDB(imdb string) string {
 	// Extract just the ttNNNNNNN part
-	if matches := database.GetCachedRegexp(`(?i)(tt\d{7,8})`).
-		FindStringSubmatch(imdb); len(
-		matches,
-	) > 1 {
-		return strings.ToLower(matches[1])
+	if loc := database.GetCachedRegexp(`(?i)(tt\d{7,8})`).
+		FindStringSubmatchIndex(imdb); len(loc) > 2 {
+		m := imdb[loc[2]:loc[3]]
+		// Only the leading two bytes can differ in case ('t' vs 'T').
+		// Digits that follow have no case, so check directly instead of strings.ToLower.
+		if m[0] == 't' && m[1] == 't' {
+			return m // already canonical, no allocation
+		}
+
+		return "tt" + m[2:]
 	}
 
 	return strings.ToLower(strings.TrimSpace(imdb))
@@ -1111,8 +1117,10 @@ func normalizeQuality(quality string) string {
 		return "HMAX"
 	default:
 		q := strings.ToUpper(strings.TrimSpace(quality))
+
 		q = strings.ReplaceAll(q, " ", "-")
 		q = strings.ReplaceAll(q, "_", "-")
+
 		return q
 	}
 }
@@ -1121,11 +1129,17 @@ func normalizeQuality(quality string) string {
 func normalizeCodec(codec string) string {
 	switch {
 	case logger.ContainsI(codec, "x264") || logger.ContainsI(codec, "x.264") || logger.ContainsI(codec, "x 264") ||
-		logger.ContainsI(codec, "h264") || logger.ContainsI(codec, "h.264") || logger.ContainsI(codec, "h 264") ||
+		logger.ContainsI(
+			codec,
+			"h264",
+		) || logger.ContainsI(codec, "h.264") || logger.ContainsI(codec, "h 264") ||
 		logger.ContainsI(codec, "avc"):
 		return "x264"
 	case logger.ContainsI(codec, "x265") || logger.ContainsI(codec, "x.265") || logger.ContainsI(codec, "x 265") ||
-		logger.ContainsI(codec, "h265") || logger.ContainsI(codec, "h.265") || logger.ContainsI(codec, "h 265") ||
+		logger.ContainsI(
+			codec,
+			"h265",
+		) || logger.ContainsI(codec, "h.265") || logger.ContainsI(codec, "h 265") ||
 		logger.ContainsI(codec, "hevc"):
 		return "x265"
 	case logger.ContainsI(codec, "xvid"):
@@ -1136,8 +1150,10 @@ func normalizeCodec(codec string) string {
 		return "AV1"
 	default:
 		c := strings.ToUpper(strings.TrimSpace(codec))
+
 		c = strings.ReplaceAll(c, ".", "")
 		c = strings.ReplaceAll(c, " ", "")
+
 		return c
 	}
 }
@@ -1171,6 +1187,7 @@ func normalizeAudio(audio string) string {
 		return "FLAC"
 	default:
 		a := strings.ToUpper(strings.TrimSpace(audio))
+
 		a = strings.ReplaceAll(a, " ", "-")
 		return a
 	}

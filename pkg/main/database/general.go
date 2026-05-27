@@ -1337,7 +1337,7 @@ func populateTableSlugs(tableName, nameColumn string, force bool) {
 	var count int
 
 	for idx := range records {
-		slug := logger.StringToSlug(records[idx].Str)
+		slug := logger.StringToSlugCached(records[idx].Str)
 		if slug == "" {
 			continue
 		}

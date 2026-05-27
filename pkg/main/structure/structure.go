@@ -151,15 +151,22 @@ type Organizerdata struct {
 }
 
 var (
-	strOldPrio             = "old prio"
-	errRuntime             = errors.New("wrong runtime")
-	errLowerQuality        = errors.New("lower quality")
-	errSeasonEmpty         = errors.New("season empty")
-	errGeneratingFilename  = errors.New("generating filename")
-	errWrongRuntime        = errors.New("wrong runtime")
-	errWrongLanguage       = errors.New("wrong language")
-	errUnprocessed         = errors.New("unprocessed")
-	errTooRecentlyModified = errors.New("file modified too recently")
+	strOldPrio               = "old prio"
+	errLowerQuality          = errors.New("lower quality")
+	errSeasonEmpty           = errors.New("season empty")
+	errGeneratingFilename    = errors.New("generating filename")
+	errWrongRuntime          = errors.New("wrong runtime")
+	errWrongLanguage         = errors.New("wrong language")
+	errUnprocessed           = errors.New("unprocessed")
+	errTooRecentlyModified   = errors.New("file modified too recently")
+	errCleanupFolderNotFound = errors.New("cleanup folder not found")
+	errSmallFile             = errors.New("small file")
+	errListcfgNotFound       = errors.New("listcfg not found")
+	errNoValidIDs            = errors.New("no valid IDs")
+	errCheckSubFiles         = errors.New("check sub files")
+	errNoDbidFound           = errors.New("no dbid found")
+	errUnwantedTitle         = errors.New("unwanted title")
+	errNoListIDFound         = errors.New("no ListID found")
 	// namingReplacer replaces multiple spaces and brackets in strings.
 	namingReplacer = strings.NewReplacer(
 		"  ",
@@ -445,7 +452,7 @@ func (s *Organizer) fileCleanup(folder, videofile, rootpath string) error {
 // Returns any error encountered.
 func (s *Organizer) cleanUpFolder(folder string) error {
 	if !scanner.CheckFileExist(folder) {
-		return errors.New("cleanup folder not found")
+		return errCleanupFolderNotFound
 	}
 
 	var leftsize int64
@@ -1216,7 +1223,7 @@ func (s *Organizer) Organize(
 
 			if (m.RuntimeStr == "" || m.RuntimeStr == "0") && checkruntime &&
 				identifiedby != "date" {
-				return errRuntime
+				return errWrongRuntime
 			}
 		}
 
@@ -2223,7 +2230,7 @@ func (s *Organizer) walkorganizefolder(
 
 				if s.sourcepathCfg.Name == "" {
 					m.TempTitle = fpath
-					m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("small file"))
+					m.AddUnmatched(cfgp, &logger.StrStructure, errSmallFile)
 					return false, "small_file", fs.SkipDir
 				}
 
@@ -2242,7 +2249,7 @@ func (s *Organizer) walkorganizefolder(
 				}
 
 				m.TempTitle = fpath
-				m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("small file"))
+				m.AddUnmatched(cfgp, &logger.StrStructure, errSmallFile)
 
 				// Only trigger move if file was not deleted
 				if shouldRemove {
@@ -2274,7 +2281,7 @@ func (s *Organizer) walkorganizefolder(
 				Msg("listcfg not found")
 
 			m.TempTitle = fpath
-			m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("listcfg not found"))
+			m.AddUnmatched(cfgp, &logger.StrStructure, errListcfgNotFound)
 
 			return false, "no_list", nil
 		}
@@ -2290,7 +2297,7 @@ func (s *Organizer) walkorganizefolder(
 	if h := mediatype.Get(s.Cfgp.IsType); h != nil {
 		if !h.ValidateIDs(m) {
 			m.TempTitle = fpath
-			m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("no valid IDs"))
+			m.AddUnmatched(cfgp, &logger.StrStructure, errNoValidIDs)
 			return false, "no_match", nil
 		}
 	}
@@ -2301,7 +2308,7 @@ func (s *Organizer) walkorganizefolder(
 			Msg("check sub files")
 
 		m.TempTitle = fpath
-		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("check sub files"))
+		m.AddUnmatched(cfgp, &logger.StrStructure, errCheckSubFiles)
 
 		return false, "subfiles_check", nil
 	}
@@ -2326,7 +2333,7 @@ func (s *Organizer) walkorganizefolder(
 
 	if dbid == 0 {
 		m.TempTitle = fpath
-		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("no dbid found"))
+		m.AddUnmatched(cfgp, &logger.StrStructure, errNoDbidFound)
 		return false, "no_match", logger.ErrNotFound
 	}
 
@@ -2344,14 +2351,14 @@ func (s *Organizer) walkorganizefolder(
 			Msg("skipped - unwanted title")
 
 		m.TempTitle = fpath
-		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("unwanted title"))
+		m.AddUnmatched(cfgp, &logger.StrStructure, errUnwantedTitle)
 
 		return false, "unwanted_title", nil
 	}
 
 	if m.ListID == -1 {
 		m.TempTitle = fpath
-		m.AddUnmatched(cfgp, &logger.StrStructure, errors.New("no ListID found"))
+		m.AddUnmatched(cfgp, &logger.StrStructure, errNoListIDFound)
 		return false, "no_list", logger.ErrListnameTemplateEmpty
 	}
 
@@ -2377,7 +2384,7 @@ func (s *Organizer) walkorganizefolder(
 
 		var moveReason string
 		switch {
-		case errors.Is(err, errWrongRuntime) || errors.Is(err, errRuntime):
+		case errors.Is(err, errWrongRuntime):
 			moveReason = "wrong_runtime"
 		case errors.Is(err, errWrongLanguage):
 			moveReason = "wrong_language"

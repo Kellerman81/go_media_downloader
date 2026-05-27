@@ -3,8 +3,9 @@ package transmission
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,7 +97,7 @@ func (p *Provider) AddTorrent(
 	}
 
 	if response.Result != "success" {
-		return nil, fmt.Errorf("failed to add torrent: %s", response.Result)
+		return nil, errors.New(logger.JoinStrings("failed to add torrent: ", response.Result))
 	}
 
 	// Extract hash from response
@@ -147,24 +148,24 @@ func (p *Provider) GetTorrentInfo(
 	}
 
 	if response.Result != "success" {
-		return nil, fmt.Errorf("failed to get torrent: %s", response.Result)
+		return nil, errors.New(logger.JoinStrings("failed to get torrent: ", response.Result))
 	}
 
 	arguments, ok := response.Arguments.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
+		return nil, errors.New("unexpected response format")
 	}
 
 	torrentsData, ok := arguments["torrents"].([]any)
 	if !ok || len(torrentsData) == 0 {
-		return nil, fmt.Errorf("torrent not found")
+		return nil, errors.New("torrent not found")
 	}
 
 	if torrentMap, ok := torrentsData[0].(map[string]any); ok {
 		return parseTorrentInfo(torrentMap), nil
 	}
 
-	return nil, fmt.Errorf("invalid torrent data")
+	return nil, errors.New("invalid torrent data")
 }
 
 // ListTorrents retrieves the list of active torrents.
@@ -198,12 +199,12 @@ func (p *Provider) ListTorrents(
 	}
 
 	if response.Result != "success" {
-		return nil, fmt.Errorf("failed to list torrents: %s", response.Result)
+		return nil, errors.New(logger.JoinStrings("failed to list torrents: ", response.Result))
 	}
 
 	arguments, ok := response.Arguments.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
+		return nil, errors.New("unexpected response format")
 	}
 
 	torrentsData, ok := arguments["torrents"].([]any)
@@ -240,7 +241,7 @@ func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 	}
 
 	if response.Result != "success" {
-		return fmt.Errorf("failed to pause torrent: %s", response.Result)
+		return errors.New(logger.JoinStrings("failed to pause torrent: ", response.Result))
 	}
 
 	return nil
@@ -254,7 +255,7 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 	}
 
 	if response.Result != "success" {
-		return fmt.Errorf("failed to resume torrent: %s", response.Result)
+		return errors.New(logger.JoinStrings("failed to resume torrent: ", response.Result))
 	}
 
 	return nil
@@ -273,7 +274,7 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 	}
 
 	if response.Result != "success" {
-		return fmt.Errorf("failed to remove torrent: %s", response.Result)
+		return errors.New(logger.JoinStrings("failed to remove torrent: ", response.Result))
 	}
 
 	return nil
@@ -287,7 +288,7 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 	}
 
 	if response.Result != "success" {
-		return nil, fmt.Errorf("failed to get status: %s", response.Result)
+		return nil, errors.New(logger.JoinStrings("failed to get status: ", response.Result))
 	}
 
 	status := &apiexternal_v2.DownloadClientStatus{
@@ -317,7 +318,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	}
 
 	if response.Result != "success" {
-		return fmt.Errorf("test failed: %s", response.Result)
+		return errors.New(logger.JoinStrings("test failed: ", response.Result))
 	}
 
 	return nil
@@ -375,12 +376,12 @@ func (p *Provider) makeRPCCall(
 				if sessionID := resp.Header.Get("X-Transmission-Session-Id"); sessionID != "" {
 					p.sessionID = sessionID
 					// Don't decode response, will retry
-					return fmt.Errorf("CSRF retry needed")
+					return errors.New("CSRF retry needed")
 				}
 			}
 
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("HTTP %d", resp.StatusCode)
+				return errors.New(logger.JoinStrings("HTTP ", strconv.Itoa(resp.StatusCode)))
 			}
 
 			if decodeErr := json.NewDecoder(resp.Body).Decode(&rpcResponse); decodeErr != nil {
@@ -429,7 +430,7 @@ func (p *Provider) getSessionID(ctx context.Context) error {
 				}
 			}
 
-			return fmt.Errorf("failed to get session ID")
+			return errors.New("failed to get session ID")
 		},
 		headers,
 	)

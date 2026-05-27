@@ -146,19 +146,19 @@ type Limiter struct {
 	fastPath         bool // Use optimized fast path for common cases
 
 	// Comprehensive metrics (atomic counters)
-	totalRequests   int64
-	allowedRequests int64
-	deniedRequests  int64
-	violations      int64
-	cleanupOps      int64
-	maxConcurrent   int64
-	currentActive   int64
+	totalRequests   atomic.Int64
+	allowedRequests atomic.Int64
+	deniedRequests  atomic.Int64
+	violations      atomic.Int64
+	cleanupOps      atomic.Int64
+	maxConcurrent   atomic.Int64
+	currentActive   atomic.Int64
 
 	// Response time tracking
 	responseTimes     []time.Duration
 	responseTimesIdx  int
-	maxResponseTime   int64 // nanoseconds
-	totalResponseTime int64 // nanoseconds for average calculation
+	maxResponseTime   atomic.Int64 // nanoseconds
+	totalResponseTime atomic.Int64 // nanoseconds for average calculation
 
 	// Health and observability
 	updateStart   time.Time
@@ -252,7 +252,7 @@ func (l *Limiter) cleanupOldRequests(now time.Time) {
 
 	// Update cleanup timestamp and metrics
 	l.lastCleanup = now
-	atomic.AddInt64(&l.cleanupOps, 1)
+	l.cleanupOps.Add(1)
 
 	// Trigger GC hint if we freed significant memory
 	if forceCleanup && len(l.requests) < l.cleanupThreshold/4 {
@@ -279,17 +279,17 @@ func (l *Limiter) binarySearchCleanup(cutoff time.Time) int {
 func (l *Limiter) Allow() (bool, time.Duration) {
 	start := time.Now()
 
-	atomic.AddInt64(&l.totalRequests, 1)
+	l.totalRequests.Add(1)
 
 	// Update current active counter
-	active := atomic.AddInt64(&l.currentActive, 1)
-	defer atomic.AddInt64(&l.currentActive, -1)
+	active := l.currentActive.Add(1)
+	defer l.currentActive.Add(-1)
 
 	// Update max concurrent if necessary (lock-free)
 	for {
-		maxCurrent := atomic.LoadInt64(&l.maxConcurrent)
+		maxCurrent := l.maxConcurrent.Load()
 		if active <= maxCurrent ||
-			atomic.CompareAndSwapInt64(&l.maxConcurrent, maxCurrent, active) {
+			l.maxConcurrent.CompareAndSwap(maxCurrent, active) {
 			break
 		}
 	}
@@ -311,7 +311,7 @@ func (l *Limiter) Allow() (bool, time.Duration) {
 			// Double-check under full lock
 			if int64(len(l.requests)) < l.max {
 				l.requests = append(l.requests, now)
-				atomic.AddInt64(&l.allowedRequests, 1)
+				l.allowedRequests.Add(1)
 				l.recordResponseTime(start, now)
 				l.mu.Unlock()
 
@@ -332,7 +332,7 @@ func (l *Limiter) Allow() (bool, time.Duration) {
 	// Check if we have capacity
 	if int64(len(l.requests)) < l.max {
 		l.requests = append(l.requests, now)
-		atomic.AddInt64(&l.allowedRequests, 1)
+		l.allowedRequests.Add(1)
 		l.recordResponseTime(start, now)
 
 		return true, 0
@@ -344,7 +344,7 @@ func (l *Limiter) Allow() (bool, time.Duration) {
 
 		waitTime := oldest.Add(l.interval).Sub(now)
 		if waitTime > 0 {
-			atomic.AddInt64(&l.deniedRequests, 1)
+			l.deniedRequests.Add(1)
 			l.recordResponseTime(start, now)
 
 			return false, waitTime
@@ -353,7 +353,7 @@ func (l *Limiter) Allow() (bool, time.Duration) {
 
 	// If we get here, cleanup should have made space
 	l.requests = append(l.requests, now)
-	atomic.AddInt64(&l.allowedRequests, 1)
+	l.allowedRequests.Add(1)
 	l.recordResponseTime(start, now)
 
 	return true, 0
@@ -445,8 +445,8 @@ func (l *Limiter) UseReservation(id string) bool {
 	now := time.Now()
 
 	l.requests = append(l.requests, now)
-	atomic.AddInt64(&l.allowedRequests, 1)
-	atomic.AddInt64(&l.totalRequests, 1)
+	l.allowedRequests.Add(1)
+	l.totalRequests.Add(1)
 
 	return true
 }
@@ -645,15 +645,15 @@ func (l *Limiter) recordResponseTime(start, end time.Time) {
 
 	// Update max response time atomically
 	for {
-		maxCurrent := atomic.LoadInt64(&l.maxResponseTime)
+		maxCurrent := l.maxResponseTime.Load()
 		if nanos <= maxCurrent ||
-			atomic.CompareAndSwapInt64(&l.maxResponseTime, maxCurrent, nanos) {
+			l.maxResponseTime.CompareAndSwap(maxCurrent, nanos) {
 			break
 		}
 	}
 
 	// Update total response time for average calculation
-	atomic.AddInt64(&l.totalResponseTime, nanos)
+	l.totalResponseTime.Add(nanos)
 
 	// Store in circular buffer for percentile calculations
 	if len(l.responseTimes) < maxResponseSamples {
@@ -683,15 +683,15 @@ func (l *Limiter) GetMetrics() LimiterMetrics {
 	utilization := float64(activeCount) / float64(l.max)
 
 	// Calculate response time metrics
-	totalReqs := atomic.LoadInt64(&l.totalRequests)
+	totalReqs := l.totalRequests.Load()
 
 	avgResponseTime := time.Duration(0)
 	if totalReqs > 0 {
-		avgResponseTime = time.Duration(atomic.LoadInt64(&l.totalResponseTime) / totalReqs)
+		avgResponseTime = time.Duration(l.totalResponseTime.Load() / totalReqs)
 	}
 
 	// Calculate P99 response time (optimized)
-	p99ResponseTime := time.Duration(atomic.LoadInt64(&l.maxResponseTime))
+	p99ResponseTime := time.Duration(l.maxResponseTime.Load())
 	if len(l.responseTimes) > 10 {
 		// Sort a copy and get 99th percentile
 		sortedTimes := make([]time.Duration, len(l.responseTimes))
@@ -710,17 +710,17 @@ func (l *Limiter) GetMetrics() LimiterMetrics {
 	}
 
 	return LimiterMetrics{
-		TotalRequests:     atomic.LoadInt64(&l.totalRequests),
-		AllowedRequests:   atomic.LoadInt64(&l.allowedRequests),
-		DeniedRequests:    atomic.LoadInt64(&l.deniedRequests),
-		Violations:        atomic.LoadInt64(&l.violations),
+		TotalRequests:     l.totalRequests.Load(),
+		AllowedRequests:   l.allowedRequests.Load(),
+		DeniedRequests:    l.deniedRequests.Load(),
+		Violations:        l.violations.Load(),
 		AvgResponseTime:   avgResponseTime,
-		MaxResponseTime:   time.Duration(atomic.LoadInt64(&l.maxResponseTime)),
+		MaxResponseTime:   time.Duration(l.maxResponseTime.Load()),
 		P99ResponseTime:   p99ResponseTime,
-		MaxConcurrent:     atomic.LoadInt64(&l.maxConcurrent),
-		CurrentActive:     atomic.LoadInt64(&l.currentActive),
+		MaxConcurrent:     l.maxConcurrent.Load(),
+		CurrentActive:     l.currentActive.Load(),
 		WindowUtilization: utilization,
-		CleanupOperations: atomic.LoadInt64(&l.cleanupOps),
+		CleanupOperations: l.cleanupOps.Load(),
 		LastViolationTime: l.lastViolation,
 		UptimeStart:       l.updateStart,
 	}
@@ -751,14 +751,14 @@ func (l *Limiter) HealthCheck() bool {
 
 // ResetMetrics resets all metrics counters.
 func (l *Limiter) ResetMetrics() {
-	atomic.StoreInt64(&l.totalRequests, 0)
-	atomic.StoreInt64(&l.allowedRequests, 0)
-	atomic.StoreInt64(&l.deniedRequests, 0)
-	atomic.StoreInt64(&l.violations, 0)
-	atomic.StoreInt64(&l.cleanupOps, 0)
-	atomic.StoreInt64(&l.maxConcurrent, 0)
-	atomic.StoreInt64(&l.maxResponseTime, 0)
-	atomic.StoreInt64(&l.totalResponseTime, 0)
+	l.totalRequests.Store(0)
+	l.allowedRequests.Store(0)
+	l.deniedRequests.Store(0)
+	l.violations.Store(0)
+	l.cleanupOps.Store(0)
+	l.maxConcurrent.Store(0)
+	l.maxResponseTime.Store(0)
+	l.totalResponseTime.Store(0)
 
 	l.mu.Lock()
 

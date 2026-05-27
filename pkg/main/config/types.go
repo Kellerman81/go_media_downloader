@@ -581,6 +581,13 @@ type GeneralConfig struct {
 	// Note: removing 'musicbrainz' severely limits matching — it is the track-listing source
 	// for candidates not yet fully populated in the database.
 	MusicMetaSourcePriority []string `comment:"Active music metadata providers in priority order.\nEmpty = all available providers in default order (musicbrainz → acoustid → lastfm → discogs → deezer → theaudiodb → itunes).\nTo disable a provider, omit it from the list." displayname:"Music Metadata Source Priority" longcomment:"Controls which music metadata providers are active and the order they are tried.\nEmpty list (default): all available providers are used in the default order:\n  musicbrainz → acoustid → lastfm → discogs → deezer → theaudiodb → itunes\nTo disable a provider, simply omit it:\n  ['musicbrainz', 'lastfm', 'discogs'] - skip AcoustID fingerprinting\n  ['musicbrainz', 'discogs'] - skip both AcoustID and Last.fm\nNote: 'acoustid' and 'lastfm' also require their API keys to be configured.\nWarning: removing 'musicbrainz' from the list will break track-listing lookups\nfor albums not yet fully populated in the local database." multiline:"true" toml:"music_meta_source_priority"`
+
+	// MusicMetaSourcePenalties adds a fixed distance penalty for candidates from specific
+	// metadata providers. Keys are provider names (e.g. "discogs", "lastfm"), values are
+	// penalty amounts added to albumDistanceWithTracks before recommendation is evaluated.
+	// A positive value makes a provider's candidates harder to match; use 0.0 to disable.
+	// Example: {"discogs": 0.1} adds 0.10 to every Discogs candidate's distance score.
+	MusicMetaSourcePenalties map[string]float64 `comment:"Distance penalty added to candidates from specific metadata providers.\nKeys are provider names (e.g. 'discogs', 'lastfm'), values are the extra distance.\nPositive value = harder to match." displayname:"Music Metadata Source Penalties" toml:"music_meta_source_penalties"`
 }
 
 // ImdbConfig defines the configuration for the IMDb indexer.
@@ -706,6 +713,10 @@ type MediaTypeConfig struct {
 
 	// ListsQualities are the quality strings from lists (not set in TOML)
 	ListsQualities []string `toml:"-"`
+
+	// ListsNames is a pre-computed slice of all list names — avoids re-allocating
+	// []string{cfgp.Lists[i].Name} on every call to FindDb*ByArtistFirst* / FindDb*ByAuthorFirst*.
+	ListsNames []string `toml:"-"`
 
 	// Notification contains notification configs
 	Notification []MediaNotificationConfig `comment:"Notification settings for this specific media group.\nDefines how and when you'll be alerted about media" displayname:"Notification Configurations" longcomment:"Notification settings for this specific media group.\nDefines how and when you'll be alerted about media events.\nEach entry can reference:\n- Notification template configurations (from [notification] section)\n- Events to notify about (downloads, upgrades, failures)\n- Specific notification channels (Pushover, email, webhooks)\nAllows different notification preferences per media type.\nOptional: Only needed if you want notifications for this media group." toml:"notification"`

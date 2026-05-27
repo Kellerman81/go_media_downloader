@@ -13,6 +13,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 )
 
+var errNoFilesFoundForAlbum = errors.New("no files found for album")
+
 func init() {
 	music.RegisterRefresh(refreshMusicWrapper)
 }
@@ -123,7 +125,7 @@ func RetagAlbum(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint) er
 		&dbID,
 	)
 	if len(files) == 0 {
-		return errors.New("no files found for album")
+		return errNoFilesFoundForAlbum
 	}
 
 	// Get track metadata from dbtracks (keyed by ID)

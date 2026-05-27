@@ -2,6 +2,7 @@ package sendmail
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/smtp"
 	"strings"
@@ -85,7 +86,7 @@ func (p *Provider) SendNotification(
 	}
 
 	if len(recipients) == 0 {
-		return nil, fmt.Errorf("no recipients configured")
+		return nil, errors.New("no recipients configured")
 	}
 
 	// Build email message
@@ -112,7 +113,7 @@ func (p *Provider) SendNotification(
 			Timestamp: time.Now(),
 			Provider:  "sendmail",
 			Error:     err.Error(),
-		}, fmt.Errorf("failed to send email: %w", err)
+		}, errors.New(logger.JoinStrings("failed to send email: ", err.Error()))
 	}
 
 	return &apiexternal_v2.NotificationResponse{
@@ -127,7 +128,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	// Try to connect to SMTP server
 	client, err := smtp.Dial(fmt.Sprintf("%s:%d", p.smtpHost, p.smtpPort))
 	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+		return errors.New(logger.JoinStrings("failed to connect to SMTP server: ", err.Error()))
 	}
 	defer client.Close()
 
@@ -135,7 +136,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	if p.username != "" && p.password != "" {
 		auth := smtp.PlainAuth("", p.username, p.password, p.smtpHost)
 		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
+			return errors.New(logger.JoinStrings("SMTP authentication failed: ", err.Error()))
 		}
 	}
 

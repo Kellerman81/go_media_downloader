@@ -2,7 +2,6 @@ package parser_v2
 
 import (
 	"path/filepath"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
@@ -135,7 +134,7 @@ func (tr *TagReader) ReadAlbumTags(filePaths []string) (*MusicParseResult, error
 
 		// Determine format from file extension
 		if len(filePaths) > 0 {
-			ext := strings.ToLower(filepath.Ext(filePaths[0]))
+			ext := logger.FileExt(filePaths[0])
 
 			result.Format = logger.ExtToFormat(ext)
 			result.IsLossless = IsLosslessAudioExtension(ext)

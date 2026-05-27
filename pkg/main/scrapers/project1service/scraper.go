@@ -276,7 +276,7 @@ func cleanTitle(title string) string {
 	// Replace multiple consecutive dashes with single dash
 	re := database.GetCachedRegexp(`-+`)
 
-	cleaned = re.ReplaceAllString(cleaned, "-")
+	cleaned = re.ReplaceAllLiteralString(cleaned, "-")
 
 	return cleaned
 }

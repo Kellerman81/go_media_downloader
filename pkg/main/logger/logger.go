@@ -48,7 +48,18 @@ type Config struct {
 
 const logfile = "./logs/downloader.log"
 
-var logZeroValues bool
+var (
+	logZeroValues bool
+
+	logMap = map[string]func() *zerolog.Event{
+		"info":  log.Info,
+		"debug": log.Debug,
+		"error": log.Error,
+		"fatal": log.Fatal,
+		"warn":  log.Warn,
+		"panic": log.Panic,
+	}
+)
 
 // InitLogger initializes the global logger based on the provided Config.
 // It sets the log level, output format, rotation options, etc.
@@ -131,15 +142,6 @@ func InitLogger(config Config) {
 	} else {
 		log = logctx.Logger()
 	}
-}
-
-var logMap = map[string]func() *zerolog.Event{
-	"info":  log.Info,
-	"debug": log.Debug,
-	"error": log.Error,
-	"fatal": log.Fatal,
-	"warn":  log.Warn,
-	"panic": log.Panic,
 }
 
 // Logtype returns a zerolog.Event with the specified log level. If the log level is not recognized,

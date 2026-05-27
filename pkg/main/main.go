@@ -491,7 +491,10 @@ func main() {
 
 	err := config.LoadCfgDB(false)
 	if err != nil {
-		fmt.Println("Fatal: failed to load config:", err) //nolint:forbidigo // logger not initialized yet
+		fmt.Println(
+			"Fatal: failed to load config:",
+			err,
+		)
 		os.Exit(1)
 	}
 
@@ -501,7 +504,8 @@ func main() {
 			fmt.Printf(
 				"creating a new watcher: %s",
 				err,
-			) //nolint:forbidigo // logger not initialized yet
+			)
+
 			return
 		}
 		defer watcher.Close()
@@ -517,7 +521,8 @@ func main() {
 			fmt.Printf(
 				"%q is a directory, not a file",
 				config.Configfile,
-			) //nolint:forbidigo // logger not initialized yet
+			)
+
 			return
 		}
 
@@ -528,7 +533,8 @@ func main() {
 				"%q: %s",
 				config.Configfile,
 				err,
-			) //nolint:forbidigo // logger not initialized yet
+			)
+
 			return
 		}
 
@@ -553,6 +559,8 @@ func main() {
 					if strings.Contains(e.Name, "config.toml") {
 						if e.Has(fsnotify.Write) {
 							config.Loadallsettings(true)
+							parser.GenerateAllQualityPriorities()
+							parser.GenerateCutoffPriorities()
 							utils.LoadGlobalSchedulerConfig()
 							utils.LoadSchedulerConfig()
 						}

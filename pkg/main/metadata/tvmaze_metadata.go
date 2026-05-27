@@ -279,7 +279,7 @@ func applyTVmazeMetadata(
 
 	// Update slug
 	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
-		newSlug := logger.StringToSlug(serie.Seriename)
+		newSlug := logger.StringToSlugCached(serie.Seriename)
 		if serie.Slug != newSlug {
 			serie.Slug = newSlug
 

@@ -2,11 +2,14 @@ package tvdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -189,7 +192,9 @@ func (p *Provider) GetSeasonDetails(
 	}
 
 	if len(seasonEpisodes) == 0 {
-		return nil, fmt.Errorf("season %d not found", seasonNumber)
+		return nil, errors.New(
+			logger.JoinStrings("season ", strconv.Itoa(seasonNumber), " not found"),
+		)
 	}
 
 	return &apiexternal_v2.Season{
@@ -222,7 +227,15 @@ func (p *Provider) GetEpisodeDetails(
 		}
 	}
 
-	return nil, fmt.Errorf("episode S%02dE%02d not found", seasonNumber, episodeNumber)
+	return nil, errors.New(
+		logger.JoinStrings(
+			"episode S",
+			fmt.Sprintf("%02d", seasonNumber),
+			"E",
+			fmt.Sprintf("%02d", episodeNumber),
+			" not found",
+		),
+	)
 }
 
 // GetAllEpisodes retrieves ALL episodes for a series, handling pagination.

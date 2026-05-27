@@ -16,6 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/movies" // Register movie handler
 	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/series" // Register series handler
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 )
 
 type regexpattern struct {
@@ -1190,12 +1191,18 @@ func GetPriorityMapQual(
 		qual = m.QualityID
 	}
 
-	if quality.UseForPriorityAudio || useall {
-		aud = m.AudioID
-	}
+	// Codec and audio contribute to priority only in the useall path (structure/
+	// cutoff table building). In the search/upgrade path (useall=false) for
+	// movies/series, only resolution+quality are compared so a different audio
+	// track or codec does not look like an upgrade and trigger a re-download.
+	if useall {
+		if quality.UseForPriorityAudio {
+			aud = m.AudioID
+		}
 
-	if quality.UseForPriorityCodec || useall {
-		codec = m.CodecID
+		if quality.UseForPriorityCodec {
+			codec = m.CodecID
+		}
 	}
 
 	intid, cwanted := findPriorityIndex(reso, qual, codec, aud, 0, quality, checkwanted)
@@ -1307,12 +1314,8 @@ func GetPriorityMapQualAudio(
 // calculateAudioBitratePriority returns priority bonus based on audio bitrate.
 // Higher bitrates get higher priority, especially for lossy formats.
 func calculateAudioBitratePriority(bitrate int, format string) int {
-	format = strings.ToLower(format)
-
 	// For lossless formats, bitrate isn't as meaningful (it varies with content)
-	switch format {
-	case "flac", "alac", "wav", "aiff", "ape", "wv", "wavpack":
-		// Lossless - bitrate doesn't indicate quality, but higher is still better
+	if parser_v2.IsLosslessFormat(format) {
 		if bitrate >= 1000 {
 			return 5 // Hi-res lossless
 		}
@@ -1370,25 +1373,22 @@ func GetPriorityMapQualBook(
 // calculateBookFormatPriority returns priority bonus based on ebook format.
 // EPUB and AZW3 are generally preferred for reflow capability.
 func calculateBookFormatPriority(format string) int {
-	format = strings.ToLower(format)
-
-	// Check for format in the quality string
 	switch {
-	case strings.Contains(format, "epub"):
+	case logger.ContainsI(format, "epub"):
 		return 50 // EPUB - most versatile, best reflow
-	case strings.Contains(format, "azw3"), strings.Contains(format, "azw"):
+	case logger.ContainsI(format, "azw3"), logger.ContainsI(format, "azw"):
 		return 45 // AZW3/AZW - Kindle format, good quality
-	case strings.Contains(format, "mobi"):
+	case logger.ContainsI(format, "mobi"):
 		return 40 // MOBI - older Kindle format
-	case strings.Contains(format, "pdf"):
+	case logger.ContainsI(format, "pdf"):
 		return 30 // PDF - fixed layout, less flexible
-	case strings.Contains(format, "cbz"), strings.Contains(format, "cbr"):
+	case logger.ContainsI(format, "cbz"), logger.ContainsI(format, "cbr"):
 		return 35 // Comic formats
-	case strings.Contains(format, "djvu"):
+	case logger.ContainsI(format, "djvu"):
 		return 25 // DjVu - good for scans but less compatible
-	case strings.Contains(format, "txt"), strings.Contains(format, "rtf"):
+	case logger.ContainsI(format, "txt"), logger.ContainsI(format, "rtf"):
 		return 10 // Plain text/RTF - basic
-	case strings.Contains(format, "doc"), strings.Contains(format, "docx"):
+	case logger.ContainsI(format, "doc"), logger.ContainsI(format, "docx"):
 		return 15 // Word documents
 	}
 

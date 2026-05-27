@@ -93,8 +93,8 @@ func (n *NZBPreprocessor) Clean(input string) string {
 		quotedName := matches[1]
 
 		// Clean up .par2/.rar suffix if present (these are repair/archive files)
-		cleanedQuotedName := n.patterns.par2Suffix.ReplaceAllString(quotedName, "")
-		// cleanedQuotedName = n.patterns.archiveSuffix.ReplaceAllString(cleanedQuotedName, "")
+		cleanedQuotedName := n.patterns.par2Suffix.ReplaceAllLiteralString(quotedName, "")
+		// cleanedQuotedName = n.patterns.archiveSuffix.ReplaceAllLiteralString(cleanedQuotedName, "")
 
 		// If the quoted filename looks like a short par2/rar reference (not the actual content name),
 		// we need to extract the content name from elsewhere in the subject line
@@ -108,44 +108,44 @@ func (n *NZBPreprocessor) Clean(input string) string {
 
 	// Remove yEnc suffix
 	if n.patterns.yenc.MatchString(result) {
-		result = n.patterns.yenc.ReplaceAllString(result, "")
+		result = n.patterns.yenc.ReplaceAllLiteralString(result, "")
 	}
 
 	// Remove site tags like <kere.ws>
 	if n.patterns.siteTag.MatchString(result) {
-		result = n.patterns.siteTag.ReplaceAllString(result, "")
+		result = n.patterns.siteTag.ReplaceAllLiteralString(result, "")
 	}
 
 	// Remove quality prefix like (TR-1080p)
 	if n.patterns.qualityPrefix.MatchString(result) {
-		result = n.patterns.qualityPrefix.ReplaceAllString(result, "")
+		result = n.patterns.qualityPrefix.ReplaceAllLiteralString(result, "")
 	}
 
 	// Remove part number prefix [001/279]
 	if n.patterns.partNumberPrefix.MatchString(result) {
-		result = n.patterns.partNumberPrefix.ReplaceAllString(result, "")
+		result = n.patterns.partNumberPrefix.ReplaceAllLiteralString(result, "")
 	}
 
 	// Remove Usenet metadata brackets
 	if n.patterns.usenetMetaPrefix.MatchString(result) {
-		result = n.patterns.usenetMetaPrefix.ReplaceAllString(result, "")
+		result = n.patterns.usenetMetaPrefix.ReplaceAllLiteralString(result, "")
 	}
 
 	// Remove part number suffix - [01/58] -
 	if n.patterns.partNumberSuffix.MatchString(result) {
-		result = n.patterns.partNumberSuffix.ReplaceAllString(result, " ")
+		result = n.patterns.partNumberSuffix.ReplaceAllLiteralString(result, " ")
 	}
 
 	// Remove .par2/.rar suffixes
 	if n.patterns.par2Suffix.MatchString(result) {
-		result = n.patterns.par2Suffix.ReplaceAllString(result, "")
+		result = n.patterns.par2Suffix.ReplaceAllLiteralString(result, "")
 	}
 
-	// result = n.patterns.archiveSuffix.ReplaceAllString(result, "")
+	// result = n.patterns.archiveSuffix.ReplaceAllLiteralString(result, "")
 
 	// Remove quoted filenames (we already tried to use them, they weren't useful)
 	if n.patterns.quotedFile.MatchString(result) {
-		result = n.patterns.quotedFile.ReplaceAllString(result, "")
+		result = n.patterns.quotedFile.ReplaceAllLiteralString(result, "")
 	}
 
 	// Clean up any remaining artifacts

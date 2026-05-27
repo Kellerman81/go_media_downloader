@@ -3,13 +3,16 @@ package pushbullet
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/goccy/go-json"
 )
 
@@ -98,7 +101,7 @@ func (p *Provider) SendNotification(
 
 	jsonData, err := json.Marshal(pushReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to marshal request: ", err.Error()))
 	}
 
 	// Use BaseClient's MakeRequest with custom response handler
@@ -113,7 +116,7 @@ func (p *Provider) SendNotification(
 		func(resp *http.Response) error {
 			body, readErr := io.ReadAll(resp.Body)
 			if readErr != nil {
-				return fmt.Errorf("failed to read response: %w", readErr)
+				return errors.New(logger.JoinStrings("failed to read response: ", readErr.Error()))
 			}
 
 			if resp.StatusCode != http.StatusOK {
@@ -124,12 +127,19 @@ func (p *Provider) SendNotification(
 					Error:     fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body)),
 				}
 
-				return fmt.Errorf("pushbullet request failed with status %d", resp.StatusCode)
+				return errors.New(
+					logger.JoinStrings(
+						"pushbullet request failed with status ",
+						strconv.Itoa(resp.StatusCode),
+					),
+				)
 			}
 
 			var pushResp pushbulletPushResponse
 			if unmarshalErr := json.Unmarshal(body, &pushResp); unmarshalErr != nil {
-				return fmt.Errorf("failed to decode response: %w", unmarshalErr)
+				return errors.New(
+					logger.JoinStrings("failed to decode response: ", unmarshalErr.Error()),
+				)
 			}
 
 			notifResponse = apiexternal_v2.NotificationResponse{
@@ -159,24 +169,27 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 		nil,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.New(logger.JoinStrings("failed to create request: ", err.Error()))
 	}
 
 	req.Header.Set("Access-Token", p.apiToken)
 
 	resp, err := p.BaseClient.GetHTTPClient().Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return errors.New(logger.JoinStrings("request failed: ", err.Error()))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 
-		return fmt.Errorf(
-			"pushbullet auth check failed with status %d: %s",
-			resp.StatusCode,
-			string(body),
+		return errors.New(
+			logger.JoinStrings(
+				"pushbullet auth check failed with status ",
+				strconv.Itoa(resp.StatusCode),
+				": ",
+				string(body),
+			),
 		)
 	}
 

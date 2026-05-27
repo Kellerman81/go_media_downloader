@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/alitto/pond/v2"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 )
@@ -95,8 +95,7 @@ var (
 	globalQueueSet = syncops.NewSyncMapUint[syncops.Job](1000)
 
 	// Recent jobs cache for duplicate detection.
-	recentJobs   = make(map[string]time.Time)
-	recentJobsMu sync.RWMutex
+	recentJobs *ristretto.Cache[string, struct{}]
 
 	// Job name index for O(1) lookup - maps job name to job ID for fast duplicate detection.
 	jobNameIndex = syncops.NewSyncMap[uint32](1000)
@@ -109,13 +108,59 @@ var (
 	lastAddedRSS    atomic.Int64
 	lastAddedOther  atomic.Int64
 
-	ErrNotQueued    = errors.New("not queued")
-	ErrQueueFull    = errors.New("queue is full")
-	ErrInvalidQueue = errors.New("invalid queue")
+	ErrNotQueued             = errors.New("not queued")
+	ErrQueueFull             = errors.New("queue is full")
+	ErrInvalidQueue          = errors.New("invalid queue")
+	errJobNotFound           = errors.New("job not found")
+	errCronJobConfigNotFound = errors.New("cron Job Config not found")
+	errCronJobNotFound       = errors.New("cron Job not found")
 	// phandler is a panic handler function.
 	// phandler = pond.PanicHandler(func(p any) {
 	// 	logger.LogDynamicany2StrAny("error", "Recovered from panic (dispatcher)", strMsg, logger.Stack(), strMsg, p)
 	// }).
+
+	jobAlternatives = map[string][]string{
+		"searchmissinginc": {
+			"searchmissinginctitle_",
+			"searchmissingfull_",
+			"searchmissingfulltitle_",
+		},
+		"searchmissinginctitle": {
+			"searchmissinginc_",
+			"searchmissingfull_",
+			"searchmissingfulltitle_",
+		},
+		"searchmissingfull": {
+			"searchmissinginctitle_",
+			"searchmissinginc_",
+			"searchmissingfulltitle_",
+		},
+		"searchmissingfulltitle": {
+			"searchmissinginctitle_",
+			"searchmissingfull_",
+			"searchmissinginc_",
+		},
+		"searchupgradeinc": {
+			"searchupgradeinctitle_",
+			"searchupgradefull_",
+			"searchupgradefulltitle_",
+		},
+		"searchupgradeinctitle": {
+			"searchupgradeinc_",
+			"searchupgradefull_",
+			"searchupgradefulltitle_",
+		},
+		"searchupgradefull": {
+			"searchupgradeinctitle_",
+			"searchupgradeinc_",
+			"searchupgradefulltitle_",
+		},
+		"searchupgradefulltitle": {
+			"searchupgradeinctitle_",
+			"searchupgradefull_",
+			"searchupgradeinc_",
+		},
+	}
 )
 
 func init() {
@@ -621,7 +666,7 @@ func runjobcron(id uint32) func() error {
 			logger.Logtype("error", 1).
 				Int("job", int(id)).
 				Msg("Job not found")
-			return errors.New("job not found")
+			return errJobNotFound
 		}
 
 		defer globalQueueSet.Delete(id)
@@ -907,7 +952,7 @@ func executeJob(s syncops.Job) error {
 				Str("cfgp", s.Cfgpstr).
 				Msg("Cron Job Config not found")
 
-			return errors.New("cron Job Config not found")
+			return errCronJobConfigNotFound
 		}
 
 		if jobFunc := cfg.Jobs[s.JobName]; jobFunc != nil {
@@ -918,7 +963,7 @@ func executeJob(s syncops.Job) error {
 				Str("cfgp", s.Cfgpstr).
 				Msg("Cron Job not found")
 
-			return errors.New("cron Job not found")
+			return errCronJobNotFound
 		}
 	}
 
@@ -1056,6 +1101,12 @@ func InitWorkerPools(
 	WorkerPoolIndexer = pond.NewPool(workerindex)
 	WorkerPoolIndexerRSS = pond.NewPool(workerindex)
 	WorkerPoolParse = pond.NewPool(workerfiles)
+
+	recentJobs, _ = ristretto.NewCache(&ristretto.Config[string, struct{}]{
+		NumCounters: 10_000,
+		MaxCost:     1 << 20, // 1MB
+		BufferItems: 64,
+	})
 }
 
 // CloseWorkerPools gracefully shuts down all worker pools.
@@ -1158,73 +1209,15 @@ func GetGlobalQueueSet() *syncops.SyncMapUint[syncops.Job] {
 	return globalQueueSet
 }
 
-var jobAlternatives = map[string][]string{
-	"searchmissinginc": {
-		"searchmissinginctitle_",
-		"searchmissingfull_",
-		"searchmissingfulltitle_",
-	},
-	"searchmissinginctitle": {
-		"searchmissinginc_",
-		"searchmissingfull_",
-		"searchmissingfulltitle_",
-	},
-	"searchmissingfull": {
-		"searchmissinginctitle_",
-		"searchmissinginc_",
-		"searchmissingfulltitle_",
-	},
-	"searchmissingfulltitle": {"searchmissinginctitle_", "searchmissingfull_", "searchmissinginc_"},
-	"searchupgradeinc": {
-		"searchupgradeinctitle_",
-		"searchupgradefull_",
-		"searchupgradefulltitle_",
-	},
-	"searchupgradeinctitle": {
-		"searchupgradeinc_",
-		"searchupgradefull_",
-		"searchupgradefulltitle_",
-	},
-	"searchupgradefull": {
-		"searchupgradeinctitle_",
-		"searchupgradeinc_",
-		"searchupgradefulltitle_",
-	},
-	"searchupgradefulltitle": {"searchupgradeinctitle_", "searchupgradefull_", "searchupgradeinc_"},
-}
-
 func addRecentJob(jobname string) {
-	recentJobsMu.Lock()
-	defer recentJobsMu.Unlock()
-
-	recentJobs[jobname] = time.Now()
-
-	// Clean up old entries (older than 10 seconds)
-	cutoff := time.Now().Add(-10 * time.Second)
-	for name, timestamp := range recentJobs {
-		if timestamp.Before(cutoff) {
-			delete(recentJobs, name)
-		}
-	}
+	recentJobs.SetWithTTL(jobname, struct{}{}, 1, 10*time.Second)
 }
 
-// isRecentJob checks if a job was recently submitted (within last 5 seconds)
+// isRecentJob checks if a job was recently submitted (within last 10 seconds)
 // to prevent duplicate job submissions and reduce system load.
-//
-// Parameters:
-//   - jobname: Name of the job to check in recent submissions cache
-//
-// Returns:
-//   - bool: True if job was submitted within the last 5 seconds, false otherwise
 func isRecentJob(jobname string) bool {
-	recentJobsMu.RLock()
-	defer recentJobsMu.RUnlock()
-
-	if timestamp, exists := recentJobs[jobname]; exists {
-		return time.Since(timestamp) < 5*time.Second
-	}
-
-	return false
+	_, ok := recentJobs.Get(jobname)
+	return ok
 }
 
 // checkQueue checks if a job with the given name is currently running in any

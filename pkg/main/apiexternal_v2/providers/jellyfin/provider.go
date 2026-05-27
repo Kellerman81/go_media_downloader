@@ -2,12 +2,14 @@ package jellyfin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -132,7 +134,7 @@ func (p *Provider) AddToWatchlist(
 
 	var response any
 	if err := p.MakeRequest(ctx, "POST", endpoint, nil, &response, nil); err != nil {
-		return fmt.Errorf("failed to add to favorites: %w", err)
+		return errors.New(logger.JoinStrings("failed to add to favorites: ", err.Error()))
 	}
 
 	return nil
@@ -149,7 +151,7 @@ func (p *Provider) RemoveFromWatchlist(
 
 	var response any
 	if err := p.MakeRequest(ctx, "DELETE", endpoint, nil, &response, nil); err != nil {
-		return fmt.Errorf("failed to remove from favorites: %w", err)
+		return errors.New(logger.JoinStrings("failed to remove from favorites: ", err.Error()))
 	}
 
 	return nil

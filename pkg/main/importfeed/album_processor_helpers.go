@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +16,22 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
+
+// discFolderRe matches folder names that contain a disc/side/volume indicator
+// anywhere in the name, e.g. "CD1", "CD 1", "Disc A", "Side B", "Vol. 2",
+// "Part 3", "Chapter 2", "Book 1", "Tape 2".
+var discFolderRe = regexp.MustCompile(
+	`(?i)(^|[\s\-_.(\[])((cd|disc|disk|side|part|chapter|book|tape)[\s._-]?[0-9a-z]|vol(ume)?[\s._-]?\d)`,
+)
+
+func looksLikeDiscFolder(name string) bool {
+	return discFolderRe.MatchString(name)
+}
+
+// LooksLikeDiscFolder is the exported version for use by other packages.
+func LooksLikeDiscFolder(name string) bool {
+	return discFolderRe.MatchString(name)
+}
 
 var (
 	seriesPrefixKeywords = []string{
@@ -133,14 +150,8 @@ func parseFolderMetadata(
 		}
 	}
 
-	// Disc/volume folder detection (CD1, Disc 2, Vol 3, …).
-	m.IsDiscFolder = logger.HasPrefixI(m.FolderBase, "cd") ||
-		logger.HasPrefixI(m.FolderBase, "disc") ||
-		logger.HasPrefixI(m.FolderBase, "disk") ||
-		logger.HasPrefixI(m.FolderBase, "vol") ||
-		logger.HasPrefixI(m.FolderBase, "volume") ||
-		strings.EqualFold(m.FolderBase, "disc") ||
-		strings.EqualFold(m.FolderBase, "disk")
+	// Disc/volume folder detection (CD1, Disc 2, Vol 3, Side A, …).
+	m.IsDiscFolder = looksLikeDiscFolder(m.FolderBase)
 
 	if m.IsDiscFolder && m.ParentAlbum != "" {
 		m.GrandparentArtist, _, _ = parser_v2.ParseAudioFolder(filepath.Dir(m.ParentDir))
@@ -419,12 +430,40 @@ func buildMusicSearchPairs(meta folderMetadata) []musicSearchPair {
 	pairs := make([]musicSearchPair, 0, 32)
 	seen := make(map[string]bool, 32)
 
+	// Single pooled buffer reused across all add() calls — 1 alloc per key (buf.String())
+	// instead of 3 (ToLower×2 + concatenation).
+	keybuf := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(keybuf)
+
 	add := func(artist, album, source string) {
 		if artist == "" || album == "" {
 			return
 		}
 
-		key := strings.ToLower(artist) + "|" + strings.ToLower(album)
+		keybuf.Reset()
+
+		for i := range len(artist) {
+			c := artist[i]
+			if c >= 'A' && c <= 'Z' {
+				c += 32
+			}
+
+			keybuf.WriteByte(c)
+		}
+
+		keybuf.WriteByte('|')
+
+		for i := range len(album) {
+			c := album[i]
+			if c >= 'A' && c <= 'Z' {
+				c += 32
+			}
+
+			keybuf.WriteByte(c)
+		}
+
+		key := keybuf.String()
+
 		if seen[key] {
 			return
 		}
@@ -469,6 +508,20 @@ func buildMusicSearchPairs(meta folderMetadata) []musicSearchPair {
 		add(VariousArtistsName, meta.ParentAlbum, "va-expanded+parent")
 	}
 
+	// Compound artist variants — when the artist is "A & B", also try "B" alone.
+	// This handles cases such as "Frank Zappa & The Mothers Of Invention" where
+	// the DB may store the album under "The Mothers of Invention" (Discogs/MB credit).
+	for _, compound := range []string{
+		meta.TagArtist, meta.TagAlbumArtist, meta.FolderArtist, meta.FilenameArtist,
+	} {
+		if idx := strings.Index(compound, " & "); idx > 0 {
+			alt := strings.TrimSpace(compound[idx+3:])
+			for _, album := range []string{meta.FolderAlbum, meta.TagAlbum, meta.FilenameAlbum} {
+				add(alt, album, "compound-alt")
+			}
+		}
+	}
+
 	// Stripped episode-number variants.
 	for _, title := range []string{
 		meta.FolderAlbum, meta.FilenameAlbum, meta.TagAlbum, meta.ParentAlbum,
@@ -506,12 +559,38 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 	pairs := make([]searchPair, 0, 48)
 	seen := make(map[string]bool, 48)
 
+	keybuf2 := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(keybuf2)
+
 	add := func(author, title, source string) {
 		if author == "" || title == "" {
 			return
 		}
 
-		key := strings.ToLower(author) + "|" + strings.ToLower(title)
+		keybuf2.Reset()
+
+		for i := range len(author) {
+			c := author[i]
+			if c >= 'A' && c <= 'Z' {
+				c += 32
+			}
+
+			keybuf2.WriteByte(c)
+		}
+
+		keybuf2.WriteByte('|')
+
+		for i := range len(title) {
+			c := title[i]
+			if c >= 'A' && c <= 'Z' {
+				c += 32
+			}
+
+			keybuf2.WriteByte(c)
+		}
+
+		key := keybuf2.String()
+
 		if seen[key] {
 			return
 		}
@@ -984,7 +1063,7 @@ func importAudiobookWithAddFound(
 	newBestCandidates = bestCandidates
 
 	if data.AllowAlternativeReleases && len(allMatches) > 0 {
-		for i := range len(allMatches) {
+		for i := range allMatches {
 			if allMatches[i].ASIN == asin {
 				continue
 			}
@@ -1285,6 +1364,7 @@ func importMusicAddFoundTextSearch(
 	ctx context.Context,
 	albumTitle, tagAlbum string,
 	artist *string,
+	tagArtist string,
 	bestCandidates []*database.AlbumSearchResult,
 	totalRuntimeMs int64,
 	fileCount *int,
@@ -1305,6 +1385,21 @@ func importMusicAddFoundTextSearch(
 	importedID, found := searchAndImportAlternativeRelease(
 		ctx, artist, &searchTitle, fileCount, totalRuntimeMs, cfgp, listid, nil, data,
 	)
+
+	// When the primary artist search failed, try each component of a compound
+	// artist name such as "Frank Zappa & The Mothers Of Invention".  The MB
+	// release may be credited to the band alone ("The Mothers of Invention"),
+	// so the primary "Frank Zappa" query never returns it.
+	if (!found || importedID == 0) && tagArtist != "" && *artist != tagArtist {
+		if idx := strings.Index(tagArtist, " & "); idx > 0 {
+			alt := strings.TrimSpace(tagArtist[idx+3:])
+
+			importedID, found = searchAndImportAlternativeRelease(
+				ctx, &alt, &searchTitle, fileCount, totalRuntimeMs, cfgp, listid, nil, data,
+			)
+		}
+	}
+
 	if !found || importedID == 0 {
 		return dbID, expectedTracks, newBestCandidates, addFoundEntry
 	}
@@ -1802,7 +1897,7 @@ func tryMusicFallbacks(
 
 	var candidates []*database.AlbumSearchResult
 
-	addIDs := func(ids []uint) {
+	addIDs := func(src string, ids []uint) {
 		for i := range ids {
 			if ids[i] == 0 || seenIDs[ids[i]] {
 				continue
@@ -1810,7 +1905,7 @@ func tryMusicFallbacks(
 
 			seenIDs[ids[i]] = true
 			if c := database.FillAlbumResult(
-				&database.AlbumSearchResult{ID: ids[i]},
+				&database.AlbumSearchResult{ID: ids[i]}, src,
 			); c != nil &&
 				c.ID > 0 {
 				candidates = append(candidates, c)
@@ -1821,7 +1916,7 @@ func tryMusicFallbacks(
 	for _, source := range config.GetMusicMetaSourcePriority() {
 		switch source {
 		case "lastfm":
-			addIDs(
+			addIDs(source,
 				tryMusicLastFMFallback(
 					ctx,
 					albumTitle,
@@ -1834,7 +1929,7 @@ func tryMusicFallbacks(
 			)
 
 		case "discogs":
-			addIDs(
+			addIDs(source,
 				tryMusicDiscogsFallback(
 					ctx,
 					albumTitle,
@@ -1847,7 +1942,7 @@ func tryMusicFallbacks(
 			)
 
 		case "deezer":
-			addIDs(
+			addIDs(source,
 				tryMusicDeezerFallback(
 					ctx,
 					albumTitle,
@@ -1860,7 +1955,7 @@ func tryMusicFallbacks(
 			)
 
 		case "theaudiodb":
-			addIDs(
+			addIDs(source,
 				tryMusicTheAudioDBFallback(
 					ctx,
 					albumTitle,
@@ -1873,7 +1968,7 @@ func tryMusicFallbacks(
 			)
 
 		case "itunes":
-			addIDs(
+			addIDs(source,
 				tryMusicItunesFallback(
 					ctx,
 					albumTitle,
@@ -1964,7 +2059,7 @@ func tryMusicLastFMFallback(
 
 	// Prefer the MusicBrainz ID returned by Last.fm for DB lookups.
 	lfmMBID := release.MusicBrainzID
-	slug := logger.StringToSlug(*albumTitle)
+	slug := logger.StringToSlugCachedP(albumTitle)
 
 	var existingID uint
 	if lfmMBID != "" {
@@ -1994,7 +2089,7 @@ func tryMusicLastFMFallback(
 		}
 
 		lfmTitle := releaseTitleName(release.Title, albumTitle)
-		lfmSlug := logger.StringToSlug(lfmTitle)
+		lfmSlug := logger.StringToSlugCached(lfmTitle)
 
 		result, insertErr := database.ExecNid(
 			`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
@@ -2173,7 +2268,7 @@ func tryMusicDiscogsFallback(
 			}
 
 			dgTitle = releaseTitleName(release.Title, albumTitle)
-			slug = logger.StringToSlug(dgTitle)
+			slug = logger.StringToSlugCached(dgTitle)
 
 			masterIDStr = ""
 			if release.MasterID > 0 {
@@ -2333,7 +2428,7 @@ func tryMusicDeezerFallback(
 			}
 
 			dzTitle := releaseTitleName(release.Title, albumTitle)
-			slug := logger.StringToSlug(dzTitle)
+			slug := logger.StringToSlugCached(dzTitle)
 
 			result, insertErr := database.ExecNid(
 				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
@@ -2480,7 +2575,7 @@ func tryMusicTheAudioDBFallback(
 			}
 
 			tadbTitle := releaseTitleName(results[i].Title, albumTitle)
-			slug := logger.StringToSlug(tadbTitle)
+			slug := logger.StringToSlugCached(tadbTitle)
 
 			result, insertErr := database.ExecNid(
 				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
@@ -2633,7 +2728,7 @@ func tryMusicItunesFallback(
 			}
 
 			itunesTitle := releaseTitleName(release.Title, albumTitle)
-			slug := logger.StringToSlug(itunesTitle)
+			slug := logger.StringToSlugCached(itunesTitle)
 
 			result, insertErr := database.ExecNid(
 				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,

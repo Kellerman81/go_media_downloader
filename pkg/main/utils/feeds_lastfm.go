@@ -13,6 +13,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
+var errLastfmAPIKeyNotConfigured = errors.New("lastfm_apikey is not configured")
+
 // getlastfmprovider returns the registered Last.fm provider or creates a
 // temporary one from config if the registry is empty. Returns nil (and an
 // error) when no API key is configured.
@@ -23,7 +25,7 @@ func getlastfmprovider() (*lastfm.Provider, error) {
 
 	apiKey := config.GetSettingsGeneral().LastFMAPIKey
 	if apiKey == "" {
-		return nil, errors.New("lastfm_apikey is not configured")
+		return nil, errLastfmAPIKeyNotConfigured
 	}
 
 	return lastfm.NewProvider(), nil
@@ -108,7 +110,7 @@ func (d *feedResults) getlastfmtopartists(
 		}
 
 		if existingID == 0 {
-			artistSlug := logger.StringToSlug(name)
+			artistSlug := logger.StringToSlugCached(name)
 			database.Scanrowsdyn(
 				false,
 				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",

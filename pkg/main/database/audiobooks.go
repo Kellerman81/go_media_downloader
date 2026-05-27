@@ -220,7 +220,7 @@ func FindAudiobookByTitleAuthor(title, author *string) (*AudiobookSearchResult, 
 	// First try exact title match
 	var result AudiobookSearchResult
 
-	slug := logger.StringToSlug(*title)
+	slug := logger.StringToSlugCachedP(title)
 
 	// Query for exact title or slug match
 	Scanrowsdyn(false,
@@ -298,10 +298,10 @@ func FindAudiobooksByTitleAuthor(
 		)
 	}
 
-	slug := logger.StringToSlug(*title)
+	slug := logger.StringToSlugCachedP(title)
 	// If we have an author, try author-first lookup (more accurate)
 	if author != nil && *author != "" {
-		authorSlug := logger.StringToSlug(*author)
+		authorSlug := logger.StringToSlugCachedP(author)
 
 		// Find author IDs (search by name or slug)
 		authorIDs := Getrowssize[uint](

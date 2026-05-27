@@ -2,6 +2,7 @@ package discogs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -297,7 +298,7 @@ func (p *Provider) GetReleaseByBarcode(
 	}
 
 	if len(response.Results) == 0 {
-		return nil, fmt.Errorf("no release found with barcode: %s", barcode)
+		return nil, errors.New(logger.JoinStrings("no release found with barcode: ", barcode))
 	}
 
 	// Get the first result's ID and fetch full details

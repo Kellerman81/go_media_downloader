@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"iter"
 	"slices"
@@ -388,7 +387,7 @@ func GetTraktMovie(movieid string) (*TraktMovieExtend, error) {
 		}
 	}
 
-	return nil, errors.New("no client")
+	return nil, errNoClient
 }
 
 // GetTraktSerie retrieves extended data for a Trakt TV show by its Trakt ID or IMDb ID.
@@ -470,7 +469,7 @@ func GetTraktSerie(showid string) (*TraktSerieData, error) {
 		}
 	}
 
-	return nil, errors.New("no client")
+	return nil, errNoClient
 }
 
 // GetTraktSerieAliases retrieves alias data from the Trakt API for the given Dbserie.
@@ -527,7 +526,7 @@ func GetTraktSerieSeasons(showid string) ([]TraktSerieSeason, error) {
 		return result, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // MergeTraktIntoCollectedEpisodes merges Trakt episode data into the collected episodes map.
@@ -738,7 +737,7 @@ func Testaddtraktdbepisodes() ([]TraktSerieSeasonEpisodes, error) {
 		return result, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // checkdbtwostrings checks if the given integer values int1 and int2 exist as a pair in the provided slice of database.DbstaticTwoString.
@@ -809,7 +808,7 @@ func GetTraktSerieSeasonEpisodes(showid, season string) ([]TraktSerieSeasonEpiso
 		return result, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // GetTraktUserList retrieves a Trakt user list by username, list name, list type,
@@ -896,7 +895,7 @@ func GetTraktUserList(username, listname, listtype string, limit *string) ([]Tra
 		return result, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // RemoveMovieFromTraktUserList removes the specified movie from the given Trakt user list.
@@ -920,7 +919,7 @@ func RemoveMovieFromTraktUserList(username, listname, remove string) error {
 		}
 	}
 
-	return errors.New("client empty")
+	return errClientEmpty
 }
 
 // RemoveSerieFromTraktUserList removes the specified TV show from the given Trakt user list.
@@ -944,7 +943,7 @@ func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
 		}
 	}
 
-	return errors.New("client empty")
+	return errClientEmpty
 }
 
 // GetTraktSeriePopular retrieves popular TV shows from Trakt, yielding each entry
@@ -1104,7 +1103,7 @@ func GetTraktAuthToken(clientcode string) (*oauth2.Token, error) {
 		}, nil
 	}
 
-	return nil, errors.New("trakt provider not initialized")
+	return nil, errTraktNotInit
 }
 
 // RefreshTraktToken manually refreshes the Trakt API token using the refresh token.
@@ -1140,7 +1139,7 @@ func RefreshTraktToken() (*oauth2.Token, error) {
 		return newToken, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // IsTokenExpired checks if the current Trakt token is expired or about to expire.
@@ -1251,7 +1250,7 @@ func GetTraktUserListAuth(
 		return result, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // TestTraktConnectivity tests the connectivity to the Trakt API
@@ -1290,5 +1289,5 @@ func TestTraktConnectivity(
 		return 200, []TraktMovieTrending{}, nil
 	}
 
-	return 400, nil, errors.New("client empty")
+	return 400, nil, errClientEmpty
 }

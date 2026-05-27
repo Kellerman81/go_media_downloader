@@ -104,7 +104,7 @@ func runConcurrencyTest(
 ) TestResults {
 	var results TestResults
 	var wg sync.WaitGroup
-	var currentConcurrent int64
+	var currentConcurrent atomic.Int64
 
 	// Track requests in sliding windows to detect violations
 	requestTimes := make([]time.Time, 0, 1000)
@@ -120,9 +120,8 @@ func runConcurrencyTest(
 
 			for time.Since(startTime) < testDuration {
 				// Track concurrent requests
-				atomic.AddInt64(&currentConcurrent, 1)
-				if current := atomic.LoadInt64(
-					&currentConcurrent,
+				currentConcurrent.Add(1)
+				if current := currentConcurrent.Load(,
 				); current > results.MaxConcurrent {
 					atomic.StoreInt64(&results.MaxConcurrent, current)
 				}
@@ -132,7 +131,7 @@ func runConcurrencyTest(
 				reqDuration := time.Since(reqStart)
 
 				atomic.AddInt64(&results.TotalRequests, 1)
-				atomic.AddInt64(&currentConcurrent, -1)
+				currentConcurrent.Add(-1)
 
 				if allowed {
 					atomic.AddInt64(&results.AllowedRequests, 1)

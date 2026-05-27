@@ -25,7 +25,10 @@ type MoveFileOptions struct {
 }
 
 // strto is a reusable string constant for log messages.
-var strto = "to"
+var (
+	strto       = "to"
+	errSameFile = errors.New("same file")
+)
 
 // MoveFile moves a file from one path to another. It handles checking extensions,
 // renaming, and setting permissions.
@@ -492,7 +495,7 @@ func copyFile(src, dst string, allowFileLink bool, chmodfolder fs.FileMode) erro
 	}
 
 	if srcAbs == dstAbs {
-		return errors.New("same file")
+		return errSameFile
 	}
 
 	// open source file

@@ -268,6 +268,12 @@ func setupMediaTypeConfig(
 	mediaConfig.MetadataTitleLanguagesLen = len(mediaConfig.MetadataTitleLanguages)
 	mediaConfig.DataLen = len(mediaConfig.Data)
 	mediaConfig.ListsQualities = make([]string, 0, len(mediaConfig.Lists))
+
+	// Pre-compute list names so handlers don't allocate []string on every lookup call.
+	mediaConfig.ListsNames = make([]string, len(mediaConfig.Lists))
+	for i := range mediaConfig.Lists {
+		mediaConfig.ListsNames[i] = mediaConfig.Lists[i].Name
+	}
 }
 
 // setupMediaListConfig initializes configuration for a media list.

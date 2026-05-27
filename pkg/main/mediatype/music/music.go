@@ -5,7 +5,6 @@ package music
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,8 +26,95 @@ type handler struct {
 	dataFullFunc mediatype.DataFullFunc
 }
 
-// Handler is the singleton instance.
-var Handler = &handler{}
+var (
+	// Handler is the singleton instance.
+	Handler = &handler{}
+
+	// StringsMap contains all music-specific string mappings for SQL queries, cache names, etc.
+	StringsMap = map[string]string{
+		"CacheDBMedia":             "CacheDBAlbum",
+		"DBCountDBMedia":           "select count() from dbalbums",
+		"DBCacheDBMedia":           "select title, slug, musicbrainz_release_id, year, id from dbalbums",
+		"CacheMedia":               "CacheAlbum",
+		"DBCountMedia":             "select count() from albums",
+		"DBCacheMedia":             "select lower(listname), dbalbum_id, id from albums",
+		"CacheRootpath":            "CacheRootpathAlbum",
+		"DBCountRootpath":          "select count() from (select distinct rootpath from albums where rootpath != '' and exists (select 1 from album_files where album_id = albums.id))",
+		"DBCacheRootpath":          "select distinct rootpath from albums where rootpath != '' and exists (select 1 from album_files where album_id = albums.id)",
+		"CacheHistoryTitle":        "CacheHistoryTitleAlbum",
+		"CacheHistoryUrl":          "CacheHistoryUrlAlbum",
+		"DBHistoriesUrl":           "select distinct url from album_histories",
+		"DBHistoriesTitle":         "select distinct title from album_histories",
+		"DBCountHistoriesUrl":      "select count() from (select distinct url from album_histories)",
+		"DBCountHistoriesTitle":    "select count() from (select distinct title from album_histories)",
+		"CacheMediaTitles":         "CacheTitlesAlbum",
+		"DBCountDBTitles":          "select count() from dbalbum_titles where title != ''",
+		"DBCacheDBTitles":          "select title, slug, dbalbum_id from dbalbum_titles where title != ''",
+		"CacheFiles":               "CacheFilesAlbum",
+		"DBCountFiles":             "select count() from album_files",
+		"DBCacheFiles":             "select location from album_files",
+		"CacheUnmatched":           "CacheUnmatchedAlbum",
+		"DBCountUnmatched":         "select count() from album_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBRemoveUnmatched":        "delete from album_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
+		"DBCacheUnmatched":         "select filepath from album_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBCountFilesLocation":     "select count() from album_files where location = ?",
+		"DBCountUnmatchedPath":     "select count() from album_file_unmatcheds where filepath = ?",
+		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbalbum_titles where dbalbum_id = ? and title != '')",
+		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbalbum_id from dbalbum_titles where dbalbum_id = ? and title != ''",
+		"DBMediaTitlesID":          "select year, title, slug from dbalbums where id = ?",
+		"DBFilesQuality":           "select 0, 0, 0, 0, 0, 0, 0 from album_files where id = ?",
+		"DBCountFilesByList":       "select count() from album_files where album_id in (select id from albums where listname = ? COLLATE NOCASE)",
+		"DBLocationFilesByList":    "select location from album_files where album_id in (select id from albums where listname = ? COLLATE NOCASE)",
+		"DBIDsFilesByLocation":     "select location, id, album_id from album_files",
+		"DBCountFilesByMediaID":    "select count() from album_files where album_id = ?",
+		"DBCountFilesByLocation":   "select count() from album_files",
+		"TableFiles":               "album_files",
+		"TableMedia":               "albums",
+		"DBCountMediaByList":       "select count() from albums where listname = ? COLLATE NOCASE",
+		"DBIDMissingMediaByList":   "select id,missing from albums where listname = ? COLLATE NOCASE",
+		"DBUpdateMissing":          "update albums set missing = ? where id = ?",
+		"DBListnameByMediaID":      "select listname from albums where id = ?",
+		"DBRootPathFromMediaID":    "select rootpath from albums where id = ?",
+		"DBDeleteFileByIDLocation": "delete from album_files where album_id = ? and location = ?",
+		"DBCountHistoriesByTitle":  "select count() from album_histories where title = ?",
+		"DBCountHistoriesByUrl":    "select count() from album_histories where url = ?",
+		"DBLocationIDFilesByID":    "select location, id from album_files where album_id = ?",
+		"DBFilePrioFilesByID":      "select location, album_id, id, 0, 0, 0, 0, 0, 0, 0 from album_files where album_id = ?",
+		"DBAudioFilePrioFilesByID": "select location, album_id, id, format, bitrate, sample_rate, bit_depth from album_files where album_id = ?",
+		"UpdateMediaLastscan":      "update albums set lastscan = datetime('now','localtime') where id = ?",
+		"DBQualityMediaByID":       "select quality_profile from albums where id = ?",
+		"SearchGenSelect":          "select albums.quality_profile, albums.id ",
+		"SearchGenTable":           " from albums inner join dbalbums on dbalbums.id=albums.dbalbum_id where ",
+		"SearchGenMissing":         "dbalbums.year != 0 and albums.missing = 1 and albums.listname in (?",
+		"SearchGenMissingEnd":      ")",
+		"SearchGenReached":         "dbalbums.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenLastScan":        " and (albums.lastscan is null or albums.Lastscan < ?)",
+		"SearchGenDate":            " and (dbalbums.release_date < ? or dbalbums.release_date is null)",
+		"SearchGenOrder":           " order by albums.Lastscan asc",
+		"DBIDUnmatchedPathList":    "select id from album_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
+		"InsertUnmatched":          "Insert into album_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
+		"UpdateUnmatched":          "update album_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
+		"GetRSSData":               "select albums.dont_search, albums.dont_upgrade, albums.listname, albums.quality_profile, dbalbums.title from albums inner join dbalbums ON dbalbums.id=albums.dbalbum_id where albums.id = ?",
+		"GetOrganizeData":          "select dbalbum_id, rootpath, listname from albums where id = ?",
+		"ClearHistoryByList":       "delete from album_histories where album_id in (Select id from albums where listname = ? COLLATE NOCASE)",
+		"QueryMediaByList":         "select id, quality_reached, quality_profile from albums where listname = ? COLLATE NOCASE",
+		"QueryMediaCountByList":    "select count() from albums where listname = ? COLLATE NOCASE",
+		"UpdateQualityReached":     "update albums set quality_reached = ? where id = ?",
+		"SelectRootpath":           "select rootpath from albums where id = ?",
+		"InsertFile":               "insert into album_files (location, filename, extension, quality_profile, album_id, dbalbum_id, dbtrack_id) values (?, ?, ?, ?, ?, ?, ?)",
+		"UpdateMissingByID":        "update albums set missing = 0 where id = ?",
+		"UpdateQualityReachedByID": "update albums set quality_reached = ? where id = ?",
+		"DeleteUnmatchedByPath":    "delete from album_file_unmatcheds where filepath = ?",
+		"SelectRuntime":            "select total_runtime_ms from dbalbums where id = ?",
+		"InsertFileOrganize":       "insert into album_files (location, filename, extension, quality_profile, album_id, dbalbum_id, dbtrack_id) values (?, ?, ?, ?, ?, ?, ?)",
+		"UpdateMissingReached":     "update albums SET missing = 0, quality_reached = ? where id = ?",
+		// Artist-based search queries
+		"SearchArtistsMissing":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.missing = 1 AND a.listname IN (?",
+		"SearchArtistsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
+		"SearchArtistsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.missing = 0 AND a.quality_reached = 0 AND a.listname IN (?",
+		"SearchArtistsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
+	}
+)
 
 func init() {
 	mediatype.Register(Handler)
@@ -131,15 +217,9 @@ func (h *handler) GetDBIDsFull(
 
 		m.Title = logger.TrimSpace(m.Title)
 
-		// Extract listnames for wanted-list priority search
-		listnames := make([]string, len(cfgp.Lists))
-		for idx := range cfgp.Lists {
-			listnames[idx] = cfgp.Lists[idx].Name
-		}
-
 		// Try artist-first lookup prioritizing albums in the wanted list
 		// This ensures we find the correct dbalbum when there are multiple releases
-		m.FindDbalbumByArtistFirstFromWantedList(listnames)
+		m.FindDbalbumByArtistFirstFromWantedList(cfgp.ListsNames)
 
 		// Fallback to regular artist-first lookup (finds any dbalbum by that artist)
 		if m.DbalbumID == 0 {
@@ -353,8 +433,6 @@ func (h *handler) SearchConfigByName(
 
 		return nil, false
 	}
-
-	searchName = strings.TrimSpace(searchName)
 
 	// Search for matching name, artist, or album series in this config file
 	for idx := range configs {
@@ -710,7 +788,7 @@ func (h *handler) CleanupAfterRemove(
 	_ func(),
 ) error {
 	if pathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(folder) {
@@ -725,7 +803,7 @@ func (h *handler) CleanupAfterRemove(
 // MoveOtherFilesAfterOrganize handles moving additional files after main album is organized.
 func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(params.Folder) {
@@ -800,93 +878,6 @@ func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesAlbum }
 
 // UsesListNameAsQualityProfile returns false - music uses quality config name.
 func (h *handler) UsesListNameAsQualityProfile() bool { return false }
-
-var errNotFoundPathTemplate = errors.New("path template not found")
-
-// StringsMap contains all music-specific string mappings for SQL queries, cache names, etc.
-var StringsMap = map[string]string{
-	"CacheDBMedia":             "CacheDBAlbum",
-	"DBCountDBMedia":           "select count() from dbalbums",
-	"DBCacheDBMedia":           "select title, slug, musicbrainz_release_id, year, id from dbalbums",
-	"CacheMedia":               "CacheAlbum",
-	"DBCountMedia":             "select count() from albums",
-	"DBCacheMedia":             "select lower(listname), dbalbum_id, id from albums",
-	"CacheRootpath":            "CacheRootpathAlbum",
-	"DBCountRootpath":          "select count() from (select distinct rootpath from albums where rootpath != '' and exists (select 1 from album_files where album_id = albums.id))",
-	"DBCacheRootpath":          "select distinct rootpath from albums where rootpath != '' and exists (select 1 from album_files where album_id = albums.id)",
-	"CacheHistoryTitle":        "CacheHistoryTitleAlbum",
-	"CacheHistoryUrl":          "CacheHistoryUrlAlbum",
-	"DBHistoriesUrl":           "select distinct url from album_histories",
-	"DBHistoriesTitle":         "select distinct title from album_histories",
-	"DBCountHistoriesUrl":      "select count() from (select distinct url from album_histories)",
-	"DBCountHistoriesTitle":    "select count() from (select distinct title from album_histories)",
-	"CacheMediaTitles":         "CacheTitlesAlbum",
-	"DBCountDBTitles":          "select count() from dbalbum_titles where title != ''",
-	"DBCacheDBTitles":          "select title, slug, dbalbum_id from dbalbum_titles where title != ''",
-	"CacheFiles":               "CacheFilesAlbum",
-	"DBCountFiles":             "select count() from album_files",
-	"DBCacheFiles":             "select location from album_files",
-	"CacheUnmatched":           "CacheUnmatchedAlbum",
-	"DBCountUnmatched":         "select count() from album_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBRemoveUnmatched":        "delete from album_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
-	"DBCacheUnmatched":         "select filepath from album_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBCountFilesLocation":     "select count() from album_files where location = ?",
-	"DBCountUnmatchedPath":     "select count() from album_file_unmatcheds where filepath = ?",
-	"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbalbum_titles where dbalbum_id = ? and title != '')",
-	"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbalbum_id from dbalbum_titles where dbalbum_id = ? and title != ''",
-	"DBMediaTitlesID":          "select year, title, slug from dbalbums where id = ?",
-	"DBFilesQuality":           "select 0, 0, 0, 0, 0, 0, 0 from album_files where id = ?",
-	"DBCountFilesByList":       "select count() from album_files where album_id in (select id from albums where listname = ? COLLATE NOCASE)",
-	"DBLocationFilesByList":    "select location from album_files where album_id in (select id from albums where listname = ? COLLATE NOCASE)",
-	"DBIDsFilesByLocation":     "select location, id, album_id from album_files",
-	"DBCountFilesByMediaID":    "select count() from album_files where album_id = ?",
-	"DBCountFilesByLocation":   "select count() from album_files",
-	"TableFiles":               "album_files",
-	"TableMedia":               "albums",
-	"DBCountMediaByList":       "select count() from albums where listname = ? COLLATE NOCASE",
-	"DBIDMissingMediaByList":   "select id,missing from albums where listname = ? COLLATE NOCASE",
-	"DBUpdateMissing":          "update albums set missing = ? where id = ?",
-	"DBListnameByMediaID":      "select listname from albums where id = ?",
-	"DBRootPathFromMediaID":    "select rootpath from albums where id = ?",
-	"DBDeleteFileByIDLocation": "delete from album_files where album_id = ? and location = ?",
-	"DBCountHistoriesByTitle":  "select count() from album_histories where title = ?",
-	"DBCountHistoriesByUrl":    "select count() from album_histories where url = ?",
-	"DBLocationIDFilesByID":    "select location, id from album_files where album_id = ?",
-	"DBFilePrioFilesByID":      "select location, album_id, id, 0, 0, 0, 0, 0, 0, 0 from album_files where album_id = ?",
-	"DBAudioFilePrioFilesByID": "select location, album_id, id, format, bitrate, sample_rate, bit_depth from album_files where album_id = ?",
-	"UpdateMediaLastscan":      "update albums set lastscan = datetime('now','localtime') where id = ?",
-	"DBQualityMediaByID":       "select quality_profile from albums where id = ?",
-	"SearchGenSelect":          "select albums.quality_profile, albums.id ",
-	"SearchGenTable":           " from albums inner join dbalbums on dbalbums.id=albums.dbalbum_id where ",
-	"SearchGenMissing":         "dbalbums.year != 0 and albums.missing = 1 and albums.listname in (?",
-	"SearchGenMissingEnd":      ")",
-	"SearchGenReached":         "dbalbums.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
-	"SearchGenLastScan":        " and (albums.lastscan is null or albums.Lastscan < ?)",
-	"SearchGenDate":            " and (dbalbums.release_date < ? or dbalbums.release_date is null)",
-	"SearchGenOrder":           " order by albums.Lastscan asc",
-	"DBIDUnmatchedPathList":    "select id from album_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
-	"InsertUnmatched":          "Insert into album_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
-	"UpdateUnmatched":          "update album_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-	"GetRSSData":               "select albums.dont_search, albums.dont_upgrade, albums.listname, albums.quality_profile, dbalbums.title from albums inner join dbalbums ON dbalbums.id=albums.dbalbum_id where albums.id = ?",
-	"GetOrganizeData":          "select dbalbum_id, rootpath, listname from albums where id = ?",
-	"ClearHistoryByList":       "delete from album_histories where album_id in (Select id from albums where listname = ? COLLATE NOCASE)",
-	"QueryMediaByList":         "select id, quality_reached, quality_profile from albums where listname = ? COLLATE NOCASE",
-	"QueryMediaCountByList":    "select count() from albums where listname = ? COLLATE NOCASE",
-	"UpdateQualityReached":     "update albums set quality_reached = ? where id = ?",
-	"SelectRootpath":           "select rootpath from albums where id = ?",
-	"InsertFile":               "insert into album_files (location, filename, extension, quality_profile, album_id, dbalbum_id, dbtrack_id) values (?, ?, ?, ?, ?, ?, ?)",
-	"UpdateMissingByID":        "update albums set missing = 0 where id = ?",
-	"UpdateQualityReachedByID": "update albums set quality_reached = ? where id = ?",
-	"DeleteUnmatchedByPath":    "delete from album_file_unmatcheds where filepath = ?",
-	"SelectRuntime":            "select total_runtime_ms from dbalbums where id = ?",
-	"InsertFileOrganize":       "insert into album_files (location, filename, extension, quality_profile, album_id, dbalbum_id, dbtrack_id) values (?, ?, ?, ?, ?, ?, ?)",
-	"UpdateMissingReached":     "update albums SET missing = 0, quality_reached = ? where id = ?",
-	// Artist-based search queries
-	"SearchArtistsMissing":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.missing = 1 AND a.listname IN (?",
-	"SearchArtistsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
-	"SearchArtistsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.missing = 0 AND a.quality_reached = 0 AND a.listname IN (?",
-	"SearchArtistsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
-}
 
 // GetStringsMap returns a music-specific string for the given key.
 func (h *handler) GetStringsMap(key string) string {

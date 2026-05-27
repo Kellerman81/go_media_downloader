@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -17,15 +16,15 @@ import (
 // Falls back to creating a legacy client if no provider is registered.
 func SendAppriseMessage(configName, serverURL, message, title, urls string) error {
 	if serverURL == "" {
-		return errors.New("server URL empty")
+		return errServerURLEmpty
 	}
 
 	if message == "" {
-		return errors.New("message empty")
+		return errMessageEmpty
 	}
 
 	if urls == "" {
-		return errors.New("notification URLs empty")
+		return errNotificationURLsEmpty
 	}
 
 	// Try v2 provider first
@@ -54,5 +53,5 @@ func SendAppriseMessage(configName, serverURL, message, title, urls string) erro
 		}
 	}
 
-	return errors.New("client empty")
+	return errClientEmpty
 }

@@ -13,6 +13,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 )
 
+var errNoFilesFoundForAudiobook = errors.New("no files found for audiobook")
+
 func init() {
 	audiobooks.RegisterRefresh(refreshAudiobooksWrapper)
 }
@@ -120,7 +122,7 @@ func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint
 		&dbID,
 	)
 	if len(files) == 0 {
-		return errors.New("no files found for audiobook")
+		return errNoFilesFoundForAudiobook
 	}
 
 	// Get narrator from DB

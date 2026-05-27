@@ -14,6 +14,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
 
+var errUnsupportedArchiveFormat = errors.New("unsupported archive format")
+
 // IsArchiveFile checks if a file is a supported archive format.
 func IsArchiveFile(filename string) bool {
 	// Check for compound extensions like .tar.gz
@@ -199,7 +201,7 @@ func getUnpackCommand(archivePath, extractPath string) (string, []string, error)
 		return "xz", []string{"-d", "-c", archivePath}, nil
 	}
 
-	return "", nil, errors.New("unsupported archive format")
+	return "", nil, errUnsupportedArchiveFormat
 }
 
 // extractArchive extracts a single archive file to the specified directory.

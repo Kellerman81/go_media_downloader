@@ -135,15 +135,16 @@ const (
 )
 
 var (
-	strQuery    = "Query"
-	readWriteMu = sync.RWMutex{}
-	globalVarMu = sync.RWMutex{} // Protects DBConnect, DBVersion, DBLogLevel
-	sqlCTX      = context.Background()
-	DBConnect   DBGlobal
-	dbData      *sqlx.DB
-	dbImdb      *sqlx.DB
-	DBVersion   = "1"
-	DBLogLevel  = "Info"
+	strQuery                = "Query"
+	readWriteMu             = sync.RWMutex{}
+	globalVarMu             = sync.RWMutex{} // Protects DBConnect, DBVersion, DBLogLevel
+	sqlCTX                  = context.Background()
+	DBConnect               DBGlobal
+	dbData                  *sqlx.DB
+	dbImdb                  *sqlx.DB
+	DBVersion               = "1"
+	DBLogLevel              = "Info"
+	errWrongNumberOfColumns = errors.New("wrong number of columns")
 )
 
 // GetMutex returns the shared read-write mutex used for database operations.
@@ -1735,7 +1736,7 @@ func exec(querystring string, args []any) (sql.Result, error) {
 // and returning the result or any error.
 func InsertArray(table string, columns []string, values ...any) (sql.Result, error) {
 	if len(columns) != len(values) {
-		return nil, errors.New("wrong number of columns")
+		return nil, errWrongNumberOfColumns
 	}
 
 	// Use buffer pool to avoid allocations

@@ -419,7 +419,7 @@ func addAlbumToDatabase(
 
 	var dbalbumID uint
 
-	slug := logger.StringToSlug(release.Title)
+	slug := logger.StringToSlugCached(release.Title)
 	year := uint16(release.ReleaseYear) //nolint:gosec // safe: value within target type range
 
 	// Convert genres slice to comma-separated string
@@ -537,8 +537,11 @@ func addAlbumToDatabase(
 
 	// Add tracks to the database if we have release details
 	if releaseDetails != nil && len(releaseDetails.Tracks) > 0 {
-		var existingTrack, dbtrackID uint
-		var runtimeMs int64
+		var (
+			existingTrack, dbtrackID uint
+			runtimeMs                int64
+		)
+
 		for i := range releaseDetails.Tracks {
 			existingTrack = 0
 			dbtrackID = 0
@@ -693,7 +696,7 @@ func addAlbumToDatabase(
 			dbartistID = 0
 			existingTrackedID = 0
 
-			artistSlugSearch = logger.StringToSlug(relArtistRef.Name)
+			artistSlugSearch = logger.StringToSlugCached(relArtistRef.Name)
 			database.Scanrowsdyn(
 				false,
 				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
@@ -752,7 +755,7 @@ func addAlbumToDatabase(
 	if artistName != nil && *artistName != "" && trackedArtistID == 0 {
 		var dbartistID uint
 
-		artistSlugSearch := logger.StringToSlug(*artistName)
+		artistSlugSearch := logger.StringToSlugCachedP(artistName)
 		database.Scanrowsdyn(
 			false,
 			"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
@@ -841,7 +844,7 @@ func addOrGetArtist(artistName, mbid *string) uint {
 	}
 
 	// Check if artist already exists
-	artistSlug := logger.StringToSlug(*artistName)
+	artistSlug := logger.StringToSlugCachedP(artistName)
 	artistID := database.Getdatarow[uint](false,
 		"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
 		artistName, &artistSlug,

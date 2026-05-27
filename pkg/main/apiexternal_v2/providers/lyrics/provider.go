@@ -10,12 +10,16 @@ package lyrics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 const (
@@ -133,7 +137,9 @@ func get(ctx context.Context, rawURL string) ([]byte, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("lyrics: HTTP %d from %s", resp.StatusCode, rawURL)
+		return nil, errors.New(
+			logger.JoinStrings("lyrics: HTTP ", strconv.Itoa(resp.StatusCode), " from ", rawURL),
+		)
 	}
 
 	return io.ReadAll(io.LimitReader(resp.Body, 512*1024)) // cap at 512 KB
@@ -141,7 +147,25 @@ func get(ctx context.Context, rawURL string) ([]byte, error) {
 
 // cleanLyrics normalises line endings and trims surrounding whitespace.
 func cleanLyrics(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return strings.TrimSpace(s)
+	// Fast path: no carriage returns to normalize.
+	if strings.IndexByte(s, '\r') == -1 {
+		return strings.TrimSpace(s)
+	}
+
+	buf := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(buf)
+
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\r' {
+			buf.WriteByte('\n')
+
+			if i+1 < len(s) && s[i+1] == '\n' {
+				i++ // skip the \n in \r\n
+			}
+		} else {
+			buf.WriteByte(s[i])
+		}
+	}
+
+	return strings.TrimSpace(buf.String())
 }

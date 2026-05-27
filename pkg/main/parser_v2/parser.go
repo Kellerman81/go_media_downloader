@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -171,7 +170,7 @@ func (p *Parser) Parse(filename string) *UnifiedParseResult {
 		cleanFilename = p.nzbPreprocessor.Clean(filename)
 	}
 
-	ext := strings.ToLower(filepath.Ext(cleanFilename))
+	ext := logger.FileExt(cleanFilename)
 
 	result := &UnifiedParseResult{}
 
@@ -204,7 +203,7 @@ func (p *Parser) Parse(filename string) *UnifiedParseResult {
 // ParseWithPath parses a file with its full path for additional context.
 func (p *Parser) ParseWithPath(fullpath string) *UnifiedParseResult {
 	filename := filepath.Base(fullpath)
-	ext := strings.ToLower(filepath.Ext(filename))
+	ext := logger.FileExt(filename)
 
 	result := &UnifiedParseResult{}
 
@@ -404,7 +403,7 @@ func (p *Parser) collectAudioFiles(dirPath string) ([]string, error) {
 			continue
 		}
 
-		ext := strings.ToLower(filepath.Ext(entries[i].Name()))
+		ext := logger.FileExt(entries[i].Name())
 		if IsAudioExtension(ext) {
 			files = append(files, filepath.Join(dirPath, entries[i].Name()))
 		}
@@ -415,7 +414,7 @@ func (p *Parser) collectAudioFiles(dirPath string) ([]string, error) {
 
 // DetectMediaType attempts to detect the media type from a file path.
 func (p *Parser) DetectMediaType(fullpath string) MediaType {
-	ext := strings.ToLower(filepath.Ext(fullpath))
+	ext := logger.FileExt(fullpath)
 	filename := filepath.Base(fullpath)
 
 	switch {
@@ -456,7 +455,7 @@ func (p *Parser) DetectMediaTypeFromDirectory(dirPath string) MediaType {
 			continue
 		}
 
-		ext := strings.ToLower(filepath.Ext(entries[i].Name()))
+		ext := logger.FileExt(entries[i].Name())
 
 		switch {
 		case IsVideoExtension(ext):

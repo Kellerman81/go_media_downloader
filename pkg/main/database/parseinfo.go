@@ -56,24 +56,135 @@ var (
 
 	vaForms = []string{"va", "v.a.", "v.a"}
 
+	sceneTagKeywords = []string{
+		"FLAC", "MP3", "AAC", "OGG", "WAV", "ALAC", "APE", "WMA",
+		"WEB", "CD", "VINYL", "HDTV", "SAT", "DVDRIP", "BDRIP",
+		"OST", "EP", "LP", "SINGLE", "ALBUM", "LIVE", "BOOTLEG",
+		"PROPER", "REPACK", "INT", "INTERNAL", "RETAIL",
+		"DELUXE", "REMASTERED", "LIMITED",
+	}
+
+	// cleanPatterns are quality/format indicators stripped from the end of NZB titles.
+	// All entries are uppercase; comparison uses strings.ToUpper on the title.
+	cleanPatterns = []string{
+		"FLAC", "MP3", "AAC", "OGG", "OPUS", "WAV", "ALAC", "APE", "WMA", "M4A",
+		"320", "256", "192", "128", "V0", "V2", "24BIT", "16BIT", "24-BIT", "16-BIT",
+		"WEB", "CD", "VINYL", "TAPE", "CABLE", "HDTV", "SAT",
+		"OST", "EP", "LP", "SINGLE", "ALBUM", "LIVE", "BOOTLEG", "DEMO", "REMIX",
+		"DELUXE", "REMASTERED", "REMASTER", "LIMITED", "EDITION",
+		"PROPER", "REPACK", "READNFO", "INT",
+	}
+
+	// sceneSepReplacer converts scene-format separators (. and _) to spaces in one pass.
+	sceneSepReplacer = strings.NewReplacer("_", " ", ".", " ")
+
+	// htmlEntityReplacer replaces common HTML entities in NZB titles in one pass.
+	htmlEntityReplacer = strings.NewReplacer(
+		"&amp;", "&",
+		"&nbsp;", " ",
+		"&quot;", "\"",
+		"&apos;", "'",
+		"&lt;", "<",
+		"&gt;", ">",
+		"&#39;", "'",
+		"&#34;", "\"",
+		"&#x27;", "'",
+		"&#x22;", "\"",
+		" amp; ", " & ",
+		" amp ", " & ",
+	)
+
+	// mojibakeReplacer fixes UTF-8 characters incorrectly decoded as Latin-1 in one pass.
+	mojibakeReplacer = strings.NewReplacer(
+		"Ã©", "é",
+		"Ã¨", "è",
+		"Ã ", "à",
+		"Ã¢", "â",
+		"Ã§", "ç",
+		"Ã´", "ô",
+		"Ã»", "û",
+		"Ã¼", "ü",
+		"Ã¶", "ö",
+		"Ã¤", "ä",
+		"Ã±", "ñ",
+		"Ã­", "í",
+		"Ã³", "ó",
+		"Ãº", "ú",
+		"Ã¡", "á",
+		"Ã¯", "ï",
+		"Ã«", "ë",
+		"Ã¿", "ÿ",
+	)
+
 	episodeSplitChars    = []string{"E", "e", "X", "x", logger.StrDash}
 	titleCleanSeps       = []string{" ", "-"}
-	losslessAudioFormats = []string{"flac", "alac", "wav", "aiff", "ape", "wv", "wavpack", "dsd", "dsf"}
+	losslessAudioFormats = []string{
+		"flac",
+		"alac",
+		"wav",
+		"aiff",
+		"ape",
+		"wv",
+		"wavpack",
+		"dsd",
+		"dsf",
+	}
 
 	// Pre-computed slugs — parallel to the name slices above, populated in init().
 	variousArtistSlugs []string
 	variousAuthorSlugs []string
+
+	PLParseInfo = pool.NewPool(100, 10, nil, func(b *ParseInfo) bool {
+		clear(b.Languages)
+		clear(b.Episodes)
+
+		*b = ParseInfo{ListID: -1}
+
+		return false
+	})
+	mapSlugged = map[string]mapslugged{
+		"dbmovies": {
+			Slugged: "select id from dbmovies where slug = ?",
+			Default: "select id from dbmovies where title = ? COLLATE NOCASE",
+		},
+		"dbmoviesalt": {
+			Slugged: "select dbmovie_id from dbmovie_titles where slug = ?",
+			Default: "select dbmovie_id from dbmovie_titles where title = ? COLLATE NOCASE",
+		},
+		"dbseries": {
+			Slugged: "select id from dbseries where slug = ?",
+			Default: "select id from dbseries where seriename = ? COLLATE NOCASE",
+		},
+		"dbseriesalt": {
+			Slugged: "select dbserie_id from dbserie_alternates where slug = ?",
+			Default: "select dbserie_id from dbserie_alternates where title = ? COLLATE NOCASE",
+		},
+	}
+	catalogPattern     = regexp.MustCompile(`\s*\([A-Z0-9][A-Z0-9\s\-]*\)`)
+	releaseTypePattern = regexp.MustCompile(
+		`(?i)(?:^|\s|-|_)(DELUXE\s*EDITION|DELUXE|REMASTERED|REMASTER|EXPANDED|LIMITED\s*EDITION|SPECIAL\s*EDITION|BONUS\s*TRACKS?)(?:\s|-|_|$)`,
+	)
+	sceneReleasePattern = regexp.MustCompile(
+		`(?i)(?:^|\s|-|_)(REISSUE|RETAIL|ADVANCE|PROMO|PROPER|REPACK|INT|INTERNAL)(?:\s|-|_|$)`,
+	)
+	anniversaryPattern = regexp.MustCompile(
+		`(?i)(?:^|\s|-|_)(\d+(?:st|nd|rd|th)\s*Anniversary\s*Edition)(?:\s|-|_|$)`,
+	)
+	countryCodePattern = regexp.MustCompile(
+		`(?i)(?:^|\s)(DE|US|UK|EU|JP|AU|CA|FR|IT|ES|NL|SE|NO|DK|FI|AT|CH|BE)(?:\s|$)`,
+	)
+	yearPattern = regexp.MustCompile(`(?:^|\s)(19\d{2}|20\d{2})(?:\s|$)`)
 )
 
 func init() {
 	variousArtistSlugs = make([]string, len(variousArtistNames))
 	for i, n := range variousArtistNames {
-		variousArtistSlugs[i] = logger.StringToSlug(n)
+		variousArtistSlugs[i] = logger.StringToSlugCached(n)
 	}
 
 	variousAuthorSlugs = make([]string, len(variousAuthorNames))
 	for i, n := range variousAuthorNames {
-		variousAuthorSlugs[i] = logger.StringToSlug(n)
+		variousAuthorSlugs[i] = logger.StringToSlugCached(n)
 	}
 }
 
@@ -208,34 +319,6 @@ type mapslugged struct {
 	Default string
 }
 
-var PLParseInfo = pool.NewPool(100, 10, nil, func(b *ParseInfo) bool {
-	clear(b.Languages)
-	clear(b.Episodes)
-
-	*b = ParseInfo{ListID: -1}
-
-	return false
-})
-
-var mapSlugged = map[string]mapslugged{
-	"dbmovies": {
-		Slugged: "select id from dbmovies where slug = ?",
-		Default: "select id from dbmovies where title = ? COLLATE NOCASE",
-	},
-	"dbmoviesalt": {
-		Slugged: "select dbmovie_id from dbmovie_titles where slug = ?",
-		Default: "select dbmovie_id from dbmovie_titles where title = ? COLLATE NOCASE",
-	},
-	"dbseries": {
-		Slugged: "select id from dbseries where slug = ?",
-		Default: "select id from dbseries where seriename = ? COLLATE NOCASE",
-	},
-	"dbseriesalt": {
-		Slugged: "select dbserie_id from dbserie_alternates where slug = ?",
-		Default: "select dbserie_id from dbserie_alternates where title = ? COLLATE NOCASE",
-	},
-}
-
 // StripTitlePrefixPostfixGetQual removes any prefix and suffix from the title
 // string that match the configured title strip patterns, and returns the
 // resulting title. This is used to normalize the title for search and
@@ -317,7 +400,7 @@ func (m *ParseInfo) Findmoviedbidbytitle(slugged bool) {
 	}
 
 	if slugged {
-		m.TempTitle = logger.StringToSlug(m.Title)
+		m.TempTitle = logger.StringToSlugCached(m.Title)
 	}
 
 	if config.GetSettingsGeneral().UseMediaCache {
@@ -830,7 +913,7 @@ func (m *ParseInfo) FindDbserieByName(slugged bool) {
 	}
 
 	if slugged {
-		m.TempTitle = logger.StringToSlug(m.TempTitle)
+		m.TempTitle = logger.StringToSlugCached(m.TempTitle)
 	}
 
 	if config.GetSettingsGeneral().UseMediaCache {
@@ -964,7 +1047,7 @@ func (m *ParseInfo) FindDbbookByAuthorFirst() {
 	// Clean up common NZB formatting from raw title
 	rawTitle = cleanRawNZBTitle(rawTitle)
 
-	authorCache := make(map[string][]resolvedAuthor)
+	var authorCache authorMiniCache
 
 	// Try " - " first (standard format: "Author - Title")
 	if before, after, ok := strings.Cut(rawTitle, " - "); ok {
@@ -972,7 +1055,7 @@ func (m *ParseInfo) FindDbbookByAuthorFirst() {
 
 		potentialTitle := strings.TrimSpace(after)
 		if m.tryFindAuthorAndBook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			potentialTitle,
 		) {
 			return
@@ -984,12 +1067,12 @@ func (m *ParseInfo) FindDbbookByAuthorFirst() {
 		potentialAuthor := strings.TrimSpace(before)
 		potentialTitle := strings.TrimSpace(after)
 
-		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
-		potentialTitle = strings.ReplaceAll(potentialTitle, ".", " ")
+		potentialAuthor = sceneSepReplacer.Replace(potentialAuthor)
+		potentialTitle = sceneSepReplacer.Replace(potentialTitle)
 		// Clean up scene group from title
 		potentialTitle = cleanSceneGroupFromAlbum(potentialTitle)
 		if m.tryFindAuthorAndBook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			potentialTitle,
 		) {
 			return
@@ -1002,7 +1085,7 @@ func (m *ParseInfo) FindDbbookByAuthorFirst() {
 
 		potentialTitle := strings.TrimSpace(after)
 		if m.tryFindAuthorAndBook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			potentialTitle,
 		) {
 			return
@@ -1010,17 +1093,19 @@ func (m *ParseInfo) FindDbbookByAuthorFirst() {
 	}
 
 	// If no split worked, try treating first two words as author (common for "FirstName LastName Title")
-	words := strings.Fields(rawTitle)
-	if len(words) >= 3 {
-		// Try "FirstName LastName" as author, rest as title
-		potentialAuthor := logger.JoinStrings(words[0], " ", words[1])
+	if i1 := strings.IndexByte(rawTitle, ' '); i1 > 0 {
+		if rest := rawTitle[i1+1:]; rest != "" {
+			if i2 := strings.IndexByte(rest, ' '); i2 > 0 {
+				potentialAuthor := logger.JoinStrings(rawTitle[:i1], " ", rest[:i2])
 
-		potentialTitle := logger.JoinStringsSep(words[2:], " ")
-		if m.tryFindAuthorAndBook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
-			potentialTitle,
-		) {
-			return
+				potentialTitle := rest[i2+1:]
+				if m.tryFindAuthorAndBook(
+					cachedResolveAuthor(&authorCache, potentialAuthor),
+					potentialTitle,
+				) {
+					return
+				}
+			}
 		}
 	}
 
@@ -1044,30 +1129,80 @@ type resolvedArtist struct {
 	ids  []uint
 }
 
-// resolveArtistNamesForAlbum splits, expands VA forms, slugs, and resolves dbartist IDs
+// artistMiniCache is a small fixed-size linear cache for resolved artist lookups.
+// It avoids the heap cost of a map for the ≤4 distinct artist names tried per FindDb call.
+type artistMiniCache struct {
+	keys [4]string
+	vals [4][]resolvedArtist
+	n    int
+}
+
+func (c *artistMiniCache) get(name string) ([]resolvedArtist, bool) {
+	for i := range c.n {
+		if c.keys[i] == name {
+			return c.vals[i], true
+		}
+	}
+
+	return nil, false
+}
+
+func (c *artistMiniCache) put(name string, val []resolvedArtist) {
+	if c.n < len(c.keys) {
+		c.keys[c.n] = name
+		c.vals[c.n] = val
+		c.n++
+	}
+}
+
+// authorMiniCache is a small fixed-size linear cache for resolved author lookups.
+type authorMiniCache struct {
+	keys [4]string
+	vals [4][]resolvedAuthor
+	n    int
+}
+
+func (c *authorMiniCache) get(name string) ([]resolvedAuthor, bool) {
+	for i := range c.n {
+		if c.keys[i] == name {
+			return c.vals[i], true
+		}
+	}
+
+	return nil, false
+}
+
+func (c *authorMiniCache) put(name string, val []resolvedAuthor) {
+	if c.n < len(c.keys) {
+		c.keys[c.n] = name
+		c.vals[c.n] = val
+		c.n++
+	}
+}
+
 // cachedResolveArtist wraps resolveArtistNamesForAlbum with a per-call cache so that
 // repeated lookups for the same name within one search do not hit the DB twice.
-func cachedResolveArtist(cache map[string][]resolvedArtist, name string) []resolvedArtist {
-	if r, ok := cache[name]; ok {
+func cachedResolveArtist(cache *artistMiniCache, name string) []resolvedArtist {
+	if r, ok := cache.get(name); ok {
 		return r
 	}
 
 	r := resolveArtistNamesForAlbum(name)
 
-	cache[name] = r
+	cache.put(name, r)
 
 	return r
 }
 
 // cachedResolveAuthor wraps resolveAuthorNames with a per-call cache.
-func cachedResolveAuthor(cache map[string][]resolvedAuthor, name string) []resolvedAuthor {
-	if r, ok := cache[name]; ok {
+func cachedResolveAuthor(cache *authorMiniCache, name string) []resolvedAuthor {
+	if r, ok := cache.get(name); ok {
 		return r
 	}
 
 	r := resolveAuthorNames(name)
 
-	cache[name] = r
+	cache.put(name, r)
 
 	return r
 }
@@ -1095,7 +1230,7 @@ func resolveArtistNamesForAlbum(artistName string) []resolvedArtist {
 	)
 
 	for i := range names {
-		slug = logger.StringToSlug(names[i])
+		slug = logger.StringToSlugCached(names[i])
 		withPeriods = addPeriodsToInitials(names[i])
 		ids = Getrowssize[uint](
 			false,
@@ -1131,7 +1266,7 @@ func resolveAuthorNames(authorName string) []resolvedAuthor {
 	single, parts := splitMultiArtist(authorName)
 
 	if single != "" {
-		slug := logger.StringToSlug(single)
+		slug := logger.StringToSlugCached(single)
 		withPeriods := addPeriodsToInitials(single)
 
 		ids := Getrowssize[uint](
@@ -1157,7 +1292,7 @@ func resolveAuthorNames(authorName string) []resolvedAuthor {
 	)
 
 	for i := range parts {
-		slug = logger.StringToSlug(parts[i])
+		slug = logger.StringToSlugCached(parts[i])
 		withPeriods = addPeriodsToInitials(parts[i])
 
 		ids = Getrowssize[uint](
@@ -1183,7 +1318,7 @@ func (m *ParseInfo) tryFindVariousAuthorsBook(bookTitle string) bool {
 		return false
 	}
 
-	sluggedTitle := logger.StringToSlug(bookTitle)
+	sluggedTitle := logger.StringToSlugCached(bookTitle)
 
 	for i := range variousAuthorNames {
 		var authorID uint
@@ -1240,7 +1375,7 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 		return false
 	}
 
-	sluggedTitle := logger.StringToSlug(bookTitle)
+	sluggedTitle := logger.StringToSlugCached(bookTitle)
 	bookWords := strings.Fields(bookTitle)
 
 	for i := range resolved {
@@ -1276,7 +1411,7 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle st
 			// Try word-skipping: remove one word at a time from the end
 			for wordsToKeep := len(bookWords) - 1; wordsToKeep >= 2; wordsToKeep-- {
 				shorterTitle := logger.JoinStringsSep(bookWords[:wordsToKeep], " ")
-				shorterSlug := logger.StringToSlug(shorterTitle)
+				shorterSlug := logger.StringToSlugCached(shorterTitle)
 
 				Scanrowsdyn(false,
 					`SELECT b.id FROM dbbooks b
@@ -1331,7 +1466,7 @@ func (m *ParseInfo) FindDbbookByAuthorFirstFromWantedList(listnames []string) {
 
 	rawTitle = cleanRawNZBTitle(rawTitle)
 
-	authorCache := make(map[string][]resolvedAuthor)
+	var authorCache authorMiniCache
 
 	// Try " - " first (standard format: "Author - Title")
 	if before, after, ok := strings.Cut(rawTitle, " - "); ok {
@@ -1339,7 +1474,7 @@ func (m *ParseInfo) FindDbbookByAuthorFirstFromWantedList(listnames []string) {
 
 		potentialTitle := strings.TrimSpace(after)
 		if m.tryFindAuthorAndBookFromWantedList(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			potentialTitle,
 			listnames,
 		) {
@@ -1352,12 +1487,12 @@ func (m *ParseInfo) FindDbbookByAuthorFirstFromWantedList(listnames []string) {
 		potentialAuthor := strings.TrimSpace(before)
 		potentialTitle := strings.TrimSpace(after)
 
-		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
-		potentialTitle = strings.ReplaceAll(potentialTitle, ".", " ")
+		potentialAuthor = sceneSepReplacer.Replace(potentialAuthor)
+		potentialTitle = sceneSepReplacer.Replace(potentialTitle)
 
 		potentialTitle = cleanSceneGroupFromAlbum(potentialTitle)
 		if m.tryFindAuthorAndBookFromWantedList(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			potentialTitle,
 			listnames,
 		) {
@@ -1379,7 +1514,7 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 		return false
 	}
 
-	sluggedTitle := logger.StringToSlug(bookTitle)
+	sluggedTitle := logger.StringToSlugCached(bookTitle)
 	bookWords := strings.Fields(bookTitle)
 
 	for i := range resolved {
@@ -1405,7 +1540,7 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 				// Try word-skipping for wanted list
 				for wordsToKeep := len(bookWords) - 1; wordsToKeep >= 2; wordsToKeep-- {
 					shorterTitle := logger.JoinStringsSep(bookWords[:wordsToKeep], " ")
-					shorterSlug := logger.StringToSlug(shorterTitle)
+					shorterSlug := logger.StringToSlugCached(shorterTitle)
 
 					Scanrowsdyn(
 						false,
@@ -1458,7 +1593,7 @@ func (m *ParseInfo) FindDbbookByTitle() {
 		return
 	}
 
-	sluggedTitle := logger.StringToSlug(m.Title)
+	sluggedTitle := logger.StringToSlugCached(m.Title)
 
 	// If artist (author) is provided, search by both title and author
 	if m.Artist != "" {
@@ -1601,7 +1736,7 @@ func (m *ParseInfo) FindDbaudiobookByTitle() {
 		return
 	}
 
-	sluggedTitle := logger.StringToSlug(m.Title)
+	sluggedTitle := logger.StringToSlugCached(m.Title)
 
 	// If artist (author) is provided, search by both title and author
 	if m.Artist != "" {
@@ -1744,7 +1879,7 @@ func (m *ParseInfo) FindDbalbumByTitle() {
 		return
 	}
 
-	sluggedTitle := logger.StringToSlug(m.Title)
+	sluggedTitle := logger.StringToSlugCached(m.Title)
 
 	// If artist is provided, search by both artist and album
 	if m.Artist != "" {
@@ -1891,68 +2026,44 @@ func (m *ParseInfo) FindDbalbumByTitle() {
 	)
 }
 
+// collapseSpaces reduces consecutive spaces to a single space in one pooled-buffer
+// pass, avoiding the repeated-ReplaceAll loop that allocates on every iteration.
+func collapseSpaces(s string) string {
+	if !strings.Contains(s, "  ") {
+		return s
+	}
+
+	buf := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(buf)
+
+	prevSpace := false
+	for i := range len(s) {
+		c := s[i]
+		if c == ' ' {
+			if !prevSpace {
+				buf.WriteByte(' ')
+			}
+
+			prevSpace = true
+		} else {
+			buf.WriteByte(c)
+
+			prevSpace = false
+		}
+	}
+
+	return buf.String()
+}
+
 // decodeHTMLEntities decodes common HTML entities found in NZB titles.
 func decodeHTMLEntities(s string) string {
-	replacements := []struct {
-		entity string
-		char   string
-	}{
-		{"&amp;", "&"},
-		{"&nbsp;", " "},
-		{"&quot;", "\""},
-		{"&apos;", "'"},
-		{"&lt;", "<"},
-		{"&gt;", ">"},
-		{"&#39;", "'"},
-		{"&#34;", "\""},
-		{"&#x27;", "'"},
-		{"&#x22;", "\""},
-	}
-
-	for i := range replacements {
-		s = strings.ReplaceAll(s, replacements[i].entity, replacements[i].char)
-	}
-
-	// Handle common broken entities (missing semicolon or space after)
-	s = strings.ReplaceAll(s, " amp; ", " & ")
-	s = strings.ReplaceAll(s, " amp ", " & ")
-
-	return s
+	return htmlEntityReplacer.Replace(s)
 }
 
 // fixMojibake fixes common UTF-8 characters that were incorrectly decoded as Latin-1.
 // This happens when UTF-8 bytes are interpreted as ISO-8859-1/Windows-1252.
 func fixMojibake(s string) string {
-	// Common mojibake patterns (UTF-8 → Latin-1 → displayed)
-	replacements := []struct {
-		broken  string
-		correct string
-	}{
-		{"Ã©", "é"}, // é
-		{"Ã¨", "è"}, // è
-		{"Ã ", "à"}, // à
-		{"Ã¢", "â"}, // â
-		{"Ã§", "ç"}, // ç
-		{"Ã´", "ô"}, // ô
-		{"Ã»", "û"}, // û
-		{"Ã¼", "ü"}, // ü
-		{"Ã¶", "ö"}, // ö
-		{"Ã¤", "ä"}, // ä
-		{"Ã±", "ñ"}, // ñ
-		{"Ã­", "í"}, // í
-		{"Ã³", "ó"}, // ó
-		{"Ãº", "ú"}, // ú
-		{"Ã¡", "á"}, // á
-		{"Ã¯", "ï"}, // ï
-		{"Ã«", "ë"}, // ë
-		{"Ã¿", "ÿ"}, // ÿ
-	}
-
-	for i := range replacements {
-		s = strings.ReplaceAll(s, replacements[i].broken, replacements[i].correct)
-	}
-
-	return s
+	return mojibakeReplacer.Replace(s)
 }
 
 // cleanRawNZBTitle cleans up common NZB formatting from a raw title string.
@@ -1966,43 +2077,23 @@ func cleanRawNZBTitle(title string) string {
 	title = fixMojibake(title)
 
 	// Replace underscores and dots with spaces (scene format)
-	if !strings.Contains(title, " ") {
-		title = strings.ReplaceAll(title, "_", " ")
-		title = strings.ReplaceAll(title, ".", " ")
+	if !strings.Contains(title, " ") && strings.ContainsAny(title, "_.") {
+		title = sceneSepReplacer.Replace(title)
 	}
 
 	// Remove common quality/format indicators at the end
-	// These patterns are case-insensitive
-	cleanPatterns := []string{
-		// Audio formats
-		"FLAC", "MP3", "AAC", "OGG", "OPUS", "WAV", "ALAC", "APE", "WMA", "M4A",
-		// Quality indicators
-		"320", "256", "192", "128", "V0", "V2", "24BIT", "16BIT", "24-BIT", "16-BIT",
-		// Sources
-		"WEB", "CD", "VINYL", "TAPE", "CABLE", "HDTV", "SAT",
-		// Release types
-		"OST", "EP", "LP", "SINGLE", "ALBUM", "LIVE", "BOOTLEG", "DEMO", "REMIX",
-		"DELUXE", "REMASTERED", "REMASTER", "LIMITED", "EDITION",
-		// Scene tags
-		"PROPER", "REPACK", "READNFO", "INT",
-	}
-
-	upperTitle := strings.ToUpper(title)
 	for i := range cleanPatterns {
-		// Remove pattern surrounded by spaces, dashes, or at end
 		for j := range titleCleanSeps {
-			// Pattern at end with separator before
-			idx := strings.LastIndex(upperTitle, titleCleanSeps[j]+cleanPatterns[i])
+			idx := logger.LastIndexI(title, titleCleanSeps[j]+cleanPatterns[i])
 			if idx == -1 {
 				continue
 			}
 
-			// Check if it's at the end or followed by separator/end
 			endIdx := idx + len(titleCleanSeps[j]) + len(cleanPatterns[i])
 			if endIdx == len(title) ||
 				(endIdx < len(title) && (title[endIdx] == ' ' || title[endIdx] == '-')) {
 				title = title[:idx]
-				upperTitle = strings.ToUpper(title)
+				break
 			}
 		}
 	}
@@ -2029,12 +2120,7 @@ func cleanRawNZBTitle(title string) string {
 	// Note: Don't remove scene groups here - they're handled during artist/album splitting
 	// The tryFindArtistAndAlbum function uses partial matching for album titles
 
-	// Clean up multiple spaces and trim
-	for strings.Contains(title, "  ") {
-		title = strings.ReplaceAll(title, "  ", " ")
-	}
-
-	return strings.TrimSpace(title)
+	return strings.TrimSpace(collapseSpaces(title))
 }
 
 // FindDbalbumByArtistFirst implements artist-first lookup for music albums.
@@ -2057,7 +2143,7 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 	// Clean up common NZB formatting from raw title
 	rawTitle = cleanRawNZBTitle(rawTitle)
 
-	artistCache := make(map[string][]resolvedArtist)
+	var artistCache artistMiniCache
 
 	var potentialArtist, potentialAlbum string
 
@@ -2067,7 +2153,7 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 
 		potentialAlbum = strings.TrimSpace(after)
 		if m.tryFindArtistAndAlbum(
-			cachedResolveArtist(artistCache, potentialArtist),
+			cachedResolveArtist(&artistCache, potentialArtist),
 			&potentialAlbum,
 		) {
 			return
@@ -2079,12 +2165,12 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 		potentialArtist = strings.TrimSpace(before)
 		potentialAlbum = strings.TrimSpace(after)
 		// Replace dots with spaces for scene format
-		potentialArtist = strings.ReplaceAll(potentialArtist, ".", " ")
-		potentialAlbum = strings.ReplaceAll(potentialAlbum, ".", " ")
+		potentialArtist = sceneSepReplacer.Replace(potentialArtist)
+		potentialAlbum = sceneSepReplacer.Replace(potentialAlbum)
 		// Clean up scene group from album (short alphanumeric string after last dash)
 		potentialAlbum = cleanSceneGroupFromAlbum(potentialAlbum)
 		if m.tryFindArtistAndAlbum(
-			cachedResolveArtist(artistCache, potentialArtist),
+			cachedResolveArtist(&artistCache, potentialArtist),
 			&potentialAlbum,
 		) {
 			return
@@ -2097,25 +2183,28 @@ func (m *ParseInfo) FindDbalbumByArtistFirst() {
 
 		potentialAlbum = strings.TrimSpace(after)
 		if m.tryFindArtistAndAlbum(
-			cachedResolveArtist(artistCache, potentialArtist),
+			cachedResolveArtist(&artistCache, potentialArtist),
 			&potentialAlbum,
 		) {
 			return
 		}
 	}
 
-	// If no split worked, try treating first two words as artist
-	words := strings.Fields(rawTitle)
-	if len(words) >= 3 {
-		// Try "FirstName LastName" as artist, rest as album
-		potentialArtist = logger.JoinStrings(words[0], " ", words[1])
+	// If no split worked, try treating first two words as artist.
+	// IndexByte avoids strings.Fields []string alloc; rest[i2+1:] is a zero-copy substring.
+	if i1 := strings.IndexByte(rawTitle, ' '); i1 > 0 {
+		if rest := rawTitle[i1+1:]; rest != "" {
+			if i2 := strings.IndexByte(rest, ' '); i2 > 0 {
+				potentialArtist = logger.JoinStrings(rawTitle[:i1], " ", rest[:i2])
 
-		potentialAlbum = logger.JoinStringsSep(words[2:], " ")
-		if m.tryFindArtistAndAlbum(
-			cachedResolveArtist(artistCache, potentialArtist),
-			&potentialAlbum,
-		) {
-			return
+				potentialAlbum = rest[i2+1:]
+				if m.tryFindArtistAndAlbum(
+					cachedResolveArtist(&artistCache, potentialArtist),
+					&potentialAlbum,
+				) {
+					return
+				}
+			}
 		}
 	}
 
@@ -2230,11 +2319,9 @@ func splitMultiArtist(artistStr string) (string, []string) {
 
 	// Search case-insensitively (lowerNormalized) but replace in original-case (normalized).
 	// Both strings are kept in sync so lowerNormalized is only computed once.
-	lowerNormalized := strings.ToLower(normalized)
 	for i := range multiArtistSeparators {
-		// All separators are already lowercase, so no ToLower(sep) needed.
 		for {
-			idx := strings.Index(lowerNormalized, multiArtistSeparators[i])
+			idx := logger.IndexI(normalized, multiArtistSeparators[i])
 			if idx == -1 {
 				break
 			}
@@ -2243,11 +2330,6 @@ func splitMultiArtist(artistStr string) (string, []string) {
 				normalized[:idx],
 				"|",
 				normalized[idx+len(multiArtistSeparators[i]):],
-			)
-			lowerNormalized = logger.JoinStrings(
-				lowerNormalized[:idx],
-				"|",
-				lowerNormalized[idx+len(multiArtistSeparators[i]):],
 			)
 		}
 	}
@@ -2274,6 +2356,30 @@ func splitMultiArtist(artistStr string) (string, []string) {
 // This enables bidirectional matching between abbreviated and full forms.
 func expandVANames(artists []string) []string {
 	const fullForm = "Various Artists"
+
+	// Fast path: skip allocation when no VA forms are present.
+	needsExpansion := false
+	for i := range artists {
+		trimmed := strings.TrimSpace(artists[i])
+		for j := range vaForms {
+			if strings.EqualFold(trimmed, vaForms[j]) {
+				needsExpansion = true
+				break
+			}
+		}
+
+		if !needsExpansion && strings.EqualFold(artists[i], fullForm) {
+			needsExpansion = true
+		}
+
+		if needsExpansion {
+			break
+		}
+	}
+
+	if !needsExpansion {
+		return artists
+	}
 
 	expanded := make([]string, 0, len(artists)*2)
 	for i := range artists {
@@ -2304,7 +2410,7 @@ func (m *ParseInfo) tryFindArtistAndAlbum(resolved []resolvedArtist, albumTitle 
 		return false
 	}
 
-	sluggedAlbum := logger.StringToSlug(*albumTitle)
+	sluggedAlbum := logger.StringToSlugCachedP(albumTitle)
 	doPrefixMatch := strings.Count(*albumTitle, " ") >= 2
 
 	for resolveid := range resolved {
@@ -2363,7 +2469,7 @@ func (m *ParseInfo) tryFindArtistAndAlbum(resolved []resolvedArtist, albumTitle 
 						continue
 					}
 
-					cs := logger.StringToSlug(prefixCandidates[i].Str)
+					cs := logger.StringToSlugCached(prefixCandidates[i].Str)
 
 					titleMatch := logger.HasPrefixI(*albumTitle, prefixCandidates[i].Str) &&
 						(len(*albumTitle) == len(prefixCandidates[i].Str) || (*albumTitle)[len(prefixCandidates[i].Str)] == ' ')
@@ -2381,7 +2487,7 @@ func (m *ParseInfo) tryFindArtistAndAlbum(resolved []resolvedArtist, albumTitle 
 	}
 
 	// Fallback with stripped title — reuse already-resolved artists, no repeated DB lookups.
-	strippedAlbum := stripReleaseType(*albumTitle)
+	strippedAlbum := stripReleaseType(albumTitle)
 	if strippedAlbum != *albumTitle && strippedAlbum != "" {
 		return m.tryFindArtistAndAlbumStripped(resolved, &strippedAlbum)
 	}
@@ -2399,7 +2505,7 @@ func (m *ParseInfo) tryFindArtistAndAlbumStripped(
 		return false
 	}
 
-	sluggedAlbum := logger.StringToSlug(*albumTitle)
+	sluggedAlbum := logger.StringToSlugCachedP(albumTitle)
 
 	for i := range resolved {
 		for artistID := range resolved[i].ids {
@@ -2458,7 +2564,7 @@ func (m *ParseInfo) FindDbalbumByArtistFirstFromWantedList(listnames []string) {
 	// Clean up common NZB formatting from raw title
 	rawTitle = cleanRawNZBTitle(rawTitle)
 
-	artistCache := make(map[string][]resolvedArtist)
+	var artistCache artistMiniCache
 
 	var potentialArtist, potentialAlbum string
 
@@ -2468,7 +2574,7 @@ func (m *ParseInfo) FindDbalbumByArtistFirstFromWantedList(listnames []string) {
 
 		potentialAlbum = strings.TrimSpace(after)
 		if m.tryFindArtistAndAlbumFromWantedList(
-			cachedResolveArtist(artistCache, potentialArtist),
+			cachedResolveArtist(&artistCache, potentialArtist),
 			&potentialAlbum,
 			listnames,
 		) {
@@ -2481,12 +2587,12 @@ func (m *ParseInfo) FindDbalbumByArtistFirstFromWantedList(listnames []string) {
 		potentialArtist = strings.TrimSpace(before)
 		potentialAlbum = strings.TrimSpace(after)
 
-		potentialArtist = strings.ReplaceAll(potentialArtist, ".", " ")
-		potentialAlbum = strings.ReplaceAll(potentialAlbum, ".", " ")
+		potentialArtist = sceneSepReplacer.Replace(potentialArtist)
+		potentialAlbum = sceneSepReplacer.Replace(potentialAlbum)
 
 		potentialAlbum = cleanSceneGroupFromAlbum(potentialAlbum)
 		if m.tryFindArtistAndAlbumFromWantedList(
-			cachedResolveArtist(artistCache, potentialArtist),
+			cachedResolveArtist(&artistCache, potentialArtist),
 			&potentialAlbum,
 			listnames,
 		) {
@@ -2508,7 +2614,7 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 		return false
 	}
 
-	sluggedAlbum := logger.StringToSlug(*albumTitle)
+	sluggedAlbum := logger.StringToSlugCachedP(albumTitle)
 	// Hoist constants out of the triple loop — albumTitle never changes.
 	doPrefixMatch := strings.Count(*albumTitle, " ") >= 2
 
@@ -2603,7 +2709,7 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedList(
 	}
 
 	// Fallback: try with release type stripped (e.g., "Deluxe Edition" removed)
-	strippedAlbum := stripReleaseType(*albumTitle)
+	strippedAlbum := stripReleaseType(albumTitle)
 	if strippedAlbum != *albumTitle && strippedAlbum != "" {
 		return m.tryFindArtistAndAlbumFromWantedListStripped(resolved, &strippedAlbum, listnames)
 	}
@@ -2622,7 +2728,7 @@ func (m *ParseInfo) tryFindArtistAndAlbumFromWantedListStripped(
 		return false
 	}
 
-	sluggedAlbum := logger.StringToSlug(*albumTitle)
+	sluggedAlbum := logger.StringToSlugCachedP(albumTitle)
 
 	for i := range resolved {
 		for raid := range resolved[i].ids {
@@ -2693,7 +2799,7 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 	// Clean up common NZB formatting from raw title
 	rawTitle = cleanRawNZBTitle(rawTitle)
 
-	authorCache := make(map[string][]resolvedAuthor)
+	var authorCache authorMiniCache
 
 	// Try " - " first (standard format: "Author - Title")
 	var potentialAuthor, potentialTitle string
@@ -2702,7 +2808,7 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 
 		potentialTitle = strings.TrimSpace(after)
 		if m.tryFindAuthorAndAudiobook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			&potentialTitle,
 		) {
 			return
@@ -2714,12 +2820,12 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 		potentialAuthor = strings.TrimSpace(before)
 		potentialTitle = strings.TrimSpace(after)
 
-		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
-		potentialTitle = strings.ReplaceAll(potentialTitle, ".", " ")
+		potentialAuthor = sceneSepReplacer.Replace(potentialAuthor)
+		potentialTitle = sceneSepReplacer.Replace(potentialTitle)
 		// Clean up scene group from title
 		potentialTitle = cleanSceneGroupFromAlbum(potentialTitle)
 		if m.tryFindAuthorAndAudiobook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			&potentialTitle,
 		) {
 			return
@@ -2732,7 +2838,7 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 
 		potentialTitle = strings.TrimSpace(after)
 		if m.tryFindAuthorAndAudiobook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			&potentialTitle,
 		) {
 			return
@@ -2740,17 +2846,19 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirst() {
 	}
 
 	// If no split worked, try treating first two words as author (common for "FirstName LastName Title")
-	words := strings.Fields(rawTitle)
-	if len(words) >= 3 {
-		// Try "FirstName LastName" as author, rest as title
-		potentialAuthor = logger.JoinStrings(words[0], " ", words[1])
+	if i1 := strings.IndexByte(rawTitle, ' '); i1 > 0 {
+		if rest := rawTitle[i1+1:]; rest != "" {
+			if i2 := strings.IndexByte(rest, ' '); i2 > 0 {
+				potentialAuthor = logger.JoinStrings(rawTitle[:i1], " ", rest[:i2])
 
-		potentialTitle = logger.JoinStringsSep(words[2:], " ")
-		if m.tryFindAuthorAndAudiobook(
-			cachedResolveAuthor(authorCache, potentialAuthor),
-			&potentialTitle,
-		) {
-			return
+				potentialTitle = rest[i2+1:]
+				if m.tryFindAuthorAndAudiobook(
+					cachedResolveAuthor(&authorCache, potentialAuthor),
+					&potentialTitle,
+				) {
+					return
+				}
+			}
 		}
 	}
 
@@ -2769,7 +2877,7 @@ func (m *ParseInfo) tryFindVariousAuthorsAudiobook(bookTitle *string) bool {
 		return false
 	}
 
-	sluggedTitle := logger.StringToSlug(*bookTitle)
+	sluggedTitle := logger.StringToSlugCachedP(bookTitle)
 
 	var authorID uint
 	for i := range variousAuthorNames {
@@ -2823,7 +2931,7 @@ func (m *ParseInfo) tryFindAuthorAndAudiobook(resolved []resolvedAuthor, bookTit
 		return false
 	}
 
-	sluggedTitle := logger.StringToSlug(*bookTitle)
+	sluggedTitle := logger.StringToSlugCachedP(bookTitle)
 	doPrefixMatch := strings.Count(*bookTitle, " ") >= 2
 
 	var (
@@ -2935,7 +3043,7 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirstFromWantedList(listnames []strin
 
 	rawTitle = cleanRawNZBTitle(rawTitle)
 
-	authorCache := make(map[string][]resolvedAuthor)
+	var authorCache authorMiniCache
 
 	var potentialAuthor, potentialTitle string
 
@@ -2945,7 +3053,7 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirstFromWantedList(listnames []strin
 
 		potentialTitle = strings.TrimSpace(after)
 		if m.tryFindAuthorAndAudiobookFromWantedList(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			&potentialTitle,
 			listnames,
 		) {
@@ -2958,12 +3066,12 @@ func (m *ParseInfo) FindDbaudiobookByAuthorFirstFromWantedList(listnames []strin
 		potentialAuthor = strings.TrimSpace(before)
 		potentialTitle = strings.TrimSpace(after)
 
-		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
-		potentialTitle = strings.ReplaceAll(potentialTitle, ".", " ")
+		potentialAuthor = sceneSepReplacer.Replace(potentialAuthor)
+		potentialTitle = sceneSepReplacer.Replace(potentialTitle)
 
 		potentialTitle = cleanSceneGroupFromAlbum(potentialTitle)
 		if m.tryFindAuthorAndAudiobookFromWantedList(
-			cachedResolveAuthor(authorCache, potentialAuthor),
+			cachedResolveAuthor(&authorCache, potentialAuthor),
 			&potentialTitle,
 			listnames,
 		) {
@@ -2985,7 +3093,7 @@ func (m *ParseInfo) tryFindAuthorAndAudiobookFromWantedList(
 		return false
 	}
 
-	sluggedTitle := logger.StringToSlug(*bookTitle)
+	sluggedTitle := logger.StringToSlugCachedP(bookTitle)
 	doPrefixMatch := strings.Count(*bookTitle, " ") >= 2
 
 	for i := range resolved {
@@ -3087,14 +3195,6 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 		return
 	}
 
-	ident2 := logger.StringReplaceWith(m.Identifier, '.', ' ')
-	ident3 := logger.StringReplaceWith(
-		m.Identifier,
-		'.',
-		'-',
-	) // scraper stores "YY-MM-DD" (dots→dashes)
-	ident4 := logger.StringReplaceWith(m.Identifier, ' ', '-')
-
 	// Only match by season+episode when they were actually parsed from the title.
 	// Matching on empty SeasonStr/EpisodeStr would hit every scraper-imported episode
 	// (which has season='' and episode='' by default), returning a wrong random episode.
@@ -3104,27 +3204,27 @@ func (m *ParseInfo) SetDBEpisodeIDfromM() {
 			`select id from dbserie_episodes where dbserie_id = ? and (
 				(season = ? and episode = ?) or
 				identifier = ? COLLATE NOCASE or
-				identifier = ? COLLATE NOCASE or
-				identifier = ? COLLATE NOCASE or
-				identifier = ? COLLATE NOCASE
+				identifier = REPLACE(?, '.', ' ') COLLATE NOCASE or
+				identifier = REPLACE(?, '.', '-') COLLATE NOCASE or
+				identifier = REPLACE(?, ' ', '-') COLLATE NOCASE
 			) limit 1`,
 			&m.DbserieEpisodeID,
 			&m.DbserieID,
 			&m.SeasonStr, &m.EpisodeStr,
-			&m.Identifier, &ident2, &ident3, &ident4,
+			&m.Identifier, &m.Identifier, &m.Identifier, &m.Identifier,
 		)
 	} else {
 		Scanrowsdyn(
 			false,
 			`select id from dbserie_episodes where dbserie_id = ? and (
 				identifier = ? COLLATE NOCASE or
-				identifier = ? COLLATE NOCASE or
-				identifier = ? COLLATE NOCASE or
-				identifier = ? COLLATE NOCASE
+				identifier = REPLACE(?, '.', ' ') COLLATE NOCASE or
+				identifier = REPLACE(?, '.', '-') COLLATE NOCASE or
+				identifier = REPLACE(?, ' ', '-') COLLATE NOCASE
 			) limit 1`,
 			&m.DbserieEpisodeID,
 			&m.DbserieID,
-			&m.Identifier, &ident2, &ident3, &ident4,
+			&m.Identifier, &m.Identifier, &m.Identifier, &m.Identifier,
 		)
 	}
 }
@@ -3474,33 +3574,46 @@ func addPeriodsToInitials(name string) string {
 // Scene format: "Album Title-Quality-Year-GROUP" → "Album Title"
 // It removes short alphanumeric segments after dashes that look like scene tags.
 func cleanSceneGroupFromAlbum(album string) string {
-	// Split by dash and analyze each part
-	parts := strings.Split(album, "-")
-	if len(parts) <= 1 {
+	if !strings.ContainsRune(album, '-') {
 		return album
 	}
 
-	// Keep parts that look like album title words, remove scene tags
-	var cleanParts []string
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
+	// Stack array avoids a heap allocation for the common case (≤16 dash-separated parts).
+	var buf [16]string
+
+	cleanParts := buf[:0]
+
+	i := 0
+
+	rest := album
+	for {
+		idx := strings.IndexByte(rest, '-')
+
+		var part string
+		if idx == -1 {
+			part = strings.TrimSpace(rest)
+			if part != "" {
+				if i == 0 || !looksLikeSceneTag(part) {
+					cleanParts = append(cleanParts, part)
+				}
+			}
+
+			break
+		}
+
+		part = strings.TrimSpace(rest[:idx])
+		rest = rest[idx+1:]
+
 		if part == "" {
 			continue
 		}
 
-		// First part is always kept (start of album title)
-		if i == 0 {
-			cleanParts = append(cleanParts, part)
-			continue
-		}
-
-		// Check if this part looks like a scene tag (short, alphanumeric, all caps or common tags)
-		if looksLikeSceneTag(part) {
-			// Stop here - everything after is likely scene metadata
+		if i > 0 && looksLikeSceneTag(part) {
 			break
 		}
 
 		cleanParts = append(cleanParts, part)
+		i++
 	}
 
 	return logger.JoinStringsSep(cleanParts, " - ")
@@ -3514,24 +3627,16 @@ func looksLikeSceneTag(s string) bool {
 		return false
 	}
 
-	// Common scene tags (case insensitive)
-	commonTags := []string{
-		"FLAC", "MP3", "AAC", "OGG", "WAV", "ALAC", "APE", "WMA",
-		"WEB", "CD", "VINYL", "HDTV", "SAT", "DVDRip", "BDRip",
-		"OST", "EP", "LP", "SINGLE", "ALBUM", "LIVE", "BOOTLEG",
-		"PROPER", "REPACK", "INT", "INTERNAL", "RETAiL",
-		"DELUXE", "REMASTERED", "LIMITED",
-	}
-
-	if slices.Contains(commonTags, strings.ToUpper(s)) {
+	// EqualFold-based check: no ToUpper allocation.
+	if logger.SlicesContainsI(sceneTagKeywords, s) {
 		return true
 	}
 
-	// Check if it's a year (4 digits starting with 19 or 20)
+	// Year: 4 digits starting with 19 or 20.
 	if len(s) == 4 && (strings.HasPrefix(s, "19") || strings.HasPrefix(s, "20")) {
 		allDigits := true
-		for _, c := range s {
-			if c < '0' || c > '9' {
+		for i := range len(s) {
+			if s[i] < '0' || s[i] > '9' {
 				allDigits = false
 				break
 			}
@@ -3542,22 +3647,16 @@ func looksLikeSceneTag(s string) bool {
 		}
 	}
 
-	// Check if it's a short all-uppercase alphanumeric string (likely a group name)
-	// Group names are typically 2-10 chars, all uppercase letters/numbers
-	if len(s) >= 2 && len(s) <= 10 {
+	// Short all-uppercase alphanumeric string (likely a group name).
+	if len(s) <= 10 {
 		allUpperAlnum := true
 
 		hasLetter := false
-		for _, c := range s {
+		for i := range len(s) {
+			c := s[i]
 			if c >= 'A' && c <= 'Z' {
 				hasLetter = true
-			} else if c >= '0' && c <= '9' {
-				// digits are ok
-			} else if c >= 'a' && c <= 'z' {
-				// lowercase means it's probably not a scene tag
-				allUpperAlnum = false
-				break
-			} else {
+			} else if c < '0' || c > '9' {
 				allUpperAlnum = false
 				break
 			}
@@ -3577,30 +3676,12 @@ func checkDigitLetter(b byte) bool {
 	return ((b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z'))
 }
 
-// Patterns for stripping release type indicators from album titles (for fallback matching).
-var (
-	catalogPattern     = regexp.MustCompile(`\s*\([A-Z0-9][A-Z0-9\s\-]*\)`)
-	releaseTypePattern = regexp.MustCompile(
-		`(?i)(?:^|\s|-|_)(DELUXE\s*EDITION|DELUXE|REMASTERED|REMASTER|EXPANDED|LIMITED\s*EDITION|SPECIAL\s*EDITION|BONUS\s*TRACKS?)(?:\s|-|_|$)`,
-	)
-	sceneReleasePattern = regexp.MustCompile(
-		`(?i)(?:^|\s|-|_)(REISSUE|RETAIL|ADVANCE|PROMO|PROPER|REPACK|INT|INTERNAL)(?:\s|-|_|$)`,
-	)
-	anniversaryPattern = regexp.MustCompile(
-		`(?i)(?:^|\s|-|_)(\d+(?:st|nd|rd|th)\s*Anniversary\s*Edition)(?:\s|-|_|$)`,
-	)
-	countryCodePattern = regexp.MustCompile(
-		`(?i)(?:^|\s)(DE|US|UK|EU|JP|AU|CA|FR|IT|ES|NL|SE|NO|DK|FI|AT|CH|BE)(?:\s|$)`,
-	)
-	yearPattern = regexp.MustCompile(`(?:^|\s)(19\d{2}|20\d{2})(?:\s|$)`)
-)
-
 // stripReleaseType removes release type indicators from album titles.
 // Used for fallback matching when exact title match fails.
-func stripReleaseType(album string) string {
+func stripReleaseType(album *string) string {
 	// Remove catalog numbers in parentheses
-	if catalogPattern.MatchString(album) {
-		album = catalogPattern.ReplaceAllString(album, "")
+	if catalogPattern.MatchString(*album) {
+		*album = catalogPattern.ReplaceAllLiteralString(*album, "")
 	}
 
 	patterns := []*regexp.Regexp{
@@ -3614,8 +3695,8 @@ func stripReleaseType(album string) string {
 	for range 3 {
 		changed := false
 		for _, p := range patterns {
-			if p.MatchString(album) {
-				album = p.ReplaceAllString(album, " ")
+			if p.MatchString(*album) {
+				*album = p.ReplaceAllLiteralString(*album, " ")
 				changed = true
 			}
 		}
@@ -3625,9 +3706,7 @@ func stripReleaseType(album string) string {
 		}
 	}
 
-	for strings.Contains(album, "  ") {
-		album = strings.ReplaceAll(album, "  ", " ")
-	}
+	*album = collapseSpaces(*album)
 
-	return strings.TrimSpace(album)
+	return strings.TrimSpace(*album)
 }

@@ -3,11 +3,11 @@ package tags
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 // Manager provides a unified interface for reading and writing audio tags
@@ -62,7 +62,13 @@ func (m *Manager) GetHandler(ext string) TagHandler {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return m.handlers[strings.ToLower(ext)]
+	for i := range len(ext) {
+		if ext[i] >= 'A' && ext[i] <= 'Z' {
+			return m.handlers[strings.ToLower(ext)]
+		}
+	}
+
+	return m.handlers[ext]
 }
 
 // SupportedFormats returns a list of all supported file extensions.
@@ -80,7 +86,7 @@ func (m *Manager) SupportedFormats() []string {
 
 // IsSupported checks if a file format is supported based on its extension.
 func (m *Manager) IsSupported(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := logger.FileExt(path)
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -93,7 +99,7 @@ func (m *Manager) IsSupported(path string) bool {
 // ReadTags reads metadata tags from an audio file.
 // The appropriate handler is selected based on the file extension.
 func (m *Manager) ReadTags(path string) (*AudioTags, error) {
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := logger.FileExt(path)
 
 	m.mu.RLock()
 
@@ -110,7 +116,7 @@ func (m *Manager) ReadTags(path string) (*AudioTags, error) {
 // WriteTags writes metadata tags to an audio file.
 // The appropriate handler is selected based on the file extension.
 func (m *Manager) WriteTags(ctx context.Context, path string, tags *AudioTags) error {
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := logger.FileExt(path)
 
 	m.mu.RLock()
 
@@ -129,7 +135,7 @@ func (m *Manager) WriteTags(ctx context.Context, path string, tags *AudioTags) e
 // Cover art is preserved: if the source handler implements CoverTagReader,
 // ReadTagsWithCover is used; otherwise ReadTags is used as fallback.
 func (m *Manager) CopyTags(ctx context.Context, srcPath, dstPath string) error {
-	ext := strings.ToLower(filepath.Ext(srcPath))
+	ext := logger.FileExt(srcPath)
 
 	m.mu.RLock()
 

@@ -59,6 +59,20 @@ var (
 	errScraperURLMissing = errors.New(
 		"movie_scraper_start_url is required for moviescraper list type",
 	)
+	errMusicchartsURLRequired       = errors.New("url is required for musiccharts list type")
+	errMusicchartsEntryNodeRequired = errors.New(
+		"chart_entry_node_xpath is required for musiccharts list type",
+	)
+	errMusicchartsTitleRequired = errors.New(
+		"chart_title_xpath is required for musiccharts list type",
+	)
+	errBookbestsellersURLRequired   = errors.New("url is required for bookbestsellers list type")
+	errBookbestsellersEntryRequired = errors.New(
+		"chart_entry_node_xpath is required for bookbestsellers list type",
+	)
+	errBookbestsellersTitleRequired = errors.New(
+		"chart_title_xpath is required for bookbestsellers list type",
+	)
 	plfeeds pool.Poolobj[feedResults]
 )
 
@@ -1432,15 +1446,15 @@ func fetchAndParseChartPage(url string, fn func(*html.Node)) error {
 //   - ChartTitleAttribute / ChartArtistAttribute: use an HTML attribute instead of inner text
 func (d *feedResults) getmusiccharts(cfglist *config.MediaListsConfig) error {
 	if cfglist.CfgList.URL == "" {
-		return errors.New("url is required for musiccharts list type")
+		return errMusicchartsURLRequired
 	}
 
 	if cfglist.CfgList.ChartEntryNodeXPath == "" {
-		return errors.New("chart_entry_node_xpath is required for musiccharts list type")
+		return errMusicchartsEntryNodeRequired
 	}
 
 	if cfglist.CfgList.ChartTitleXPath == "" {
-		return errors.New("chart_title_xpath is required for musiccharts list type")
+		return errMusicchartsTitleRequired
 	}
 
 	// Pre-build query strings once; per-entry args are built inside the loop.
@@ -1557,15 +1571,15 @@ func (d *feedResults) getmusiccharts(cfglist *config.MediaListsConfig) error {
 //   - ChartTitleAttribute / ChartArtistAttribute: use an HTML attribute instead of inner text
 func (d *feedResults) getbookbestsellers(cfglist *config.MediaListsConfig) error {
 	if cfglist.CfgList.URL == "" {
-		return errors.New("url is required for bookbestsellers list type")
+		return errBookbestsellersURLRequired
 	}
 
 	if cfglist.CfgList.ChartEntryNodeXPath == "" {
-		return errors.New("chart_entry_node_xpath is required for bookbestsellers list type")
+		return errBookbestsellersEntryRequired
 	}
 
 	if cfglist.CfgList.ChartTitleXPath == "" {
-		return errors.New("chart_title_xpath is required for bookbestsellers list type")
+		return errBookbestsellersTitleRequired
 	}
 
 	// Pre-build query strings once; per-entry args are built inside the loop.

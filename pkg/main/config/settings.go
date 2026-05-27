@@ -384,6 +384,21 @@ func GetMusicMetaSourcePriority() []string {
 	return out
 }
 
+// GetMusicSourcePenalty returns the configured distance penalty for a metadata provider.
+// Returns 0 if no penalty is configured for the given source.
+func GetMusicSourcePenalty(source string) float64 {
+	if source == "" {
+		return 0
+	}
+
+	cfg := GetSettingsGeneral()
+	if cfg == nil || len(cfg.MusicMetaSourcePenalties) == 0 {
+		return 0
+	}
+
+	return cfg.MusicMetaSourcePenalties[source]
+}
+
 func RangeSettingsDownloader(fn func(string, *DownloaderConfig)) {
 	currentSnapshot := getCurrentConfig()
 	if currentSnapshot == nil {

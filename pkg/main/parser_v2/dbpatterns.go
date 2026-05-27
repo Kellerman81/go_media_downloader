@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 // PatternType defines the type of quality pattern.
@@ -207,24 +208,23 @@ func (ps *DBPatternStore) MatchString(
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	inputLower := strings.ToLower(input)
 	patterns := ps.getPatterns(patternType)
 
 	for i := range patterns {
 		for j := range patterns[i].Strings {
-			idx := strings.Index(inputLower, patterns[i].Strings[j])
+			idx := logger.IndexI(input, patterns[i].Strings[j])
 			if idx == -1 {
 				continue
 			}
 
 			endIdx := idx + len(patterns[i].Strings[j])
 
-			// Word boundary check (similar to checkDigitLetter in original)
-			if endIdx < len(inputLower) && isDigitOrLetter(inputLower[endIdx]) {
+			// Word boundary check — isDigitOrLetter handles both cases so original input is fine.
+			if endIdx < len(input) && isDigitOrLetter(input[endIdx]) {
 				continue
 			}
 
-			if idx > 0 && isDigitOrLetter(inputLower[idx-1]) {
+			if idx > 0 && isDigitOrLetter(input[idx-1]) {
 				continue
 			}
 

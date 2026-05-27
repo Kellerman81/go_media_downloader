@@ -84,39 +84,105 @@ type MatchReport struct {
 // Ported from https://github.com/beetbox/beets/blob/master/beets/autotag/distance.py
 // ---------------------------------------------------------------------------
 
-// beetsWeights mirrors beets' default distance_weights config (music).
-var beetsWeights = map[string]float64{
-	"artist": 3.0,
-	"album":  3.0,
-	"year":   1.0,
-	// "country": 0.5, // temporarily disabled
-	// "label":   0.5, // temporarily disabled
-	// "mediums":          1.0, // not used — no disc-format comparison implemented
-	// "media":            1.0, // not used — no media-type comparison implemented
-	// "catalognum":       0.5, // not used — no catalogue-number comparison implemented
-	// "albumdisambig":    0.5, // not used — no disambiguation-comment comparison implemented
-	"tracks":           3.0, // per-matched-track-pair distance (Hungarian-assigned)
-	"album_id":         5.0,
-	"missing_tracks":   0.9,
-	"unmatched_tracks": 0.6,
-	// track-level defaults
-	"track_title":  3.0,
-	"track_artist": 2.0,
-	"track_index":  1.0,
-	"track_length": 3.0,
-	"track_id":     5.0,
-}
+var (
+	// ampReplacer replaces & with "and" in one allocation-free scan when & is absent.
+	ampReplacer = strings.NewReplacer("&", "and")
 
-// audiobookTrackWeights overrides track-level weights for audiobooks.
-// Audiobooks have no reliable title matching, so track_index and track_length
-// are boosted; track_title is reduced.
-var audiobookTrackWeights = map[string]float64{
-	"track_title":  1.0,
-	"track_artist": 2.0,
-	"track_index":  3.0,
-	"track_length": 3.0,
-	"track_id":     5.0,
-}
+	// unicodeReplacer maps accented Latin characters and German umlauts to their ASCII
+	// equivalents before Levenshtein comparison, so "Müller"≈"Mueller", "étude"≈"etude".
+	unicodeReplacer = strings.NewReplacer(
+		// German umlauts and sharp-s
+		"ä", "ae", "Ä", "ae",
+		"ö", "oe", "Ö", "oe",
+		"ü", "ue", "Ü", "ue",
+		"ß", "ss", "ẞ", "ss",
+		// Ligatures
+		"æ", "ae", "Æ", "ae",
+		"œ", "oe", "Œ", "oe",
+		// a-group
+		"à", "a", "á", "a", "â", "a", "ã", "a", "å", "a",
+		"À", "a", "Á", "a", "Â", "a", "Ã", "a", "Å", "a",
+		// e-group
+		"è", "e", "é", "e", "ê", "e", "ë", "e",
+		"È", "e", "É", "e", "Ê", "e", "Ë", "e",
+		// i-group
+		"ì", "i", "í", "i", "î", "i", "ï", "i",
+		"Ì", "i", "Í", "i", "Î", "i", "Ï", "i",
+		// o-group
+		"ò", "o", "ó", "o", "ô", "o", "õ", "o", "ø", "o",
+		"Ò", "o", "Ó", "o", "Ô", "o", "Õ", "o", "Ø", "o",
+		// u-group
+		"ù", "u", "ú", "u", "û", "u",
+		"Ù", "u", "Ú", "u", "Û", "u",
+		// y, c-cedilla, n-tilde
+		"ý", "y", "Ý", "y",
+		"ç", "c", "Ç", "c",
+		"ñ", "n", "Ñ", "n",
+	)
+
+	// numParenRe matches parenthetical groups that start with '#' or a digit,
+	// e.g. "(#1)", "(4:46)", "(2:30)". Used to strip track numbers and time codes
+	// before the substring-containment check in stringDist.
+	numParenRe = regexp.MustCompile(`\([#\d][^)]*\)`)
+
+	// vaArtistTokens lists lowercase tokens that indicate "various artists".
+	// Used by ScoreTrackDistance so the local vaArtists map isn't re-allocated per call.
+	vaArtistTokens = []string{"", "various artists", "various", "va", "unknown"}
+
+	// beetsWeights mirrors beets' default distance_weights config (music).
+	beetsWeights = map[string]float64{
+		"artist": 3.0,
+		"album":  3.0,
+		"year":   1.0,
+		// "country": 0.5, // temporarily disabled
+		// "label":   0.5, // temporarily disabled
+		// "mediums":          1.0, // not used — no disc-format comparison implemented
+		// "media":            1.0, // not used — no media-type comparison implemented
+		// "catalognum":       0.5, // not used — no catalogue-number comparison implemented
+		// "albumdisambig":    0.5, // not used — no disambiguation-comment comparison implemented
+		"tracks":           3.0, // per-matched-track-pair distance (Hungarian-assigned)
+		"album_id":         5.0,
+		"missing_tracks":   0.9,
+		"unmatched_tracks": 0.6,
+		// track-level defaults
+		"track_title":  3.0,
+		"track_artist": 2.0,
+		"track_index":  1.0,
+		"track_length": 3.0,
+		"track_id":     5.0,
+	}
+
+	// audiobookTrackWeights overrides track-level weights for audiobooks.
+	// Audiobooks have no reliable title matching, so track_index and track_length
+	// are boosted; track_title is reduced.
+	audiobookTrackWeights = map[string]float64{
+		"track_title":  1.0,
+		"track_artist": 2.0,
+		"track_index":  3.0,
+		"track_length": 3.0,
+		"track_id":     5.0,
+	}
+	sdEndWordList     = [3]string{"the", "a", "an"}
+	sdEndWordSuffixes = [3]string{", the", ", a", ", an"}
+
+	// sdPatterns mirrors beets SD_PATTERNS: (compiled regex, weight).
+	// Matched portions are removed and the improvement is credited at the given weight.
+	sdPatterns = []struct {
+		re     *regexp.Regexp
+		weight float64
+	}{
+		{regexp.MustCompile(`(?i)^the `), 0.1},
+		{regexp.MustCompile(`(?i)^an? `), 0.1}, // "A " / "An " article prefix
+		{regexp.MustCompile(`(?i)[\[\(]?(ep|single)[\]\)]?`), 0.0},
+		{regexp.MustCompile(`(?i)[\[\(]?(featuring|feat|ft)[\. :].+`), 0.1},
+		{regexp.MustCompile(`\(.*?\)`), 0.3},
+		{regexp.MustCompile(`\[.*?\]`), 0.3},
+		{regexp.MustCompile(`(?i)(, )?(pt\.|part) .+`), 0.2},
+	}
+
+	// levBufPool recycles the prev+curr buffer across levenshteinInt calls.
+	levBufPool = pool.NewPool(200, 0, nil, func(*levBuf) bool { return false })
+)
 
 // sdNormalize lowercases ASCII uppercase letters and strips all bytes that are
 // not ASCII lowercase letters or digits in a single pass.
@@ -156,27 +222,6 @@ func sdNormalize(s string) string {
 	}
 
 	return buf.String()
-}
-
-// sdEndWords holds the article words tested by SD_END_WORDS and the pre-built
-// ", word" suffixes, avoiding per-call allocations inside stringDist.
-var (
-	sdEndWordList     = [3]string{"the", "a", "an"}
-	sdEndWordSuffixes = [3]string{", the", ", a", ", an"}
-)
-
-// sdPatterns mirrors beets SD_PATTERNS: (compiled regex, weight).
-// Matched portions are removed and the improvement is credited at the given weight.
-var sdPatterns = []struct {
-	re     *regexp.Regexp
-	weight float64
-}{
-	{regexp.MustCompile(`(?i)^the `), 0.1},
-	{regexp.MustCompile(`(?i)[\[\(]?(ep|single)[\]\)]?`), 0.0},
-	{regexp.MustCompile(`(?i)[\[\(]?(featuring|feat|ft)[\. :].+`), 0.1},
-	{regexp.MustCompile(`\(.*?\)`), 0.3},
-	{regexp.MustCompile(`\[.*?\]`), 0.3},
-	{regexp.MustCompile(`(?i)(, )?(pt\.|part) .+`), 0.2},
 }
 
 // penaltyEntry accumulates a named penalty: sum of values and count of entries.
@@ -264,9 +309,6 @@ type levBuf struct {
 	data []int
 }
 
-// levBufPool recycles the prev+curr buffer across levenshteinInt calls.
-var levBufPool = pool.NewPool(200, 0, nil, func(*levBuf) bool { return false })
-
 // levenshteinInt returns the raw Levenshtein edit distance between two strings.
 func levenshteinInt(a, b string) int {
 	la, lb := len(a), len(b)
@@ -343,6 +385,11 @@ func stringDist(str1, str2 string) float64 {
 		return 1.0
 	}
 
+	// Pre-normalize: map accented chars and German umlauts to ASCII equivalents so that
+	// "Müller"≡"Mueller", "étude"≡"etude", etc. contribute zero Levenshtein distance.
+	str1 = unicodeReplacer.Replace(str1)
+	str2 = unicodeReplacer.Replace(str2)
+
 	// SD_END_WORDS: "something, the" → "the something"
 	for i, suffix := range sdEndWordSuffixes {
 		if trimmed := logger.TrimSuffixI(str1, suffix); trimmed != str1 {
@@ -355,8 +402,8 @@ func stringDist(str1, str2 string) float64 {
 	}
 
 	// SD_REPLACE: & → and
-	str1 = strings.ReplaceAll(str1, "&", "and")
-	str2 = strings.ReplaceAll(str2, "&", "and")
+	str1 = ampReplacer.Replace(str1)
+	str2 = ampReplacer.Replace(str2)
 
 	// SD_PATTERNS: each match is credited at its weight rather than full distance.
 	baseDist := stringDistBasic(str1, str2)
@@ -370,14 +417,13 @@ func stringDist(str1, str2 string) float64 {
 			continue
 		}
 
-		case1 := str1
+		case1, case2 := str1, str2
 		if match1 {
-			case1 = sdPatterns[i].re.ReplaceAllString(str1, "")
+			case1 = sdPatterns[i].re.ReplaceAllLiteralString(str1, "")
 		}
 
-		case2 := str2
 		if match2 {
-			case2 = sdPatterns[i].re.ReplaceAllString(str2, "")
+			case2 = sdPatterns[i].re.ReplaceAllLiteralString(str2, "")
 		}
 
 		caseDist := stringDistBasic(case1, case2)
@@ -391,6 +437,27 @@ func stringDist(str1, str2 string) float64 {
 		baseDist = caseDist
 
 		penalty += sdPatterns[i].weight * caseDelta
+	}
+
+	// Optional: subtitle/movement containment check.
+	// If one title (with track-number and time-code parentheticals stripped) is a
+	// prefix or suffix of the other, cap the distance at 0.3 × extra-content fraction.
+	// Example: "Preludio (Largo)" is a suffix of "Sonata in E minor - Preludio (Largo)".
+	if reg := baseDist + penalty; reg > 0 {
+		s1 := sdNormalize(numParenRe.ReplaceAllLiteralString(str1, ""))
+		s2 := sdNormalize(numParenRe.ReplaceAllLiteralString(str2, ""))
+
+		shortS, longS := s1, s2
+		if len(shortS) > len(longS) {
+			shortS, longS = longS, shortS
+		}
+
+		if len(shortS) >= 4 &&
+			(strings.HasPrefix(longS, shortS) || strings.HasSuffix(longS, shortS)) {
+			if sub := 0.3 * float64(len(longS)-len(shortS)) / float64(len(longS)); sub < reg {
+				return sub
+			}
+		}
 	}
 
 	return baseDist + penalty
@@ -508,14 +575,8 @@ func trackDistance(
 
 	// track_artist — beets only adds this for VA releases when the DB track has
 	// an artist and the local artist is not one of the "various artists" tokens.
-	vaArtists := map[string]bool{
-		"":                true,
-		"various artists": true,
-		"various":         true,
-		"va":              true,
-		"unknown":         true,
-	}
-	if isVA && db.Artist != "" && !vaArtists[strings.ToLower(strings.TrimSpace(local.Artist))] {
+	if isVA && db.Artist != "" &&
+		!logger.SlicesContainsI(vaArtistTokens, strings.TrimSpace(local.Artist)) {
 		dist.addString("track_artist", local.Artist, db.Artist)
 	}
 
@@ -548,6 +609,55 @@ func trackDistance(
 	return dist.distance()
 }
 
+// globaliseDiscTrackNumbers returns a copy of dbTracks where per-disc track
+// numbers are replaced by global sequential positions (1, 2, 3, …) when the
+// DB release spans multiple discs but the local tracks carry no disc info.
+//
+// This eliminates the spurious track_index penalty that arises when the DB
+// stores, say, disc-2 track 1 and the local file is sequentially numbered 12.
+// Without this the LAP still assigns the pair correctly (runtime+title win), but
+// the large index delta inflates the full distance and can push the candidate
+// above the acceptance threshold.
+//
+// Condition for normalisation:
+//   - at least one DB track has DiscNumber > 1 (multi-disc release in DB), AND
+//   - every local track has DiscNumber ≤ 1 (flat sequential file numbering).
+//
+// When the condition is not met, the original slice is returned as-is.
+func globaliseDiscTrackNumbers(
+	dbTracks []database.DbtrackWithArtist,
+	localTracks []parser_v2.TrackInfo,
+) []database.DbtrackWithArtist {
+	multiDisc := false
+	for i := range dbTracks {
+		if dbTracks[i].DiscNumber > 1 {
+			multiDisc = true
+			break
+		}
+	}
+
+	if !multiDisc {
+		return dbTracks
+	}
+
+	for i := range localTracks {
+		if localTracks[i].DiscNumber > 1 {
+			return dbTracks // local also has disc info — no normalisation needed
+		}
+	}
+
+	// DB tracks are ordered by (disc_number, track_number) so position i+1 is
+	// the correct global sequential index.
+	out := make([]database.DbtrackWithArtist, len(dbTracks))
+	copy(out, dbTracks)
+
+	for i := range out {
+		out[i].TrackNumber = uint16(i + 1)
+	}
+
+	return out
+}
+
 // matchTracksByDistance assigns local tracks to database track positions using
 // beets-style track_distance scoring and Kuhn's augmenting-path bipartite matching.
 //
@@ -570,6 +680,13 @@ func matchTracksByDistance(
 	data *config.MediaDataConfig,
 ) ([]parser_v2.TrackInfo, []bool, []bool) {
 	const maxTrackDist = 0.9
+
+	// Normalise multi-disc DB track numbers to global sequential positions when
+	// local files use flat sequential numbering (no disc info). This keeps
+	// track_index meaningful: disc-2 track 1 becomes global position 12 and
+	// compares correctly against local track 12, rather than producing a
+	// spurious diff of 11.
+	dbTracks = globaliseDiscTrackNumbers(dbTracks, tracks)
 
 	n := len(dbTracks)
 	m := len(tracks)
@@ -1051,6 +1168,12 @@ func albumDistanceWithTracks(
 		}
 	}
 
+	// Same normalisation used in matchTracksByDistance so the two functions
+	// agree on track positions when computing the full album distance.
+	dbTracks = globaliseDiscTrackNumbers(dbTracks, localTracks)
+
+	sourcePenalty := config.GetMusicSourcePenalty(c.Source)
+
 	nDB := len(dbTracks)
 
 	nLocal := len(localTracks)
@@ -1064,7 +1187,7 @@ func albumDistanceWithTracks(
 			dist.add("unmatched_tracks", 1.0)
 		}
 
-		return dist.distance()
+		return dist.distance() + sourcePenalty
 	}
 
 	// Build padded square cost matrix and run Hungarian assignment.
@@ -1102,7 +1225,7 @@ func albumDistanceWithTracks(
 		}
 	}
 
-	return dist.distance()
+	return dist.distance() + sourcePenalty
 }
 
 // audiobookDistanceWithTracks computes the full beets-style distance for an audiobook

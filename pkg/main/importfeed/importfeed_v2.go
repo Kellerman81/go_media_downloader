@@ -21,18 +21,24 @@ import (
 // -----------------------------------------------------------------------------
 
 var (
-	errBookIgnored      = errors.New("book ignored")
-	errAudiobookIgnored = errors.New("audiobook ignored")
-	errAlbumIgnored     = errors.New("album ignored")
-	errArtistIgnored    = errors.New("artist ignored")
-	errAuthorIgnored    = errors.New("author ignored")
-)
+	errBookIgnored              = errors.New("book ignored")
+	errAudiobookIgnored         = errors.New("audiobook ignored")
+	errAlbumIgnored             = errors.New("album ignored")
+	errArtistIgnored            = errors.New("artist ignored")
+	errAuthorIgnored            = errors.New("author ignored")
+	errIsbnEmpty                = errors.New("isbn empty")
+	errBookNotFoundInDatabase   = errors.New("book not found in database")
+	errAuthorIdentifierEmpty    = errors.New("author identifier empty")
+	errAuthorNotFoundInDatabase = errors.New("author not found in database")
+	errAsinEmpty                = errors.New("asin empty")
+	errAudiobookNotFoundInDB    = errors.New("audiobook not found in database")
+	errAlbumIdentifierEmpty     = errors.New("album identifier empty")
+	errAlbumNotFoundInDatabase  = errors.New("album not found in database")
+	errArtistIdentifierEmpty    = errors.New("artist identifier empty")
+	errArtistNotFoundInDatabase = errors.New("artist not found in database")
+	errUseJobImportDBSeries     = errors.New("use JobImportDBSeries for series")
+	errUnsupportedMediaType     = errors.New("unsupported media type")
 
-// -----------------------------------------------------------------------------
-// Provider Singletons (lazy initialization)
-// -----------------------------------------------------------------------------
-
-var (
 	openLibraryProvider *openlibrary.Provider
 	audibleProvider     *audible.Provider
 	musicbrainzProvider *musicbrainz.Provider
@@ -98,7 +104,7 @@ func jobImportEntryByList(
 	importFn func() (uint, error),
 ) error {
 	if listid == -1 {
-		return errors.New("listid not set")
+		return errListidNotSet
 	}
 
 	if err := logger.CheckContextEnded(ctx); err != nil {
@@ -376,7 +382,7 @@ func JobImportBooks(
 	}
 
 	if isbn == "" {
-		return 0, errors.New("isbn empty")
+		return 0, errIsbnEmpty
 	}
 
 	if checkJobRunning(isbn) {
@@ -440,7 +446,7 @@ func JobImportBooks(
 	}
 
 	if dbbook.ID == 0 {
-		return 0, errors.New("book not found in database")
+		return 0, errBookNotFoundInDatabase
 	}
 
 	// Update metadata if needed
@@ -475,7 +481,7 @@ func JobImportBooks(
 	if dbbook.ID == 0 {
 		dbbook.ID = BookFindDBIDByISBN(&isbn)
 		if dbbook.ID == 0 {
-			return 0, errors.New("book not found")
+			return 0, logger.ErrNotFoundBook
 		}
 	}
 
@@ -639,7 +645,7 @@ func JobImportAuthor(
 
 	if authorConfig.Name == "" && authorConfig.OpenlibraryID == "" &&
 		authorConfig.GoodreadsID == "" {
-		return 0, errors.New("author identifier empty")
+		return 0, errAuthorIdentifierEmpty
 	}
 
 	jobName := authorConfig.Name
@@ -692,7 +698,7 @@ func JobImportAuthor(
 			Str("author", authorConfig.Name).
 			Msg("Insert dbauthor for")
 
-		authorSlug := logger.StringToSlug(authorConfig.Name)
+		authorSlug := logger.StringToSlugCached(authorConfig.Name)
 
 		dbresult, err := database.ExecNid(
 			"insert into dbauthors (name, slug, openlibrary_id, goodreads_id) VALUES (?, ?, ?, ?)",
@@ -710,7 +716,7 @@ func JobImportAuthor(
 	}
 
 	if dbauthor.ID == 0 {
-		return 0, errors.New("author not found in database")
+		return 0, errAuthorNotFoundInDatabase
 	}
 
 	// Update metadata if needed
@@ -813,7 +819,7 @@ func JobImportAudiobooks(
 	}
 
 	if asin == "" {
-		return 0, errors.New("asin empty")
+		return 0, errAsinEmpty
 	}
 
 	if checkJobRunning(asin) {
@@ -875,7 +881,7 @@ func JobImportAudiobooks(
 	}
 
 	if dbaudiobook.ID == 0 {
-		return 0, errors.New("audiobook not found in database")
+		return 0, errAudiobookNotFoundInDB
 	}
 
 	// Update metadata if needed
@@ -910,7 +916,7 @@ func JobImportAudiobooks(
 	if dbaudiobook.ID == 0 {
 		dbaudiobook.ID = AudiobookFindDBIDByASIN(&asin)
 		if dbaudiobook.ID == 0 {
-			return 0, errors.New("audiobook not found")
+			return 0, logger.ErrNotFoundAudiobook
 		}
 	}
 
@@ -1035,7 +1041,7 @@ func JobImportAlbums(
 	}
 
 	if identifier == "" {
-		return 0, errors.New("album identifier empty")
+		return 0, errAlbumIdentifierEmpty
 	}
 
 	if checkJobRunning(identifier) {
@@ -1112,7 +1118,7 @@ func JobImportAlbums(
 	}
 
 	if dbalbum.ID == 0 {
-		return 0, errors.New("album not found in database")
+		return 0, errAlbumNotFoundInDatabase
 	}
 
 	// Update metadata if needed
@@ -1151,7 +1157,7 @@ func JobImportAlbums(
 	if dbalbum.ID == 0 {
 		dbalbum.ID = AlbumFindDBIDByIdentifier(&identifier)
 		if dbalbum.ID == 0 {
-			return 0, errors.New("album not found")
+			return 0, logger.ErrNotFoundAlbum
 		}
 	}
 
@@ -1276,7 +1282,7 @@ func JobImportArtist(
 	}
 
 	if artistConfig.Name == "" && artistConfig.MusicBrainzID == "" && artistConfig.DiscogsID == "" {
-		return 0, errors.New("artist identifier empty")
+		return 0, errArtistIdentifierEmpty
 	}
 
 	jobName := artistConfig.Name
@@ -1316,7 +1322,7 @@ func JobImportArtist(
 	}
 
 	if dbartist.ID == 0 && artistConfig.Name != "" {
-		artistSlug := logger.StringToSlug(artistConfig.Name)
+		artistSlug := logger.StringToSlugCached(artistConfig.Name)
 		database.Scanrowsdyn(
 			false,
 			"select id from dbartists where name = ? COLLATE NOCASE or slug = ?",
@@ -1341,7 +1347,7 @@ func JobImportArtist(
 			Str("artist", artistConfig.Name).
 			Msg("Insert dbartist for")
 
-		artistSlug := logger.StringToSlug(artistConfig.Name)
+		artistSlug := logger.StringToSlugCached(artistConfig.Name)
 
 		dbresult, err := database.ExecNid(
 			"insert into dbartists (name, slug, musicbrainz_id, discogs_id) VALUES (?, ?, ?, ?)",
@@ -1359,7 +1365,7 @@ func JobImportArtist(
 	}
 
 	if dbartist.ID == 0 {
-		return 0, errors.New("artist not found in database")
+		return 0, errArtistNotFoundInDatabase
 	}
 
 	// Update metadata if needed.
@@ -1465,7 +1471,7 @@ func JobImportByType(
 
 	case config.MediaTypeSeries:
 		// Series uses different config structure - call jobImportDBSeries directly
-		return 0, errors.New("use JobImportDBSeries for series")
+		return 0, errUseJobImportDBSeries
 
 	case config.MediaTypeBook:
 		return JobImportBooks(ctx, identifier, cfgp, listid, addnew)
@@ -1477,7 +1483,7 @@ func JobImportByType(
 		return JobImportAlbums(ctx, identifier, cfgp, listid, addnew)
 
 	default:
-		return 0, errors.New("unsupported media type")
+		return 0, errUnsupportedMediaType
 	}
 }
 
@@ -1502,7 +1508,7 @@ func addAlternateTitle(mediaType uint, dbid *uint, title *string, regionin ...*s
 		return
 	}
 
-	slug := logger.StringToSlug(*title)
+	slug := logger.StringToSlugCachedP(title)
 
 	if len(regionin) > 0 && regionin[0] != nil {
 		database.ExecN(
@@ -1614,7 +1620,7 @@ func FindBookByTitle(
 		return &dbbook, nil
 	}
 
-	return nil, errors.New("book not found")
+	return nil, logger.ErrNotFoundBook
 }
 
 // FindAudiobookByTitle searches for an audiobook in the database or external APIs by title.
@@ -1674,5 +1680,5 @@ func FindAudiobookByTitle(
 		return &dbaudiobook, nil
 	}
 
-	return nil, errors.New("audiobook not found")
+	return nil, logger.ErrNotFoundAudiobook
 }

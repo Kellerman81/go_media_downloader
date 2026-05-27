@@ -2,6 +2,7 @@ package sabnzbd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -9,11 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
-
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -86,7 +86,7 @@ type Provider struct {
 // NewProvider creates a new SABnzbd download provider
 func NewProvider(host string, port int, apiKey string, useSSL bool) (*Provider, error) {
 	if apiKey == "" {
-		return nil, fmt.Errorf("SABnzbd requires an API key")
+		return nil, errors.New("SABnzbd requires an API key")
 	}
 
 	if port == 0 {
@@ -151,7 +151,7 @@ func (p *Provider) GetTorrentInfo(
 		}
 	}
 
-	return nil, fmt.Errorf("download not found: %s", hash)
+	return nil, errors.New(logger.JoinStrings("download not found: ", hash))
 }
 
 // ListTorrents lists all NZB downloads in the queue
@@ -177,7 +177,9 @@ func (p *Provider) ListTorrents(
 
 	var queueResult sabQueueResult
 	if err := json.NewDecoder(resp.Body).Decode(&queueResult); err != nil {
-		return nil, fmt.Errorf("failed to decode SABnzbd queue response: %w", err)
+		return nil, errors.New(
+			logger.JoinStrings("failed to decode SABnzbd queue response: ", err.Error()),
+		)
 	}
 
 	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(queueResult.Queue.Slots))
@@ -214,11 +216,11 @@ func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 
 	var result sabBasicResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode SABnzbd response: %w", err)
+		return errors.New(logger.JoinStrings("failed to decode SABnzbd response: ", err.Error()))
 	}
 
 	if !result.Status {
-		return fmt.Errorf("SABnzbd pause failed")
+		return errors.New("SABnzbd pause failed")
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -251,11 +253,11 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 
 	var result sabBasicResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode SABnzbd response: %w", err)
+		return errors.New(logger.JoinStrings("failed to decode SABnzbd response: ", err.Error()))
 	}
 
 	if !result.Status {
-		return fmt.Errorf("SABnzbd resume failed")
+		return errors.New("SABnzbd resume failed")
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -290,11 +292,11 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 
 	var result sabBasicResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode SABnzbd response: %w", err)
+		return errors.New(logger.JoinStrings("failed to decode SABnzbd response: ", err.Error()))
 	}
 
 	if !result.Status {
-		return fmt.Errorf("SABnzbd remove failed")
+		return errors.New("SABnzbd remove failed")
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -340,11 +342,11 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 func (p *Provider) TestConnection(ctx context.Context) error {
 	status, err := p.GetStatus(ctx)
 	if err != nil {
-		return fmt.Errorf("connection test failed: %w", err)
+		return errors.New(logger.JoinStrings("connection test failed: ", err.Error()))
 	}
 
 	if !status.Connected {
-		return fmt.Errorf("not connected: %s", status.Message)
+		return errors.New(logger.JoinStrings("not connected: ", status.Message))
 	}
 
 	return nil
@@ -382,7 +384,7 @@ func (p *Provider) makeRequest(ctx context.Context, params url.Values) (*http.Re
 		headers,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, errors.New(logger.JoinStrings("request failed: ", err.Error()))
 	}
 
 	return rawResp, nil
@@ -466,15 +468,15 @@ func (p *Provider) parseTimeLeft(timeLeft string) int {
 func (p *Provider) handleHTTPError(resp *http.Response) error {
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("invalid API key")
+		return errors.New("invalid API key")
 	case http.StatusTooManyRequests:
-		return fmt.Errorf("rate limit exceeded")
+		return errors.New("rate limit exceeded")
 	case http.StatusNotFound:
-		return fmt.Errorf("endpoint not found")
+		return errors.New("endpoint not found")
 	case http.StatusBadRequest:
-		return fmt.Errorf("invalid request")
+		return errors.New("invalid request")
 	default:
-		return fmt.Errorf("HTTP error %d", resp.StatusCode)
+		return errors.New(logger.JoinStrings("HTTP error ", strconv.Itoa(resp.StatusCode)))
 	}
 }
 
@@ -510,11 +512,11 @@ func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority
 
 	var result sabAddResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to decode SABnzbd response: %w", err)
+		return errors.New(logger.JoinStrings("failed to decode SABnzbd response: ", err.Error()))
 	}
 
 	if !result.Status {
-		return fmt.Errorf("SABnzbd add failed: %s", result.Error)
+		return errors.New(logger.JoinStrings("SABnzbd add failed: ", result.Error))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).

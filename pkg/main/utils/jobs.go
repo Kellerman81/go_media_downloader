@@ -31,9 +31,8 @@ import (
 // NumGo is a constant for job processing.
 const NumGo = "Num Goroutines"
 
-var pathSep = string(filepath.Separator)
-
 var (
+	pathSep = string(filepath.Separator)
 	// v0 and v1 are reusable values to avoid allocations in database calls.
 	v0 uint8
 	v1 uint8 = 1
@@ -41,6 +40,65 @@ var (
 	// jobLocks tracks running jobs per configuration name to prevent concurrent execution.
 	jobLocks      = make(map[string]*sync.Mutex)
 	jobLocksGuard sync.Mutex
+
+	errConfigNotFound      = errors.New("config not found")
+	errParseFailedCfgp     = errors.New("parse failed cfgp")
+	errJobOrConfigNotFound = errors.New("job or config not found")
+	errSwitchNotFound      = errors.New("switch not found")
+	errNoLists             = errors.New("no lists")
+
+	// cacheRefreshKeys holds the cache keys to refresh, defined at package level to avoid allocation.
+	cacheRefreshKeys = []string{
+		logger.CacheMediaTitles,
+		logger.CacheFiles,
+		logger.CacheUnmatched,
+		"CacheHistoryUrl",
+		"CacheHistoryTitle",
+		logger.CacheMedia,
+		logger.CacheDBMedia,
+	}
+
+	// allCacheTypes holds all cache types for full refresh, defined at package level to avoid allocation.
+	allCacheTypes = []string{
+		logger.CacheMovie,
+		logger.CacheSeries,
+		logger.CacheDBMovie,
+		logger.CacheDBSeries,
+		logger.CacheDBSeriesAlt,
+		logger.CacheTitlesMovie,
+		logger.CacheUnmatchedMovie,
+		logger.CacheUnmatchedSeries,
+		logger.CacheFilesMovie,
+		logger.CacheFilesSeries,
+		logger.CacheHistoryURLMovie,
+		logger.CacheHistoryTitleMovie,
+		logger.CacheHistoryURLSeries,
+		logger.CacheHistoryTitleSeries,
+		// Book caches
+		logger.CacheBook,
+		logger.CacheDBBook,
+		logger.CacheTitlesBook,
+		logger.CacheUnmatchedBook,
+		logger.CacheFilesBook,
+		logger.CacheHistoryURLBook,
+		logger.CacheHistoryTitleBook,
+		// Audiobook caches
+		logger.CacheAudiobook,
+		logger.CacheDBAudiobook,
+		logger.CacheTitlesAudiobook,
+		logger.CacheUnmatchedAudiobook,
+		logger.CacheFilesAudiobook,
+		logger.CacheHistoryURLAudiobook,
+		logger.CacheHistoryTitleAudiobook,
+		// Album/Music caches
+		logger.CacheAlbum,
+		logger.CacheDBAlbum,
+		logger.CacheTitlesAlbum,
+		logger.CacheUnmatchedAlbum,
+		logger.CacheFilesAlbum,
+		logger.CacheHistoryURLAlbum,
+		logger.CacheHistoryTitleAlbum,
+	}
 )
 
 // getJobLock retrieves or creates a mutex for the given configuration name.
@@ -204,7 +262,7 @@ func newfilesloop(
 		logger.Logtype("error", 1).
 			Str(logger.StrConfig, data.TemplatePath).
 			Msg("config not found")
-		return errors.New("config not found")
+		return errConfigNotFound
 	}
 
 	if cfgp == nil {
@@ -213,7 +271,7 @@ func newfilesloop(
 			Err(logger.ErrCfgpNotFound).
 			Msg("parse failed cfgp")
 
-		return errors.New("parse failed cfgp")
+		return errParseFailedCfgp
 	}
 
 	// For multi-track media (audiobooks, music), group files by folder first
@@ -697,30 +755,9 @@ func processAudioDirectory(
 	return nil
 }
 
-// multiDiscPatterns holds common multi-disc folder name patterns.
-// Defined at package level to avoid allocation on each call.
-var multiDiscPatterns = []string{
-	"cd", "disc", "disk", "part", "chapter", "volume", "vol",
-	"book", "side", "tape",
-}
-
 // isMultiDiscSubfolder checks if a folder name indicates a multi-disc/part structure.
 func isMultiDiscSubfolder(name string) bool {
-	for i := range multiDiscPatterns {
-		// Check for patterns like "CD1", "CD 1", "CD-1", "Disc 01", etc.
-		if !logger.HasPrefixI(name, multiDiscPatterns[i]) {
-			continue
-		}
-
-		rest := name[len(multiDiscPatterns[i]):]
-
-		rest = strings.TrimLeft(rest, " -_")
-		if len(rest) > 0 && rest[0] >= '0' && rest[0] <= '9' {
-			return true
-		}
-	}
-
-	return false
+	return importfeed.LooksLikeDiscFolder(name)
 }
 
 // ProcessAudioFolderAsAlbum attempts to process a folder as a complete album/audiobook.
@@ -2057,7 +2094,7 @@ func SingleJobs(
 		cfgp = config.GetSettingsMedia(cfgpstr)
 		if cfgp == nil {
 			logjob("config not found", cfgpstr, listname, job)
-			return errors.New("config not found")
+			return errConfigNotFound
 		}
 
 		if cfgp.IsType != config.MediaTypeSeries &&
@@ -2144,59 +2181,6 @@ func logjob(act, cfgp, listname, job string) {
 		Msg(act)
 }
 
-// cacheRefreshKeys holds the cache keys to refresh, defined at package level to avoid allocation.
-var cacheRefreshKeys = []string{
-	logger.CacheMediaTitles,
-	logger.CacheFiles,
-	logger.CacheUnmatched,
-	"CacheHistoryUrl",
-	"CacheHistoryTitle",
-	logger.CacheMedia,
-	logger.CacheDBMedia,
-}
-
-// allCacheTypes holds all cache types for full refresh, defined at package level to avoid allocation.
-var allCacheTypes = []string{
-	logger.CacheMovie,
-	logger.CacheSeries,
-	logger.CacheDBMovie,
-	logger.CacheDBSeries,
-	logger.CacheDBSeriesAlt,
-	logger.CacheTitlesMovie,
-	logger.CacheUnmatchedMovie,
-	logger.CacheUnmatchedSeries,
-	logger.CacheFilesMovie,
-	logger.CacheFilesSeries,
-	logger.CacheHistoryURLMovie,
-	logger.CacheHistoryTitleMovie,
-	logger.CacheHistoryURLSeries,
-	logger.CacheHistoryTitleSeries,
-	// Book caches
-	logger.CacheBook,
-	logger.CacheDBBook,
-	logger.CacheTitlesBook,
-	logger.CacheUnmatchedBook,
-	logger.CacheFilesBook,
-	logger.CacheHistoryURLBook,
-	logger.CacheHistoryTitleBook,
-	// Audiobook caches
-	logger.CacheAudiobook,
-	logger.CacheDBAudiobook,
-	logger.CacheTitlesAudiobook,
-	logger.CacheUnmatchedAudiobook,
-	logger.CacheFilesAudiobook,
-	logger.CacheHistoryURLAudiobook,
-	logger.CacheHistoryTitleAudiobook,
-	// Album/Music caches
-	logger.CacheAlbum,
-	logger.CacheDBAlbum,
-	logger.CacheTitlesAlbum,
-	logger.CacheUnmatchedAlbum,
-	logger.CacheFilesAlbum,
-	logger.CacheHistoryURLAlbum,
-	logger.CacheHistoryTitleAlbum,
-}
-
 // Refreshcache refreshes various database caches used for performance.
 // It refreshes the history cache, media cache, media titles cache,
 // unmatched cache, and files cache.
@@ -2219,7 +2203,7 @@ func runjoblistfunc(
 	listid int,
 ) error {
 	if job == "" || cfgp == nil {
-		return errors.New("job or config not found")
+		return errJobOrConfigNotFound
 	}
 
 	if err := logger.CheckContextEnded(rootctx); err != nil {
@@ -2353,7 +2337,7 @@ func runjoblistfunc(
 		logger.Logtype("error", 1).
 			Str(logger.StrJob, job).
 			Msg("Switch not found")
-		return errors.New("switch not found")
+		return errSwitchNotFound
 	}
 
 	return nil
@@ -2441,7 +2425,7 @@ func jobsearchmedia(
 	}
 
 	if cfgp.ListsLen == 0 {
-		return errors.New("no lists")
+		return errNoLists
 	}
 
 	args := logger.PLArrAny.Get()
@@ -2452,7 +2436,7 @@ func jobsearchmedia(
 	}
 
 	if len(args.Arr) == 0 {
-		return errors.New("no lists")
+		return errNoLists
 	}
 
 	bld := logger.PlAddBuffer.Get()

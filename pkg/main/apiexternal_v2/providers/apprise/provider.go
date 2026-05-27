@@ -3,14 +3,17 @@ package apprise
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/goccy/go-json"
 )
 
@@ -113,14 +116,14 @@ func (p *Provider) SendNotification(
 	}
 
 	if len(urls) == 0 {
-		return nil, fmt.Errorf("no notification URLs configured")
+		return nil, errors.New("no notification URLs configured")
 	}
 
 	appriseReq.URLs = urls
 
 	jsonData, err := json.Marshal(appriseReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to marshal request: ", err.Error()))
 	}
 
 	endpoint := "/notify"
@@ -146,7 +149,7 @@ func (p *Provider) SendNotification(
 		func(resp *http.Response) error {
 			body, readErr := io.ReadAll(resp.Body)
 			if readErr != nil {
-				return fmt.Errorf("failed to read response: %w", readErr)
+				return errors.New(logger.JoinStrings("failed to read response: ", readErr.Error()))
 			}
 
 			if resp.StatusCode != http.StatusOK {
@@ -157,7 +160,12 @@ func (p *Provider) SendNotification(
 					Error:     fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body)),
 				}
 
-				return fmt.Errorf("apprise request failed with status %d", resp.StatusCode)
+				return errors.New(
+					logger.JoinStrings(
+						"apprise request failed with status ",
+						strconv.Itoa(resp.StatusCode),
+					),
+				)
 			}
 
 			appriseResponse = apiexternal_v2.NotificationResponse{
@@ -178,17 +186,22 @@ func (p *Provider) SendNotification(
 func (p *Provider) TestConnection(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", p.baseURL+"/", nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.New(logger.JoinStrings("failed to create request: ", err.Error()))
 	}
 
 	resp, err := p.BaseClient.GetHTTPClient().Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return errors.New(logger.JoinStrings("request failed: ", err.Error()))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusMethodNotAllowed {
-		return fmt.Errorf("apprise health check failed with status %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings(
+				"apprise health check failed with status ",
+				strconv.Itoa(resp.StatusCode),
+			),
+		)
 	}
 
 	return nil

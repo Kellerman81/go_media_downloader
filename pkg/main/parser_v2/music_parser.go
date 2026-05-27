@@ -144,44 +144,44 @@ func (mp *MusicParser) Parse(filename string) *MusicParseResult {
 
 	// Extract disc-track combined pattern first (e.g., "1-01 Track.mp3")
 	var trackInfo TrackInfo
-	if matches := mp.patterns.discTrack.FindStringSubmatch(name); len(matches) > 2 {
-		trackInfo.DiscNumber = parseInt(matches[1])
-		trackInfo.TrackNumber = parseInt(matches[2])
-		cleanedName = mp.patterns.discTrack.ReplaceAllString(cleanedName, "")
+	if loc := mp.patterns.discTrack.FindStringSubmatchIndex(name); len(loc) > 4 {
+		trackInfo.DiscNumber = parseInt(name[loc[2]:loc[3]])
+		trackInfo.TrackNumber = parseInt(name[loc[4]:loc[5]])
+		cleanedName = mp.patterns.discTrack.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Extract track number if not already found
 	if trackInfo.TrackNumber == 0 {
-		if matches := mp.patterns.trackNumber.FindStringSubmatch(cleanedName); len(matches) > 1 {
-			trackInfo.TrackNumber = parseInt(matches[1])
-			cleanedName = mp.patterns.trackNumber.ReplaceAllString(cleanedName, "")
+		if loc := mp.patterns.trackNumber.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+			trackInfo.TrackNumber = parseInt(cleanedName[loc[2]:loc[3]])
+			cleanedName = mp.patterns.trackNumber.ReplaceAllLiteralString(cleanedName, "")
 		}
 	}
 
 	// Extract disc number if not already found
 	if trackInfo.DiscNumber == 0 {
-		if matches := mp.patterns.discNumber.FindStringSubmatch(cleanedName); len(matches) > 1 {
-			trackInfo.DiscNumber = parseInt(matches[1])
-			cleanedName = mp.patterns.discNumber.ReplaceAllString(cleanedName, "")
+		if loc := mp.patterns.discNumber.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+			trackInfo.DiscNumber = parseInt(cleanedName[loc[2]:loc[3]])
+			cleanedName = mp.patterns.discNumber.ReplaceAllLiteralString(cleanedName, "")
 		}
 	}
 
 	// Check for vinyl side notation
-	if matches := mp.patterns.vinyl.FindStringSubmatch(name); len(matches) > 2 {
-		// Convert vinyl side to disc (A=1, B=2, etc.)
-		trackInfo.DiscNumber = int(matches[1][0] - 'A' + 1)
-		trackInfo.TrackNumber = parseInt(matches[2])
+	if loc := mp.patterns.vinyl.FindStringSubmatchIndex(name); len(loc) > 4 {
+		// Convert vinyl side to disc (A=1, B=2, etc.) — loc[2] is the byte offset of the side letter.
+		trackInfo.DiscNumber = int(name[loc[2]] - 'A' + 1)
+		trackInfo.TrackNumber = parseInt(name[loc[4]:loc[5]])
 	}
 
 	// Extract ISRC
-	if matches := mp.patterns.isrc.FindStringSubmatch(name); len(matches) > 1 {
-		trackInfo.ISRC = matches[1]
+	if loc := mp.patterns.isrc.FindStringSubmatchIndex(name); len(loc) > 2 {
+		trackInfo.ISRC = name[loc[2]:loc[3]]
 	}
 
 	// Extract featured artist
-	if matches := mp.patterns.feat.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		trackInfo.Artist = strings.TrimSpace(matches[1])
-		cleanedName = mp.patterns.feat.ReplaceAllString(cleanedName, " ")
+	if loc := mp.patterns.feat.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		trackInfo.Artist = strings.TrimSpace(cleanedName[loc[2]:loc[3]])
+		cleanedName = mp.patterns.feat.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// The remaining name is the track title
@@ -309,34 +309,35 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 	cleanedName = strings.ReplaceAll(cleanedName, "_", " ")
 
 	// Extract year
-	if matches := mp.patterns.year.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.Year = parseInt(matches[1])
-		if strings.Contains(matches[0], "(") || strings.Contains(matches[0], "[") {
-			cleanedName = strings.Replace(cleanedName, matches[0], "", 1)
+	if loc := mp.patterns.year.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.Year = parseInt(cleanedName[loc[2]:loc[3]])
+
+		fullMatch := cleanedName[loc[0]:loc[1]]
+		if strings.Contains(fullMatch, "(") || strings.Contains(fullMatch, "[") {
+			cleanedName = strings.Replace(cleanedName, fullMatch, "", 1)
 		}
 	}
 
 	// Extract release type - only extract for metadata, don't strip from title
 	// if it's in parentheses (e.g., "(Live)" is often part of the album name)
-	if matches := mp.patterns.releaseType.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.ReleaseType = normalizeReleaseType(matches[1])
+	if loc := mp.patterns.releaseType.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.ReleaseType = normalizeReleaseType(cleanedName[loc[2]:loc[3]])
 		// Only strip release type if it's NOT in parentheses/brackets
-		// "(Live)" should stay, but "-LIVE-" can be stripped by sceneTags later
-		matchStr := matches[0]
+		matchStr := cleanedName[loc[0]:loc[1]]
 		if !strings.HasPrefix(matchStr, "(") && !strings.HasPrefix(matchStr, "[") {
 			cleanedName = strings.Replace(cleanedName, matchStr, " ", 1)
 		}
 	}
 
 	// Extract catalog number
-	if matches := mp.patterns.catalogNum.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.CatalogNumber = matches[1]
-		cleanedName = mp.patterns.catalogNum.ReplaceAllString(cleanedName, " ")
+	if loc := mp.patterns.catalogNum.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.CatalogNumber = cleanedName[loc[2]:loc[3]]
+		cleanedName = mp.patterns.catalogNum.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// Extract format indicators
-	if matches := mp.patterns.format.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		formatIndicator := strings.ToLower(matches[1])
+	if loc := mp.patterns.format.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		formatIndicator := strings.ToLower(cleanedName[loc[2]:loc[3]])
 		switch formatIndicator {
 		case "flac", "wav", "alac", "aiff":
 			result.IsLossless = true
@@ -352,18 +353,18 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 			result.Bitrate = 245 // Approximate VBR V0
 		}
 
-		cleanedName = mp.patterns.format.ReplaceAllString(cleanedName, " ")
+		cleanedName = mp.patterns.format.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// Extract bitrate
-	if matches := mp.patterns.bitrate.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.Bitrate = parseInt(matches[1])
-		cleanedName = mp.patterns.bitrate.ReplaceAllString(cleanedName, " ")
+	if loc := mp.patterns.bitrate.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.Bitrate = parseInt(cleanedName[loc[2]:loc[3]])
+		cleanedName = mp.patterns.bitrate.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// Extract sample rate
-	if matches := mp.patterns.sampleRate.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		rate := parseFloat(matches[1])
+	if loc := mp.patterns.sampleRate.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		rate := parseFloat(cleanedName[loc[2]:loc[3]])
 		if rate < 1000 {
 			result.SampleRate = int(rate * 1000)
 		} else {
@@ -372,33 +373,33 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 	}
 
 	// Extract bit depth
-	if matches := mp.patterns.bitDepth.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.BitDepth = parseInt(matches[1])
+	if loc := mp.patterns.bitDepth.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.BitDepth = parseInt(cleanedName[loc[2]:loc[3]])
 	}
 
 	// Extract UPC
-	if matches := mp.patterns.upc.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.UPC = matches[1]
-		cleanedName = strings.Replace(cleanedName, matches[0], "", 1)
+	if loc := mp.patterns.upc.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.UPC = cleanedName[loc[2]:loc[3]]
+		cleanedName = strings.Replace(cleanedName, cleanedName[loc[0]:loc[1]], "", 1)
 	}
 
 	// Extract MusicBrainz ID
-	if matches := mp.patterns.mbid.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.MusicBrainzReleaseID = matches[1]
-		cleanedName = strings.Replace(cleanedName, matches[0], "", 1)
+	if loc := mp.patterns.mbid.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.MusicBrainzReleaseID = cleanedName[loc[2]:loc[3]]
+		cleanedName = strings.Replace(cleanedName, cleanedName[loc[0]:loc[1]], "", 1)
 	}
 
 	// Extract release group
-	if matches := mp.patterns.group.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.ReleaseGroup = matches[1]
-		cleanedName = mp.patterns.group.ReplaceAllString(cleanedName, "")
+	if loc := mp.patterns.group.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.ReleaseGroup = cleanedName[loc[2]:loc[3]]
+		cleanedName = mp.patterns.group.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Strip scene release tags (formats, sources, quality indicators)
 	// This handles names like "Artist-Album-OST-CD-FLAC-1986-KINDA"
 	// Loop to handle overlapping matches (pattern includes trailing dash)
 	for {
-		newName := mp.patterns.sceneTags.ReplaceAllString(cleanedName, "-")
+		newName := mp.patterns.sceneTags.ReplaceAllLiteralString(cleanedName, "-")
 		if newName == cleanedName {
 			break
 		}
@@ -408,7 +409,7 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 
 	// Strip release group at end
 	if mp.patterns.sceneGroup.MatchString(cleanedName) {
-		cleanedName = mp.patterns.sceneGroup.ReplaceAllString(cleanedName, "")
+		cleanedName = mp.patterns.sceneGroup.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Clean up multiple consecutive dashes and trailing dashes
@@ -434,10 +435,11 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 	name = strings.TrimSpace(name)
 
 	// Try "Artist - Album" pattern (with spaces around dash)
-	if matches := mp.patterns.artistDash.FindStringSubmatch(name); len(matches) > 2 {
+	if loc := mp.patterns.artistDash.FindStringSubmatchIndex(name); len(loc) > 4 {
+		g1, g2 := name[loc[2]:loc[3]], name[loc[4]:loc[5]]
 		// Skip this split if the "album" side starts with a bare year like "2007 - FLAC - GROUP".
 		// That pattern means the whole string is "Title - Year - Format", not "Artist - Album".
-		rhsTrimmed := strings.TrimSpace(matches[2])
+		rhsTrimmed := strings.TrimSpace(g2)
 
 		yearStart := len(rhsTrimmed) >= 4 &&
 			(rhsTrimmed[0] == '1' || rhsTrimmed[0] == '2') &&
@@ -448,7 +450,7 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 
 		// Skip this split if the LHS is a 4-digit year that was already extracted
 		// (e.g. "1976 - I'd Rather Believe in You" → year=1976, not artist).
-		lhsTrimmed := strings.TrimSpace(matches[1])
+		lhsTrimmed := strings.TrimSpace(g1)
 		lhsIsYear := result.Year > 0 &&
 			len(lhsTrimmed) == 4 &&
 			parseInt(lhsTrimmed) == result.Year
@@ -458,12 +460,12 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 		lhsIsNumericPrefix := !lhsIsYear && isNumericOnly(lhsTrimmed)
 
 		if !yearStart && !lhsIsYear && !lhsIsNumericPrefix {
-			mp.setArtistAlbumFromMatches(matches[1], matches[2], result)
+			mp.setArtistAlbumFromMatches(g1, g2, result)
 			return
 		}
 
 		if !yearStart && lhsIsNumericPrefix {
-			mp.extractArtistAlbum(matches[2], result)
+			mp.extractArtistAlbum(g2, result)
 			return
 		}
 	}
@@ -471,24 +473,18 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 	// Try "Artist-Album" or "Artist_Album" pattern (scene releases without spaces)
 	// Only use this if we have at least one dash/underscore
 	if strings.ContainsAny(name, "-_") {
-		if matches := mp.patterns.artistTitle.FindStringSubmatch(name); len(matches) > 2 {
-			potentialArtist := strings.TrimSpace(matches[1])
-			potentialAlbum := strings.TrimSpace(matches[2])
+		if loc := mp.patterns.artistTitle.FindStringSubmatchIndex(name); len(loc) > 4 {
+			potentialArtist := strings.TrimSpace(name[loc[2]:loc[3]])
+			potentialAlbum := strings.TrimSpace(name[loc[4]:loc[5]])
 
-			// Validate: artist should have reasonable length and look like a name/band
-			// Album shouldn't be empty after cleaning
 			if len(potentialArtist) >= 2 && len(potentialAlbum) >= 2 {
-				// Clean up scene separators (dots, dashes, underscores) to spaces
-				potentialArtist = strings.ReplaceAll(potentialArtist, ".", " ")
-				potentialArtist = strings.ReplaceAll(potentialArtist, "_", " ")
-				potentialArtist = cleanTitle(potentialArtist)
-
-				potentialAlbum = strings.ReplaceAll(potentialAlbum, ".", " ")
-				potentialAlbum = strings.ReplaceAll(potentialAlbum, "-", " ")
-				potentialAlbum = strings.ReplaceAll(potentialAlbum, "_", " ")
-				potentialAlbum = cleanTitle(potentialAlbum)
-
-				mp.setArtistAlbumFromMatches(potentialArtist, potentialAlbum, result)
+				// normalizeArtistName (inside setArtistAlbumFromMatches) handles ./_→space for artist.
+				// Album needs '-'→' ' too since cleanAlbumTitle doesn't do it; use normalizeScenePart.
+				mp.setArtistAlbumFromMatches(
+					potentialArtist,
+					normalizeScenePart(potentialAlbum, true),
+					result,
+				)
 
 				return
 			}
@@ -502,21 +498,14 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 
 // setArtistAlbumFromMatches sets artist and album from matched strings.
 func (mp *MusicParser) setArtistAlbumFromMatches(artist, album string, result *MusicParseResult) {
-	// Clean up scene separators (dots, underscores) in artist name
-	artist = strings.ReplaceAll(artist, ".", " ")
-	artist = strings.ReplaceAll(artist, "_", " ")
-	// Clean up multiple spaces
-	for strings.Contains(artist, "  ") {
-		artist = strings.ReplaceAll(artist, "  ", " ")
-	}
-
-	result.Artist = strings.TrimSpace(artist)
+	result.Artist = normalizeArtistName(artist)
 	result.Album = cleanAlbumTitle(strings.TrimSpace(album))
 	result.Title = result.Album
 
-	// Check for multiple artists
-	if !strings.Contains(result.Artist, " & ") && !strings.Contains(result.Artist, " x ") &&
-		!strings.Contains(result.Artist, " and ") && !strings.Contains(result.Artist, " And ") {
+	// Check for multiple artists — ContainsI covers "and"/"And"/"AND" in one call.
+	if !strings.Contains(result.Artist, " & ") &&
+		!strings.Contains(result.Artist, " x ") &&
+		!logger.ContainsI(result.Artist, " and ") {
 		return
 	}
 
@@ -528,6 +517,56 @@ func (mp *MusicParser) setArtistAlbumFromMatches(artist, album string, result *M
 		result.Artist = artists[0]
 	}
 }
+
+// normalizeScenePart replaces scene separators and collapses spaces in a
+// single pooled-buffer pass. Set replaceDash=true to also convert '-' → ' '
+// (needed for album parts; artists may legitimately contain dashes like "AC-DC").
+func normalizeScenePart(s string, replaceDash bool) string {
+	needsClean := false
+
+	prevWasSpace := false
+	for i := range len(s) {
+		c := s[i]
+		if c == '.' || c == '_' || (replaceDash && c == '-') || (c == ' ' && prevWasSpace) {
+			needsClean = true
+			break
+		}
+
+		prevWasSpace = c == ' '
+	}
+
+	if !needsClean {
+		return strings.TrimSpace(s)
+	}
+
+	buf := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(buf)
+
+	lastWasSpace := false
+	for i := range len(s) {
+		c := s[i]
+		if c == '.' || c == '_' || (replaceDash && c == '-') {
+			c = ' '
+		}
+
+		if c == ' ' {
+			if !lastWasSpace {
+				buf.WriteByte(' ')
+			}
+
+			lastWasSpace = true
+		} else {
+			buf.WriteByte(c)
+
+			lastWasSpace = false
+		}
+	}
+
+	return strings.TrimSpace(buf.String())
+}
+
+// normalizeArtistName cleans scene separators from an artist name.
+func normalizeArtistName(s string) string { return normalizeScenePart(s, false) }
 
 // cleanAlbumTitle removes format indicators and scene tags from album titles.
 func cleanAlbumTitle(album string) string {
@@ -567,7 +606,7 @@ func cleanAlbumTitle(album string) string {
 		changed := false
 		for _, p := range patterns {
 			if p.MatchString(album) {
-				album = p.ReplaceAllString(album, " ")
+				album = p.ReplaceAllLiteralString(album, " ")
 				changed = true
 			}
 		}
@@ -603,16 +642,22 @@ func cleanAlbumTitle(album string) string {
 		lastWord := words[len(words)-1]
 		// Check if last word looks like a scene group (short uppercase, or known patterns)
 		if len(lastWord) >= 2 && len(lastWord) <= 10 {
-			// Require at least one letter: pure numbers like "58" are volume/track numbers,
-			// not scene groups, even though strings.ToUpper("58") == "58".
-			hasLetter := strings.ContainsAny(
-				lastWord,
-				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-			)
+			// Single pass: check for at least one letter and no lowercase letters.
+			// Pure numbers like "58" are volume/track numbers, not scene groups.
+			hasLetter, hasLower := false, false
+			for i := range len(lastWord) {
+				c := lastWord[i]
+				if c >= 'A' && c <= 'Z' {
+					hasLetter = true
+				} else if c >= 'a' && c <= 'z' {
+					hasLetter = true
+					hasLower = true
+					break
+				}
+			}
 
-			isAllUpper := hasLetter && strings.ToUpper(lastWord) == lastWord
-			if isAllUpper && !looksLikeAlbumWord(lastWord) {
-				album = trailingGroup.ReplaceAllString(album, "")
+			if hasLetter && !hasLower && !looksLikeAlbumWord(lastWord) {
+				album = trailingGroup.ReplaceAllLiteralString(album, "")
 			}
 		}
 	}
@@ -628,10 +673,10 @@ func looksLikeAlbumWord(word string) bool {
 
 // StripReleaseType removes release type indicators (Deluxe Edition, Remastered, etc.) from album titles.
 // This is used for fallback matching when exact title match fails.
-func StripReleaseType(album string) string {
+func StripReleaseType(album *string) string {
 	// Remove catalog numbers in parentheses like (824 150-2 M-1) or (B60F350E)
-	if re := database.GetCachedRegexp(`\s*\([A-Z0-9][A-Z0-9\s\-]*\)`); re.MatchString(album) {
-		album = re.ReplaceAllString(album, "")
+	if re := database.GetCachedRegexp(`\s*\([A-Z0-9][A-Z0-9\s\-]*\)`); re.MatchString(*album) {
+		*album = re.ReplaceAllLiteralString(*album, "")
 	}
 
 	patterns := []*regexp.Regexp{
@@ -653,8 +698,8 @@ func StripReleaseType(album string) string {
 	for range 3 {
 		changed := false
 		for _, p := range patterns {
-			if p.MatchString(album) {
-				album = p.ReplaceAllString(album, " ")
+			if p.MatchString(*album) {
+				*album = p.ReplaceAllLiteralString(*album, " ")
 				changed = true
 			}
 		}
@@ -665,11 +710,11 @@ func StripReleaseType(album string) string {
 	}
 
 	// Clean up multiple spaces
-	for strings.Contains(album, "  ") {
-		album = strings.ReplaceAll(album, "  ", " ")
+	for strings.Contains(*album, "  ") {
+		*album = strings.ReplaceAll(*album, "  ", " ")
 	}
 
-	return strings.TrimSpace(album)
+	return strings.TrimSpace(*album)
 }
 
 // checkCompleteness determines if an album has all expected tracks.

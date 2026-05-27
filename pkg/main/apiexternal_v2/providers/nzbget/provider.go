@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -128,7 +129,7 @@ func (p *Provider) GetTorrentInfo(
 	// Parse hash as NZBID
 	nzbID, err := strconv.Atoi(hash)
 	if err != nil {
-		return nil, fmt.Errorf("invalid NZBID: %s", hash)
+		return nil, errors.New(logger.JoinStrings("invalid NZBID: ", hash))
 	}
 
 	// Get all downloads and find the specific one
@@ -155,7 +156,7 @@ func (p *Provider) GetTorrentInfo(
 		}
 	}
 
-	return nil, fmt.Errorf("download not found: %s", hash)
+	return nil, errors.New(logger.JoinStrings("download not found: ", hash))
 }
 
 // ListTorrents lists all NZB downloads in the queue
@@ -167,11 +168,11 @@ func (p *Provider) ListTorrents(
 
 	result, err := p.makeJSONRPCCall(ctx, "listgroups", []any{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list downloads: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to list downloads: ", err.Error()))
 	}
 
 	if err := json.Unmarshal(result, &queueItems); err != nil {
-		return nil, fmt.Errorf("failed to decode queue items: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode queue items: ", err.Error()))
 	}
 
 	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(queueItems))
@@ -190,12 +191,12 @@ func (p *Provider) ListTorrents(
 func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 	nzbID, err := strconv.Atoi(hash)
 	if err != nil {
-		return fmt.Errorf("invalid NZBID: %s", hash)
+		return errors.New(logger.JoinStrings("invalid NZBID: ", hash))
 	}
 
 	_, err = p.makeJSONRPCCall(ctx, "editqueue", []any{"GroupPause", 0, "", []int{nzbID}})
 	if err != nil {
-		return fmt.Errorf("failed to pause download: %w", err)
+		return errors.New(logger.JoinStrings("failed to pause download: ", err.Error()))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -210,12 +211,12 @@ func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 	nzbID, err := strconv.Atoi(hash)
 	if err != nil {
-		return fmt.Errorf("invalid NZBID: %s", hash)
+		return errors.New(logger.JoinStrings("invalid NZBID: ", hash))
 	}
 
 	_, err = p.makeJSONRPCCall(ctx, "editqueue", []any{"GroupResume", 0, "", []int{nzbID}})
 	if err != nil {
-		return fmt.Errorf("failed to resume download: %w", err)
+		return errors.New(logger.JoinStrings("failed to resume download: ", err.Error()))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -230,7 +231,7 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles bool) error {
 	nzbID, err := strconv.Atoi(hash)
 	if err != nil {
-		return fmt.Errorf("invalid NZBID: %s", hash)
+		return errors.New(logger.JoinStrings("invalid NZBID: ", hash))
 	}
 
 	action := "GroupDelete"
@@ -240,7 +241,7 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 
 	_, err = p.makeJSONRPCCall(ctx, "editqueue", []any{action, 0, "", []int{nzbID}})
 	if err != nil {
-		return fmt.Errorf("failed to remove download: %w", err)
+		return errors.New(logger.JoinStrings("failed to remove download: ", err.Error()))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -281,11 +282,11 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 func (p *Provider) TestConnection(ctx context.Context) error {
 	status, err := p.GetStatus(ctx)
 	if err != nil {
-		return fmt.Errorf("connection test failed: %w", err)
+		return errors.New(logger.JoinStrings("connection test failed: ", err.Error()))
 	}
 
 	if !status.Connected {
-		return fmt.Errorf("not connected: %s", status.Message)
+		return errors.New(logger.JoinStrings("not connected: ", status.Message))
 	}
 
 	return nil
@@ -314,7 +315,7 @@ func (p *Provider) makeJSONRPCCall(
 
 	jsonData, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal JSON-RPC request: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to marshal JSON-RPC request: ", err.Error()))
 	}
 
 	// Build custom headers
@@ -339,15 +340,11 @@ func (p *Provider) makeJSONRPCCall(
 		nil,
 		func(resp *http.Response) error {
 			if decodeErr := json.NewDecoder(resp.Body).Decode(&response); decodeErr != nil {
-				return fmt.Errorf("failed to decode JSON-RPC response: %w", decodeErr)
+				return errors.New(logger.JoinStrings("failed to decode JSON-RPC response: ", decodeErr.Error()))
 			}
 
 			if response.Error != nil {
-				return fmt.Errorf(
-					"JSON-RPC error %d: %s",
-					response.Error.Code,
-					response.Error.Message,
-				)
+				return errors.New(logger.JoinStrings("JSON-RPC error ", strconv.Itoa(response.Error.Code), ": ", response.Error.Message))
 			}
 
 			return nil
@@ -416,12 +413,12 @@ func (p *Provider) convertQueueItemToTorrentInfo(item nzbGetQueueItem) apiextern
 func (p *Provider) getHistory(ctx context.Context, hidden bool) ([]nzbGetQueueItem, error) {
 	result, err := p.makeJSONRPCCall(ctx, "history", []any{hidden})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get history: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to get history: ", err.Error()))
 	}
 
 	var historyItems []nzbGetQueueItem
 	if err := json.Unmarshal(result, &historyItems); err != nil {
-		return nil, fmt.Errorf("failed to decode history: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode history: ", err.Error()))
 	}
 
 	return historyItems, nil
@@ -478,7 +475,7 @@ func (p *Provider) AddNZBExtended(
 		nil,
 		func(resp *http.Response) error {
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("failed to download NZB: HTTP %d", resp.StatusCode)
+				return errors.New(logger.JoinStrings("failed to download NZB: HTTP ", strconv.Itoa(resp.StatusCode)))
 			}
 
 			// Store Content-Disposition header for later
@@ -486,7 +483,7 @@ func (p *Provider) AddNZBExtended(
 
 			// Read NZB content
 			if _, err := buf.ReadFrom(resp.Body); err != nil {
-				return fmt.Errorf("failed to read NZB content: %w", err)
+				return errors.New(logger.JoinStrings("failed to read NZB content: ", err.Error()))
 			}
 
 			return nil
@@ -547,12 +544,12 @@ func (p *Provider) AddNZBExtended(
 
 	result, err := p.makeJSONRPCCall(ctx, "append", params)
 	if err != nil {
-		return 0, fmt.Errorf("failed to add NZB: %w", err)
+		return 0, errors.New(logger.JoinStrings("failed to add NZB: ", err.Error()))
 	}
 
 	var nzbID int
 	if err := json.Unmarshal(result, &nzbID); err != nil {
-		return 0, fmt.Errorf("failed to decode NZB ID: %w", err)
+		return 0, errors.New(logger.JoinStrings("failed to decode NZB ID: ", err.Error()))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).

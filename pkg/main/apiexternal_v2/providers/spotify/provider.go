@@ -3,11 +3,13 @@ package spotify
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -127,7 +129,7 @@ func (p *Provider) authenticate(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, "POST", authURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return fmt.Errorf("failed to create auth request: %w", err)
+		return errors.New(logger.JoinStrings("failed to create auth request: ", err.Error()))
 	}
 
 	// Set Authorization header with Base64 encoded client credentials
@@ -139,17 +141,19 @@ func (p *Provider) authenticate(ctx context.Context) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("auth request failed: %w", err)
+		return errors.New(logger.JoinStrings("auth request failed: ", err.Error()))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("auth failed with status %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings("auth failed with status ", strconv.Itoa(resp.StatusCode)),
+		)
 	}
 
 	var authResp spotifyAuthResponse
 	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		return fmt.Errorf("failed to decode auth response: %w", err)
+		return errors.New(logger.JoinStrings("failed to decode auth response: ", err.Error()))
 	}
 
 	p.accessToken = authResp.AccessToken
@@ -260,7 +264,7 @@ func (p *Provider) SearchAlbums(
 	}
 
 	if response.Albums == nil || len(response.Albums.Items) == 0 {
-		return nil, fmt.Errorf("no albums found")
+		return nil, errors.New("no albums found")
 	}
 
 	return p.filterAndConvertAlbums(response.Albums.Items), nil
@@ -295,7 +299,7 @@ func (p *Provider) SearchTracks(
 	}
 
 	if response.Tracks == nil || len(response.Tracks.Items) == 0 {
-		return nil, fmt.Errorf("no tracks found")
+		return nil, errors.New("no tracks found")
 	}
 
 	return p.filterAndConvertTracks(response.Tracks.Items), nil

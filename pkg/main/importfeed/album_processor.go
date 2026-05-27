@@ -90,14 +90,58 @@ func MatchAudioFolderAsAlbum(
 		return nil, "files_error", nil
 	}
 
+	// If this is a disc subfolder (e.g. "CD3"), redirect to the parent album folder
+	// and collect all sibling disc files so the full album is matched together.
+	if len(files) > 0 && looksLikeDiscFolder(filepath.Base(folder)) {
+		parent := filepath.Dir(folder)
+		parentEntries, _ := os.ReadDir(parent)
+
+		var (
+			combined []string
+			allDisc  = true
+		)
+		for _, e := range parentEntries {
+			if !e.IsDir() {
+				continue
+			}
+
+			sub := filepath.Join(parent, e.Name())
+
+			sf, _ := parser_v2.CollectFilesOnly(sub, parser_v2.AudioExtensions)
+			if len(sf) == 0 {
+				continue
+			}
+
+			if !looksLikeDiscFolder(e.Name()) {
+				allDisc = false
+				break
+			}
+
+			combined = append(combined, sf...)
+		}
+
+		if allDisc && len(combined) > len(files) {
+			folder = parent
+			files = combined
+		}
+	}
+
 	if len(files) == 0 {
-		// Pattern 4: no audio files at root — check for exactly one subfolder containing audio
+		// Pattern 4: no audio files at root — check subfolders.
+		// If there is exactly one audio subfolder, use it.
+		// If all audio subfolders are disc-type (CD1, Disc2, …), combine their files
+		// and keep the parent folder so the full multi-disc album is matched together.
 		entries, err2 := os.ReadDir(folder)
 		if err2 != nil {
 			return nil, "no_files", nil
 		}
 
-		var audioSub string
+		var (
+			firstAudioSub string
+			allFiles      []string
+			allDisc       = true
+			subCount      int
+		)
 		for i := range entries {
 			if !entries[i].IsDir() {
 				continue
@@ -106,22 +150,38 @@ func MatchAudioFolderAsAlbum(
 			subPath := filepath.Join(folder, entries[i].Name())
 
 			sf, err3 := parser_v2.CollectFilesOnly(subPath, parser_v2.AudioExtensions)
-			if err3 == nil && len(sf) > 0 {
-				if audioSub != "" {
-					// more than one audio-containing subfolder — ambiguous, give up
-					return nil, "no_files", nil
-				}
-
-				audioSub = subPath
-				files = sf
+			if err3 != nil || len(sf) == 0 {
+				continue
 			}
+
+			subCount++
+			if subCount == 1 {
+				firstAudioSub = subPath
+			}
+
+			if !looksLikeDiscFolder(entries[i].Name()) {
+				allDisc = false
+			}
+
+			allFiles = append(allFiles, sf...)
 		}
 
-		if audioSub == "" {
+		switch subCount {
+		case 0:
 			return nil, "no_files", nil
-		}
+		case 1:
+			folder = firstAudioSub
+			files = allFiles
 
-		folder = audioSub
+		default:
+			// Multiple audio subfolders: only valid when all are disc-type.
+			if !allDisc {
+				return nil, "no_files", nil
+			}
+
+			// Keep folder = parent album folder; combine all disc files.
+			files = allFiles
+		}
 	}
 
 	// logger.Logtype("debug", 0).
@@ -1202,7 +1262,7 @@ func matchMusicFolder(
 	if album.DatabaseID == 0 {
 		if data.AddFound && listid != -1 && artist != "" && albumTitle != "" {
 			dbID, expTracks, newCands, addFoundEntry := importMusicAddFoundTextSearch(
-				ctx, albumTitle, artist, &meta.TagAlbum, bestCandidates,
+				ctx, albumTitle, meta.TagAlbum, &artist, meta.TagArtist, bestCandidates,
 				int64(album.TotalRuntime/time.Millisecond), &fileCount,
 				cfgp, listid, data, folder,
 			)
@@ -1649,7 +1709,7 @@ func searchAndImportAlternativeRelease(
 
 			if runtimeOK {
 				lfmMBID := release.MusicBrainzID
-				slug := logger.StringToSlug(*albumTitle)
+				slug := logger.StringToSlugCachedP(albumTitle)
 
 				var existingID uint
 				if lfmMBID != "" {
@@ -1676,7 +1736,7 @@ func searchAndImportAlternativeRelease(
 				if existingID == 0 && data != nil &&
 					(data.AddFound || data.AllowAlternativeReleases) {
 					lfmAltTitle := releaseTitleName(release.Title, albumTitle)
-					lfmAltSlug := logger.StringToSlug(lfmAltTitle)
+					lfmAltSlug := logger.StringToSlugCached(lfmAltTitle)
 
 					result, insertErr := database.ExecNid(
 						`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
@@ -1801,7 +1861,7 @@ func searchAndImportAlternativeRelease(
 				if existingID == 0 && data != nil &&
 					(data.AddFound || data.AllowAlternativeReleases) {
 					dgAltTitle := releaseTitleName(release.Title, albumTitle)
-					slug := logger.StringToSlug(dgAltTitle)
+					slug := logger.StringToSlugCached(dgAltTitle)
 
 					masterIDStr := ""
 					if release.MasterID > 0 {
@@ -1907,7 +1967,7 @@ func searchAndImportAlternativeRelease(
 				if existingID == 0 && data != nil &&
 					(data.AddFound || data.AllowAlternativeReleases) {
 					dzAltTitle := releaseTitleName(release.Title, albumTitle)
-					slug := logger.StringToSlug(dzAltTitle)
+					slug := logger.StringToSlugCached(dzAltTitle)
 
 					result, insertErr := database.ExecNid(
 						`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
@@ -2123,12 +2183,38 @@ func MatchSingleAudiobookFile(
 		var pairs []searchPair
 
 		seen := make(map[string]bool)
+
+		pairbuf := logger.PlAddBuffer.Get()
+		defer logger.PlAddBuffer.Put(pairbuf)
+
 		addPair := func(a, t, src string) {
 			if a == "" || t == "" {
 				return
 			}
 
-			key := strings.ToLower(a) + "|" + strings.ToLower(t)
+			pairbuf.Reset()
+
+			for i := range len(a) {
+				c := a[i]
+				if c >= 'A' && c <= 'Z' {
+					c += 32
+				}
+
+				pairbuf.WriteByte(c)
+			}
+
+			pairbuf.WriteByte('|')
+
+			for i := range len(t) {
+				c := t[i]
+				if c >= 'A' && c <= 'Z' {
+					c += 32
+				}
+
+				pairbuf.WriteByte(c)
+			}
+
+			key := pairbuf.String()
 			if !seen[key] {
 				seen[key] = true
 

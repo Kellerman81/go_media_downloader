@@ -2,13 +2,14 @@ package http
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 /*
@@ -76,14 +77,14 @@ func (p *HTTPProvider) DownloadFile(ctx context.Context, url, targetPath, filena
 			// Create output file
 			outFile, err := os.Create(fullPath)
 			if err != nil {
-				return fmt.Errorf("failed to create output file: %w", err)
+				return errors.New(logger.JoinStrings("failed to create output file: ", err.Error()))
 			}
 			defer outFile.Close()
 
 			// Copy response body to file
 			_, err = io.Copy(outFile, resp.Body)
 			if err != nil {
-				return fmt.Errorf("failed to write file: %w", err)
+				return errors.New(logger.JoinStrings("failed to write file: ", err.Error()))
 			}
 
 			return nil

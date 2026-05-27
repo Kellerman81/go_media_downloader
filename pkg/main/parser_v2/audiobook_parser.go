@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,7 +79,7 @@ const (
 	reAudioSceneAuthorDash = `^([A-Za-z][A-Za-z\s\.]+)-([^-].*)$`
 	reAudioNumInName       = `(?:^|\D)(\d{1,2})(?:\D|$)`
 	reAudioStripASIN       = `(?i)asin[:\s-]*`
-	reAudioStripISBN       = `(?i)isbn[:\s-]*`
+	reStripISBN            = `(?i)isbn[:\s-]*`
 )
 
 // compileAudiobookPatterns returns the shared audiobook pattern set, fetching each
@@ -149,48 +150,47 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 	// Check for abridged/unabridged
 	if ap.patterns.abridged.MatchString(name) {
 		result.Abridged = true
-		cleanedName = ap.patterns.abridged.ReplaceAllString(cleanedName, " ")
+		cleanedName = ap.patterns.abridged.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	if ap.patterns.unabridged.MatchString(name) {
 		result.Abridged = false
-		cleanedName = ap.patterns.unabridged.ReplaceAllString(cleanedName, " ")
+		cleanedName = ap.patterns.unabridged.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// Extract year BEFORE release group (group pattern matches digits too)
-	if matches := ap.patterns.year.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.Year = parseInt(matches[1])
-		// Remove the year pattern from cleaned name (including surrounding parens/brackets)
-		cleanedName = ap.patterns.year.ReplaceAllString(cleanedName, " ")
+	if loc := ap.patterns.year.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.Year = parseInt(cleanedName[loc[2]:loc[3]])
+		cleanedName = ap.patterns.year.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// Extract release group
-	if matches := ap.patterns.group.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.ReleaseGroup = matches[1]
-		cleanedName = ap.patterns.group.ReplaceAllString(cleanedName, "")
+	if loc := ap.patterns.group.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.ReleaseGroup = cleanedName[loc[2]:loc[3]]
+		cleanedName = ap.patterns.group.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Extract narrator
-	if matches := ap.patterns.narrator.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.Narrator = strings.TrimSpace(matches[1])
-		cleanedName = ap.patterns.narrator.ReplaceAllString(cleanedName, " ")
+	if loc := ap.patterns.narrator.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.Narrator = strings.TrimSpace(cleanedName[loc[2]:loc[3]])
+		cleanedName = ap.patterns.narrator.ReplaceAllLiteralString(cleanedName, " ")
 	}
 
 	// Extract series information
-	if matches := ap.patterns.series.FindStringSubmatch(cleanedName); len(matches) > 2 {
-		result.Series = strings.TrimSpace(matches[1])
-		result.SeriesPosition = matches[2]
-		cleanedName = ap.patterns.series.ReplaceAllString(cleanedName, "")
+	if loc := ap.patterns.series.FindStringSubmatchIndex(cleanedName); len(loc) > 4 {
+		result.Series = strings.TrimSpace(cleanedName[loc[2]:loc[3]])
+		result.SeriesPosition = cleanedName[loc[4]:loc[5]]
+		cleanedName = ap.patterns.series.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Extract bitrate
-	if matches := ap.patterns.bitrate.FindStringSubmatch(name); len(matches) > 1 {
-		result.Bitrate = parseInt(matches[1])
+	if loc := ap.patterns.bitrate.FindStringSubmatchIndex(name); len(loc) > 2 {
+		result.Bitrate = parseInt(name[loc[2]:loc[3]])
 	}
 
 	// Extract sample rate
-	if matches := ap.patterns.sampleRate.FindStringSubmatch(name); len(matches) > 1 {
-		rate := parseFloat(matches[1])
+	if loc := ap.patterns.sampleRate.FindStringSubmatchIndex(name); len(loc) > 2 {
+		rate := parseFloat(name[loc[2]:loc[3]])
 		// Convert kHz to Hz if needed
 		if rate < 1000 {
 			result.SampleRate = int(rate * 1000)
@@ -201,7 +201,7 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 
 	// Clean up audiobook-specific tags
 	if ap.patterns.titleClean.MatchString(cleanedName) {
-		cleanedName = ap.patterns.titleClean.ReplaceAllString(cleanedName, "")
+		cleanedName = ap.patterns.titleClean.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Try to extract author and title
@@ -289,15 +289,15 @@ func (ap *AudiobookParser) parseFileInfo(filename string) AudiobookFileInfo {
 	name := strings.TrimSuffix(info.Filename, filepath.Ext(info.Filename))
 
 	// Extract disc number
-	if matches := ap.patterns.discNumber.FindStringSubmatch(name); len(matches) > 1 {
-		info.DiscNumber = parseInt(matches[1])
+	if loc := ap.patterns.discNumber.FindStringSubmatchIndex(name); len(loc) > 2 {
+		info.DiscNumber = parseInt(name[loc[2]:loc[3]])
 	}
 
-	// Extract part/track number
-	if matches := ap.patterns.partNumber.FindStringSubmatch(name); len(matches) > 0 {
-		for i := 1; i < len(matches); i++ {
-			if matches[i] != "" {
-				info.PartNumber = parseInt(matches[i])
+	// Extract part/track number — check each capture group for a non-empty match (loc[i] == -1 means no match).
+	if loc := ap.patterns.partNumber.FindStringSubmatchIndex(name); len(loc) > 0 {
+		for i := 1; i < len(loc)/2; i++ {
+			if loc[2*i] != -1 {
+				info.PartNumber = parseInt(name[loc[2*i]:loc[2*i+1]])
 				break
 			}
 		}
@@ -305,9 +305,11 @@ func (ap *AudiobookParser) parseFileInfo(filename string) AudiobookFileInfo {
 
 	// Extract chapter number as alternative
 	if info.PartNumber == 0 {
-		if matches := ap.patterns.chapterNum.FindStringSubmatch(name); len(matches) > 1 {
-			info.PartNumber = parseInt(matches[1])
-			info.ChapterTitle = "Chapter " + matches[1]
+		if loc := ap.patterns.chapterNum.FindStringSubmatchIndex(name); len(loc) > 2 {
+			numStr := name[loc[2]:loc[3]]
+
+			info.PartNumber = parseInt(numStr)
+			info.ChapterTitle = "Chapter " + numStr
 		}
 	}
 
@@ -363,9 +365,9 @@ func (ap *AudiobookParser) extractAuthorTitle(name string, result *AudiobookPars
 	name = strings.TrimSpace(name)
 
 	// Try "Author - Title" pattern
-	if matches := ap.patterns.authorDash.FindStringSubmatch(name); len(matches) > 2 {
-		potentialAuthor := strings.TrimSpace(matches[1])
-		potentialTitle := strings.TrimSpace(matches[2])
+	if loc := ap.patterns.authorDash.FindStringSubmatchIndex(name); len(loc) > 4 {
+		potentialAuthor := strings.TrimSpace(name[loc[2]:loc[3]])
+		potentialTitle := strings.TrimSpace(name[loc[4]:loc[5]])
 
 		// If author or title contains dots without spaces, it's likely scene format
 		// (e.g., "Paul.K.Lunow - Riaru - Willkommen.im.modernsten")
@@ -402,9 +404,9 @@ func (ap *AudiobookParser) extractAuthorTitle(name string, result *AudiobookPars
 	}
 
 	// Try scene format "Author-Title-..." pattern (no spaces around dash)
-	if matches := ap.patterns.sceneAuthorDash.FindStringSubmatch(name); len(matches) > 2 {
-		potentialAuthor := strings.TrimSpace(matches[1])
-		potentialTitle := strings.TrimSpace(matches[2])
+	if loc := ap.patterns.sceneAuthorDash.FindStringSubmatchIndex(name); len(loc) > 4 {
+		potentialAuthor := strings.TrimSpace(name[loc[2]:loc[3]])
+		potentialTitle := strings.TrimSpace(name[loc[4]:loc[5]])
 
 		// For scene format, replace dots with spaces (e.g., "Paul.K.Lunow" -> "Paul K Lunow")
 		potentialAuthor = strings.ReplaceAll(potentialAuthor, ".", " ")
@@ -432,10 +434,10 @@ func (ap *AudiobookParser) extractAuthorTitle(name string, result *AudiobookPars
 	}
 
 	// Try "by Author" pattern
-	if matches := ap.patterns.author.FindStringSubmatch(name); len(matches) > 1 {
-		result.Author = strings.TrimSpace(matches[1])
+	if loc := ap.patterns.author.FindStringSubmatchIndex(name); len(loc) > 2 {
+		result.Author = strings.TrimSpace(name[loc[2]:loc[3]])
 		// Remove the author part from name for title
-		result.Title = ap.patterns.author.ReplaceAllString(name, "")
+		result.Title = ap.patterns.author.ReplaceAllLiteralString(name, "")
 		result.Title = strings.TrimSpace(result.Title)
 
 		return
@@ -448,7 +450,9 @@ func (ap *AudiobookParser) extractAuthorTitle(name string, result *AudiobookPars
 // extractASIN extracts the ASIN from a match.
 func (ap *AudiobookParser) extractASIN(match string) string {
 	return strings.ToUpper(
-		strings.TrimSpace(database.GetCachedRegexp(reAudioStripASIN).ReplaceAllString(match, "")),
+		strings.TrimSpace(
+			database.GetCachedRegexp(reAudioStripASIN).ReplaceAllLiteralString(match, ""),
+		),
 	)
 }
 
@@ -685,19 +689,21 @@ func splitAuthors(s string) []string {
 }
 
 // audiobookSceneTags contains common scene tags to strip from audiobook titles.
-var audiobookSceneTags = map[string]bool{
+// Stored as a slice so logger.SlicesContainsI can match case-insensitively without
+// a strings.ToUpper allocation on every part.
+var audiobookSceneTags = []string{
 	// Audio formats
-	"FLAC": true, "MP3": true, "AAC": true, "OGG": true, "OPUS": true,
-	"WAV": true, "ALAC": true, "APE": true, "WMA": true, "M4A": true, "M4B": true,
+	"FLAC", "MP3", "AAC", "OGG", "OPUS",
+	"WAV", "ALAC", "APE", "WMA", "M4A", "M4B",
 	// Country codes
-	"DE": true, "US": true, "UK": true, "EU": true, "JP": true, "AU": true,
-	"CA": true, "FR": true, "IT": true, "ES": true, "NL": true, "SE": true,
-	"NO": true, "DK": true, "FI": true, "AT": true, "CH": true, "BE": true,
+	"DE", "US", "UK", "EU", "JP", "AU",
+	"CA", "FR", "IT", "ES", "NL", "SE",
+	"NO", "DK", "FI", "AT", "CH", "BE",
 	// Media types
-	"AUDIOBOOK": true, "EBOOK": true, "CD": true, "DVD": true,
+	"AUDIOBOOK", "EBOOK", "CD", "DVD",
 	// Scene tags
-	"RETAIL": true, "WEB": true, "PROPER": true, "REPACK": true, "INT": true,
-	"INTERNAL": true, "READNFO": true,
+	"RETAIL", "WEB", "PROPER", "REPACK", "INT",
+	"INTERNAL", "READNFO",
 }
 
 // cleanAudiobookSceneTags removes common scene tags from audiobook titles.
@@ -716,17 +722,17 @@ func cleanAudiobookSceneTags(title string) string {
 	// Work backwards from the end, removing known tags
 	lastValidIdx := len(parts) - 1
 
-	for i := len(parts) - 1; i >= 0; i-- {
-		part := strings.ToUpper(strings.TrimSpace(parts[i]))
+	for i, part := range slices.Backward(parts) {
+		part := strings.TrimSpace(part)
 
 		// Check if it's a known scene tag
-		if audiobookSceneTags[part] {
+		if logger.SlicesContainsI(audiobookSceneTags, part) {
 			lastValidIdx = i - 1
 			continue
 		}
 
 		// Check if it's a year (4 digits starting with 19 or 20)
-		if len(part) == 4 && (strings.HasPrefix(part, "19") || strings.HasPrefix(part, "20")) {
+		if len(part) == 4 && (logger.HasPrefixI(part, "19") || logger.HasPrefixI(part, "20")) {
 			if _, err := strconv.Atoi(part); err == nil {
 				lastValidIdx = i - 1
 				continue
@@ -762,12 +768,18 @@ func isAlphanumeric(s string) bool {
 	return len(s) > 0
 }
 
-// normalizeISBN removes hyphens and spaces from ISBN.
+// normalizeISBN strips the "ISBN:" prefix, hyphens, and spaces, and uppercases
+// any trailing 'x' (the only letter that appears in a valid ISBN).
 func normalizeISBN(isbn string) string {
-	isbn = database.GetCachedRegexp(reAudioStripISBN).ReplaceAllString(isbn, "")
+	isbn = database.GetCachedRegexp(reStripISBN).ReplaceAllLiteralString(isbn, "")
 	isbn = strings.ReplaceAll(isbn, "-", "")
+
 	isbn = strings.ReplaceAll(isbn, " ", "")
-	return strings.ToUpper(isbn)
+	if len(isbn) > 0 && isbn[len(isbn)-1] == 'x' {
+		isbn = isbn[:len(isbn)-1] + "X"
+	}
+
+	return isbn
 }
 
 // parseFloat parses a string to float64, returning 0 on error.

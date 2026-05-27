@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -342,8 +343,8 @@ func convertToAuthorDetails(author *olAuthorResponse) *apiexternal_v2.AuthorDeta
 
 	// Website from links
 	for i := range author.Links {
-		if strings.Contains(strings.ToLower(author.Links[i].Title), "website") ||
-			strings.Contains(strings.ToLower(author.Links[i].Title), "official") {
+		if logger.ContainsI(author.Links[i].Title, "website") ||
+			logger.ContainsI(author.Links[i].Title, "official") {
 			details.Website = author.Links[i].URL
 			break
 		}

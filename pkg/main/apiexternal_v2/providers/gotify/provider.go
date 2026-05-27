@@ -2,6 +2,7 @@ package gotify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/goccy/go-json"
 )
 
@@ -119,7 +121,7 @@ func (p *Provider) SendNotification(
 
 	jsonData, err := json.Marshal(messageData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal message: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to marshal message: ", err.Error()))
 	}
 
 	// Make request
@@ -146,7 +148,7 @@ func (p *Provider) SendNotification(
 		func(resp *http.Response) error {
 			body, readErr := io.ReadAll(resp.Body)
 			if readErr != nil {
-				return fmt.Errorf("failed to read response: %w", readErr)
+				return errors.New(logger.JoinStrings("failed to read response: ", readErr.Error()))
 			}
 
 			if resp.StatusCode != http.StatusOK {
@@ -157,12 +159,19 @@ func (p *Provider) SendNotification(
 					Error:     fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body)),
 				}
 
-				return fmt.Errorf("gotify request failed with status %d", resp.StatusCode)
+				return errors.New(
+					logger.JoinStrings(
+						"gotify request failed with status ",
+						strconv.Itoa(resp.StatusCode),
+					),
+				)
 			}
 
 			var gotifyResp gotifyMessageResponse
 			if unmarshalErr := json.Unmarshal(body, &gotifyResp); unmarshalErr != nil {
-				return fmt.Errorf("failed to decode response: %w", unmarshalErr)
+				return errors.New(
+					logger.JoinStrings("failed to decode response: ", unmarshalErr.Error()),
+				)
 			}
 
 			notifResponse = apiexternal_v2.NotificationResponse{
@@ -188,22 +197,25 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", requestURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.New(logger.JoinStrings("failed to create request: ", err.Error()))
 	}
 
 	resp, err := p.BaseClient.GetHTTPClient().Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return errors.New(logger.JoinStrings("request failed: ", err.Error()))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 
-		return fmt.Errorf(
-			"gotify version check failed with status %d: %s",
-			resp.StatusCode,
-			string(body),
+		return errors.New(
+			logger.JoinStrings(
+				"gotify version check failed with status ",
+				strconv.Itoa(resp.StatusCode),
+				": ",
+				string(body),
+			),
 		)
 	}
 
@@ -225,7 +237,7 @@ func (p *Provider) GetVersion(ctx context.Context) (*GotifyVersion, error) {
 		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("gotify version request failed: %w", err)
+		return nil, errors.New(logger.JoinStrings("gotify version request failed: ", err.Error()))
 	}
 
 	return &GotifyVersion{

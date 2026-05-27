@@ -13,6 +13,14 @@ import (
 	"github.com/goccy/go-json"
 )
 
+var (
+	errFilePathEmpty        = errors.New("file path is empty")
+	errNoTracksFoundInMedia = errors.New("no tracks found in media file")
+
+	// DefaultMediaAnalyzer is a package-level MediaAnalyzer instance.
+	DefaultMediaAnalyzer = NewMediaAnalyzer()
+)
+
 // MediaAnalyzer provides FFmpeg and mediainfo integration for extracting
 // technical metadata from media files.
 type MediaAnalyzer struct {
@@ -210,7 +218,7 @@ func defaultMediainfoPath() string {
 // Analyze extracts technical metadata from a media file.
 func (ma *MediaAnalyzer) Analyze(ctx context.Context, filePath string) (*MediaInfo, error) {
 	if filePath == "" {
-		return nil, errors.New("file path is empty")
+		return nil, errFilePathEmpty
 	}
 
 	var (
@@ -355,9 +363,7 @@ func (ma *MediaAnalyzer) AnalyzeMusic(
 		result.BitDepth = audio.BitDepth
 
 		// Determine if lossless
-		ext := strings.ToLower(filepath.Ext(filePath))
-
-		result.IsLossless = IsLosslessAudioExtension(ext)
+		result.IsLossless = IsLosslessAudioExtension(filepath.Ext(filePath))
 	}
 
 	result.TotalRuntimeMS = totalRuntime
@@ -431,7 +437,7 @@ func (ma *MediaAnalyzer) analyzeWithMediainfo(
 	}
 
 	if len(mediainfo.Media.Track) == 0 {
-		return nil, errors.New("no tracks found in media file")
+		return nil, errNoTracksFoundInMedia
 	}
 
 	return ma.parseMediainfoResult(&mediainfo), nil
@@ -683,9 +689,6 @@ func parseFrameRate(s string) float64 {
 
 	return rate
 }
-
-// DefaultMediaAnalyzer is a package-level MediaAnalyzer instance.
-var DefaultMediaAnalyzer = NewMediaAnalyzer()
 
 // Analyze uses the default analyzer to extract metadata.
 func Analyze(ctx context.Context, filePath string) (*MediaInfo, error) {

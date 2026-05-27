@@ -2,7 +2,7 @@ package omdb
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -74,7 +74,7 @@ func (p *Provider) SearchMovies(
 func (p *Provider) GetMovieByID(ctx context.Context, id int) (*apiexternal_v2.MovieDetails, error) {
 	// OMDB uses IMDb ID format, so convert if needed
 	// For now, return error as OMDB doesn't use numeric IDs
-	return nil, fmt.Errorf("OMDB requires IMDb ID (use FindMovieByIMDbID instead)")
+	return nil, errors.New("OMDB requires IMDb ID (use FindMovieByIMDbID instead)")
 }
 
 // FindMovieByIMDbID finds movies by IMDb ID.
@@ -140,7 +140,7 @@ func (p *Provider) GetSeriesByID(
 	ctx context.Context,
 	id int,
 ) (*apiexternal_v2.SeriesDetails, error) {
-	return nil, fmt.Errorf("OMDB requires IMDb ID (use FindSeriesByIMDbID instead)")
+	return nil, errors.New("OMDB requires IMDb ID (use FindSeriesByIMDbID instead)")
 }
 
 // FindSeriesByIMDbID finds TV series by IMDb ID.
@@ -177,7 +177,7 @@ func (p *Provider) GetEpisodeDetailsByIMDb(
 	}
 
 	if response.Response == "False" {
-		return nil, fmt.Errorf("episode not found")
+		return nil, errors.New("episode not found")
 	}
 
 	return convertDetailsToEpisode(&response, seasonNumber, episodeNumber), nil
@@ -219,7 +219,7 @@ func (p *Provider) GetDetailsByIMDb(
 	}
 
 	if response.Response == "False" {
-		return nil, fmt.Errorf("not found: %s", response.Error)
+		return nil, errors.New(logger.JoinStrings("not found: ", response.Error))
 	}
 
 	return convertDetailsToMovieDetails(&response), nil

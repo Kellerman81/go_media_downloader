@@ -97,21 +97,22 @@ const (
 )
 
 var (
-	strRegexEmpty         = "regex_template empty"
-	strMinutes            = "Minutes"
-	strIdentifier         = "identifier"
-	strCheckedFor         = "checked for"
-	strTitlesearch        = "titlesearch"
-	strRejectedby         = "rejected by"
-	strMediaid            = "Media ID"
-	episodePrefixes       = [4]string{"", logger.StrSpace, "0", " 0"}
-	errOther              = errors.New("other error")
-	errSearchvarEmpty     = errors.New("searchvar empty")
-	errSearchIDEmpty      = errors.New("search id empty")
-	errSearchQualityEmpty = errors.New("search quality empty")
-	errRegexEmpty         = errors.New("regex template empty")
-	plsearcher            pool.Poolobj[ConfigSearcher]
-	plsearchparam         pool.Poolobj[searchParams]
+	strRegexEmpty                      = "regex_template empty"
+	strMinutes                         = "Minutes"
+	strIdentifier                      = "identifier"
+	strCheckedFor                      = "checked for"
+	strTitlesearch                     = "titlesearch"
+	strRejectedby                      = "rejected by"
+	strMediaid                         = "Media ID"
+	episodePrefixes                    = [4]string{"", logger.StrSpace, "0", " 0"}
+	errOther                           = errors.New("other error")
+	errSearchvarEmpty                  = errors.New("searchvar empty")
+	errSearchIDEmpty                   = errors.New("search id empty")
+	errSearchQualityEmpty              = errors.New("search quality empty")
+	errRegexEmpty                      = errors.New("regex template empty")
+	errQualityConfigNotFoundForIndexer = errors.New("quality configuration not found for indexer")
+	plsearcher                         pool.Poolobj[ConfigSearcher]
+	plsearchparam                      pool.Poolobj[searchParams]
 )
 
 // clearNzbSlice efficiently clears the contents of an Nzbwithprio slice by resetting
@@ -508,7 +509,7 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 			Str("search_type", s.searchActionType).
 			Msg("Quality configuration not found for indexer")
 
-		return errors.New("quality configuration not found for indexer")
+		return errQualityConfigNotFoundForIndexer
 	}
 
 	// Query-only media types (books, audiobooks, music) always use query search
@@ -1444,12 +1445,11 @@ func searchArtistsOrAuthors(
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
 
-	listnames := make([]string, 0, len(cfgp.ListsMap))
-	for _, lst := range cfgp.ListsMap {
-		name := lst.Name // copy to avoid pointer issues
-
-		args.Arr = append(args.Arr, &name)
-		listnames = append(listnames, lst.Name)
+	// cfgp.ListsNames is pre-built in setupMediaConfig — reuse it directly.
+	// &cfgp.ListsNames[i] points into the stable config backing array (safe to hold across the query).
+	listnames := cfgp.ListsNames
+	for i := range listnames {
+		args.Arr = append(args.Arr, &listnames[i])
 	}
 
 	// Debug: log listnames being searched
@@ -1690,18 +1690,27 @@ func calcPrioFromFiles(
 	prio func(i int) int,
 	loc func(i int) string,
 ) (int, []string) {
+	if n == 0 {
+		return 0, nil
+	}
+
 	collectOldFiles := getold && wantedprio != -1
 
-	var (
-		minPrio int
-		oldf    []string
-	)
-
+	var oldf []string
 	if collectOldFiles {
 		oldf = make([]string, 0, n)
 	}
 
-	for i := range n {
+	// Seed from the first element so the accumulator is not clamped at 0.
+	// Files with negative priorities (e.g. from reorder rules) would otherwise
+	// never update a zero-initialised accumulator, making MinimumPriority appear
+	// unset and bypassing the upgrade check entirely.
+	minPrio := prio(0)
+	if collectOldFiles && wantedprio > minPrio {
+		oldf = append(oldf, loc(0))
+	}
+
+	for i := 1; i < n; i++ {
 		p := prio(i)
 
 		if p > minPrio {
@@ -1779,13 +1788,10 @@ func calculateFilePriority(
 			q = file.QualityID
 		}
 
-		if qualcfg.UseForPriorityAudio {
-			a = file.AudioID
-		}
-
-		if qualcfg.UseForPriorityCodec {
-			c = file.CodecID
-		}
+		// Codec and audio are intentionally excluded from the upgrade-check path
+		// (useall=false) for movies/series. Only resolution+quality determine
+		// whether a release is a genuine upgrade; a different audio track or codec
+		// must not trigger a re-download.
 	}
 
 	var prio int
@@ -1911,12 +1917,9 @@ func calculateAudioFilePriority(
 
 // calculateAudioBitratePriorityFromFile returns priority bonus based on audio bitrate.
 func calculateAudioBitratePriorityFromFile(bitrate int, format string) int {
-	format = strings.ToLower(format)
-
 	// For lossless formats, bitrate varies with content, so give a small bonus
-	switch format {
-	case "flac", "alac", "wav", "aiff", "ape", "wv", "wavpack", "dsd", "dsf":
-		return 5 // Small bonus for having bitrate info
+	if parser_v2.IsLosslessFormat(format) {
+		return 5
 	}
 
 	// For lossy formats, higher bitrate = better quality

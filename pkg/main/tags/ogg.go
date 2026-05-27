@@ -190,10 +190,7 @@ func (h *OGGHandler) parseVorbisCommentPacket(data []byte, tags *AudioTags) {
 			continue
 		}
 
-		key := strings.ToUpper(before)
-		value := after
-
-		h.setTagValue(key, value, tags)
+		h.setTagValue(strings.ToUpper(before), after, tags)
 	}
 }
 

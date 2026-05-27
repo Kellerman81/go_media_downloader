@@ -1373,6 +1373,8 @@ func apiConfigDelete(ctx *gin.Context) {
 // @Router       /api/config/refresh [get].
 func apiConfigRefreshFile(ctx *gin.Context) {
 	config.LoadCfgDB(true)
+	parser.GenerateAllQualityPriorities()
+	parser.GenerateCutoffPriorities()
 	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
 }
 

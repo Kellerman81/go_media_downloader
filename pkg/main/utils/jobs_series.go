@@ -17,6 +17,8 @@ import (
 	"github.com/alitto/pond/v2"
 )
 
+var errPathNotFound = errors.New("path not found")
+
 func init() {
 	// Register series-specific functions with the mediatype handler
 	// series.RegisterImportParse(jobImportSeriesParseV2Wrapper)
@@ -111,7 +113,7 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 		logger.Logtype("error", 1).
 			Str(logger.StrConfig, cfgp.Data[0].TemplatePath).
 			Msg("Path not found")
-		return errors.New("path not found")
+		return errPathNotFound
 	}
 
 	if !cfgp.Structure {

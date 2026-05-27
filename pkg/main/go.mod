@@ -3,7 +3,7 @@ module github.com/Kellerman81/go_media_downloader/pkg/main
 go 1.25.0
 
 require (
-	github.com/DeanThompson/ginpprof v0.0.0-20201112072838-007b1e56b2e1 //extend webserver with pprof tools
+	github.com/DeanThompson/ginpprof v0.0.0-20260510063128-6416bbab1bfc //extend webserver with pprof tools
 	github.com/PuerkitoBio/goquery v1.12.0 //html parsing and manipulation
 	github.com/alitto/pond/v2 v2.7.1 //worker pool
 	github.com/antchfx/htmlquery v1.3.6 //xpath query for html
@@ -21,13 +21,13 @@ require (
 	github.com/robfig/cron/v3 v3.0.1 //scheduler
 	github.com/rs/zerolog v1.35.1 //logging
 	github.com/stretchr/testify v1.11.1 //testing toolkit
-	golang.org/x/net v0.53.0 //network utilities
+	golang.org/x/net v0.55.0 //network utilities
 	golang.org/x/oauth2 v0.36.0 //used for trakt api
-	golang.org/x/text v0.36.0 //text processing utilities
+	golang.org/x/text v0.37.0 //text processing utilities
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 //log file rotation
 	maragu.dev/gomponents v1.3.0 //html component library
 	maragu.dev/gomponents-htmx v0.6.1 //htmx integration for gomponents
-	modernc.org/sqlite v1.50.0 //sqlite db driver
+	modernc.org/sqlite v1.50.1 //sqlite db driver
 )
 
 require (
@@ -64,11 +64,11 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.72.0 // indirect
+	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )

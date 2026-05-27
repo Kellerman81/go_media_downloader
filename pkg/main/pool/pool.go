@@ -134,7 +134,7 @@ type Poolobj[t any] struct {
 
 	// Enhanced features
 	stats   PoolStats
-	closed  int32        // atomic bool for closed state
+	closed  atomic.Int32 // atomic bool for closed state
 	maxSize int          // maximum pool capacity
 	mu      sync.RWMutex // for pool state operations
 }
@@ -150,7 +150,7 @@ func (p *Poolobj[t]) Get() *t {
 
 	atomic.AddInt64(&p.stats.Gets, 1)
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return nil
 	}
 
@@ -176,7 +176,7 @@ func (p *Poolobj[t]) GetWithContext(ctx context.Context) (*t, error) {
 
 	atomic.AddInt64(&p.stats.Gets, 1)
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return nil, ErrPoolClosed
 	}
 
@@ -243,7 +243,7 @@ func (p *Poolobj[t]) PutWithError(bo *t) error {
 		return ErrNilObject
 	}
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return ErrPoolClosed
 	}
 
@@ -281,7 +281,7 @@ func (p *Poolobj[t]) PutWithContext(ctx context.Context, bo *t) error {
 		return ErrNilObject
 	}
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return ErrPoolClosed
 	}
 
@@ -319,7 +319,7 @@ func (p *Poolobj[t]) Init(maxsize, initcreate int, constructor func(*t), destruc
 	p.destructor = destructor
 	p.maxSize = maxsize
 	p.stats.MaxSize = maxsize
-	atomic.StoreInt32(&p.closed, 0)
+	p.closed.Store(0)
 
 	p.objs = make(chan *t, maxsize)
 
@@ -377,7 +377,7 @@ func (p *Poolobj[t]) Stats() PoolStats {
 // IsHealthy returns true if the pool is in a healthy state.
 // A pool is considered healthy if it's not closed and has reasonable hit rates.
 func (p *Poolobj[t]) IsHealthy() bool {
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return false
 	}
 
@@ -393,7 +393,7 @@ func (p *Poolobj[t]) IsHealthy() bool {
 
 // IsClosed returns true if the pool has been closed.
 func (p *Poolobj[t]) IsClosed() bool {
-	return atomic.LoadInt32(&p.closed) == 1
+	return p.closed.Load() == 1
 }
 
 // Close drains and closes the pool, preventing further operations.
@@ -402,11 +402,11 @@ func (p *Poolobj[t]) Close() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return 0 // Already closed
 	}
 
-	atomic.StoreInt32(&p.closed, 1)
+	p.closed.Store(1)
 
 	// Drain the pool
 	var drained int
@@ -430,7 +430,7 @@ func (p *Poolobj[t]) Drain() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return 0
 	}
 
@@ -454,7 +454,7 @@ func (p *Poolobj[t]) Reset() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return
 	}
 
@@ -505,7 +505,7 @@ func (p *Poolobj[t]) IsAtCapacity() bool {
 // This can be useful for improving initial performance by avoiding
 // object creation during the first requests.
 func (p *Poolobj[t]) Warmup(count int) int {
-	if atomic.LoadInt32(&p.closed) == 1 {
+	if p.closed.Load() == 1 {
 		return 0
 	}
 

@@ -5,7 +5,6 @@ package audiobooks
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,8 +26,95 @@ type handler struct {
 	dataFullFunc mediatype.DataFullFunc
 }
 
-// Handler is the singleton instance.
-var Handler = &handler{}
+var (
+	// Handler is the singleton instance.
+	Handler = &handler{}
+
+	// StringsMap contains all audiobook-specific string mappings for SQL queries, cache names, etc.
+	StringsMap = map[string]string{
+		"CacheDBMedia":             "CacheDBAudiobook",
+		"DBCountDBMedia":           "select count() from dbaudiobooks",
+		"DBCacheDBMedia":           "select title, slug, asin, year, id from dbaudiobooks",
+		"CacheMedia":               "CacheAudiobook",
+		"DBCountMedia":             "select count() from audiobooks",
+		"DBCacheMedia":             "select lower(listname), dbaudiobook_id, id from audiobooks",
+		"CacheRootpath":            "CacheRootpathAudiobook",
+		"DBCountRootpath":          "select count() from (select distinct rootpath from audiobooks where rootpath != '' and exists (select 1 from audiobook_files where audiobook_id = audiobooks.id))",
+		"DBCacheRootpath":          "select distinct rootpath from audiobooks where rootpath != '' and exists (select 1 from audiobook_files where audiobook_id = audiobooks.id)",
+		"CacheHistoryTitle":        "CacheHistoryTitleAudiobook",
+		"CacheHistoryUrl":          "CacheHistoryUrlAudiobook",
+		"DBHistoriesUrl":           "select distinct url from audiobook_histories",
+		"DBHistoriesTitle":         "select distinct title from audiobook_histories",
+		"DBCountHistoriesUrl":      "select count() from (select distinct url from audiobook_histories)",
+		"DBCountHistoriesTitle":    "select count() from (select distinct title from audiobook_histories)",
+		"CacheMediaTitles":         "CacheTitlesAudiobook",
+		"DBCountDBTitles":          "select count() from dbaudiobook_titles where title != ''",
+		"DBCacheDBTitles":          "select title, slug, dbaudiobook_id from dbaudiobook_titles where title != ''",
+		"CacheFiles":               "CacheFilesAudiobook",
+		"DBCountFiles":             "select count() from audiobook_files",
+		"DBCacheFiles":             "select location from audiobook_files",
+		"CacheUnmatched":           "CacheUnmatchedAudiobook",
+		"DBCountUnmatched":         "select count() from audiobook_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBRemoveUnmatched":        "delete from audiobook_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
+		"DBCacheUnmatched":         "select filepath from audiobook_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBCountFilesLocation":     "select count() from audiobook_files where location = ?",
+		"DBCountUnmatchedPath":     "select count() from audiobook_file_unmatcheds where filepath = ?",
+		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbaudiobook_titles where dbaudiobook_id = ? and title != '')",
+		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbaudiobook_id from dbaudiobook_titles where dbaudiobook_id = ? and title != ''",
+		"DBMediaTitlesID":          "select year, title, slug from dbaudiobooks where id = ?",
+		"DBFilesQuality":           "select 0, 0, 0, 0, 0, 0, 0 from audiobook_files where id = ?",
+		"DBCountFilesByList":       "select count() from audiobook_files where audiobook_id in (select id from audiobooks where listname = ? COLLATE NOCASE)",
+		"DBLocationFilesByList":    "select location from audiobook_files where audiobook_id in (select id from audiobooks where listname = ? COLLATE NOCASE)",
+		"DBIDsFilesByLocation":     "select location, id, audiobook_id from audiobook_files",
+		"DBCountFilesByMediaID":    "select count() from audiobook_files where audiobook_id = ?",
+		"DBCountFilesByLocation":   "select count() from audiobook_files",
+		"TableFiles":               "audiobook_files",
+		"TableMedia":               "audiobooks",
+		"DBCountMediaByList":       "select count() from audiobooks where listname = ? COLLATE NOCASE",
+		"DBIDMissingMediaByList":   "select id,missing from audiobooks where listname = ? COLLATE NOCASE",
+		"DBUpdateMissing":          "update audiobooks set missing = ? where id = ?",
+		"DBListnameByMediaID":      "select listname from audiobooks where id = ?",
+		"DBRootPathFromMediaID":    "select rootpath from audiobooks where id = ?",
+		"DBDeleteFileByIDLocation": "delete from audiobook_files where audiobook_id = ? and location = ?",
+		"DBCountHistoriesByTitle":  "select count() from audiobook_histories where title = ?",
+		"DBCountHistoriesByUrl":    "select count() from audiobook_histories where url = ?",
+		"DBLocationIDFilesByID":    "select location, id from audiobook_files where audiobook_id = ?",
+		"DBFilePrioFilesByID":      "select location, audiobook_id, id, 0, 0, 0, 0, 0, 0, 0 from audiobook_files where audiobook_id = ?",
+		"DBAudioFilePrioFilesByID": "select location, audiobook_id, id, format, bitrate, 0, 0 from audiobook_files where audiobook_id = ?",
+		"UpdateMediaLastscan":      "update audiobooks set lastscan = datetime('now','localtime') where id = ?",
+		"DBQualityMediaByID":       "select quality_profile from audiobooks where id = ?",
+		"SearchGenSelect":          "select audiobooks.quality_profile, audiobooks.id ",
+		"SearchGenTable":           " from audiobooks inner join dbaudiobooks on dbaudiobooks.id=audiobooks.dbaudiobook_id where ",
+		"SearchGenMissing":         "audiobooks.missing = 1 and audiobooks.listname in (?",
+		"SearchGenMissingEnd":      ")",
+		"SearchGenReached":         "quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenLastScan":        " and (audiobooks.lastscan is null or audiobooks.Lastscan < ?)",
+		"SearchGenDate":            " and (dbaudiobooks.release_date < ? or dbaudiobooks.release_date is null)",
+		"SearchGenOrder":           " order by audiobooks.Lastscan asc",
+		"DBIDUnmatchedPathList":    "select id from audiobook_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
+		"InsertUnmatched":          "Insert into audiobook_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
+		"UpdateUnmatched":          "update audiobook_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
+		"GetRSSData":               "select audiobooks.dont_search, audiobooks.dont_upgrade, audiobooks.listname, audiobooks.quality_profile, dbaudiobooks.title from audiobooks inner join dbaudiobooks ON dbaudiobooks.id=audiobooks.dbaudiobook_id where audiobooks.id = ?",
+		"GetOrganizeData":          "select dbaudiobook_id, rootpath, listname from audiobooks where id = ?",
+		"ClearHistoryByList":       "delete from audiobook_histories where audiobook_id in (Select id from audiobooks where listname = ? COLLATE NOCASE)",
+		"QueryMediaByList":         "select id, quality_reached, quality_profile from audiobooks where listname = ? COLLATE NOCASE",
+		"QueryMediaCountByList":    "select count() from audiobooks where listname = ? COLLATE NOCASE",
+		"UpdateQualityReached":     "update audiobooks set quality_reached = ? where id = ?",
+		"SelectRootpath":           "select rootpath from audiobooks where id = ?",
+		"InsertFile":               "insert into audiobook_files (location, filename, extension, quality_profile, audiobook_id, dbaudiobook_id) values (?, ?, ?, ?, ?, ?)",
+		"UpdateMissingByID":        "update audiobooks set missing = 0 where id = ?",
+		"UpdateQualityReachedByID": "update audiobooks set quality_reached = ? where id = ?",
+		"DeleteUnmatchedByPath":    "delete from audiobook_file_unmatcheds where filepath = ?",
+		"SelectRuntime":            "select runtime_minutes from dbaudiobooks where id = ?",
+		"InsertFileOrganize":       "insert into audiobook_files (location, filename, extension, quality_profile, audiobook_id, dbaudiobook_id) values (?, ?, ?, ?, ?, ?)",
+		"UpdateMissingReached":     "update audiobooks SET missing = 0, quality_reached = ? where id = ?",
+		// Author-based search queries
+		"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.missing = 1 AND ab.listname IN (?",
+		"SearchAuthorsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
+		"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.missing = 0 AND ab.quality_reached = 0 AND ab.listname IN (?",
+		"SearchAuthorsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
+	}
+)
 
 func init() {
 	mediatype.Register(Handler)
@@ -110,14 +196,8 @@ func (h *handler) GetDBIDsFull(
 
 		m.Title = logger.TrimSpace(m.Title)
 
-		// Extract listnames for wanted-list priority search
-		listnames := make([]string, len(cfgp.Lists))
-		for idx := range cfgp.Lists {
-			listnames[idx] = cfgp.Lists[idx].Name
-		}
-
 		// Try author-first lookup prioritizing audiobooks in the wanted list
-		m.FindDbaudiobookByAuthorFirstFromWantedList(listnames)
+		m.FindDbaudiobookByAuthorFirstFromWantedList(cfgp.ListsNames)
 
 		// Fallback to regular author-first lookup
 		if m.DbaudiobookID == 0 {
@@ -331,8 +411,6 @@ func (h *handler) SearchConfigByName(
 
 		return nil, false
 	}
-
-	searchName = strings.TrimSpace(searchName)
 
 	// Search for matching name, author, or book series in this config file
 	for idx := range configs {
@@ -691,7 +769,7 @@ func (h *handler) CleanupAfterRemove(
 	_ func(),
 ) error {
 	if pathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(folder) {
@@ -706,7 +784,7 @@ func (h *handler) CleanupAfterRemove(
 // MoveOtherFilesAfterOrganize handles moving additional files after main audiobook is organized.
 func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(params.Folder) {
@@ -781,93 +859,6 @@ func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesAudiobook 
 
 // UsesListNameAsQualityProfile returns false - audiobooks use quality config name.
 func (h *handler) UsesListNameAsQualityProfile() bool { return false }
-
-var errNotFoundPathTemplate = errors.New("path template not found")
-
-// StringsMap contains all audiobook-specific string mappings for SQL queries, cache names, etc.
-var StringsMap = map[string]string{
-	"CacheDBMedia":             "CacheDBAudiobook",
-	"DBCountDBMedia":           "select count() from dbaudiobooks",
-	"DBCacheDBMedia":           "select title, slug, asin, year, id from dbaudiobooks",
-	"CacheMedia":               "CacheAudiobook",
-	"DBCountMedia":             "select count() from audiobooks",
-	"DBCacheMedia":             "select lower(listname), dbaudiobook_id, id from audiobooks",
-	"CacheRootpath":            "CacheRootpathAudiobook",
-	"DBCountRootpath":          "select count() from (select distinct rootpath from audiobooks where rootpath != '' and exists (select 1 from audiobook_files where audiobook_id = audiobooks.id))",
-	"DBCacheRootpath":          "select distinct rootpath from audiobooks where rootpath != '' and exists (select 1 from audiobook_files where audiobook_id = audiobooks.id)",
-	"CacheHistoryTitle":        "CacheHistoryTitleAudiobook",
-	"CacheHistoryUrl":          "CacheHistoryUrlAudiobook",
-	"DBHistoriesUrl":           "select distinct url from audiobook_histories",
-	"DBHistoriesTitle":         "select distinct title from audiobook_histories",
-	"DBCountHistoriesUrl":      "select count() from (select distinct url from audiobook_histories)",
-	"DBCountHistoriesTitle":    "select count() from (select distinct title from audiobook_histories)",
-	"CacheMediaTitles":         "CacheTitlesAudiobook",
-	"DBCountDBTitles":          "select count() from dbaudiobook_titles where title != ''",
-	"DBCacheDBTitles":          "select title, slug, dbaudiobook_id from dbaudiobook_titles where title != ''",
-	"CacheFiles":               "CacheFilesAudiobook",
-	"DBCountFiles":             "select count() from audiobook_files",
-	"DBCacheFiles":             "select location from audiobook_files",
-	"CacheUnmatched":           "CacheUnmatchedAudiobook",
-	"DBCountUnmatched":         "select count() from audiobook_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBRemoveUnmatched":        "delete from audiobook_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
-	"DBCacheUnmatched":         "select filepath from audiobook_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBCountFilesLocation":     "select count() from audiobook_files where location = ?",
-	"DBCountUnmatchedPath":     "select count() from audiobook_file_unmatcheds where filepath = ?",
-	"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbaudiobook_titles where dbaudiobook_id = ? and title != '')",
-	"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbaudiobook_id from dbaudiobook_titles where dbaudiobook_id = ? and title != ''",
-	"DBMediaTitlesID":          "select year, title, slug from dbaudiobooks where id = ?",
-	"DBFilesQuality":           "select 0, 0, 0, 0, 0, 0, 0 from audiobook_files where id = ?",
-	"DBCountFilesByList":       "select count() from audiobook_files where audiobook_id in (select id from audiobooks where listname = ? COLLATE NOCASE)",
-	"DBLocationFilesByList":    "select location from audiobook_files where audiobook_id in (select id from audiobooks where listname = ? COLLATE NOCASE)",
-	"DBIDsFilesByLocation":     "select location, id, audiobook_id from audiobook_files",
-	"DBCountFilesByMediaID":    "select count() from audiobook_files where audiobook_id = ?",
-	"DBCountFilesByLocation":   "select count() from audiobook_files",
-	"TableFiles":               "audiobook_files",
-	"TableMedia":               "audiobooks",
-	"DBCountMediaByList":       "select count() from audiobooks where listname = ? COLLATE NOCASE",
-	"DBIDMissingMediaByList":   "select id,missing from audiobooks where listname = ? COLLATE NOCASE",
-	"DBUpdateMissing":          "update audiobooks set missing = ? where id = ?",
-	"DBListnameByMediaID":      "select listname from audiobooks where id = ?",
-	"DBRootPathFromMediaID":    "select rootpath from audiobooks where id = ?",
-	"DBDeleteFileByIDLocation": "delete from audiobook_files where audiobook_id = ? and location = ?",
-	"DBCountHistoriesByTitle":  "select count() from audiobook_histories where title = ?",
-	"DBCountHistoriesByUrl":    "select count() from audiobook_histories where url = ?",
-	"DBLocationIDFilesByID":    "select location, id from audiobook_files where audiobook_id = ?",
-	"DBFilePrioFilesByID":      "select location, audiobook_id, id, 0, 0, 0, 0, 0, 0, 0 from audiobook_files where audiobook_id = ?",
-	"DBAudioFilePrioFilesByID": "select location, audiobook_id, id, format, bitrate, 0, 0 from audiobook_files where audiobook_id = ?",
-	"UpdateMediaLastscan":      "update audiobooks set lastscan = datetime('now','localtime') where id = ?",
-	"DBQualityMediaByID":       "select quality_profile from audiobooks where id = ?",
-	"SearchGenSelect":          "select audiobooks.quality_profile, audiobooks.id ",
-	"SearchGenTable":           " from audiobooks inner join dbaudiobooks on dbaudiobooks.id=audiobooks.dbaudiobook_id where ",
-	"SearchGenMissing":         "audiobooks.missing = 1 and audiobooks.listname in (?",
-	"SearchGenMissingEnd":      ")",
-	"SearchGenReached":         "quality_reached = 0 and missing = 0 and listname in (?",
-	"SearchGenLastScan":        " and (audiobooks.lastscan is null or audiobooks.Lastscan < ?)",
-	"SearchGenDate":            " and (dbaudiobooks.release_date < ? or dbaudiobooks.release_date is null)",
-	"SearchGenOrder":           " order by audiobooks.Lastscan asc",
-	"DBIDUnmatchedPathList":    "select id from audiobook_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
-	"InsertUnmatched":          "Insert into audiobook_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
-	"UpdateUnmatched":          "update audiobook_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-	"GetRSSData":               "select audiobooks.dont_search, audiobooks.dont_upgrade, audiobooks.listname, audiobooks.quality_profile, dbaudiobooks.title from audiobooks inner join dbaudiobooks ON dbaudiobooks.id=audiobooks.dbaudiobook_id where audiobooks.id = ?",
-	"GetOrganizeData":          "select dbaudiobook_id, rootpath, listname from audiobooks where id = ?",
-	"ClearHistoryByList":       "delete from audiobook_histories where audiobook_id in (Select id from audiobooks where listname = ? COLLATE NOCASE)",
-	"QueryMediaByList":         "select id, quality_reached, quality_profile from audiobooks where listname = ? COLLATE NOCASE",
-	"QueryMediaCountByList":    "select count() from audiobooks where listname = ? COLLATE NOCASE",
-	"UpdateQualityReached":     "update audiobooks set quality_reached = ? where id = ?",
-	"SelectRootpath":           "select rootpath from audiobooks where id = ?",
-	"InsertFile":               "insert into audiobook_files (location, filename, extension, quality_profile, audiobook_id, dbaudiobook_id) values (?, ?, ?, ?, ?, ?)",
-	"UpdateMissingByID":        "update audiobooks set missing = 0 where id = ?",
-	"UpdateQualityReachedByID": "update audiobooks set quality_reached = ? where id = ?",
-	"DeleteUnmatchedByPath":    "delete from audiobook_file_unmatcheds where filepath = ?",
-	"SelectRuntime":            "select runtime_minutes from dbaudiobooks where id = ?",
-	"InsertFileOrganize":       "insert into audiobook_files (location, filename, extension, quality_profile, audiobook_id, dbaudiobook_id) values (?, ?, ?, ?, ?, ?)",
-	"UpdateMissingReached":     "update audiobooks SET missing = 0, quality_reached = ? where id = ?",
-	// Author-based search queries
-	"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.missing = 1 AND ab.listname IN (?",
-	"SearchAuthorsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
-	"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.missing = 0 AND ab.quality_reached = 0 AND ab.listname IN (?",
-	"SearchAuthorsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
-}
 
 // GetStringsMap returns an audiobook-specific string for the given key.
 func (h *handler) GetStringsMap(key string) string {

@@ -14,11 +14,16 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
-var errTmdbNotFound = errors.New("tmdb not found")
+var (
+	errTmdbNotFound = errors.New("tmdb not found")
 
-// invalidRuntimes is a sorted slice for binary search.
-// This is more memory efficient than a map for small sets.
-var invalidRuntimes = []int{1, 2, 3, 4, 60, 90, 120}
+	// invalidRuntimes is a sorted slice for binary search.
+	// This is more memory efficient than a map for small sets.
+	invalidRuntimes = []int{1, 2, 3, 4, 60, 90, 120}
+
+	// errFound is a sentinel error for early loop termination.
+	errFound = errors.New("found")
+)
 
 // checkaddmovietitlewoslug adds a movie title to the dbmovie_titles table if it does not already exist.
 // It takes the title string, movie ID uint, region string, current movie titles slice, and cache setting.
@@ -49,7 +54,7 @@ func checkaddmovietitlewoslug(
 		return
 	}
 
-	slug := logger.StringToSlug(*title)
+	slug := logger.StringToSlugCachedP(title)
 	database.ExecN(
 		"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
 		title,
@@ -185,7 +190,7 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 	})
 
 	if (movie.Slug == "" || overwrite) && movie.Title != "" {
-		movie.Slug = logger.StringToSlug(movie.Title)
+		movie.Slug = logger.StringToSlugCached(movie.Title)
 	}
 
 	updateBoolField(&movie.Adult, moviedbdetails.Adult, overwrite)
@@ -310,7 +315,7 @@ func movieGetOmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 	})
 
 	if (movie.Slug == "" || overwrite) && movie.Title != "" {
-		movie.Slug = logger.StringToSlug(movie.Title)
+		movie.Slug = logger.StringToSlugCached(movie.Title)
 	}
 
 	updateStringField(&movie.Genres, omdbdetails.Genre, overwrite, nil)
@@ -352,7 +357,7 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 	})
 
 	if (movie.Slug == "" || overwrite) && movie.Title != "" {
-		movie.Slug = logger.StringToSlug(movie.Title)
+		movie.Slug = logger.StringToSlugCached(movie.Title)
 	}
 
 	if (movie.Genres == "" || overwrite) && len(traktdetails.Genres) > 0 {
@@ -626,7 +631,7 @@ func processImdbAlternateTitles(
 		}
 
 		if aka.Str3 == "" {
-			aka.Str3 = logger.StringToSlug(aka.Str2)
+			aka.Str3 = logger.StringToSlugCached(aka.Str2)
 		}
 
 		insertMovieTitle(checkid, &movie.ID, &aka.Str2, &aka.Str3, &aka.Str1, useMediaCache)
@@ -694,9 +699,6 @@ func processTraktAlternateTitles(
 		)
 	}
 }
-
-// errFound is a sentinel error for early loop termination.
-var errFound = errors.New("found")
 
 // shouldProcessTitle checks if a title should be processed based on language filters.
 // Optimized to avoid repeated allocations by collecting languages more efficiently.
@@ -794,7 +796,7 @@ func serieGetMetadataTmdb(serie *database.Dbserie, overwrite bool) error {
 	updateStringField(&serie.Seriename, moviedb.TvResults[0].Name, overwrite, nil)
 
 	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
-		serie.Slug = logger.StringToSlug(serie.Seriename)
+		serie.Slug = logger.StringToSlugCached(serie.Seriename)
 	}
 
 	return nil
@@ -822,7 +824,7 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 	updateStringField(&serie.Status, traktdetails.Status, overwrite, nil)
 
 	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
-		serie.Slug = logger.StringToSlug(serie.Seriename)
+		serie.Slug = logger.StringToSlugCached(serie.Seriename)
 	}
 
 	// Handle genres
@@ -942,7 +944,7 @@ func serieGetMetadataTvdb(
 
 	// Update slug if needed
 	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
-		serie.Slug = logger.StringToSlug(serie.Seriename)
+		serie.Slug = logger.StringToSlugCached(serie.Seriename)
 	}
 
 	// Return updated aliases

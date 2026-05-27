@@ -5,7 +5,6 @@ package books
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
@@ -24,8 +23,92 @@ type handler struct {
 	dataFullFunc mediatype.DataFullFunc
 }
 
-// Handler is the singleton instance.
-var Handler = &handler{}
+var (
+	// Handler is the singleton instance.
+	Handler = &handler{}
+
+	// StringsMap contains all book-specific string mappings for SQL queries, cache names, etc.
+	StringsMap = map[string]string{
+		"CacheDBMedia":             "CacheDBBook",
+		"DBCountDBMedia":           "select count() from dbbooks",
+		"DBCacheDBMedia":           "select title, slug, isbn_13, year, id from dbbooks",
+		"CacheMedia":               "CacheBook",
+		"DBCountMedia":             "select count() from books",
+		"DBCacheMedia":             "select lower(listname), dbbook_id, id from books",
+		"CacheHistoryTitle":        "CacheHistoryTitleBook",
+		"CacheHistoryUrl":          "CacheHistoryUrlBook",
+		"DBHistoriesUrl":           "select distinct url from book_histories",
+		"DBHistoriesTitle":         "select distinct title from book_histories",
+		"DBCountHistoriesUrl":      "select count() from (select distinct url from book_histories)",
+		"DBCountHistoriesTitle":    "select count() from (select distinct title from book_histories)",
+		"CacheMediaTitles":         "CacheTitlesBook",
+		"DBCountDBTitles":          "select count() from dbbook_titles where title != ''",
+		"DBCacheDBTitles":          "select title, slug, dbbook_id from dbbook_titles where title != ''",
+		"CacheFiles":               "CacheFilesBook",
+		"DBCountFiles":             "select count() from book_files",
+		"DBCacheFiles":             "select location from book_files",
+		"CacheUnmatched":           "CacheUnmatchedBook",
+		"DBCountUnmatched":         "select count() from book_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBRemoveUnmatched":        "delete from book_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
+		"DBCacheUnmatched":         "select filepath from book_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
+		"DBCountFilesLocation":     "select count() from book_files where location = ?",
+		"DBCountUnmatchedPath":     "select count() from book_file_unmatcheds where filepath = ?",
+		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbbook_titles where dbbook_id = ? and title != '')",
+		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbbook_id from dbbook_titles where dbbook_id = ? and title != ''",
+		"DBMediaTitlesID":          "select year, title, slug from dbbooks where id = ?",
+		"DBFilesQuality":           "select 0, 0, 0, 0, 0, 0, 0 from book_files where id = ?",
+		"DBCountFilesByList":       "select count() from book_files where book_id in (select id from books where listname = ? COLLATE NOCASE)",
+		"DBLocationFilesByList":    "select location from book_files where book_id in (select id from books where listname = ? COLLATE NOCASE)",
+		"DBIDsFilesByLocation":     "select location, id, book_id from book_files",
+		"DBCountFilesByMediaID":    "select count() from book_files where book_id = ?",
+		"DBCountFilesByLocation":   "select count() from book_files",
+		"TableFiles":               "book_files",
+		"TableMedia":               "books",
+		"DBCountMediaByList":       "select count() from books where listname = ? COLLATE NOCASE",
+		"DBIDMissingMediaByList":   "select id,missing from books where listname = ? COLLATE NOCASE",
+		"DBUpdateMissing":          "update books set missing = ? where id = ?",
+		"DBListnameByMediaID":      "select listname from books where id = ?",
+		"DBRootPathFromMediaID":    "select rootpath from books where id = ?",
+		"DBDeleteFileByIDLocation": "delete from book_files where book_id = ? and location = ?",
+		"DBCountHistoriesByTitle":  "select count() from book_histories where title = ?",
+		"DBCountHistoriesByUrl":    "select count() from book_histories where url = ?",
+		"DBLocationIDFilesByID":    "select location, id from book_files where book_id = ?",
+		"DBFilePrioFilesByID":      "select location, book_id, id, 0, 0, 0, 0, 0, 0, 0 from book_files where book_id = ?",
+		"DBAudioFilePrioFilesByID": "select location, book_id, id, format, 0, 0, 0 from book_files where book_id = ?",
+		"UpdateMediaLastscan":      "update books set lastscan = datetime('now','localtime') where id = ?",
+		"DBQualityMediaByID":       "select quality_profile from books where id = ?",
+		"SearchGenSelect":          "select books.quality_profile, books.id ",
+		"SearchGenTable":           " from books inner join dbbooks on dbbooks.id=books.dbbook_id where ",
+		"SearchGenMissing":         "books.missing = 1 and books.listname in (?",
+		"SearchGenMissingEnd":      ")",
+		"SearchGenReached":         "quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenLastScan":        " and (books.lastscan is null or books.Lastscan < ?)",
+		"SearchGenDate":            " and (dbbooks.publish_date < ? or dbbooks.publish_date is null)",
+		"SearchGenOrder":           " order by books.Lastscan asc",
+		"DBIDUnmatchedPathList":    "select id from book_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
+		"InsertUnmatched":          "Insert into book_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
+		"UpdateUnmatched":          "update book_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
+		"GetRSSData":               "select books.dont_search, books.dont_upgrade, books.listname, books.quality_profile, dbbooks.title from books inner join dbbooks ON dbbooks.id=books.dbbook_id where books.id = ?",
+		"GetOrganizeData":          "select dbbook_id, rootpath, listname from books where id = ?",
+		"ClearHistoryByList":       "delete from book_histories where book_id in (Select id from books where listname = ? COLLATE NOCASE)",
+		"QueryMediaByList":         "select id, quality_reached, quality_profile from books where listname = ? COLLATE NOCASE",
+		"QueryMediaCountByList":    "select count() from books where listname = ? COLLATE NOCASE",
+		"UpdateQualityReached":     "update books set quality_reached = ? where id = ?",
+		"SelectRootpath":           "select rootpath from books where id = ?",
+		"InsertFile":               "insert into book_files (location, filename, extension, quality_profile, book_id, dbbook_id) values (?, ?, ?, ?, ?, ?)",
+		"UpdateMissingByID":        "update books set missing = 0 where id = ?",
+		"UpdateQualityReachedByID": "update books set quality_reached = ? where id = ?",
+		"DeleteUnmatchedByPath":    "delete from book_file_unmatcheds where filepath = ?",
+		"SelectRuntime":            "select page_count from dbbooks where id = ?",
+		"InsertFileOrganize":       "insert into book_files (location, filename, extension, quality_profile, book_id, dbbook_id) values (?, ?, ?, ?, ?, ?)",
+		"UpdateMissingReached":     "update books SET missing = 0, quality_reached = ? where id = ?",
+		// Author-based search queries
+		"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.missing = 1 AND b.listname IN (?",
+		"SearchAuthorsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
+		"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.missing = 0 AND b.quality_reached = 0 AND b.listname IN (?",
+		"SearchAuthorsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
+	}
+)
 
 func init() {
 	mediatype.Register(Handler)
@@ -107,14 +190,8 @@ func (h *handler) GetDBIDsFull(
 
 		m.Title = logger.TrimSpace(m.Title)
 
-		// Extract listnames for wanted-list priority search
-		listnames := make([]string, len(cfgp.Lists))
-		for idx := range cfgp.Lists {
-			listnames[idx] = cfgp.Lists[idx].Name
-		}
-
 		// Try author-first lookup prioritizing books in the wanted list
-		m.FindDbbookByAuthorFirstFromWantedList(listnames)
+		m.FindDbbookByAuthorFirstFromWantedList(cfgp.ListsNames)
 
 		// Fallback to regular author-first lookup
 		if m.DbbookID == 0 {
@@ -577,7 +654,7 @@ func (h *handler) CleanupAfterRemove(
 	_ func(),
 ) error {
 	if pathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(folder) {
@@ -592,7 +669,7 @@ func (h *handler) CleanupAfterRemove(
 // MoveOtherFilesAfterOrganize handles moving additional files after main book is organized.
 func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
-		return errNotFoundPathTemplate
+		return logger.ErrPathTemplateNotFound
 	}
 
 	if !scanner.CheckFileExist(params.Folder) {
@@ -667,90 +744,6 @@ func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesBook }
 
 // UsesListNameAsQualityProfile returns false - books use quality config name.
 func (h *handler) UsesListNameAsQualityProfile() bool { return false }
-
-var errNotFoundPathTemplate = errors.New("path template not found")
-
-// StringsMap contains all book-specific string mappings for SQL queries, cache names, etc.
-var StringsMap = map[string]string{
-	"CacheDBMedia":             "CacheDBBook",
-	"DBCountDBMedia":           "select count() from dbbooks",
-	"DBCacheDBMedia":           "select title, slug, isbn_13, year, id from dbbooks",
-	"CacheMedia":               "CacheBook",
-	"DBCountMedia":             "select count() from books",
-	"DBCacheMedia":             "select lower(listname), dbbook_id, id from books",
-	"CacheHistoryTitle":        "CacheHistoryTitleBook",
-	"CacheHistoryUrl":          "CacheHistoryUrlBook",
-	"DBHistoriesUrl":           "select distinct url from book_histories",
-	"DBHistoriesTitle":         "select distinct title from book_histories",
-	"DBCountHistoriesUrl":      "select count() from (select distinct url from book_histories)",
-	"DBCountHistoriesTitle":    "select count() from (select distinct title from book_histories)",
-	"CacheMediaTitles":         "CacheTitlesBook",
-	"DBCountDBTitles":          "select count() from dbbook_titles where title != ''",
-	"DBCacheDBTitles":          "select title, slug, dbbook_id from dbbook_titles where title != ''",
-	"CacheFiles":               "CacheFilesBook",
-	"DBCountFiles":             "select count() from book_files",
-	"DBCacheFiles":             "select location from book_files",
-	"CacheUnmatched":           "CacheUnmatchedBook",
-	"DBCountUnmatched":         "select count() from book_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBRemoveUnmatched":        "delete from book_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
-	"DBCacheUnmatched":         "select filepath from book_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
-	"DBCountFilesLocation":     "select count() from book_files where location = ?",
-	"DBCountUnmatchedPath":     "select count() from book_file_unmatcheds where filepath = ?",
-	"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbbook_titles where dbbook_id = ? and title != '')",
-	"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbbook_id from dbbook_titles where dbbook_id = ? and title != ''",
-	"DBMediaTitlesID":          "select year, title, slug from dbbooks where id = ?",
-	"DBFilesQuality":           "select 0, 0, 0, 0, 0, 0, 0 from book_files where id = ?",
-	"DBCountFilesByList":       "select count() from book_files where book_id in (select id from books where listname = ? COLLATE NOCASE)",
-	"DBLocationFilesByList":    "select location from book_files where book_id in (select id from books where listname = ? COLLATE NOCASE)",
-	"DBIDsFilesByLocation":     "select location, id, book_id from book_files",
-	"DBCountFilesByMediaID":    "select count() from book_files where book_id = ?",
-	"DBCountFilesByLocation":   "select count() from book_files",
-	"TableFiles":               "book_files",
-	"TableMedia":               "books",
-	"DBCountMediaByList":       "select count() from books where listname = ? COLLATE NOCASE",
-	"DBIDMissingMediaByList":   "select id,missing from books where listname = ? COLLATE NOCASE",
-	"DBUpdateMissing":          "update books set missing = ? where id = ?",
-	"DBListnameByMediaID":      "select listname from books where id = ?",
-	"DBRootPathFromMediaID":    "select rootpath from books where id = ?",
-	"DBDeleteFileByIDLocation": "delete from book_files where book_id = ? and location = ?",
-	"DBCountHistoriesByTitle":  "select count() from book_histories where title = ?",
-	"DBCountHistoriesByUrl":    "select count() from book_histories where url = ?",
-	"DBLocationIDFilesByID":    "select location, id from book_files where book_id = ?",
-	"DBFilePrioFilesByID":      "select location, book_id, id, 0, 0, 0, 0, 0, 0, 0 from book_files where book_id = ?",
-	"DBAudioFilePrioFilesByID": "select location, book_id, id, format, 0, 0, 0 from book_files where book_id = ?",
-	"UpdateMediaLastscan":      "update books set lastscan = datetime('now','localtime') where id = ?",
-	"DBQualityMediaByID":       "select quality_profile from books where id = ?",
-	"SearchGenSelect":          "select books.quality_profile, books.id ",
-	"SearchGenTable":           " from books inner join dbbooks on dbbooks.id=books.dbbook_id where ",
-	"SearchGenMissing":         "books.missing = 1 and books.listname in (?",
-	"SearchGenMissingEnd":      ")",
-	"SearchGenReached":         "quality_reached = 0 and missing = 0 and listname in (?",
-	"SearchGenLastScan":        " and (books.lastscan is null or books.Lastscan < ?)",
-	"SearchGenDate":            " and (dbbooks.publish_date < ? or dbbooks.publish_date is null)",
-	"SearchGenOrder":           " order by books.Lastscan asc",
-	"DBIDUnmatchedPathList":    "select id from book_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
-	"InsertUnmatched":          "Insert into book_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
-	"UpdateUnmatched":          "update book_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-	"GetRSSData":               "select books.dont_search, books.dont_upgrade, books.listname, books.quality_profile, dbbooks.title from books inner join dbbooks ON dbbooks.id=books.dbbook_id where books.id = ?",
-	"GetOrganizeData":          "select dbbook_id, rootpath, listname from books where id = ?",
-	"ClearHistoryByList":       "delete from book_histories where book_id in (Select id from books where listname = ? COLLATE NOCASE)",
-	"QueryMediaByList":         "select id, quality_reached, quality_profile from books where listname = ? COLLATE NOCASE",
-	"QueryMediaCountByList":    "select count() from books where listname = ? COLLATE NOCASE",
-	"UpdateQualityReached":     "update books set quality_reached = ? where id = ?",
-	"SelectRootpath":           "select rootpath from books where id = ?",
-	"InsertFile":               "insert into book_files (location, filename, extension, quality_profile, book_id, dbbook_id) values (?, ?, ?, ?, ?, ?)",
-	"UpdateMissingByID":        "update books set missing = 0 where id = ?",
-	"UpdateQualityReachedByID": "update books set quality_reached = ? where id = ?",
-	"DeleteUnmatchedByPath":    "delete from book_file_unmatcheds where filepath = ?",
-	"SelectRuntime":            "select page_count from dbbooks where id = ?",
-	"InsertFileOrganize":       "insert into book_files (location, filename, extension, quality_profile, book_id, dbbook_id) values (?, ?, ?, ?, ?, ?)",
-	"UpdateMissingReached":     "update books SET missing = 0, quality_reached = ? where id = ?",
-	// Author-based search queries
-	"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.missing = 1 AND b.listname IN (?",
-	"SearchAuthorsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
-	"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.missing = 0 AND b.quality_reached = 0 AND b.listname IN (?",
-	"SearchAuthorsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
-}
 
 // GetStringsMap returns a book-specific string for the given key.
 func (h *handler) GetStringsMap(key string) string {

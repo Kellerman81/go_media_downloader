@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -18,19 +17,19 @@ import (
 // Falls back to creating a legacy client if no provider is registered.
 func SendPushoverMessage(cfgname, apikey, message, title, recipient string) error {
 	if apikey == "" {
-		return errors.New("apikey empty")
+		return errAPIKeyEmpty
 	}
 
 	if message == "" {
-		return errors.New("message empty")
+		return errMessageEmpty
 	}
 
 	if len(message) > 1024 {
-		return errors.New("message too long")
+		return errMessageTooLong
 	}
 
 	if len(title) > 250 {
-		return errors.New("title too long")
+		return errTitleTooLong
 	}
 
 	// Try v2 provider first
@@ -61,5 +60,5 @@ func SendPushoverMessage(cfgname, apikey, message, title, recipient string) erro
 		}
 	}
 
-	return errors.New("client empty")
+	return errClientEmpty
 }

@@ -2,7 +2,6 @@ package database
 
 import (
 	"database/sql"
-	"slices"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -289,12 +288,16 @@ type AlbumSearchResult struct {
 	MusicBrainzReleaseID string
 	Label                string
 	Country              string
-	ID                   uint
-	TotalTracks          int
-	TotalRuntime         int // Runtime in milliseconds
-	Year                 int
-	Title                string
-	Artist               string
+	// Source identifies the metadata provider this album entry originates from
+	// ("musicbrainz", "discogs", "deezer", "lastfm", "theaudiodb", "itunes", …).
+	// Populated by fillAlbumResult; empty when the source cannot be determined.
+	Source       string
+	ID           uint
+	TotalTracks  int
+	TotalRuntime int // Runtime in milliseconds
+	Year         int
+	Title        string
+	Artist       string
 }
 
 // FindAlbumByArtistTitle searches for an album by artist and title.
@@ -305,18 +308,18 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 		return nil, logger.ErrNotFoundDbalbum
 	}
 
-	slug := logger.StringToSlug(*title)
+	slug := logger.StringToSlugCachedP(title)
 	// Hoist stripped variants — used in both fallback branches; compute once.
-	strippedTitle := stripReleaseType(*title)
+	strippedTitle := stripReleaseType(title)
 
 	var strippedSlug string
 	if strippedTitle != *title && strippedTitle != "" {
-		strippedSlug = logger.StringToSlug(strippedTitle)
+		strippedSlug = logger.StringToSlugCached(strippedTitle)
 	}
 
 	// If we have an artist, try artist-first lookup (more accurate)
 	if artist != nil && *artist != "" {
-		artistSlug := logger.StringToSlug(*artist)
+		artistSlug := logger.StringToSlugCachedP(artist)
 
 		// Find artist IDs
 		artistIDs := Getrowssize[uint](
@@ -356,7 +359,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 				// 	Str("title", title).
 				// 	Uint("dbID", result.ID).
 				// 	Msg("DEBUG: FindAlbumByArtistTitle - found by artist+title exact match")
-				return fillAlbumResult(&result), nil
+				return fillAlbumResult(&result, ""), nil
 			}
 
 			// Try alternate titles
@@ -374,7 +377,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 				// 	Str("title", title).
 				// 	Uint("dbID", result.ID).
 				// 	Msg("DEBUG: FindAlbumByArtistTitle - found by artist+alternate title")
-				return fillAlbumResult(&result), nil
+				return fillAlbumResult(&result, ""), nil
 			}
 		}
 
@@ -398,7 +401,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 					// 	Str("strippedTitle", strippedTitle).
 					// 	Uint("dbID", result.ID).
 					// 	Msg("DEBUG: FindAlbumByArtistTitle - found by artist+stripped title")
-					return fillAlbumResult(&result), nil
+					return fillAlbumResult(&result, ""), nil
 				}
 
 				// Try alternate titles with stripped version
@@ -417,7 +420,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 					// 	Str("strippedTitle", strippedTitle).
 					// 	Uint("dbID", result.ID).
 					// 	Msg("DEBUG: FindAlbumByArtistTitle - found by artist+stripped alternate title")
-					return fillAlbumResult(&result), nil
+					return fillAlbumResult(&result, ""), nil
 				}
 			}
 		}
@@ -443,7 +446,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 		// 	Str("title", title).
 		// 	Uint("dbID", result.ID).
 		// 	Msg("DEBUG: FindAlbumByArtistTitle - found by title only")
-		return fillAlbumResult(&result), nil
+		return fillAlbumResult(&result, ""), nil
 	}
 
 	// Try stripped title without artist
@@ -458,7 +461,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 			// 	Str("strippedTitle", strippedTitle).
 			// 	Uint("dbID", result.ID).
 			// 	Msg("DEBUG: FindAlbumByArtistTitle - found by stripped title only")
-			return fillAlbumResult(&result), nil
+			return fillAlbumResult(&result, ""), nil
 		}
 	}
 
@@ -472,18 +475,24 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 }
 
 // albumResultDedup tracks unique album IDs seen by FindAlbumsByArtistTitle.
-// Using a []uint slice sized to maxResults replaces the map[uint]bool (one
-// heap allocation instead of two) and is correct for any maxResults value.
+// The backing array is embedded in the struct so it stays on the stack —
+// no heap allocation needed for the common maxResults ≤ 16 case.
 type albumResultDedup struct {
-	seen []uint
+	buf [16]uint
+	n   int
 }
 
 func (d *albumResultDedup) add(id uint) bool {
-	if slices.Contains(d.seen, id) {
-		return false
+	for i := range d.n {
+		if d.buf[i] == id {
+			return false
+		}
 	}
 
-	d.seen = append(d.seen, id)
+	if d.n < len(d.buf) {
+		d.buf[d.n] = id
+		d.n++
+	}
 
 	return true
 }
@@ -500,21 +509,22 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 		maxResults = 10
 	}
 
-	slug := logger.StringToSlug(*title)
+	slug := logger.StringToSlugCachedP(title)
 	// Hoist stripped variants — used in both fallback branches; compute once.
-	strippedTitle := stripReleaseType(*title)
+	strippedTitle := stripReleaseType(title)
 
 	var strippedSlug string
 	if strippedTitle != *title && strippedTitle != "" {
-		strippedSlug = logger.StringToSlug(strippedTitle)
+		strippedSlug = logger.StringToSlugCached(strippedTitle)
 	}
 
 	results := make([]*AlbumSearchResult, 0, maxResults)
-	dedup := albumResultDedup{seen: make([]uint, 0, maxResults)}
+
+	var dedup albumResultDedup
 
 	// If we have an artist, try artist-first lookup (more accurate)
 	if artist != nil && *artist != "" {
-		artistSlug := logger.StringToSlug(*artist)
+		artistSlug := logger.StringToSlugCachedP(artist)
 
 		// Find artist IDs
 		artistIDs := Getrowssize[uint](
@@ -556,7 +566,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 			for i := range ids {
 				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 				}
 			}
 
@@ -579,7 +589,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 			for i := range ids {
 				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 				}
 			}
 		}
@@ -605,7 +615,10 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 				for i := range ids {
 					if ids[i] > 0 && dedup.add(ids[i]) {
-						results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+						results = append(
+							results,
+							fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""),
+						)
 					}
 				}
 
@@ -628,7 +641,10 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 				for i := range ids {
 					if ids[i] > 0 && dedup.add(ids[i]) {
-						results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+						results = append(
+							results,
+							fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""),
+						)
 					}
 				}
 			}
@@ -644,7 +660,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 		for i := range ids {
 			if ids[i] > 0 && dedup.add(ids[i]) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 			}
 		}
 	}
@@ -658,7 +674,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 		for i := range ids {
 			if ids[i] > 0 && dedup.add(ids[i]) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 			}
 		}
 	}
@@ -678,7 +694,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 		for i := range ids {
 			if ids[i] > 0 && dedup.add(ids[i]) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 			}
 		}
 
@@ -693,7 +709,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 			for i := range ids {
 				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 				}
 			}
 		}
@@ -709,7 +725,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 			for i := range ids {
 				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}))
+					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
 				}
 			}
 		}
@@ -729,12 +745,15 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 }
 
 // FillAlbumResult fills in the AlbumSearchResult with full album data.
-func FillAlbumResult(result *AlbumSearchResult) *AlbumSearchResult {
-	return fillAlbumResult(result)
+// FillAlbumResult fills in the AlbumSearchResult with full album data.
+// source identifies the metadata provider this candidate originated from
+// (e.g. "musicbrainz", "discogs", "lastfm"). Pass "" when unknown.
+func FillAlbumResult(result *AlbumSearchResult, source string) *AlbumSearchResult {
+	return fillAlbumResult(result, source)
 }
 
 // fillAlbumResult fills in the AlbumSearchResult with full album data.
-func fillAlbumResult(result *AlbumSearchResult) *AlbumSearchResult {
+func fillAlbumResult(result *AlbumSearchResult, source string) *AlbumSearchResult {
 	if result.ID == 0 {
 		return result
 	}
@@ -748,6 +767,20 @@ func fillAlbumResult(result *AlbumSearchResult) *AlbumSearchResult {
 		result.MusicBrainzReleaseID = ab.MusicbrainzReleaseID
 		result.Label = ab.Label
 		result.Country = ab.Country
+	}
+
+	// Caller-supplied source takes priority; fall back to ID-based detection
+	// so that albums already in the DB report a sensible source even when
+	// the importer didn't explicitly pass one.
+	switch {
+	case source != "":
+		result.Source = source
+	case ab.MusicbrainzReleaseID != "":
+		result.Source = "musicbrainz"
+	case ab.DiscogsReleaseID != "" || ab.DiscogsMasterID != "":
+		result.Source = "discogs"
+	case ab.SpotifyID != "":
+		result.Source = "spotify"
 	}
 
 	Scanrowsdyn(
@@ -914,18 +947,7 @@ func FindAlbumByMusicBrainzID(musicBrainzID *string) (*AlbumSearchResult, error)
 	)
 
 	if result.ID > 0 {
-		var ab Dbalbum
-		if err := ab.GetDbalbumByIDP(&result.ID); err == nil {
-			result.Title = ab.Title
-			result.TotalTracks = ab.TotalTracks
-			result.TotalRuntime = int(ab.TotalRuntimeMs)
-			result.Year = int(ab.Year)
-			result.MusicBrainzReleaseID = ab.MusicbrainzReleaseID
-			result.Label = ab.Label
-			result.Country = ab.Country
-		}
-
-		return &result, nil
+		return fillAlbumResult(&result, "musicbrainz"), nil
 	}
 
 	return nil, logger.ErrNotFoundDbalbum
@@ -946,18 +968,7 @@ func FindAlbumByUPC(upc *string) (*AlbumSearchResult, error) {
 		upc)
 
 	if result.ID > 0 {
-		var ab Dbalbum
-		if err := ab.GetDbalbumByIDP(&result.ID); err == nil {
-			result.Title = ab.Title
-			result.TotalTracks = ab.TotalTracks
-			result.TotalRuntime = int(ab.TotalRuntimeMs)
-			result.Year = int(ab.Year)
-			result.MusicBrainzReleaseID = ab.MusicbrainzReleaseID
-			result.Label = ab.Label
-			result.Country = ab.Country
-		}
-
-		return &result, nil
+		return fillAlbumResult(&result, ""), nil
 	}
 
 	return nil, logger.ErrNotFoundDbalbum

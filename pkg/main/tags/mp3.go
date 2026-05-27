@@ -215,6 +215,7 @@ func (h *MP3Handler) WriteTags(ctx context.Context, filepath string, tags *Audio
 
 	// Remove legacy TYER (v2.3) before writing TDRC (v2.4) to avoid dual year frames.
 	tag.DeleteFrames("TYER")
+
 	if tags.Year > 0 {
 		tag.SetYear(strconv.Itoa(tags.Year))
 	}
@@ -381,6 +382,7 @@ func parseYearFallback(tag *id3v2.Tag) int {
 	if y := parseYear(tag.Year()); y > 0 {
 		return y
 	}
+
 	return parseYear(getTextFrame(tag, "TYER"))
 }
 

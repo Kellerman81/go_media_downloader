@@ -96,6 +96,8 @@ var (
 
 	// Configuration reload mutex - only used during reload operations.
 	reloadMutex sync.Mutex
+
+	errGeneralConfigNil = errors.New("general configuration cannot be nil")
 )
 
 // getCurrentConfig returns the current configuration snapshot (thread-safe).
@@ -482,7 +484,7 @@ func readConfigTomlSafe() (*MainConfig, error) {
 // validateGeneralConfig validates general configuration settings.
 func validateGeneralConfig(cfg *GeneralConfig) error {
 	if cfg == nil {
-		return errors.New("general configuration cannot be nil")
+		return errGeneralConfigNil
 	}
 
 	if cfg.LogLevel == "" {

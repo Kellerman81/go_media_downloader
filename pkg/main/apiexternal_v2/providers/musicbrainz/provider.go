@@ -2,7 +2,7 @@ package musicbrainz
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -232,7 +232,7 @@ func (p *Provider) GetReleaseByBarcode(
 	}
 
 	if len(response.Releases) == 0 {
-		return nil, fmt.Errorf("no release found with barcode: %s", barcode)
+		return nil, errors.New(logger.JoinStrings("no release found with barcode: ", barcode))
 	}
 
 	// Get full details
@@ -311,7 +311,7 @@ func (p *Provider) GetRecordingByISRC(
 	}
 
 	if len(response.Recordings) == 0 {
-		return nil, fmt.Errorf("no recording found with ISRC: %s", isrc)
+		return nil, errors.New(logger.JoinStrings("no recording found with ISRC: ", isrc))
 	}
 
 	return convertRecordingToTrack(&response.Recordings[0]), nil
@@ -373,7 +373,7 @@ func (p *Provider) GetReleaseIDsByISRC(
 	}
 
 	if len(response.Recordings) == 0 {
-		return nil, fmt.Errorf("no recording found with ISRC: %s", isrc)
+		return nil, errors.New(logger.JoinStrings("no recording found with ISRC: ", isrc))
 	}
 
 	seen := make(map[string]struct{})

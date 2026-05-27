@@ -47,7 +47,6 @@ const (
 	reBookRetail     = `(?i)[\[\(]?retail[\]\)]?`
 	reBookGroup      = `(?i)[\[\(]([a-z0-9_-]+)[\]\)]$`
 	reBookAuthorDash = `^(.+?)\s+-\s+(.+)$`
-	reBookStripISBN  = `(?i)isbn[:\s-]*`
 	reBookStripASIN  = `(?i)asin[:\s-]*`
 )
 
@@ -91,7 +90,7 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 
 	// Extract ISBN-13
 	if match := bp.patterns.isbn13.FindString(name); match != "" {
-		result.ISBN13 = bp.normalizeISBN(match)
+		result.ISBN13 = normalizeISBN(match)
 		cleanedName = strings.Replace(cleanedName, match, "", 1)
 
 		result.Confidence += 0.3
@@ -99,7 +98,7 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 
 	// Extract ISBN-10
 	if match := bp.patterns.isbn10.FindString(name); match != "" && result.ISBN13 == "" {
-		result.ISBN10 = bp.normalizeISBN(match)
+		result.ISBN10 = normalizeISBN(match)
 		cleanedName = strings.Replace(cleanedName, match, "", 1)
 
 		result.Confidence += 0.2
@@ -116,32 +115,33 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 	// Check for retail indicator
 	if bp.patterns.retail.MatchString(name) {
 		result.IsRetail = true
-		cleanedName = bp.patterns.retail.ReplaceAllString(cleanedName, "")
+		cleanedName = bp.patterns.retail.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Extract release group (typically at the end)
-	if matches := bp.patterns.group.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.ReleaseGroup = matches[1]
-		cleanedName = bp.patterns.group.ReplaceAllString(cleanedName, "")
+	if loc := bp.patterns.group.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.ReleaseGroup = cleanedName[loc[2]:loc[3]]
+		cleanedName = bp.patterns.group.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Extract year
-	if matches := bp.patterns.year.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.Year = parseInt(matches[1])
+	if loc := bp.patterns.year.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.Year = parseInt(cleanedName[loc[2]:loc[3]])
 		// Only remove year if it's in parentheses/brackets or standalone
-		if strings.Contains(matches[0], "(") || strings.Contains(matches[0], "[") {
-			cleanedName = strings.Replace(cleanedName, matches[0], "", 1)
+		fullMatch := cleanedName[loc[0]:loc[1]]
+		if strings.Contains(fullMatch, "(") || strings.Contains(fullMatch, "[") {
+			cleanedName = strings.Replace(cleanedName, fullMatch, "", 1)
 		}
 	}
 
 	// Extract series information
-	if matches := bp.patterns.series.FindStringSubmatch(cleanedName); len(matches) > 2 {
-		result.Series = strings.TrimSpace(matches[1])
-		result.SeriesPosition = matches[2]
-		cleanedName = bp.patterns.series.ReplaceAllString(cleanedName, "")
-	} else if matches := bp.patterns.seriesNum.FindStringSubmatch(cleanedName); len(matches) > 1 {
-		result.SeriesPosition = matches[1]
-		cleanedName = bp.patterns.seriesNum.ReplaceAllString(cleanedName, "")
+	if loc := bp.patterns.series.FindStringSubmatchIndex(cleanedName); len(loc) > 4 {
+		result.Series = strings.TrimSpace(cleanedName[loc[2]:loc[3]])
+		result.SeriesPosition = cleanedName[loc[4]:loc[5]]
+		cleanedName = bp.patterns.series.ReplaceAllLiteralString(cleanedName, "")
+	} else if loc := bp.patterns.seriesNum.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.SeriesPosition = cleanedName[loc[2]:loc[3]]
+		cleanedName = bp.patterns.seriesNum.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Try to split author from title
@@ -198,9 +198,9 @@ func (bp *BookParser) extractAuthorTitle(name string, result *BookParseResult) {
 	name = strings.TrimSpace(name)
 
 	// Try "Author - Title" pattern
-	if matches := bp.patterns.authorDash.FindStringSubmatch(name); len(matches) > 2 {
-		potentialAuthor := strings.TrimSpace(matches[1])
-		potentialTitle := strings.TrimSpace(matches[2])
+	if loc := bp.patterns.authorDash.FindStringSubmatchIndex(name); len(loc) > 4 {
+		potentialAuthor := strings.TrimSpace(name[loc[2]:loc[3]])
+		potentialTitle := strings.TrimSpace(name[loc[4]:loc[5]])
 
 		// Validate it looks like an author name
 		if bp.looksLikeAuthor(potentialAuthor) {
@@ -253,22 +253,13 @@ func (bp *BookParser) looksLikeAuthor(s string) bool {
 	return false
 }
 
-// normalizeISBN removes hyphens and spaces from ISBN and returns clean format.
-func (bp *BookParser) normalizeISBN(isbn string) string {
-	// Remove "ISBN:" prefix if present
-	isbn = database.GetCachedRegexp(reBookStripISBN).ReplaceAllString(isbn, "")
-	// Remove hyphens and spaces
-	isbn = strings.ReplaceAll(isbn, "-", "")
-	isbn = strings.ReplaceAll(isbn, " ", "")
-
-	return strings.ToUpper(isbn)
-}
-
 // extractASIN extracts the ASIN from a match.
 func (bp *BookParser) extractASIN(match string) string {
 	// Remove "ASIN:" prefix if present
 	return strings.ToUpper(
-		strings.TrimSpace(database.GetCachedRegexp(reBookStripASIN).ReplaceAllString(match, "")),
+		strings.TrimSpace(
+			database.GetCachedRegexp(reBookStripASIN).ReplaceAllLiteralString(match, ""),
+		),
 	)
 }
 
@@ -346,7 +337,6 @@ func ValidateISBN13(isbn string) bool {
 func ValidateISBN10(isbn string) bool {
 	isbn = strings.ReplaceAll(isbn, "-", "")
 	isbn = strings.ReplaceAll(isbn, " ", "")
-	isbn = strings.ToUpper(isbn)
 
 	if len(isbn) != 10 {
 		return false
@@ -357,7 +347,7 @@ func ValidateISBN10(isbn string) bool {
 		var digit int
 		if c >= '0' && c <= '9' {
 			digit = int(c - '0')
-		} else if c == 'X' && i == 9 {
+		} else if (c == 'X' || c == 'x') && i == 9 {
 			digit = 10
 		} else {
 			return false
@@ -399,11 +389,7 @@ func ISBN10toISBN13(isbn10 string) string {
 
 // cleanTitle cleans up a title string.
 func cleanTitle(title string) string {
-	// Remove extra whitespace
-	title = logger.JoinStringsSep(strings.Fields(title), " ")
-	// Remove leading/trailing punctuation
-	title = strings.Trim(title, ".-_,;: ")
-	return title
+	return strings.Trim(logger.JoinStringsSep(strings.Fields(title), " "), ".-_,;: ")
 }
 
 // parseInt parses a string to int, returning 0 on error.

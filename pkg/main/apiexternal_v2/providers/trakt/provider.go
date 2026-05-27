@@ -3,11 +3,13 @@ package trakt
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -315,7 +317,7 @@ func (p *Provider) FindSeriesByTVDbID(
 	}
 
 	if len(response) == 0 || response[0].Show == nil {
-		return nil, fmt.Errorf("show not found")
+		return nil, errors.New("show not found")
 	}
 
 	// Get full details using Trakt ID
@@ -361,11 +363,15 @@ func (p *Provider) FindByTraktID(
 
 	// If both failed, return error
 	if result.MovieResult == nil && result.SeriesResult == nil {
-		return nil, fmt.Errorf(
-			"content not found with Trakt ID %d: movie error: %w, series error: %w",
-			traktID,
-			movieErr,
-			seriesErr,
+		return nil, errors.New(
+			logger.JoinStrings(
+				"content not found with Trakt ID ",
+				strconv.Itoa(traktID),
+				": movie error: ",
+				movieErr.Error(),
+				", series error: ",
+				seriesErr.Error(),
+			),
 		)
 	}
 
@@ -606,7 +612,7 @@ func (p *Provider) GetMovieImages(
 	ctx context.Context,
 	id int,
 ) (*apiexternal_v2.ImageCollection, error) {
-	return nil, fmt.Errorf("trakt does not provide image listings")
+	return nil, errors.New("trakt does not provide image listings")
 }
 
 // GetSeriesImages - Trakt doesn't provide images.
@@ -614,17 +620,17 @@ func (p *Provider) GetSeriesImages(
 	ctx context.Context,
 	id int,
 ) (*apiexternal_v2.ImageCollection, error) {
-	return nil, fmt.Errorf("trakt does not provide image listings")
+	return nil, errors.New("trakt does not provide image listings")
 }
 
 // GetMovieVideos - Trakt doesn't provide videos.
 func (p *Provider) GetMovieVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
-	return nil, fmt.Errorf("trakt does not provide video listings")
+	return nil, errors.New("trakt does not provide video listings")
 }
 
 // GetSeriesVideos - Trakt doesn't provide videos.
 func (p *Provider) GetSeriesVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
-	return nil, fmt.Errorf("trakt does not provide video listings")
+	return nil, errors.New("trakt does not provide video listings")
 }
 
 //
@@ -784,7 +790,7 @@ func (p *Provider) GetUserLists(
 	}
 
 	// Lists would require additional processing
-	return nil, fmt.Errorf("list processing not implemented")
+	return nil, errors.New("list processing not implemented")
 }
 
 // GetTraktUserList retrieves items from a specific Trakt user list
@@ -842,7 +848,7 @@ func (p *Provider) RemoveMovieFromTraktUserList(
 
 	bodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return errors.New(logger.JoinStrings("failed to marshal request body: ", err.Error()))
 	}
 
 	var response map[string]any
@@ -880,7 +886,7 @@ func (p *Provider) RemoveSerieFromTraktUserList(
 
 	bodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return errors.New(logger.JoinStrings("failed to marshal request body: ", err.Error()))
 	}
 
 	var response map[string]any
@@ -973,7 +979,7 @@ func (p *Provider) loadTokenFromDisk() {
 // saveTokenToDisk saves the OAuth token to disk for persistence.
 func (p *Provider) saveTokenToDisk(token *apiexternal_v2.OAuthToken) error {
 	if token == nil {
-		return fmt.Errorf("cannot save nil token")
+		return errors.New("cannot save nil token")
 	}
 
 	tokenPath := p.getTokenFilePath()
@@ -986,7 +992,7 @@ func (p *Provider) saveTokenToDisk(token *apiexternal_v2.OAuthToken) error {
 			Str("dir", configDir).
 			Msg("Failed to create config directory for Trakt token")
 
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return errors.New(logger.JoinStrings("failed to create config directory: ", err.Error()))
 	}
 
 	// Marshal token to JSON with indentation for readability
@@ -995,7 +1001,7 @@ func (p *Provider) saveTokenToDisk(token *apiexternal_v2.OAuthToken) error {
 		logger.Logtype(logger.StatusError, 0).
 			Err(err).
 			Msg("Failed to marshal Trakt token to JSON")
-		return fmt.Errorf("failed to marshal token: %w", err)
+		return errors.New(logger.JoinStrings("failed to marshal token: ", err.Error()))
 	}
 
 	// Write token to file with restricted permissions (0600 = owner read/write only)
@@ -1005,7 +1011,7 @@ func (p *Provider) saveTokenToDisk(token *apiexternal_v2.OAuthToken) error {
 			Str("path", tokenPath).
 			Msg("Failed to write Trakt token to disk")
 
-		return fmt.Errorf("failed to write token file: %w", err)
+		return errors.New(logger.JoinStrings("failed to write token file: ", err.Error()))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -1060,7 +1066,7 @@ func (p *Provider) doTokenRequest(ctx context.Context, bodyBytes []byte) ([]byte
 		bytes.NewReader(bodyBytes),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create token request: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to create token request: ", err.Error()))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -1069,21 +1075,24 @@ func (p *Provider) doTokenRequest(ctx context.Context, bodyBytes []byte) ([]byte
 
 	resp, err := p.GetHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("token request failed: %w", err)
+		return nil, errors.New(logger.JoinStrings("token request failed: ", err.Error()))
 	}
 
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read token response: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to read token response: ", err.Error()))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(
-			"token request failed (HTTP %d): %s",
-			resp.StatusCode,
-			string(respBody),
+		return nil, errors.New(
+			logger.JoinStrings(
+				"token request failed (HTTP ",
+				strconv.Itoa(resp.StatusCode),
+				"): ",
+				string(respBody),
+			),
 		)
 	}
 
@@ -1105,7 +1114,7 @@ func (p *Provider) ExchangeCodeForToken(
 
 	bodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to marshal request: ", err.Error()))
 	}
 
 	respBody, err := p.doTokenRequest(ctx, bodyBytes)
@@ -1123,7 +1132,7 @@ func (p *Provider) ExchangeCodeForToken(
 	}
 
 	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
-		return nil, fmt.Errorf("failed to decode token response: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode token response: ", err.Error()))
 	}
 
 	// Calculate expiry time
@@ -1143,7 +1152,7 @@ func (p *Provider) ExchangeCodeForToken(
 
 	// Store the token in memory
 	if err := p.SetToken(token); err != nil {
-		return nil, fmt.Errorf("failed to store token: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to store token: ", err.Error()))
 	}
 
 	// Reset circuit breaker so previous auth failures don't block API calls
@@ -1179,7 +1188,7 @@ func (p *Provider) RefreshToken(
 
 	bodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to marshal request: ", err.Error()))
 	}
 
 	respBody, err := p.doTokenRequest(ctx, bodyBytes)
@@ -1197,7 +1206,7 @@ func (p *Provider) RefreshToken(
 	}
 
 	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
-		return nil, fmt.Errorf("failed to decode token response: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode token response: ", err.Error()))
 	}
 
 	// Calculate expiry time
@@ -1217,7 +1226,7 @@ func (p *Provider) RefreshToken(
 
 	// Store the new token in memory
 	if err := p.SetToken(token); err != nil {
-		return nil, fmt.Errorf("failed to store refreshed token: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to store refreshed token: ", err.Error()))
 	}
 
 	// Save token to disk for persistence
@@ -1292,12 +1301,12 @@ func (p *Provider) IsAuthenticated() bool {
 func (p *Provider) EnsureValidToken(ctx context.Context) error {
 	token := p.GetCurrentToken()
 	if token == nil {
-		return fmt.Errorf("no token available - please authenticate first")
+		return errors.New("no token available - please authenticate first")
 	}
 
 	if !token.IsValid() {
 		if token.RefreshToken == "" {
-			return fmt.Errorf("token expired and no refresh token available")
+			return errors.New("token expired and no refresh token available")
 		}
 
 		// Token is expired, try to refresh

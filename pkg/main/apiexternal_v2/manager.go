@@ -1,9 +1,11 @@
 package apiexternal_v2
 
 import (
-	"fmt"
+	"errors"
 	"maps"
 	"sync"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -131,7 +133,7 @@ func (cm *ClientManager) GetWatchlistProvider(name string) (WatchlistProvider, b
 func (cm *ClientManager) GetWatchlistProviderOrError(name string) (WatchlistProvider, error) {
 	provider, exists := cm.GetWatchlistProvider(name)
 	if !exists {
-		return nil, fmt.Errorf("watchlist provider '%s' not found", name)
+		return nil, errors.New(logger.JoinStrings("watchlist provider '", name, "' not found"))
 	}
 
 	return provider, nil
@@ -195,7 +197,7 @@ func (cm *ClientManager) GetNotificationProvider(name string) (NotificationProvi
 func (cm *ClientManager) GetNotificationProviderOrError(name string) (NotificationProvider, error) {
 	provider, exists := cm.GetNotificationProvider(name)
 	if !exists {
-		return nil, fmt.Errorf("notification provider '%s' not found", name)
+		return nil, errors.New(logger.JoinStrings("notification provider '", name, "' not found"))
 	}
 
 	return provider, nil

@@ -12,13 +12,20 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
-// normKeyPool provides reusable byte buffers for normalizeKey to reduce allocations.
-var normKeyPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 0, 256)
-		return &b
-	},
-}
+var (
+	normKeyPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, 0, 256)
+			return &b
+		},
+	}
+	compositeKeyPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, 0, 64) // Most composite keys are under 64 bytes
+			return &b
+		},
+	}
+)
 
 // normalizeKey converts a string to lowercase and trims whitespace for
 // case-insensitive lookups. Uses a fast path for already-lowercase ASCII
@@ -77,14 +84,6 @@ func normalizeKey(s string) string {
 	normKeyPool.Put(bufPtr)
 
 	return result
-}
-
-// compositeKeyPool provides reusable byte buffers for makeCompositeKey.
-var compositeKeyPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 0, 64) // Most composite keys are under 64 bytes
-		return &b
-	},
 }
 
 // makeCompositeKey creates a composite key from mediaID and listname for O(1) lookups

@@ -51,7 +51,6 @@ func (qual *Qualities) Gettypeidprioritysingle(
 // GetAudioFormatID looks up the audio format ID from the qualities table (type 5)
 // for the given format string. Returns 0 if no match is found.
 func GetAudioFormatID(format string) uint {
-	format = strings.ToLower(format)
 	for idx := range DBConnect.GetaudioformatsIn {
 		qual := &DBConnect.GetaudioformatsIn[idx]
 		if qual.Strings != "" && logger.SlicesContainsI(qual.StringsLowerSplitted, format) {

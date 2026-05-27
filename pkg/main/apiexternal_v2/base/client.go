@@ -5,9 +5,9 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -92,7 +92,7 @@ type BaseClient struct {
 	// Rate limiting (using slidingwindow)
 	rateLimiterHour  *slidingwindow.Limiter
 	rateLimiter24h   *slidingwindow.Limiter
-	rateLimiterTotal int64 // Use atomic counter for total requests
+	rateLimiterTotal atomic.Int64 // Use atomic counter for total requests
 
 	// Server-side rate limiting (HTTP 429 responses)
 	rateLimitedUntil atomic.Value // stores time.Time - when server rate limit expires
@@ -214,7 +214,7 @@ func (s *defaultOAuth2Storage) LoadToken(clientName string) (*oauth2.Token, erro
 
 	token, exists := s.tokens[clientName]
 	if !exists {
-		return nil, fmt.Errorf("token not found for client %s", clientName)
+		return nil, errors.New(logger.JoinStrings("token not found for client ", clientName))
 	}
 
 	return token, nil
@@ -235,9 +235,7 @@ var (
 	headerAcceptJSON       = []string{"application/json"}
 	headerContentTypeJSON  = []string{"application/json"}
 	headerAcceptEncodingGZ = []string{"gzip, deflate"}
-)
 
-var (
 	// Global default OAuth2 token storage (can be replaced with custom implementation).
 	defaultTokenStorage OAuth2TokenStorage = newDefaultOAuth2Storage()
 
@@ -387,7 +385,7 @@ func (bc *BaseClient) CheckFree() error {
 			Int("failure_count", failureCount).
 			Msg("Circuit breaker blocked request")
 
-		return fmt.Errorf("circuit breaker is open for %s", bc.config.Name)
+		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
 	}
 
 	// Check server-side rate limiting (HTTP 429)
@@ -419,7 +417,7 @@ func (bc *BaseClient) CheckFreeForDownload() error {
 			Int("failure_count", failureCount).
 			Msg("Circuit breaker blocked download request")
 
-		return fmt.Errorf("circuit breaker is open for %s", bc.config.Name)
+		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
 	}
 
 	// Check server-side rate limiting (HTTP 429)
@@ -441,7 +439,7 @@ func (bc *BaseClient) CheckFreeForDownload() error {
 func (bc *BaseClient) CheckFreeNonBlocking() error {
 	// Check circuit breaker (with nil protection)
 	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
-		return fmt.Errorf("circuit breaker is open for %s", bc.config.Name)
+		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
 	}
 
 	// Check server-side rate limiting (HTTP 429)
@@ -524,7 +522,7 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 			Int("failure_count", failureCount).
 			Msg("Circuit breaker blocked request")
 
-		return fmt.Errorf("circuit breaker is open for %s", bc.config.Name)
+		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
 	}
 
 	// Check server-side rate limiting (HTTP 429)
@@ -553,18 +551,22 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 		url = logger.JoinStrings(
 			bc.config.BaseURL,
-			strings.ReplaceAll(endpoint, bc.config.BaseURL, ""),
+			strings.TrimPrefix(endpoint, bc.config.BaseURL),
 		)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return fmt.Errorf("[%s] failed to create request: %w", bc.config.Name, err)
+		return errors.New(
+			logger.JoinStrings("[", bc.config.Name, "] failed to create request: ", err.Error()),
+		)
 	}
 
 	// Apply authentication
 	if err := bc.applyAuth(req); err != nil {
-		return fmt.Errorf("[%s] authentication failed: %w", bc.config.Name, err)
+		return errors.New(
+			logger.JoinStrings("[", bc.config.Name, "] authentication failed: ", err.Error()),
+		)
 	}
 
 	// Set default headers
@@ -629,11 +631,15 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 
 		bc.recordStats(false, duration.Milliseconds(), reqErr.Error())
 
-		return fmt.Errorf(
-			"[%s] request failed after %d attempts: %w",
-			bc.config.Name,
-			bc.config.MaxRetries+1,
-			reqErr,
+		return errors.New(
+			logger.JoinStrings(
+				"[",
+				bc.config.Name,
+				"] request failed after ",
+				strconv.Itoa(bc.config.MaxRetries+1),
+				" attempts: ",
+				reqErr.Error(),
+			),
 		)
 	}
 
@@ -660,10 +666,14 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 
 			bc.recordRequestOnly(duration.Milliseconds())
 
-			return fmt.Errorf(
-				"[%s] server rate limit (HTTP %d), request paused",
-				bc.config.Name,
-				resp.StatusCode,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] server rate limit (HTTP ",
+					strconv.Itoa(resp.StatusCode),
+					"), request paused",
+				),
 			)
 		}
 
@@ -704,7 +714,14 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 		if readErr != nil {
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
 
-			return fmt.Errorf("[%s] failed to read response: %w", bc.config.Name, readErr)
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] failed to read response: ",
+					readErr.Error(),
+				),
+			)
 		}
 
 		if err := json.Unmarshal(data, target); err != nil {
@@ -714,7 +731,14 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
 
-			return fmt.Errorf("[%s] failed to decode response: %w", bc.config.Name, err)
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] failed to decode response: ",
+					err.Error(),
+				),
+			)
 		}
 	}
 
@@ -762,7 +786,7 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 			Int("failure_count", failureCount).
 			Msg("Circuit breaker blocked request")
 
-		return fmt.Errorf("circuit breaker is open for %s", bc.config.Name)
+		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
 	}
 
 	// Check server-side rate limiting (HTTP 429)
@@ -791,18 +815,22 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 		url = logger.JoinStrings(
 			bc.config.BaseURL,
-			strings.ReplaceAll(endpoint, bc.config.BaseURL, ""),
+			strings.TrimPrefix(endpoint, bc.config.BaseURL),
 		)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return fmt.Errorf("[%s] failed to create request: %w", bc.config.Name, err)
+		return errors.New(
+			logger.JoinStrings("[", bc.config.Name, "] failed to create request: ", err.Error()),
+		)
 	}
 
 	// Apply authentication
 	if err := bc.applyAuth(req); err != nil {
-		return fmt.Errorf("[%s] authentication failed: %w", bc.config.Name, err)
+		return errors.New(
+			logger.JoinStrings("[", bc.config.Name, "] authentication failed: ", err.Error()),
+		)
 	}
 
 	// Set default headers — direct map assignment skips textproto.CanonicalMIMEHeaderKey
@@ -876,11 +904,15 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 
 		bc.recordStats(false, duration.Milliseconds(), reqErr.Error())
 
-		return fmt.Errorf(
-			"[%s] request failed after %d attempts: %w",
-			bc.config.Name,
-			bc.config.MaxRetries+1,
-			reqErr,
+		return errors.New(
+			logger.JoinStrings(
+				"[",
+				bc.config.Name,
+				"] request failed after ",
+				strconv.Itoa(bc.config.MaxRetries+1),
+				" attempts: ",
+				reqErr.Error(),
+			),
 		)
 	}
 
@@ -926,10 +958,14 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 					Msg("server rate limit: requests paused")
 			}
 
-			return fmt.Errorf(
-				"[%s] server rate limit (HTTP %d), requests paused",
-				bc.config.Name,
-				resp.StatusCode,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] server rate limit (HTTP ",
+					strconv.Itoa(resp.StatusCode),
+					"), requests paused",
+				),
 			)
 		}
 
@@ -985,7 +1021,14 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		if readErr != nil {
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
 
-			return fmt.Errorf("[%s] failed to read response: %w", bc.config.Name, readErr)
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] failed to read response: ",
+					readErr.Error(),
+				),
+			)
 		}
 
 		if err := json.Unmarshal(data, target); err != nil {
@@ -1008,7 +1051,14 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
 
-			return fmt.Errorf("[%s] failed to decode response: %w", bc.config.Name, err)
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] failed to decode response: ",
+					err.Error(),
+				),
+			)
 		}
 	}
 
@@ -1072,10 +1122,13 @@ func (bc *BaseClient) checkServerRateLimit() error {
 			// 	Time("rate_limited_until", until).
 			// 	Msg("Skipping request due to server rate limit (HTTP 429)")
 
-			return fmt.Errorf(
-				"[%s] server rate limit active, retry after %v",
-				bc.config.Name,
-				waitTime,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] server rate limit active, retry after ",
+					waitTime.String(),
+				),
 			)
 		}
 
@@ -1279,10 +1332,14 @@ func (bc *BaseClient) checkRateLimits() error {
 				bc.stats.NextAvailableAt = nextAvailable
 				bc.stats.mu.Unlock()
 
-				return fmt.Errorf(
-					"[%s] rate limit exceeded, next request available in %v (exceeds 30s grace period)",
-					bc.config.Name,
-					waitTime,
+				return errors.New(
+					logger.JoinStrings(
+						"[",
+						bc.config.Name,
+						"] rate limit exceeded, next request available in ",
+						waitTime.String(),
+						" (exceeds 30s grace period)",
+					),
 				)
 			}
 
@@ -1307,10 +1364,13 @@ func (bc *BaseClient) checkRateLimits() error {
 			bc.stats.NextAvailableAt = nextAvailable
 			bc.stats.mu.Unlock()
 
-			return fmt.Errorf(
-				"[%s] rate limit exceeded, grace period exhausted, next request available in %v",
-				bc.config.Name,
-				waitTime,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] rate limit exceeded, grace period exhausted, next request available in ",
+					waitTime.String(),
+				),
 			)
 		}
 	}
@@ -1329,7 +1389,7 @@ checkDailyLimit:
 				bc.stats.NextAvailableAt = nextAvailable
 				bc.stats.mu.Unlock()
 
-				return fmt.Errorf("[%s] daily rate limit exceeded, next request available in %v (exceeds 30s grace period)", bc.config.Name, waitTime)
+				return errors.New(logger.JoinStrings("[", bc.config.Name, "] daily rate limit exceeded, next request available in ", waitTime.String(), " (exceeds 30s grace period)"))
 			}
 
 			// Wait time is within grace period - retry every second
@@ -1353,19 +1413,19 @@ checkDailyLimit:
 			bc.stats.NextAvailableAt = nextAvailable
 			bc.stats.mu.Unlock()
 
-			return fmt.Errorf("[%s] daily rate limit exceeded, grace period exhausted, next request available in %v", bc.config.Name, waitTime)
+			return errors.New(logger.JoinStrings("[", bc.config.Name, "] daily rate limit exceeded, grace period exhausted, next request available in ", waitTime.String()))
 		}
 	}
 
 checkTotalLimit:
 	// Check total limit (no retry for absolute limits)
 	if bc.config.RateLimitPerTotal > 0 {
-		currentTotal := atomic.LoadInt64(&bc.rateLimiterTotal)
+		currentTotal := bc.rateLimiterTotal.Load()
 		if currentTotal >= int64(bc.config.RateLimitPerTotal) {
-			return fmt.Errorf("[%s] total rate limit exceeded (%d requests)", bc.config.Name, bc.config.RateLimitPerTotal)
+			return errors.New(logger.JoinStrings("[", bc.config.Name, "] total rate limit exceeded (", strconv.Itoa(bc.config.RateLimitPerTotal), " requests)"))
 		}
 
-		atomic.AddInt64(&bc.rateLimiterTotal, 1)
+		bc.rateLimiterTotal.Add(1)
 	}
 
 	return nil
@@ -1410,11 +1470,16 @@ func (bc *BaseClient) checkRateLimitsWithGracePeriod(gracePeriod time.Duration) 
 				bc.stats.NextAvailableAt = nextAvailable
 				bc.stats.mu.Unlock()
 
-				return fmt.Errorf(
-					"[%s] rate limit exceeded, next request available in %v (exceeds %v grace period)",
-					bc.config.Name,
-					waitTime,
-					gracePeriod,
+				return errors.New(
+					logger.JoinStrings(
+						"[",
+						bc.config.Name,
+						"] rate limit exceeded, next request available in ",
+						waitTime.String(),
+						" (exceeds ",
+						gracePeriod.String(),
+						" grace period)",
+					),
 				)
 			}
 
@@ -1439,11 +1504,15 @@ func (bc *BaseClient) checkRateLimitsWithGracePeriod(gracePeriod time.Duration) 
 			bc.stats.NextAvailableAt = nextAvailable
 			bc.stats.mu.Unlock()
 
-			return fmt.Errorf(
-				"[%s] rate limit exceeded, grace period (%v) exhausted, next request available in %v",
-				bc.config.Name,
-				gracePeriod,
-				waitTime,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] rate limit exceeded, grace period (",
+					gracePeriod.String(),
+					") exhausted, next request available in ",
+					waitTime.String(),
+				),
 			)
 		}
 	}
@@ -1462,7 +1531,7 @@ checkDailyLimit:
 				bc.stats.NextAvailableAt = nextAvailable
 				bc.stats.mu.Unlock()
 
-				return fmt.Errorf("[%s] daily rate limit exceeded, next request available in %v (exceeds %v grace period)", bc.config.Name, waitTime, gracePeriod)
+				return errors.New(logger.JoinStrings("[", bc.config.Name, "] daily rate limit exceeded, next request available in ", waitTime.String(), " (exceeds ", gracePeriod.String(), " grace period)"))
 			}
 
 			// Wait time is within grace period - retry every second
@@ -1486,19 +1555,28 @@ checkDailyLimit:
 			bc.stats.NextAvailableAt = nextAvailable
 			bc.stats.mu.Unlock()
 
-			return fmt.Errorf("[%s] daily rate limit exceeded, grace period (%v) exhausted, next request available in %v", bc.config.Name, gracePeriod, waitTime)
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] daily rate limit exceeded, grace period (",
+					gracePeriod.String(),
+					") exhausted, next request available in ",
+					waitTime.String(),
+				),
+			)
 		}
 	}
 
 checkTotalLimit:
 	// Check total limit (no retry for absolute limits)
 	if bc.config.RateLimitPerTotal > 0 {
-		currentTotal := atomic.LoadInt64(&bc.rateLimiterTotal)
+		currentTotal := bc.rateLimiterTotal.Load()
 		if currentTotal >= int64(bc.config.RateLimitPerTotal) {
-			return fmt.Errorf("[%s] total rate limit exceeded (%d requests)", bc.config.Name, bc.config.RateLimitPerTotal)
+			return errors.New(logger.JoinStrings("[", bc.config.Name, "] total rate limit exceeded (", strconv.Itoa(bc.config.RateLimitPerTotal), " requests)"))
 		}
 
-		atomic.AddInt64(&bc.rateLimiterTotal, 1)
+		bc.rateLimiterTotal.Add(1)
 	}
 
 	return nil
@@ -1524,10 +1602,16 @@ func (bc *BaseClient) checkRateLimitsNonBlocking() error {
 			bc.stats.NextAvailableAt = nextAvailable
 			bc.stats.mu.Unlock()
 
-			return fmt.Errorf(
-				"[%s] rate limit exceeded, next request available in %v (exceeds grace period)",
-				bc.config.Name,
-				waitTime,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] rate limit exceeded, next request available in ",
+					waitTime.String(),
+					" (exceeds ",
+					maxGracePeriod.String(),
+					" grace period)",
+				),
 			)
 		}
 	}
@@ -1543,10 +1627,16 @@ func (bc *BaseClient) checkRateLimitsNonBlocking() error {
 			bc.stats.NextAvailableAt = nextAvailable
 			bc.stats.mu.Unlock()
 
-			return fmt.Errorf(
-				"[%s] daily rate limit exceeded, next request available in %v (exceeds grace period)",
-				bc.config.Name,
-				waitTime,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] daily rate limit exceeded, next request available in ",
+					waitTime.String(),
+					" (exceeds ",
+					maxGracePeriod.String(),
+					" grace period)",
+				),
 			)
 		}
 	}
@@ -1554,12 +1644,16 @@ func (bc *BaseClient) checkRateLimitsNonBlocking() error {
 	// Check total limit (no retry for absolute limits)
 	// NOTE: Does NOT increment counter - this is a read-only pre-flight check
 	if bc.config.RateLimitPerTotal > 0 {
-		currentTotal := atomic.LoadInt64(&bc.rateLimiterTotal)
+		currentTotal := bc.rateLimiterTotal.Load()
 		if currentTotal >= int64(bc.config.RateLimitPerTotal) {
-			return fmt.Errorf(
-				"[%s] total rate limit exceeded (%d requests)",
-				bc.config.Name,
-				bc.config.RateLimitPerTotal,
+			return errors.New(
+				logger.JoinStrings(
+					"[",
+					bc.config.Name,
+					"] total rate limit exceeded (",
+					strconv.Itoa(bc.config.RateLimitPerTotal),
+					" requests)",
+				),
 			)
 		}
 	}
@@ -1655,7 +1749,7 @@ func (bc *BaseClient) getValidOAuthToken(ctx context.Context) (*oauth2.Token, er
 //   - Preserves old token on refresh failure for graceful degradation
 func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 	if bc.oauthConfig == nil {
-		return fmt.Errorf("OAuth2 not configured for %s", bc.config.Name)
+		return errors.New(logger.JoinStrings("OAuth2 not configured for ", bc.config.Name))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -1676,7 +1770,9 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 				Str("client", bc.config.Name).
 				Msg("Provider hook BeforeTokenRefresh failed")
 
-			return fmt.Errorf("[%s] provider hook failed: %w", bc.config.Name, err)
+			return errors.New(
+				logger.JoinStrings("[", bc.config.Name, "] provider hook failed: ", err.Error()),
+			)
 		}
 	}
 
@@ -1696,7 +1792,9 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 				Str("client", bc.config.Name).
 				Msg("Failed to refresh OAuth2 token using refresh token")
 
-			return fmt.Errorf("[%s] failed to refresh token: %w", bc.config.Name, err)
+			return errors.New(
+				logger.JoinStrings("[", bc.config.Name, "] failed to refresh token: ", err.Error()),
+			)
 		}
 	} else {
 		// Use client credentials flow (if no refresh token available)
@@ -1721,7 +1819,14 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 					Str("client", bc.config.Name).
 					Msg("Failed to obtain OAuth2 token using client credentials")
 
-				return fmt.Errorf("[%s] failed to obtain token: %w", bc.config.Name, err)
+				return errors.New(
+					logger.JoinStrings(
+						"[",
+						bc.config.Name,
+						"] failed to obtain token: ",
+						err.Error(),
+					),
+				)
 			}
 		}
 	}
@@ -1734,7 +1839,9 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 				Str("client", bc.config.Name).
 				Msg("Provider hook AfterTokenRefresh failed")
 
-			return fmt.Errorf("[%s] provider hook failed: %w", bc.config.Name, err)
+			return errors.New(
+				logger.JoinStrings("[", bc.config.Name, "] provider hook failed: ", err.Error()),
+			)
 		}
 	}
 
@@ -1764,7 +1871,13 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 // Example: After completing the OAuth2 authorization code flow in a web browser.
 func (bc *BaseClient) SetOAuthToken(token *oauth2.Token) error {
 	if bc.config.AuthType != AuthOAuth {
-		return fmt.Errorf("client %s is not configured for OAuth authentication", bc.config.Name)
+		return errors.New(
+			logger.JoinStrings(
+				"client ",
+				bc.config.Name,
+				" is not configured for OAuth authentication",
+			),
+		)
 	}
 
 	bc.oauthTokenLock.Lock()
@@ -1809,7 +1922,7 @@ func (bc *BaseClient) GetOAuthToken() *oauth2.Token {
 // Returns the authorization URL to redirect the user to.
 func (bc *BaseClient) GetOAuthAuthorizationURL(redirectURL, state string) (string, error) {
 	if bc.oauthConfig == nil {
-		return "", fmt.Errorf("OAuth2 not configured for %s", bc.config.Name)
+		return "", errors.New(logger.JoinStrings("OAuth2 not configured for ", bc.config.Name))
 	}
 
 	bc.oauthConfig.RedirectURL = redirectURL
@@ -1830,7 +1943,7 @@ func (bc *BaseClient) GetOAuthAuthorizationURL(redirectURL, state string) (strin
 // back with an authorization code.
 func (bc *BaseClient) ExchangeOAuthCode(ctx context.Context, code string) (*oauth2.Token, error) {
 	if bc.oauthConfig == nil {
-		return nil, fmt.Errorf("OAuth2 not configured for %s", bc.config.Name)
+		return nil, errors.New(logger.JoinStrings("OAuth2 not configured for ", bc.config.Name))
 	}
 
 	token, err := bc.oauthConfig.Exchange(ctx, code)
@@ -1840,7 +1953,9 @@ func (bc *BaseClient) ExchangeOAuthCode(ctx context.Context, code string) (*oaut
 			Str("client", bc.config.Name).
 			Msg("Failed to exchange OAuth2 authorization code")
 
-		return nil, fmt.Errorf("[%s] failed to exchange code: %w", bc.config.Name, err)
+		return nil, errors.New(
+			logger.JoinStrings("[", bc.config.Name, "] failed to exchange code: ", err.Error()),
+		)
 	}
 
 	// Save the token
@@ -1967,9 +2082,9 @@ func (bc *BaseClient) cleanupOldTimestamps() {
 // Must be called with bc.stats.mu already locked.
 func (bc *BaseClient) countRequestsSince(since time.Time) int64 {
 	count := int64(0)
-	for i := len(bc.stats.requestTimestamps) - 1; i >= 0; i-- {
+	for _, v := range slices.Backward(bc.stats.requestTimestamps) {
 		// Count timestamps that are at or after the since time
-		if bc.stats.requestTimestamps[i].Before(since) {
+		if v.Before(since) {
 			// We've reached timestamps older than our window, stop counting
 			break
 		}

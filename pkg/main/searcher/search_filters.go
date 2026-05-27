@@ -593,7 +593,7 @@ func (s *ConfigSearcher) checktitle(
 
 	entry.Info.StripTitlePrefixPostfixGetQual(qual)
 
-	wantedslug := logger.StringToSlug(entry.WantedTitle)
+	wantedslug := logger.StringToSlugCached(entry.WantedTitle)
 	if entry.WantedTitle != "" && qual.CheckTitle &&
 		database.ChecknzbtitleB(
 			entry.WantedTitle,

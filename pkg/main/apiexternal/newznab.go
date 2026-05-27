@@ -176,7 +176,7 @@ func processurl(
 ) (bool, string, error) {
 	c := Getnewznabclient(ind)
 	if c == nil {
-		return false, "", errors.New("no Client returned")
+		return false, "", errNoClientReturned
 	}
 
 	result, err := c.ExecuteRequest(context.Background(), urlv, tillid, ind, qual)
@@ -535,7 +535,7 @@ func QueryNewznabMovieImdb(
 
 	c := Getnewznabclient(cfgind)
 	if c == nil {
-		return false, "", errors.New("no Client returned")
+		return false, "", errNoClientReturned
 	}
 
 	var additionalQueryParams string

@@ -2,10 +2,13 @@ package tvmaze
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -166,7 +169,7 @@ func (p *Provider) GetSeasonDetails(
 		}
 	}
 
-	return nil, fmt.Errorf("season %d not found", seasonNumber)
+	return nil, errors.New(logger.JoinStrings("season ", strconv.Itoa(seasonNumber), " not found"))
 }
 
 // GetEpisodes retrieves all episodes for the given series.

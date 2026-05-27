@@ -13,6 +13,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 )
 
+var errListNotFound = errors.New("list not found")
+
 // SearchRSS searches the RSS feeds of the enabled Newznab indexers for the
 // given media type and quality configuration. It returns a ConfigSearcher
 // instance for managing the search, or an error if no search could be started.
@@ -444,7 +446,7 @@ func searchseason(
 	// Get list ID once
 	listid := database.GetMediaListIDGetListname(cfgp, &row.Num1)
 	if listid == -1 {
-		return errors.New("list not found")
+		return errListNotFound
 	}
 
 	// Date-identified series: search by name only, no season iteration

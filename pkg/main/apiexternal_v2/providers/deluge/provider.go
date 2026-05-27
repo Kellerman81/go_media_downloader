@@ -2,6 +2,7 @@ package deluge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -175,7 +176,7 @@ func (p *Provider) GetTorrentInfo(
 
 	data, ok := result.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
+		return nil, errors.New("unexpected response format")
 	}
 
 	return parseTorrentInfo(hash, data), nil
@@ -204,7 +205,7 @@ func (p *Provider) ListTorrents(
 
 	torrentsData, ok := result.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
+		return nil, errors.New("unexpected response format")
 	}
 
 	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(torrentsData))
@@ -279,7 +280,7 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 
 	data, ok := result.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
+		return nil, errors.New("unexpected response format")
 	}
 
 	status := &apiexternal_v2.DownloadClientStatus{
@@ -312,7 +313,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	}
 
 	if connected, ok := result.(bool); !ok || !connected {
-		return fmt.Errorf("not connected to daemon")
+		return errors.New("not connected to daemon")
 	}
 
 	return nil
@@ -333,11 +334,11 @@ func (p *Provider) authenticate(ctx context.Context) error {
 	if p.password != "" {
 		result, err := p.makeRPCCall(ctx, "auth.login", []any{p.password})
 		if err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
+			return errors.New(logger.JoinStrings("authentication failed: ", err.Error()))
 		}
 
 		if success, ok := result.(bool); !ok || !success {
-			return fmt.Errorf("authentication failed: invalid credentials")
+			return errors.New("authentication failed: invalid credentials")
 		}
 	}
 
@@ -383,7 +384,7 @@ func (p *Provider) authenticate(ctx context.Context) error {
 	// Connect to the daemon
 	_, err = p.makeRPCCall(ctx, "web.connect", []any{hostID})
 	if err != nil {
-		return fmt.Errorf("failed to connect to daemon: %w", err)
+		return errors.New(logger.JoinStrings("failed to connect to daemon: ", err.Error()))
 	}
 
 	p.sessionID = "authenticated"
@@ -422,7 +423,9 @@ func (p *Provider) makeRPCCall(ctx context.Context, method string, params []any)
 			}
 
 			if rpcResponse.Error != nil {
-				return fmt.Errorf("RPC error: %v", rpcResponse.Error)
+				return errors.New(
+					logger.JoinStrings("RPC error: ", fmt.Sprintf("%v", rpcResponse.Error)),
+				)
 			}
 
 			return nil

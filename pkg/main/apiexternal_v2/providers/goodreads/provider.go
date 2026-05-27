@@ -3,6 +3,7 @@ package goodreads
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -81,7 +82,7 @@ func (p *Provider) SearchBooks(
 	page int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("goodreads API key is required")
+		return nil, errors.New("goodreads API key is required")
 	}
 
 	endpoint := fmt.Sprintf("/search/index.xml?key=%s&q=%s",
@@ -110,7 +111,7 @@ func (p *Provider) SearchByISBN(
 	isbn string,
 ) (*apiexternal_v2.BookDetails, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("goodreads API key is required")
+		return nil, errors.New("goodreads API key is required")
 	}
 
 	endpoint := fmt.Sprintf("/book/isbn/%s?key=%s", isbn, p.apiKey)
@@ -139,7 +140,7 @@ func (p *Provider) GetBookByID(
 	id string,
 ) (*apiexternal_v2.BookDetails, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("goodreads API key is required")
+		return nil, errors.New("goodreads API key is required")
 	}
 
 	endpoint := fmt.Sprintf("/book/show/%s.xml?key=%s", id, p.apiKey)
@@ -164,7 +165,7 @@ func (p *Provider) GetAuthorByID(
 	id string,
 ) (*apiexternal_v2.AuthorDetails, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("goodreads API key is required")
+		return nil, errors.New("goodreads API key is required")
 	}
 
 	endpoint := fmt.Sprintf("/author/show/%s?key=%s", id, p.apiKey)
@@ -190,7 +191,7 @@ func (p *Provider) GetBooksByAuthor(
 	page int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("goodreads API key is required")
+		return nil, errors.New("goodreads API key is required")
 	}
 
 	endpoint := fmt.Sprintf("/author/list/%s?key=%s&format=xml", authorID, p.apiKey)
@@ -218,7 +219,7 @@ func (p *Provider) GetSeriesByID(
 	id string,
 ) (*apiexternal_v2.BookSeriesDetails, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("goodreads API key is required")
+		return nil, errors.New("goodreads API key is required")
 	}
 
 	endpoint := fmt.Sprintf("/series/%s?key=%s", id, p.apiKey)

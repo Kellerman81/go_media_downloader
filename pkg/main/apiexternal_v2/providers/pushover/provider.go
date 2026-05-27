@@ -2,7 +2,7 @@ package pushover
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -152,11 +152,11 @@ func (p *Provider) SendNotification(
 			// Custom response handler for form-encoded request
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return fmt.Errorf("failed to read response: %w", err)
+				return errors.New(logger.JoinStrings("failed to read response: ", err.Error()))
 			}
 
 			if err := json.Unmarshal(body, &pushoverResp); err != nil {
-				return fmt.Errorf("failed to decode response: %w", err)
+				return errors.New(logger.JoinStrings("failed to decode response: ", err.Error()))
 			}
 
 			return nil
@@ -177,7 +177,7 @@ func (p *Provider) SendNotification(
 			Timestamp: time.Now(),
 			Provider:  "pushover",
 			Error:     errorMsg,
-		}, fmt.Errorf("pushover notification failed: %s", errorMsg)
+		}, errors.New(logger.JoinStrings("pushover notification failed: ", errorMsg))
 	}
 
 	return &apiexternal_v2.NotificationResponse{
@@ -202,30 +202,30 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 		strings.NewReader(params.Encode()),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.New(logger.JoinStrings("failed to create request: ", err.Error()))
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := p.BaseClient.GetHTTPClient().Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return errors.New(logger.JoinStrings("request failed: ", err.Error()))
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return errors.New(logger.JoinStrings("failed to read response: ", err.Error()))
 	}
 
 	var pushoverResp pushoverResponse
 	if err := json.Unmarshal(body, &pushoverResp); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		return errors.New(logger.JoinStrings("failed to decode response: ", err.Error()))
 	}
 
 	if pushoverResp.Status != 1 {
 		errorMsg := logger.JoinStringsSep(pushoverResp.Errors, ", ")
-		return fmt.Errorf("pushover validation failed: %s", errorMsg)
+		return errors.New(logger.JoinStrings("pushover validation failed: ", errorMsg))
 	}
 
 	return nil
@@ -257,7 +257,7 @@ func (p *Provider) GetSounds(ctx context.Context) (map[string]string, error) {
 
 	if soundsResp.Status != 1 {
 		errorMsg := logger.JoinStringsSep(soundsResp.Errors, ", ")
-		return nil, fmt.Errorf("pushover sounds request failed: %s", errorMsg)
+		return nil, errors.New(logger.JoinStrings("pushover sounds request failed: ", errorMsg))
 	}
 
 	return soundsResp.Sounds, nil

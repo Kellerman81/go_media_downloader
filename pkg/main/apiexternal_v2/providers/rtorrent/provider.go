@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -314,7 +316,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	}
 
 	if !status.Connected {
-		return fmt.Errorf("not connected: %s", status.Message)
+		return errors.New(logger.JoinStrings("not connected: ", status.Message))
 	}
 
 	return nil
@@ -360,7 +362,7 @@ func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []a
 	// Marshal to XML
 	xmlData, err := xml.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("failed to marshal XML-RPC request: %w", err)
+		return errors.New(logger.JoinStrings("failed to marshal XML-RPC request: ", err.Error()))
 	}
 
 	// Prepare headers with authentication
@@ -386,27 +388,34 @@ func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []a
 			if resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
 
-				return fmt.Errorf(
-					"HTTP request failed with status %d: %s",
-					resp.StatusCode,
-					string(body),
+				return errors.New(
+					logger.JoinStrings(
+						"HTTP request failed with status ",
+						strconv.Itoa(resp.StatusCode),
+						": ",
+						string(body),
+					),
 				)
 			}
 
 			// Read and parse XML response
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return fmt.Errorf("failed to read response body: %w", err)
+				return errors.New(logger.JoinStrings("failed to read response body: ", err.Error()))
 			}
 
 			var response xmlRPCResponse
 			if err := xml.Unmarshal(body, &response); err != nil {
-				return fmt.Errorf("failed to unmarshal XML-RPC response: %w", err)
+				return errors.New(
+					logger.JoinStrings("failed to unmarshal XML-RPC response: ", err.Error()),
+				)
 			}
 
 			// Check for fault
 			if response.Fault != nil {
-				return fmt.Errorf("XML-RPC fault: %v", response.Fault.Value)
+				return errors.New(
+					logger.JoinStrings("XML-RPC fault: ", fmt.Sprintf("%v", response.Fault.Value)),
+				)
 			}
 
 			return nil

@@ -3,6 +3,7 @@ package tmdb
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"github.com/goccy/go-json"
 )
@@ -22,9 +24,11 @@ import (
 
 // Provider implements the MetadataProvider interface for TMDB.
 type Provider struct {
-	apiKey     string
 	baseClient *base.BaseClient
 	baseURL    string
+	apiKey     string
+	bearerAuth string            // "Bearer <apiKey>" pre-computed to avoid per-request allocation
+	headers    map[string]string // pre-allocated, constant across all requests
 }
 
 // NewProviderWithConfig creates a new TMDB metadata provider with full configuration including
@@ -43,10 +47,17 @@ func NewProviderWithConfig(config base.ClientConfig, apiKey string) *Provider {
 	// Create base client with full infrastructure (rate limiting, circuit breaker, etc.)
 	baseClient := base.NewBaseClient(config)
 
+	bearer := "Bearer " + apiKey
+
 	return &Provider{
 		apiKey:     apiKey,
 		baseClient: baseClient,
 		baseURL:    config.BaseURL,
+		bearerAuth: bearer,
+		headers: map[string]string{
+			"Authorization": bearer,
+			"Accept":        "application/json",
+		},
 	}
 }
 
@@ -205,7 +216,9 @@ func (p *Provider) FindSeriesByTVDbID(
 	}
 
 	if len(response.TVResults) == 0 {
-		return nil, fmt.Errorf("no series found with TVDb ID %d", tvdbID)
+		return nil, errors.New(
+			logger.JoinStrings("no series found with TVDb ID ", strconv.Itoa(tvdbID)),
+		)
 	}
 
 	// Get full details for the first result
@@ -244,7 +257,7 @@ func (p *Provider) GetTVExternal(ctx context.Context, tvID int) (*TVExternalIDs,
 
 	var response tmdbExternalIDs
 	if err := p.makeRequest(ctx, url, &response); err != nil {
-		return nil, fmt.Errorf("failed to get TV external IDs: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to get TV external IDs: ", err.Error()))
 	}
 
 	return &TVExternalIDs{
@@ -667,7 +680,7 @@ func (p *Provider) RemoveFromTMDBList(ctx context.Context, listID int, mediaID i
 
 	bodyBytes, err := json.Marshal(requestBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return errors.New(logger.JoinStrings("failed to marshal request: ", err.Error()))
 	}
 
 	headers := map[string]string{
@@ -684,7 +697,9 @@ func (p *Provider) RemoveFromTMDBList(ctx context.Context, listID int, mediaID i
 		nil,
 		func(resp *http.Response) error {
 			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-				return fmt.Errorf("TMDB API returned status %d", resp.StatusCode)
+				return errors.New(
+					logger.JoinStrings("TMDB API returned status ", strconv.Itoa(resp.StatusCode)),
+				)
 			}
 
 			return nil
@@ -812,18 +827,14 @@ func (p *Provider) makeRequest(ctx context.Context, url string, target any) erro
 		endpoint = after // +3 to skip over "/3/"
 	}
 
-	// Use BaseClient's MakeRequestWithHeaders with custom Bearer token
 	return p.baseClient.MakeRequestWithHeaders(
 		ctx,
 		"GET",
-		"/"+endpoint, // Add leading slash for proper URL construction
+		"/"+endpoint,
 		nil,
 		target,
 		nil,
-		map[string]string{
-			"Authorization": "Bearer " + p.apiKey,
-			"Accept":        "application/json",
-		},
+		p.headers,
 	)
 }
 

@@ -16,6 +16,11 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
 
+var (
+	errDownloaderTemplateNotFound = errors.New("downloader template not found")
+	errUnknownDownloader          = errors.New("unknown downloader")
+)
+
 type downloadertype struct {
 	Dbmovie        database.Dbmovie
 	Dbserie        database.Dbserie
@@ -93,14 +98,14 @@ func (d *downloadertype) downloadNzb() {
 
 		if d.Quality.Indexer[0].CfgPath == nil {
 			logger.Logtype("error", 0).
-				Err(errors.New("path template not found")).
+				Err(logger.ErrPathTemplateNotFound).
 				Msg("Error get Nzb Config")
 			return
 		}
 
 		if d.Quality.Indexer[0].CfgDownloader == nil {
 			logger.Logtype("error", 0).
-				Err(errors.New("downloader template not found")).
+				Err(errDownloaderTemplateNotFound).
 				Msg("Error get Nzb Config")
 			return
 		}
@@ -148,7 +153,7 @@ func (d *downloadertype) downloadNzb() {
 		err = d.downloadByDeluge()
 	default:
 		logger.Logtype("error", 0).
-			Err(errors.New("unknown downloader")).
+			Err(errUnknownDownloader).
 			Msg("Download")
 		return
 	}

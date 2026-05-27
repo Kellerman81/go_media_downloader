@@ -22,6 +22,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/mozillazg/go-unidecode/table"
 	"github.com/rs/zerolog"
 )
@@ -344,6 +345,7 @@ var (
 	ErrNotFoundAudiobook      = errors.New("audiobook not found")
 	ErrNotFoundDbalbum        = errors.New("dbalbum not found")
 	ErrNotFoundAlbum          = errors.New("album not found")
+	ErrPathTemplateNotFound   = errors.New("path template not found")
 	ErrListnameEmpty          = errors.New("listname empty")
 	ErrListnameTemplateEmpty  = errors.New("listname template empty")
 	ErrTvdbEmpty              = errors.New("tvdb empty")
@@ -442,11 +444,19 @@ var (
 		'>':  {},
 		'|':  {},
 	}
+
+	slugCache *ristretto.Cache[string, string]
 )
 
 // initializePools initializes the object pools safely with sync.Once.
 func initializePools() {
 	poolsOnce.Do(func() {
+		slugCache, _ = ristretto.NewCache(&ristretto.Config[string, string]{
+			NumCounters: 327_680, // 10x expected items (32768)
+			MaxCost:     1 << 20, // 1MB
+			BufferItems: 64,
+		})
+
 		PlAddBuffer.Init(200, 10, func(b *AddBuffer) {
 			if b.Cap() < 900 {
 				b.Grow(900)
@@ -653,6 +663,30 @@ func BytesToString(b []byte) string {
 	bld.Write(b)
 
 	return bld.String()
+}
+
+// StringToSlugCached is StringToSlug with a bounded global memo cache.
+// Use this in tight loops where the same input recurs (artist, album, author names).
+func StringToSlugCached(instr string) string {
+	if v, ok := slugCache.Get(instr); ok {
+		return v
+	}
+
+	slug := StringToSlug(instr)
+	slugCache.SetWithTTL(instr, slug, 1, 8*time.Hour)
+
+	return slug
+}
+
+func StringToSlugCachedP(instr *string) string {
+	if v, ok := slugCache.Get(*instr); ok {
+		return v
+	}
+
+	slug := StringToSlug(*instr)
+	slugCache.SetWithTTL(*instr, slug, 1, 8*time.Hour)
+
+	return slug
 }
 
 // StringToSlug converts the given string to a slug format by replacing
@@ -1076,7 +1110,27 @@ func HasSuffixI(s, suffix string) bool {
 // ExtToFormat converts a file extension to a lowercase format string without
 // the leading dot, e.g. ".MP3" → "mp3", "FLAC" → "flac".
 func ExtToFormat(ext string) string {
-	return strings.ToLower(strings.TrimPrefix(ext, "."))
+	ext = TrimPrefixI(ext, ".")
+	for i := range len(ext) {
+		if ext[i] >= 'A' && ext[i] <= 'Z' {
+			return strings.ToLower(ext)
+		}
+	}
+
+	return ext
+}
+
+// FileExt returns the lowercased extension of p (e.g. ".flac"), avoiding
+// a strings.ToLower allocation when the extension is already all-lowercase.
+func FileExt(p string) string {
+	ext := path.Ext(p)
+	for i := range len(ext) {
+		if ext[i] >= 'A' && ext[i] <= 'Z' {
+			return strings.ToLower(ext)
+		}
+	}
+
+	return ext
 }
 
 // TrimPrefixI returns s with prefix removed using a case-insensitive match,
@@ -1245,6 +1299,87 @@ func IndexI(a, b string) int {
 	}
 
 	return bytes.Index(bufa.Bytes(), bufb.Bytes())
+}
+
+// LastIndexI searches for the last case-insensitive instance of b in a.
+// It returns the byte index of the last match, or -1 if no match is found.
+func LastIndexI(a, b string) int {
+	if i := strings.LastIndex(a, b); i != -1 {
+		return i
+	}
+
+	if len(b) > len(a) {
+		return -1
+	}
+
+	hasUppera, hasUpperb := false, false
+	isASCIIb := true
+
+	for _, c := range a {
+		if c >= utf8.RuneSelf {
+			if _, ok := diacriticslowermap[c]; !ok {
+				break
+			}
+		}
+
+		hasUppera = hasUppera || ('A' <= c && c <= 'Z') || c == 'Ö' || c == 'Ü' || c == 'Ä'
+	}
+
+	for _, c := range b {
+		if c >= utf8.RuneSelf {
+			_, ok := diacriticslowermap[c]
+			if !ok {
+				isASCIIb = false
+				break
+			}
+		}
+
+		hasUpperb = hasUpperb || ('A' <= c && c <= 'Z') || c == 'Ö' || c == 'Ü' || c == 'Ä'
+	}
+
+	if !isASCIIb {
+		return strings.LastIndex(strings.Map(unicode.ToLower, a), strings.Map(unicode.ToLower, b))
+	}
+
+	if !hasUppera && !hasUpperb {
+		return strings.LastIndex(a, b)
+	}
+
+	initializePools()
+
+	bufa := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(bufa)
+
+	for _, c := range a {
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		} else if c >= utf8.RuneSelf {
+			d, ok := diacriticslowermap[c]
+			if ok {
+				c = d
+			}
+		}
+
+		bufa.WriteRune(c)
+	}
+
+	bufb := PlAddBuffer.Get()
+	defer PlAddBuffer.Put(bufb)
+
+	for _, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		} else if c >= utf8.RuneSelf {
+			d, ok := diacriticslowermap[c]
+			if ok {
+				c = d
+			}
+		}
+
+		bufb.WriteRune(c)
+	}
+
+	return bytes.LastIndex(bufa.Bytes(), bufb.Bytes())
 }
 
 // Int64ToUint converts an int64 to a uint, returning 0 if the input is negative.

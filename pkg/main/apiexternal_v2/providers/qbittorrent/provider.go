@@ -2,6 +2,7 @@ package qbittorrent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -62,7 +63,7 @@ func NewProvider(host string, port int, username, password string, useSSL bool) 
 
 	cookieJar, err := cookiejar.New(&cookiejar.Options{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to create cookie jar: ", err.Error()))
 	}
 
 	baseClient := base.NewBaseClient(config)
@@ -129,7 +130,7 @@ func (p *Provider) AddTorrent(
 			Success:  false,
 			Provider: "qbittorrent",
 			Error:    fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body)),
-		}, fmt.Errorf("failed to add torrent: HTTP %d", resp.StatusCode)
+		}, errors.New(logger.JoinStrings("failed to add torrent: HTTP ", strconv.Itoa(resp.StatusCode)))
 	}
 
 	return &apiexternal_v2.TorrentAddResponse{
@@ -155,11 +156,11 @@ func (p *Provider) GetTorrentInfo(
 
 	var torrents []qbtTorrent
 	if err := json.NewDecoder(resp.Body).Decode(&torrents); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode response: ", err.Error()))
 	}
 
 	if len(torrents) == 0 {
-		return nil, fmt.Errorf("torrent not found")
+		return nil, errors.New("torrent not found")
 	}
 
 	return convertTorrentInfo(&torrents[0]), nil
@@ -187,7 +188,7 @@ func (p *Provider) ListTorrents(
 
 	var qbtTorrents []qbtTorrent
 	if err := json.NewDecoder(resp.Body).Decode(&qbtTorrents); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode response: ", err.Error()))
 	}
 
 	torrents := make([]apiexternal_v2.TorrentInfo, len(qbtTorrents))
@@ -216,7 +217,9 @@ func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to pause torrent: HTTP %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings("failed to pause torrent: HTTP ", strconv.Itoa(resp.StatusCode)),
+		)
 	}
 
 	return nil
@@ -237,7 +240,9 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to resume torrent: HTTP %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings("failed to resume torrent: HTTP ", strconv.Itoa(resp.StatusCode)),
+		)
 	}
 
 	return nil
@@ -261,7 +266,9 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to remove torrent: HTTP %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings("failed to remove torrent: HTTP ", strconv.Itoa(resp.StatusCode)),
+		)
 	}
 
 	return nil
@@ -281,7 +288,7 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 
 	var info qbtTransferInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to decode response: ", err.Error()))
 	}
 
 	// Get version
@@ -315,7 +322,9 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("qBittorrent test failed: HTTP %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings("qBittorrent test failed: HTTP ", strconv.Itoa(resp.StatusCode)),
+		)
 	}
 
 	return nil
@@ -340,12 +349,14 @@ func (p *Provider) ensureAuthenticated(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("authentication failed: HTTP %d", resp.StatusCode)
+		return errors.New(
+			logger.JoinStrings("authentication failed: HTTP ", strconv.Itoa(resp.StatusCode)),
+		)
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	if strings.TrimSpace(string(body)) == "Fails." {
-		return fmt.Errorf("invalid username or password")
+		return errors.New("invalid username or password")
 	}
 
 	p.authenticated = true

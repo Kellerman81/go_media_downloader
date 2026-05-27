@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/goccy/go-json"
 )
 
@@ -128,16 +130,18 @@ func (p *Provider) GetWatchlist(
 		nil,
 		func(resp *http.Response) error {
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("plex API returned status %d", resp.StatusCode)
+				return errors.New(
+					logger.JoinStrings("plex API returned status ", strconv.Itoa(resp.StatusCode)),
+				)
 			}
 
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return fmt.Errorf("failed to read response: %w", err)
+				return errors.New(logger.JoinStrings("failed to read response: ", err.Error()))
 			}
 
 			if err := json.Unmarshal(body, &jsonResp); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
+				return errors.New(logger.JoinStrings("failed to parse JSON: ", err.Error()))
 			}
 
 			return nil
@@ -145,7 +149,7 @@ func (p *Provider) GetWatchlist(
 		headers,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch watchlist: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to fetch watchlist: ", err.Error()))
 	}
 
 	items := make([]apiexternal_v2.WatchlistItem, 0, len(jsonResp.MediaContainer.Metadata))
@@ -203,7 +207,7 @@ func (p *Provider) AddToWatchlist(
 	itemType string,
 	id int,
 ) error {
-	return fmt.Errorf("add to watchlist not implemented for Plex")
+	return errors.New("add to watchlist not implemented for Plex")
 }
 
 // RemoveFromWatchlist removes an item from the Plex watchlist.
@@ -213,5 +217,5 @@ func (p *Provider) RemoveFromWatchlist(
 	itemType string,
 	id int,
 ) error {
-	return fmt.Errorf("remove from watchlist not implemented for Plex")
+	return errors.New("remove from watchlist not implemented for Plex")
 }

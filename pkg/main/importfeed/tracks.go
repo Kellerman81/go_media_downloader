@@ -351,9 +351,8 @@ func findASINByTitleAuthor(
 				continue
 			}
 
-			rTitleLower := strings.ToLower(entry.results[j].Title)
-			if !strings.Contains(rTitleLower, titleKey) &&
-				!strings.Contains(titleKey, rTitleLower) {
+			if !logger.ContainsI(entry.results[j].Title, titleKey) &&
+				!logger.ContainsI(titleKey, entry.results[j].Title) {
 				continue
 			}
 
@@ -361,9 +360,8 @@ func findASINByTitleAuthor(
 				authorMatched := false
 				// Exact substring check against Authors.
 				for k := range entry.results[j].Authors {
-					aLower := strings.ToLower(entry.results[j].Authors[k])
-					if strings.Contains(aLower, authorLower) ||
-						strings.Contains(authorLower, aLower) {
+					if logger.ContainsI(entry.results[j].Authors[k], authorLower) ||
+						logger.ContainsI(authorLower, entry.results[j].Authors[k]) {
 						authorMatched = true
 						break
 					}
@@ -381,10 +379,7 @@ func findASINByTitleAuthor(
 						}
 
 						for k := range entry.results[j].Authors {
-							if strings.Contains(
-								strings.ToLower(entry.results[j].Authors[k]),
-								word,
-							) {
+							if logger.ContainsI(entry.results[j].Authors[k], word) {
 								authorMatched = true
 								break
 							}
@@ -392,10 +387,7 @@ func findASINByTitleAuthor(
 
 						if !authorMatched {
 							for _, series := range []string{entry.results[j].SeriesName, entry.results[j].Series} {
-								if strings.Contains(
-									strings.ToLower(series),
-									word,
-								) {
+								if logger.ContainsI(series, word) {
 									authorMatched = true
 									break
 								}

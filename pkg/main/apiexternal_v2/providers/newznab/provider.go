@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -155,8 +154,8 @@ func NewProvider(config ProviderConfig) *Provider {
 		maxAge:            config.MaxAge,
 		maxEntries:        config.MaxEntries,
 		addQuotesForTitle: config.AddQuotesForTitle,
-		isTorznab: strings.Contains(strings.ToLower(config.BaseURL), "torznab") ||
-			strings.Contains(strings.ToLower(config.BaseURL), "torrent"),
+		isTorznab: logger.ContainsI(config.BaseURL, "torznab") ||
+			logger.ContainsI(config.BaseURL, "torrent"),
 	}
 
 	// Fetch indexer capabilities and cache supported category IDs for resolution inference.
@@ -194,102 +193,128 @@ func (p *Provider) Search(
 	request apiexternal_v2.IndexerSearchRequest,
 	ind *config.IndexersConfig, qual *config.QualityConfig,
 ) ([]apiexternal_v2.Nzbwithprio, error) {
-	// Build URL parameters following the old buildurlnew logic
-	params := url.Values{}
+	// Build the query string directly into a pooled buffer to avoid url.Values
+	// allocations (each Set call allocates a []string{value}).
+	buf := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(buf)
 
-	// Add API key with custom parameter name if configured
+	var intBuf [20]byte // stack buffer for integer → ASCII conversion
+
+	writeParam := func(key, value string) {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+
+		buf.WriteString(url.QueryEscape(key))
+		buf.WriteByte('=')
+		buf.WriteString(url.QueryEscape(value))
+	}
+
+	writeSafe := func(key, value string) { // use when value is known URL-safe
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+
+		buf.WriteString(key)
+		buf.WriteByte('=')
+		buf.WriteString(value)
+	}
+
+	writeInt := func(key string, n int) {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+
+		buf.WriteString(key)
+		buf.WriteByte('=')
+		buf.Write(strconv.AppendInt(intBuf[:0], int64(n), 10))
+	}
+
+	// API key
 	apiKeyParam := "apikey"
 	if p.customAPI != "" {
 		apiKeyParam = p.customAPI
 	}
 
-	params.Set(apiKeyParam, p.apiKey)
+	writeParam(apiKeyParam, p.apiKey)
 
-	// Determine search type from request or default to "search"
+	// Determine search type
 	searchType := "search"
 	if request.SearchType != "" {
 		searchType = request.SearchType
 	}
 
-	// Set search type based on what parameters are provided
 	if request.IMDBID != "" {
 		searchType = "movie"
 
-		params.Set("imdbid", request.IMDBID)
+		writeSafe("imdbid", request.IMDBID) // tt + digits, always URL-safe
 	} else if request.TVDBID > 0 {
 		searchType = "tvsearch"
 
-		params.Set("tvdbid", strconv.Itoa(request.TVDBID))
+		writeInt("tvdbid", request.TVDBID)
 	}
 
-	// Set the search type parameter
-	params.Set("t", searchType)
+	writeSafe("t", searchType) // "search"/"movie"/"tvsearch" always URL-safe
 
-	// Add query if provided, with optional quotes
 	if request.Query != "" {
 		query := request.Query
 		if p.addQuotesForTitle {
 			query = `"` + query + `"`
 		}
 
-		params.Set("q", query)
+		writeParam("q", query)
 	}
 
-	// Add season/episode for TV searches
 	if request.Season != "" {
-		params.Set("season", request.Season)
+		writeSafe("season", request.Season)
 	}
 
 	if request.Episode != "" {
-		params.Set("ep", request.Episode)
+		writeSafe("ep", request.Episode)
 	}
 
-	// Add categories
 	if len(request.Categories) > 0 {
-		params.Set("cat", logger.JoinStringsSep(request.Categories, ","))
+		writeSafe("cat", logger.JoinStringsSep(request.Categories, ","))
 	} else if len(p.categories) > 0 {
-		params.Set("cat", logger.JoinStringsSep(p.categories, ","))
+		writeSafe("cat", logger.JoinStringsSep(p.categories, ","))
 	}
 
-	// Add limits - use provider default if not specified in request
 	limit := request.Limit
 	if limit == 0 && p.maxEntries > 0 {
 		limit = int(p.maxEntries)
 	}
 
 	if limit > 0 {
-		params.Set("limit", strconv.Itoa(limit))
+		writeInt("limit", limit)
 	}
 
 	if request.Offset > 0 {
-		params.Set("offset", strconv.Itoa(request.Offset))
+		writeInt("offset", request.Offset)
 	}
 
-	// Add max age filter - use provider default if not specified in request
 	maxAge := request.MaxAge
 	if maxAge == 0 && p.maxAge > 0 {
 		maxAge = int(p.maxAge)
 	}
 
 	if maxAge > 0 {
-		params.Set("maxage", strconv.Itoa(maxAge))
+		writeInt("maxage", maxAge)
 	}
 
-	// Add download flag (from old buildurlnew)
-	params.Set("dl", "1")
+	writeSafe("dl", "1")
 
-	// Extract raw additional query params if provided
-	// This handles AdditionalQueryParams from quality indexer config (format: "&param=value&param2=value2")
-	rawParams := ""
+	// Collect additional raw params from options; append them after the built query.
 	for k, v := range request.Options {
 		if k == "_raw_params" || k == "AdditionalQueryParams" {
-			rawParams = v
+			buf.WriteString(v) // already has "&" prefix
 		} else {
-			params.Set(k, v)
+			writeParam(k, v)
 		}
 	}
 
-	return p.MakeSearchRequest(ctx, params, rawParams, ind, qual)
+	// Pass nil url.Values (encodes to "") so MakeSearchRequest appends our
+	// pre-built query directly after "?".
+	return p.MakeSearchRequest(ctx, nil, buf.String(), ind, qual)
 }
 
 // SearchMovies searches for movies by title and year.
@@ -454,62 +479,96 @@ func (p *Provider) GetRSSFeed(
 	tillid string,
 	ind *config.IndexersConfig, qual *config.QualityConfig,
 ) ([]apiexternal_v2.Nzbwithprio, error) {
-	params := url.Values{}
+	buf := logger.PlAddBuffer.Get()
+	defer logger.PlAddBuffer.Put(buf)
 
-	// Add API key with custom parameter name if configured
+	var intBuf [20]byte
+
+	writeSafe := func(key, value string) {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+
+		buf.WriteString(key)
+		buf.WriteByte('=')
+		buf.WriteString(value)
+	}
+
+	writeParam := func(key, value string) {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+
+		buf.WriteString(url.QueryEscape(key))
+		buf.WriteByte('=')
+		buf.WriteString(url.QueryEscape(value))
+	}
+
+	writeInt := func(key string, n int) {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+
+		buf.WriteString(key)
+		buf.WriteByte('=')
+		buf.Write(strconv.AppendInt(intBuf[:0], int64(n), 10))
+	}
+
+	// API key
 	apiKeyParam := "apikey"
 	if p.customAPI != "" {
 		apiKeyParam = p.customAPI
 	}
 
-	params.Set(apiKeyParam, p.apiKey)
+	writeParam(apiKeyParam, p.apiKey)
 
-	// Use custom RSS category parameter if configured (default is "t")
+	// RSS category parameter (default "t"); trim surrounding & and = if present
 	categoryParam := "t"
 	if p.customRSSCategory != "" {
 		categoryParam = strings.TrimPrefix(p.customRSSCategory, "&")
 		categoryParam = strings.TrimSuffix(categoryParam, "=")
 	}
 
-	params.Set(categoryParam, "search")
+	writeSafe(categoryParam, "search")
 
-	// Add categories
+	// Categories
 	if len(categories) > 0 {
-		params.Set("cat", logger.JoinStringsSep(categories, ","))
+		writeSafe("cat", logger.JoinStringsSep(categories, ","))
 	} else if len(p.categories) > 0 {
-		params.Set("cat", logger.JoinStringsSep(p.categories, ","))
+		writeSafe("cat", logger.JoinStringsSep(p.categories, ","))
 	}
 
-	// Add limit - use provider default if not specified
+	// Limit
 	if limit == 0 && p.maxEntries > 0 {
 		limit = int(p.maxEntries)
 	}
 
 	if limit > 0 {
-		params.Set("limit", strconv.Itoa(limit))
+		writeInt("limit", limit)
 	}
 
-	// Add max age if configured
+	// Max age
 	if p.maxAge > 0 {
-		params.Set("maxage", strconv.Itoa(int(p.maxAge)))
+		writeInt("maxage", int(p.maxAge))
 	}
 
-	// Add tillid parameter if provided (only fetch entries newer than this ID)
+	// tillid
 	if tillid != "" {
-		params.Set("tillid", tillid)
+		writeSafe("tillid", tillid)
 	}
 
-	// Add download flag
-	params.Set("dl", "1")
+	writeSafe("dl", "1")
 
-	// Extract additional params if provided
-	rawParams := ""
-	if len(additionalParams) > 0 {
-		rawParams = additionalParams
+	if p.outputAsJSON {
+		writeSafe("o", "json")
 	}
 
-	// Use custom RSS URL or makeSearchRequest for RSS feeds
-	return p.makeRSSRequest(ctx, params, rawParams, tillid, ind, qual)
+	// Append raw additional params (already have & prefix)
+	if additionalParams != "" {
+		buf.WriteString(additionalParams)
+	}
+
+	return p.makeRSSRequest(ctx, nil, buf.String(), tillid, ind, qual)
 }
 
 // TestConnection validates connectivity.
@@ -535,10 +594,10 @@ func (p *Provider) MakeSearchRequest(
 	var requestURL string
 	if p.customURL != "" {
 		// Use custom URL path if configured
-		requestURL = p.baseURL + p.customURL + "?" + params.Encode()
+		requestURL = logger.JoinStrings(p.baseURL, p.customURL, "?", params.Encode())
 	} else {
 		// Default to /api
-		requestURL = p.baseURL + "/api?" + params.Encode()
+		requestURL = logger.JoinStrings(p.baseURL, "/api?", params.Encode())
 	}
 
 	// Append raw additional query params if provided (from AdditionalQueryParams)
@@ -577,14 +636,14 @@ func (p *Provider) makeRSSRequest(
 		if strings.HasPrefix(p.customRSSURL, "http://") ||
 			strings.HasPrefix(p.customRSSURL, "https://") {
 			// Absolute URL
-			requestURL = p.customRSSURL + "?" + params.Encode()
+			requestURL = logger.JoinStrings(p.customRSSURL, "?", params.Encode())
 		} else {
 			// Relative path
-			requestURL = p.baseURL + p.customRSSURL + "?" + params.Encode()
+			requestURL = logger.JoinStrings(p.baseURL, p.customRSSURL, "?", params.Encode())
 		}
 	} else {
 		// Default to /rss
-		requestURL = p.baseURL + "/rss?" + params.Encode()
+		requestURL = logger.JoinStrings(p.baseURL, "/rss?", params.Encode())
 	}
 
 	// Append raw additional query params if provided (from AdditionalQueryParams)
@@ -710,7 +769,7 @@ func (p *Provider) parseXMLResponse(
 				break
 			}
 
-			return nil, fmt.Errorf("failed to parse XML: %w", err)
+			return nil, errors.New(logger.JoinStrings("failed to parse XML: ", err.Error()))
 		}
 
 		switch t := token.(type) {
@@ -943,7 +1002,7 @@ func (p *Provider) parseJSONResponse(
 	// Read the body once since we may need to try multiple formats
 	bodyBytes, err := io.ReadAll(body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, errors.New(logger.JoinStrings("failed to read response body: ", err.Error()))
 	}
 
 	// Try format 1 first (nested channel structure)
@@ -957,7 +1016,9 @@ func (p *Provider) parseJSONResponse(
 	// Try format 2 (flat structure)
 	var format2 searchResponseJSON2
 	if err := json.Unmarshal(bodyBytes, &format2); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON in any supported format: %w", err)
+		return nil, errors.New(
+			logger.JoinStrings("failed to parse JSON in any supported format: ", err.Error()),
+		)
 	}
 
 	if len(format2.Item) == 0 {

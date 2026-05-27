@@ -2,7 +2,6 @@ package apiexternal
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"time"
 
@@ -161,7 +160,7 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 		return series, nil
 	}
 
-	return nil, errors.New("client empty")
+	return nil, errClientEmpty
 }
 
 // CollectTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
@@ -276,5 +275,5 @@ func TestTVDBConnectivity(timeout time.Duration) (int, error) {
 		return 200, nil
 	}
 
-	return 400, errors.New("client empty")
+	return 400, errClientEmpty
 }

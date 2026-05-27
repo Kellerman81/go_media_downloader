@@ -180,7 +180,7 @@ func GenerateSlug(title string) string {
 		return ""
 	}
 
-	return logger.StringToSlug(title)
+	return logger.StringToSlugCached(title)
 }
 
 // CleanTitle sanitizes a title string by unquoting and handling HTML entities.
@@ -324,6 +324,30 @@ func ShouldProcessTitle(
 // Provider Singletons (thread-safe lazy initialization using sync.Once)
 // -----------------------------------------------------------------------------
 
+// metaUnicodeReplacer maps accented Latin characters and German umlauts to their
+// ASCII equivalents for fuzzy title/author matching (mirrors importfeed.unicodeReplacer).
+var metaUnicodeReplacer = strings.NewReplacer(
+	"ä", "ae", "Ä", "ae",
+	"ö", "oe", "Ö", "oe",
+	"ü", "ue", "Ü", "ue",
+	"ß", "ss", "ẞ", "ss",
+	"æ", "ae", "Æ", "ae",
+	"œ", "oe", "Œ", "oe",
+	"à", "a", "á", "a", "â", "a", "ã", "a", "å", "a",
+	"À", "a", "Á", "a", "Â", "a", "Ã", "a", "Å", "a",
+	"è", "e", "é", "e", "ê", "e", "ë", "e",
+	"È", "e", "É", "e", "Ê", "e", "Ë", "e",
+	"ì", "i", "í", "i", "î", "i", "ï", "i",
+	"Ì", "i", "Í", "i", "Î", "i", "Ï", "i",
+	"ò", "o", "ó", "o", "ô", "o", "õ", "o", "ø", "o",
+	"Ò", "o", "Ó", "o", "Ô", "o", "Õ", "o", "Ø", "o",
+	"ù", "u", "ú", "u", "û", "u",
+	"Ù", "u", "Ú", "u", "Û", "u",
+	"ý", "y", "Ý", "y",
+	"ç", "c", "Ç", "c",
+	"ñ", "n", "Ñ", "n",
+)
+
 var (
 	openLibraryProvider *openlibrary.Provider
 	audibleProvider     *audible.Provider
@@ -341,6 +365,22 @@ var (
 	goodreadsOnce   sync.Once
 	discogsOnce     sync.Once
 	spotifyOnce     sync.Once
+
+	// levenshteinPool provides reusable slices for Levenshtein distance calculation.
+	// This reduces allocations when computing distances for multiple strings.
+	levenshteinPool = sync.Pool{
+		New: func() any {
+			// Pre-allocate with reasonable capacity for typical strings
+			return &levenshteinBuffers{
+				prev: make([]int, 0, 256),
+				curr: make([]int, 0, 256),
+			}
+		},
+	}
+
+	// Common invalid runtime values (placeholders that should be skipped).
+	// Sorted for binary search.
+	invalidRuntimesV2 = []int{1, 2, 3, 4, 60, 90, 120}
 )
 
 func getOpenLibraryProvider() *openlibrary.Provider {
@@ -769,8 +809,12 @@ func goodreadsFindBestMatch(
 	}
 
 	// Normalize inputs for comparison
-	normalizedTitle := strings.ToLower(strings.TrimSpace(cleanGoodreadsTitle(title)))
-	normalizedAuthor := strings.ToLower(strings.ReplaceAll(author, " ", ""))
+	normalizedTitle := metaUnicodeReplacer.Replace(
+		strings.ToLower(strings.TrimSpace(cleanGoodreadsTitle(title))),
+	)
+	normalizedAuthor := metaUnicodeReplacer.Replace(
+		strings.ToLower(strings.ReplaceAll(author, " ", "")),
+	)
 
 	var bestMatch *apiexternal_v2.BookSearchResult
 
@@ -780,12 +824,16 @@ func goodreadsFindBestMatch(
 		result := &results[i]
 
 		// Clean and normalize result title (remove series info after parentheses)
-		resultTitle := strings.ToLower(strings.TrimSpace(cleanGoodreadsTitle(result.Title)))
+		resultTitle := metaUnicodeReplacer.Replace(
+			strings.ToLower(strings.TrimSpace(cleanGoodreadsTitle(result.Title))),
+		)
 
 		// Normalize author name (remove spaces like "James S. A. Corey" -> "JamesS.A.Corey")
 		resultAuthor := ""
 		if len(result.Authors) > 0 {
-			resultAuthor = strings.ToLower(strings.ReplaceAll(result.Authors[0], " ", ""))
+			resultAuthor = metaUnicodeReplacer.Replace(
+				strings.ToLower(strings.ReplaceAll(result.Authors[0], " ", "")),
+			)
 		}
 
 		// Calculate Levenshtein distance for both title and author
@@ -820,18 +868,6 @@ func cleanGoodreadsTitle(title string) string {
 	}
 
 	return strings.TrimSpace(title)
-}
-
-// levenshteinPool provides reusable slices for Levenshtein distance calculation.
-// This reduces allocations when computing distances for multiple strings.
-var levenshteinPool = sync.Pool{
-	New: func() any {
-		// Pre-allocate with reasonable capacity for typical strings
-		return &levenshteinBuffers{
-			prev: make([]int, 0, 256),
-			curr: make([]int, 0, 256),
-		}
-	},
 }
 
 type levenshteinBuffers struct {
@@ -935,7 +971,7 @@ func applyAudiobookDetails(
 			// Get or create author in dbauthors
 			var dbauthorID uint
 
-			authorSlug := logger.StringToSlug(authorName)
+			authorSlug := logger.StringToSlugCached(authorName)
 			database.Scanrowsdyn(
 				false,
 				"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ?",
@@ -1118,7 +1154,7 @@ func applyAudiobookDetails(
 	if dbbookID > 0 && details.SeriesName != "" {
 		var seriesID uint
 
-		seriesSlug := logger.StringToSlug(details.SeriesName)
+		seriesSlug := logger.StringToSlugCached(details.SeriesName)
 
 		// Try to find existing series by name or slug
 		database.Scanrowsdyn(
@@ -1368,7 +1404,7 @@ func applyAlbumDetails(
 			// Get or create artist in dbartists
 			var dbartistID uint
 
-			artistSlug := logger.StringToSlug(artistRef.Name)
+			artistSlug := logger.StringToSlugCached(artistRef.Name)
 			database.Scanrowsdyn(
 				false,
 				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
@@ -1509,7 +1545,7 @@ func applyAlbumDetails(
 			artistID = 0
 			existingRelation = 0
 
-			artistSlug = logger.StringToSlug(artistRef.Name)
+			artistSlug = logger.StringToSlugCached(artistRef.Name)
 			database.Scanrowsdyn(
 				false,
 				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
@@ -1638,7 +1674,7 @@ func applyArtistDetails(
 
 		if existingAlias == 0 {
 			// Insert new alias
-			aliasSlug := logger.StringToSlug(aliasName)
+			aliasSlug := logger.StringToSlugCached(aliasName)
 
 			_, _ = database.ExecNid(
 				"INSERT INTO dbartist_aliases (dbartist_id, alias, slug) VALUES (?, ?, ?)",
@@ -1768,10 +1804,6 @@ func GetMetadataForType(
 // -----------------------------------------------------------------------------
 // Runtime Validation (shared across video and audio media)
 // -----------------------------------------------------------------------------
-
-// Common invalid runtime values (placeholders that should be skipped).
-// Sorted for binary search.
-var invalidRuntimesV2 = []int{1, 2, 3, 4, 60, 90, 120}
 
 // IsValidRuntimeV2 checks if a runtime value is valid.
 // Uses binary search on sorted slice for O(log n) performance.

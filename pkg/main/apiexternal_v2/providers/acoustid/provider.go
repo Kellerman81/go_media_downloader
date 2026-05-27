@@ -2,7 +2,7 @@ package acoustid
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -98,7 +98,7 @@ func (p *Provider) LookupByFingerprint(
 	}
 
 	if response.Status != "ok" {
-		return nil, fmt.Errorf("acoustid error: %s", response.Status)
+		return nil, errors.New(logger.JoinStrings("acoustid error: ", response.Status))
 	}
 
 	return convertLookupResults(response.Results), nil
@@ -133,7 +133,7 @@ func (p *Provider) LookupByFingerprintWithMeta(
 	}
 
 	if response.Status != "ok" {
-		return nil, fmt.Errorf("acoustid error: %s", response.Status)
+		return nil, errors.New(logger.JoinStrings("acoustid error: ", response.Status))
 	}
 
 	return convertLookupResults(response.Results), nil
@@ -162,7 +162,7 @@ func (p *Provider) LookupByTrackID(
 	}
 
 	if response.Status != "ok" {
-		return nil, fmt.Errorf("acoustid error: %s", response.Status)
+		return nil, errors.New(logger.JoinStrings("acoustid error: ", response.Status))
 	}
 
 	return convertLookupResults(response.Results), nil
@@ -211,7 +211,7 @@ func (p *Provider) BatchLookup(
 	}
 
 	if response.Status != "ok" {
-		return nil, fmt.Errorf("acoustid error: %s", response.Status)
+		return nil, errors.New(logger.JoinStrings("acoustid error: ", response.Status))
 	}
 
 	// Group results by index
@@ -312,7 +312,7 @@ func (p *Provider) SubmitFingerprint(
 	}
 
 	if response.Status != "ok" {
-		return fmt.Errorf("acoustid submit error: %s", response.Status)
+		return errors.New(logger.JoinStrings("acoustid submit error: ", response.Status))
 	}
 
 	return nil

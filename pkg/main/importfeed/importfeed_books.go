@@ -303,7 +303,7 @@ func addBookToDatabase(
 
 	var dbbookID uint
 
-	slug := logger.StringToSlug(book.Title)
+	slug := logger.StringToSlugCached(book.Title)
 	year := uint16(book.PublishYear) //nolint:gosec // safe: value within target type range
 
 	if existingID > 0 {
@@ -424,7 +424,7 @@ func addBookToDatabase(
 	// Add alternate title if subtitle exists
 	if book.Subtitle != "" {
 		fullTitle := book.Title + ": " + book.Subtitle
-		fullSlug := logger.StringToSlug(fullTitle)
+		fullSlug := logger.StringToSlugCached(fullTitle)
 
 		var existingTitle uint
 		database.Scanrowsdyn(false,
@@ -1225,7 +1225,7 @@ func addOrGetAuthor(authorName string) uint {
 	// Check if author already exists
 	var authorID uint
 
-	authorSlug := logger.StringToSlug(authorName)
+	authorSlug := logger.StringToSlugCached(authorName)
 	database.Scanrowsdyn(
 		false,
 		"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ?",
@@ -1346,7 +1346,7 @@ func addAudiobookDetailToDatabase(
 
 	var dbaudiobookID uint
 
-	slug := logger.StringToSlug(details.Title)
+	slug := logger.StringToSlugCached(details.Title)
 	year := uint16(details.ReleaseYear) //nolint:gosec // safe: value within target type range
 
 	if existingID > 0 {
@@ -1494,7 +1494,7 @@ func addAudiobookDetailToDatabase(
 	}
 
 	// Add main title to titles table
-	mainSlug := logger.StringToSlug(details.Title)
+	mainSlug := logger.StringToSlugCached(details.Title)
 
 	var existingMainTitle uint
 	database.Scanrowsdyn(false,
@@ -1512,7 +1512,7 @@ func addAudiobookDetailToDatabase(
 	// Add alternate title if subtitle exists
 	if details.Subtitle != "" {
 		fullTitle := details.Title + ": " + details.Subtitle
-		fullSlug := logger.StringToSlug(fullTitle)
+		fullSlug := logger.StringToSlugCached(fullTitle)
 
 		var existingTitle uint
 		database.Scanrowsdyn(false,
@@ -1709,7 +1709,7 @@ func addAudiobookFromBookToDatabase(
 
 	var dbaudiobookID uint
 
-	slug := logger.StringToSlug(book.Title)
+	slug := logger.StringToSlugCached(book.Title)
 	year := uint16(book.PublishYear) //nolint:gosec // safe: value within target type range
 
 	if existingID > 0 {
@@ -1801,7 +1801,7 @@ func addAudiobookFromBookToDatabase(
 	// Add alternate title if subtitle exists
 	if book.Subtitle != "" {
 		fullTitle := book.Title + ": " + book.Subtitle
-		fullSlug := logger.StringToSlug(fullTitle)
+		fullSlug := logger.StringToSlugCached(fullTitle)
 
 		var existingTitle uint
 		database.Scanrowsdyn(false,

@@ -2,6 +2,7 @@ package lastfm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -294,7 +295,7 @@ func (p *Provider) GetArtistInfo(
 	artistName, mbid string,
 ) (*apiexternal_v2.ArtistDetails, error) {
 	if artistName == "" && mbid == "" {
-		return nil, fmt.Errorf("lastfm: GetArtistInfo requires artist name or mbid")
+		return nil, errors.New("lastfm: GetArtistInfo requires artist name or mbid")
 	}
 
 	var extra []string
@@ -321,7 +322,7 @@ func (p *Provider) GetAlbumInfo(
 	artistName, albumName, mbid string,
 ) (*apiexternal_v2.ReleaseDetails, error) {
 	if mbid == "" && (artistName == "" || albumName == "") {
-		return nil, fmt.Errorf("lastfm: GetAlbumInfo requires (artist+album) or mbid")
+		return nil, errors.New("lastfm: GetAlbumInfo requires (artist+album) or mbid")
 	}
 
 	var extra []string
