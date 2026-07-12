@@ -14,9 +14,9 @@ import (
 // Returns any error from the connection or add torrent operations.
 func SendToDeluge(
 	downloaderName string,
-	host string,
-	port int,
-	username, password, urlv, dlpath string,
+	_ string,
+	_ int,
+	_, _, urlv, dlpath string,
 	moveafter bool,
 	moveafterpath string,
 	addpaused bool,

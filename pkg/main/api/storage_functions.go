@@ -138,7 +138,7 @@ func checkPermissions(paths []string) []PermissionInfo {
 
 // checkMountStatus checks if storage paths are properly mounted (Unix/Linux).
 func checkMountStatus(paths []string) []MountInfo {
-	var mountInfo []MountInfo
+	mountInfo := make([]MountInfo, 0, len(paths))
 
 	for _, path := range paths {
 		info := MountInfo{

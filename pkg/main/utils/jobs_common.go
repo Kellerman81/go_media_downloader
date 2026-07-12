@@ -238,6 +238,7 @@ func jobImportParseCommon(
 							cfgp,
 							cfgp.GetMediaListsEntryListID(list.Name),
 							true,
+							false,
 						)
 					}
 
@@ -434,8 +435,8 @@ func jobImportParseCommon(
 				database.ExecN(updateMissing, &m.Episodes[idx].Num1)
 				database.ExecN(updateReached, &reached, &m.Episodes[idx].Num1)
 
-				if list.Name != "" {
-					database.ExecN(updateProfile, &list.Name, &m.Episodes[idx].Num1)
+				if qualityProfileName != "" {
+					database.ExecN(updateProfile, &qualityProfileName, &m.Episodes[idx].Num1)
 				}
 
 				database.ExecN(deleteUnmatched, &m.File)
@@ -682,12 +683,12 @@ func importnewsingle(
 		Str(logger.StrListname, list.Name).
 		Msg("get feeds for")
 
-	if !list.Enabled || !list.CfgList.Enabled {
-		return logger.ErrDisabled
-	}
-
 	if list.CfgList == nil {
 		return errListNotFound
+	}
+
+	if !list.Enabled || !list.CfgList.Enabled {
+		return logger.ErrDisabled
 	}
 
 	feed, err := Feeds(ctx, cfgp, list, false)
@@ -705,6 +706,9 @@ func importnewsingle(
 	for idx := range list.IgnoreMapLists {
 		args.Arr = append(args.Arr, &list.IgnoreMapLists[idx])
 	}
+
+	// Aggregate per-entry outcomes so one summary line is logged per run.
+	ctx, summary := importfeed.WithImportSummary(ctx)
 
 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
 
@@ -795,6 +799,7 @@ func importnewsingle(
 							cfgp,
 							listid,
 							true,
+							false,
 						)
 					})
 				} else {
@@ -892,6 +897,8 @@ func importnewsingle(
 			Err(errjobs).
 			Msg("Error importing")
 	}
+
+	summary.Log(cfgp.NamePrefix, list.Name)
 
 	return nil
 }

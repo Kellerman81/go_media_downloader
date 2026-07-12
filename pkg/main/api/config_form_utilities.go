@@ -292,7 +292,7 @@ func createResetButton(text string) gomponents.Node {
 		gomponents.Text(text),
 		gomponents.Attr(
 			"onclick",
-			"if(confirm('Are you sure you want to reset all fields?')) { window.location.reload(); }",
+			"confirmAction('Reset fields', 'Reset all fields? Unsaved changes will be lost.', function(){ window.location.reload(); });",
 		),
 		gomponents.Attr(
 			"onmouseover",

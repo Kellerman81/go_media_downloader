@@ -485,6 +485,22 @@ func initproviders() {
 // main initializes and starts the Go Media Downloader application server.
 // It sets up configuration, database connections, worker pools, schedulers,
 // external API clients, and the web server with graceful shutdown handling.
+// cleanupDuplicatesArgs scans the command line for the one-off duplicate-cleanup
+// flags. runCleanup is true when --cleanup-duplicates is present; apply is true
+// when --apply is also present (otherwise it is a dry run).
+func cleanupDuplicatesArgs() (runCleanup, apply bool) {
+	for _, a := range os.Args[1:] {
+		switch a {
+		case "--cleanup-duplicates", "-cleanup-duplicates":
+			runCleanup = true
+		case "--apply", "-apply":
+			apply = true
+		}
+	}
+
+	return runCleanup, apply
+}
+
 func main() {
 	// debug.SetGCPercent(30)
 	os.Mkdir("./temp", 0o777)
@@ -588,7 +604,6 @@ func main() {
 
 	// Register additional SyncMaps with syncops for architectural consistency
 	syncops.RegisterSyncMap(syncops.MapTypeStructEmpty, importfeed.GetImportJobRunning())
-	syncops.RegisterSyncMap(syncops.MapTypeAny, syncops.NewSyncMap[syncops.SyncAny](20))
 
 	// Register API client SyncMaps
 	logger.InitLogger(logger.Config{
@@ -675,6 +690,15 @@ func main() {
 		logger.Logtype("fatal", 0).Err(err).Msg("Database Initialization Failed")
 	}
 
+	// Repair legacy rows that stored empty/non-numeric text in numeric columns
+	// so the strict sqlite driver can scan them (idempotent; cheap on clean DBs).
+	database.NormalizeNumericColumns()
+
+	// Remove child rows whose parents are gone. The schema's ON DELETE CASCADE
+	// rules never fire because FK enforcement is disabled (optional reference
+	// columns store 0 instead of NULL), so orphans accumulate over time.
+	database.CleanupOrphans()
+
 	err = database.InitImdbdb()
 	if err != nil {
 		logger.Logtype("fatal", 0).Err(err).Msg("IMDB Database Initialization Failed")
@@ -699,8 +723,22 @@ func main() {
 	logger.Logtype("info", 0).Msg("Load DB Patterns")
 	parser.LoadDBPatterns()
 
+	// One-off maintenance: remove duplicate list entries (same item under two
+	// sibling lists of one media group). Run with --cleanup-duplicates for a
+	// dry-run report, add --apply to actually delete. The process exits after.
+	if runCleanup, apply := cleanupDuplicatesArgs(); runCleanup {
+		logger.Logtype("info", 0).Bool("apply", apply).Msg("Running list duplicate cleanup")
+		utils.CleanupListDuplicates(apply)
+		database.DBClose()
+		os.Exit(0) //nolint:gocritic // intentional early exit; OS frees resources
+	}
+
 	logger.Logtype("info", 0).Msg("Load DB Cutoff")
 	parser.GenerateCutoffPriorities()
+
+	// Surface a missing/misconfigured ffprobe or mediainfo once at startup
+	// instead of as per-file errors during scans.
+	parser.CheckAnalyzerPaths()
 
 	if general.SearcherSize == 0 {
 		general.SearcherSize = 5000
@@ -771,7 +809,10 @@ func main() {
 	logger.Logtype("info", 0).Msg("Starting API")
 
 	router := gin.New()
-	router.Use(logger.GinLogger(), logger.ErrorLogger())
+	// Recovery must come first so a panic in any handler is turned into a 500
+	// response instead of crashing the connection (which surfaces as a 502 behind
+	// a reverse proxy).
+	router.Use(gin.Recovery(), logger.GinLogger(), logger.ErrorLogger())
 	// router.Use(ginlog.SetLogger(ginlog.WithLogger(func(_ *gin.Context, l zerolog.Logger) zerolog.Logger {
 	// 	return l.Output(gin.DefaultWriter).With().Logger()
 	// })))
@@ -787,6 +828,8 @@ func main() {
 
 	// router.Use(ginlog.Logger(logger.Log), cors.New(corsconfig), gin.Recovery())
 	router.Static("/static", "./static")
+	// Serve the browser's default /favicon.ico request with the small app icon.
+	router.StaticFile("/favicon.ico", "./static/img/icons/icon-32x32.png")
 
 	// Root path redirect
 	router.GET("/", func(c *gin.Context) {
@@ -849,6 +892,7 @@ func main() {
 
 	worker.StopCronWorker()
 	worker.CloseWorkerPools()
+	utils.StopAllIRCSessions()
 	syncops.Shutdown()
 
 	logger.Logtype("info", 0).Msg("Queues stopped")

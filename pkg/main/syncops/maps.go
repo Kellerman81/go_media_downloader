@@ -2,21 +2,26 @@ package syncops
 
 import (
 	"maps"
-	"reflect"
 	"slices"
 	"sync"
 	"time"
 )
 
+// smEntry holds a value together with its metadata in a single map slot so that
+// every operation hashes the key once and the value and its metadata can never
+// drift out of sync.
+type smEntry[T any] struct {
+	value    T
+	expires  int64
+	lastScan int64
+	imdb     bool
+}
+
 // SyncMap is an optimized version that only needs read locks since all writes
 // go through the SyncOpsManager single-writer system.
 type SyncMap[T any] struct {
-	m        map[string]T
-	mp       map[string]*T
-	expires  map[string]int64
-	lastScan map[string]int64
-	imdb     map[string]bool
-	mu       sync.RWMutex // Only needed for read protection during writes
+	m  map[string]smEntry[T]
+	mu sync.RWMutex // Only needed for read protection during writes
 }
 
 // NewSyncMap creates a new SyncMap with the specified initial size.
@@ -24,11 +29,7 @@ type SyncMap[T any] struct {
 // additional metadata such as expiration time, IMDB flag, and last scan time.
 func NewSyncMap[T any](size int) *SyncMap[T] {
 	return &SyncMap[T]{
-		m:        make(map[string]T, size),
-		mp:       make(map[string]*T, size),
-		expires:  make(map[string]int64, size),
-		lastScan: make(map[string]int64, size),
-		imdb:     make(map[string]bool, size),
+		m: make(map[string]smEntry[T], size),
 	}
 }
 
@@ -40,28 +41,30 @@ func (s *SyncMap[T]) Add(key string, value T, expires int64, imdb bool, lastscan
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.m[key] = value
-	s.expires[key] = expires
-	s.lastScan[key] = lastscan
-	s.imdb[key] = imdb
+	s.m[key] = smEntry[T]{value: value, expires: expires, lastScan: lastscan, imdb: imdb}
 }
 
-// AddPointer stores a new key-value pair with automatic pointer management.
-// If the value is not already a pointer, it creates a pointer reference for efficient access.
-// Includes expiration, IMDB flag, and last scan metadata. This operation is NOT thread-safe
-// and should only be called from the SyncOpsManager single writer goroutine.
-func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, lastscan int64) {
+// AddIfAbsent atomically stores the key-value pair only when the key is not
+// already present (or its existing entry has expired) and returns true.
+// Returns false when a live entry for the key already exists. This closes the
+// check-then-add race of calling Check followed by Add from concurrent
+// goroutines: exactly one caller wins for a given key.
+func (s *SyncMap[T]) AddIfAbsent(key string, value T, expires int64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.m[key] = value
-	if reflect.ValueOf(value).Kind() != reflect.Ptr {
-		s.mp[key] = &value
+	if e, ok := s.m[key]; ok {
+		if e.expires == 0 || time.Now().UnixNano() < e.expires {
+			return false
+		}
+
+		// The previous holder's entry expired (e.g. a crashed or hung job) -
+		// take the key over.
 	}
 
-	s.expires[key] = expires
-	s.lastScan[key] = lastscan
-	s.imdb[key] = imdb
+	s.m[key] = smEntry[T]{value: value, expires: expires}
+
+	return true
 }
 
 // ModifyInPlace calls fn on the value stored for key.
@@ -72,11 +75,11 @@ func (s *SyncMap[T]) AddPointer(key string, value T, expires int64, imdb bool, l
 func (s *SyncMap[T]) ModifyInPlace(key string, fn func(T)) {
 	s.mu.RLock()
 
-	val, ok := s.m[key]
+	e, ok := s.m[key]
 	s.mu.RUnlock()
 
 	if ok {
-		fn(val)
+		fn(e.value)
 	}
 }
 
@@ -88,7 +91,10 @@ func (s *SyncMap[T]) UpdateVal(key string, value T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.m[key] = value
+	e := s.m[key]
+
+	e.value = value
+	s.m[key] = e
 }
 
 // UpdateExpire modifies the expiration timestamp for an existing key.
@@ -100,8 +106,9 @@ func (s *SyncMap[T]) UpdateExpire(key string, value int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.expires[key] != 0 {
-		s.expires[key] = value
+	if e, ok := s.m[key]; ok && e.expires != 0 {
+		e.expires = value
+		s.m[key] = e
 	}
 }
 
@@ -113,29 +120,20 @@ func (s *SyncMap[T]) UpdateLastscan(key string, value int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.lastScan[key] = value
+	if e, ok := s.m[key]; ok {
+		e.lastScan = value
+		s.m[key] = e
+	}
 }
 
 // Delete removes a key and all its associated metadata from the SyncMap.
-// This includes the value, pointer reference, expiration time, last scan time, and IMDB flag.
 // This operation is NOT thread-safe and should only be called from the
 // SyncOpsManager single writer goroutine.
 func (s *SyncMap[T]) Delete(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.delete(key)
-}
-
-// delete is the internal helper that removes a key from all internal maps.
-// Clears the value, pointer, expiration, last scan, and IMDB data for the key.
-// This method assumes the caller already holds the appropriate lock.
-func (s *SyncMap[T]) delete(key string) {
 	delete(s.m, key)
-	delete(s.mp, key)
-	delete(s.expires, key)
-	delete(s.lastScan, key)
-	delete(s.imdb, key)
 }
 
 // Check tests whether a key exists in the SyncMap.
@@ -156,15 +154,7 @@ func (s *SyncMap[T]) Check(key string) bool {
 func (s *SyncMap[T]) GetVal(key string) T {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.m[key]
-}
-
-// GetExpires returns the expiration time for the given key.
-// This is a read operation and is safe for concurrent access.
-func (s *SyncMap[T]) GetExpires(key string) int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.expires[key]
+	return s.m[key].value
 }
 
 // GetLastScan returns the last scan time for the given key.
@@ -172,40 +162,7 @@ func (s *SyncMap[T]) GetExpires(key string) int64 {
 func (s *SyncMap[T]) GetLastScan(key string) int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.lastScan[key]
-}
-
-// GetIMDB returns the IMDB flag for the given key.
-// This is a read operation and is safe for concurrent access.
-func (s *SyncMap[T]) GetIMDB(key string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.imdb[key]
-}
-
-// GetExpire returns the expiration time for the given key (alias for GetExpires).
-// This is a read operation and is safe for concurrent access.
-func (s *SyncMap[T]) GetExpire(key string) int64 {
-	return s.GetExpires(key)
-}
-
-// GetValP returns a pointer to the value associated with the specified key.
-// Checks the pointer map first, then creates a pointer to the regular value if needed.
-// Returns nil if the key doesn't exist. This is a thread-safe read operation
-// that can be called concurrently from multiple goroutines.
-func (s *SyncMap[T]) GetValP(key string) *T {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if ptr, exists := s.mp[key]; exists {
-		return ptr
-	}
-
-	if val, exists := s.m[key]; exists {
-		return &val
-	}
-
-	return nil
+	return s.m[key].lastScan
 }
 
 // CheckExpires determines if a key has passed its expiration time and optionally extends it.
@@ -216,15 +173,16 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	expiry, exists := s.expires[key]
-	if !exists || expiry == 0 {
+	e, exists := s.m[key]
+	if !exists || e.expires == 0 {
 		return false
 	}
 
 	now := time.Now().UnixNano()
-	if now >= expiry {
+	if now >= e.expires {
 		if extend {
-			s.expires[key] = now + int64(dur)*int64(time.Hour)
+			e.expires = now + int64(dur)*int64(time.Hour)
+			s.m[key] = e
 		}
 
 		return true
@@ -234,131 +192,31 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 }
 
 // DeleteFunc deletes all entries for which the provided function returns true.
-// fn is evaluated under a read lock; deletions are applied under a write lock
-// so fn is safe to call other SyncMap or QueueOperation functions.
+// The whole scan-and-delete runs under the write lock, so fn must not call other
+// SyncMap or QueueOperation functions. In the single-writer model that is already
+// the contract: deletions only run inside the writer goroutine.
 func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	var toDelete []string
-	for key, value := range s.m {
-		if fn(value) {
-			toDelete = append(toDelete, key)
+	for key, e := range s.m {
+		if fn(e.value) {
+			delete(s.m, key)
 		}
 	}
-
-	s.mu.RUnlock()
-
-	if len(toDelete) == 0 {
-		return
-	}
-
-	s.mu.Lock()
-	for i := range toDelete {
-		s.delete(toDelete[i])
-	}
-
-	s.mu.Unlock()
 }
 
 // DeleteFuncExpires deletes all entries for which the provided function returns true
-// using the expiration time as the argument.
-// fn is evaluated under a read lock; deletions are applied under a write lock.
+// using the expiration time as the argument. Runs entirely under the write lock.
 func (s *SyncMap[T]) DeleteFuncExpires(fn func(int64) bool) {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	var toDelete []string
-	for key, expires := range s.expires {
-		if fn(expires) {
-			toDelete = append(toDelete, key)
+	for key, e := range s.m {
+		if fn(e.expires) {
+			delete(s.m, key)
 		}
 	}
-
-	s.mu.RUnlock()
-
-	if len(toDelete) == 0 {
-		return
-	}
-
-	s.mu.Lock()
-	for i := range toDelete {
-		s.delete(toDelete[i])
-	}
-
-	s.mu.Unlock()
-}
-
-// DeleteFuncExpiresVal deletes all entries for which the provided function returns true
-// and calls fnVal with the value before deletion.
-// Both fn and fnVal are called outside any lock so they are safe to call other
-// SyncMap or QueueOperation functions without risking a deadlock.
-func (s *SyncMap[T]) DeleteFuncExpiresVal(fn func(int64) bool, fnVal func(T)) {
-	type entry struct {
-		key   string
-		value T
-	}
-
-	s.mu.RLock()
-
-	var toDelete []entry
-	for key, expires := range s.expires {
-		if fn(expires) {
-			toDelete = append(toDelete, entry{key: key, value: s.m[key]})
-		}
-	}
-
-	s.mu.RUnlock()
-
-	if len(toDelete) == 0 {
-		return
-	}
-
-	for i := range toDelete {
-		fnVal(toDelete[i].value)
-	}
-
-	s.mu.Lock()
-	for i := range toDelete {
-		s.delete(toDelete[i].key)
-	}
-
-	s.mu.Unlock()
-}
-
-// DeleteFuncImdbVal deletes all entries for which the provided function returns true
-// using the IMDB flag as the argument and calls fnVal with the value before deletion.
-// Both fn and fnVal are called outside any lock so they are safe to call other
-// SyncMap or QueueOperation functions without risking a deadlock.
-func (s *SyncMap[T]) DeleteFuncImdbVal(fn func(bool) bool, fnVal func(T)) {
-	type entry struct {
-		key   string
-		value T
-	}
-
-	s.mu.RLock()
-
-	var toDelete []entry
-	for key, imdb := range s.imdb {
-		if fn(imdb) {
-			toDelete = append(toDelete, entry{key: key, value: s.m[key]})
-		}
-	}
-
-	s.mu.RUnlock()
-
-	if len(toDelete) == 0 {
-		return
-	}
-
-	for i := range toDelete {
-		fnVal(toDelete[i].value)
-	}
-
-	s.mu.Lock()
-	for i := range toDelete {
-		s.delete(toDelete[i].key)
-	}
-
-	s.mu.Unlock()
 }
 
 // SyncMapUint is an optimized version for uint32 keys.
@@ -423,44 +281,19 @@ func (s *SyncMapUint[T]) GetVal(key uint32) T {
 	return s.m[key]
 }
 
-// Range calls the provided function for each key-value pair in the map.
-// This is a read operation and is safe for concurrent access.
-// func (s *SyncMapUint[T]) Range(fn func(uint32, T) bool) {
-// 	s.mu.RLock()
-// 	defer s.mu.RUnlock()
-
-// 	for key, value := range s.m {
-// 		if !fn(key, value) {
-// 			break
-// 		}
-// 	}
-// }
-
 // DeleteIf removes all entries for which the provided function returns true.
-// fn is evaluated under a read lock; deletions are applied under a write lock
-// so fn is safe to call other SyncMap or QueueOperation functions.
+// The whole scan-and-delete runs under the write lock, so fn must not call other
+// SyncMap or QueueOperation functions. In the single-writer model that is already
+// the contract: deletions only run inside the writer goroutine.
 func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	var toDelete []uint32
 	for key, value := range s.m {
 		if fn(key, value) {
-			toDelete = append(toDelete, key)
+			delete(s.m, key)
 		}
 	}
-
-	s.mu.RUnlock()
-
-	if len(toDelete) == 0 {
-		return
-	}
-
-	s.mu.Lock()
-	for i := range toDelete {
-		delete(s.m, toDelete[i])
-	}
-
-	s.mu.Unlock()
 }
 
 // ForEach executes a function for each key-value pair in the map while holding a read lock.
@@ -521,50 +354,49 @@ func (s *SyncMapUint[T]) Exists(predicate func(uint32, T) bool) bool {
 
 // AtomicAppendToStringSlice safely appends a string to a string slice stored in a SyncMap.
 // Creates a new slice if the key doesn't exist, and checks for duplicates before appending.
-// Reuses existing slice capacity when available, allocating only when needed.
 // This operation is NOT thread-safe and should only be called from the SyncOpsManager single writer goroutine.
 func AtomicAppendToStringSlice(sm *SyncMap[[]string], key, value string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	current, exists := sm.m[key]
+	e, exists := sm.m[key]
 	if !exists {
-		sm.m[key] = []string{value}
+		sm.m[key] = smEntry[[]string]{value: []string{value}}
 		return
 	}
 
 	// Check if value already exists
-	if slices.Contains(current, value) {
+	if slices.Contains(e.value, value) {
 		return // Already exists
 	}
 
-	sm.m[key] = append(current, value)
+	e.value = append(e.value, value)
+	sm.m[key] = e
 }
 
 // AtomicRemoveFromStringSlice safely removes a string from a string slice stored in a SyncMap.
 // Does nothing if the key doesn't exist or the value is not found in the slice.
-// Creates a new slice without the specified value, maintaining order of remaining elements.
 // This operation is NOT thread-safe and should only be called from the SyncOpsManager single writer goroutine.
 func AtomicRemoveFromStringSlice(sm *SyncMap[[]string], key, value string) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	current, exists := sm.m[key]
+	e, exists := sm.m[key]
 	if !exists {
 		return
 	}
 
-	// Check if value exists and create new slice without it
-	if !slices.Contains(current, value) {
+	if !slices.Contains(e.value, value) {
 		return
 	}
 
-	newSlice := make([]string, 0, len(current))
-	for i := range current {
-		if current[i] != value {
-			newSlice = append(newSlice, current[i])
+	newSlice := make([]string, 0, len(e.value))
+	for i := range e.value {
+		if e.value[i] != value {
+			newSlice = append(newSlice, e.value[i])
 		}
 	}
 
-	sm.m[key] = newSlice
+	e.value = newSlice
+	sm.m[key] = e
 }

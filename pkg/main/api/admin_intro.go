@@ -1,324 +1,296 @@
 package api
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
+	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
 )
 
-// renderModernAdminIntro creates a modern admin dashboard intro page.
+// renderModernAdminIntro creates the admin landing page: a live dashboard with
+// library counts, queue/scheduler activity and quick actions.
 func renderModernAdminIntro() gomponents.Node {
 	return html.Div(
-		html.Class("container-fluid"),
-		html.Style(
-			"background: linear-gradient(135deg, #6c757d 0%, #495057 100%); min-height: 100vh; padding: 0;",
+		html.Class("container-fluid p-4"),
+		dashboardHeader(),
+
+		// Live-updating stat region (refreshed via HTMX without a full reload).
+		html.Div(
+			html.ID("dashboard-cards"),
+			hx.Get("/api/admin/dashboard/cards"),
+			hx.Trigger("every 30s"),
+			hx.Swap("innerHTML"),
+			renderDashboardCards(),
 		),
 
-		// Hero Section
+		dashboardQuickActions(),
+	)
+}
+
+// dashboardHeader renders the page title row.
+func dashboardHeader() gomponents.Node {
+	return html.Div(
+		html.Class("d-flex align-items-center justify-content-between flex-wrap mb-4"),
 		html.Div(
-			html.Class("row"),
-			html.Div(
-				html.Class("col-12"),
-				html.Div(
-					html.Style(
-						"background: linear-gradient(135deg, rgba(108,117,125,0.9) 0%, rgba(73,80,87,0.9) 100%); color: white; padding: 4rem 0; text-align: center;",
-					),
-					html.Div(
-						html.Class("container"),
-						html.Div(
-							html.Class("row justify-content-center"),
-							html.Div(
-								html.Class("col-lg-8"),
-								html.I(
-									html.Class("fas fa-download mb-4"),
-									html.Style("font-size: 4rem; opacity: 0.9;"),
-								),
-								html.H1(
-									html.Class("display-4 mb-3"),
-									html.Style(
-										"font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.3);",
-									),
-									gomponents.Text("Go Media Downloader"),
-								),
-								html.P(
-									html.Class("lead mb-4"),
-									html.Style(
-										"font-size: 1.25rem; opacity: 0.9; text-shadow: 0 1px 2px rgba(0,0,0,0.2);",
-									),
-									gomponents.Text(
-										"Advanced media download automation and management platform",
-									),
-								),
-								html.Div(
-									html.Class("d-flex justify-content-center gap-3 flex-wrap"),
-									html.Span(
-										html.Class("badge bg-success px-3 py-2"),
-										html.Style("font-size: 1rem; border-radius: 20px;"),
-										html.I(html.Class("fas fa-check me-1")),
-										gomponents.Text("Movies & TV Series"),
-									),
-									html.Span(
-										html.Class("badge bg-info px-3 py-2"),
-										html.Style("font-size: 1rem; border-radius: 20px;"),
-										html.I(html.Class("fas fa-rss me-1")),
-										gomponents.Text("RSS Automation"),
-									),
-									html.Span(
-										html.Class("badge bg-warning px-3 py-2"),
-										html.Style("font-size: 1rem; border-radius: 20px;"),
-										html.I(html.Class("fas fa-search me-1")),
-										gomponents.Text("Smart Indexing"),
-									),
-								),
-							),
-						),
-					),
+			html.H1(
+				html.Class("h3 mb-1"),
+				html.I(
+					html.Class("fas fa-gauge-high me-2 text-primary"),
+					gomponents.Attr("aria-hidden", "true"),
 				),
+				gomponents.Text("Dashboard"),
+			),
+			html.P(
+				html.Class("text-muted mb-0"),
+				gomponents.Text("Library overview and current activity"),
 			),
 		),
+		html.Button(
+			html.Type("button"),
+			html.Class("btn btn-outline-secondary btn-sm"),
+			gomponents.Attr("aria-label", "Refresh dashboard now"),
+			hx.Get("/api/admin/dashboard/cards"),
+			hx.Target("#dashboard-cards"),
+			hx.Swap("innerHTML"),
+			html.I(html.Class("fas fa-sync-alt me-1"), gomponents.Attr("aria-hidden", "true")),
+			gomponents.Text("Refresh"),
+		),
+	)
+}
 
-		// Quick Stats Cards
-		html.Div(
-			html.Class("container my-5"),
-			html.Div(
-				html.Class("row g-4"),
+// countRow returns the row count of a table, or 0 on any error.
+func countRow(query string) int {
+	return int(database.Getdatarow[uint](false, query))
+}
 
-				// Configuration Card
-				html.Div(
-					html.Class("col-lg-3 col-md-6"),
-					html.Div(
-						html.Class("card border-0 shadow-lg h-100"),
-						html.Style(
-							"border-radius: 20px; transition: transform 0.3s ease, box-shadow 0.3s ease;",
-						),
-						html.Div(
-							html.Class("card-body text-center p-4"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-cog"),
-									html.Style("font-size: 3rem; color: #007bff;"),
-								),
-							),
-							html.H5(
-								html.Class("card-title fw-bold"),
-								gomponents.Text("Configuration"),
-							),
-							html.P(
-								html.Class("card-text text-muted"),
-								gomponents.Text(
-									"Manage system settings, media configurations, and indexer connections",
-								),
-							),
-							html.A(
-								html.Class("btn btn-primary btn-sm"),
-								html.Style("border-radius: 15px;"),
-								html.Href("/api/admin/config/general"),
-								html.I(html.Class("fas fa-arrow-right me-1")),
-								gomponents.Text("Configure"),
-							),
-						),
-					),
-				),
+// renderDashboardCards builds the live statistic cards. It is also served as an
+// HTMX fragment for periodic refresh.
+func renderDashboardCards() gomponents.Node {
+	ctx := context.Background()
+	movieStats, _ := getMovieStatistics(ctx)
+	seriesStats, _ := getSeriesStatistics(ctx)
 
-				// Management Card
-				html.Div(
-					html.Class("col-lg-3 col-md-6"),
-					html.Div(
-						html.Class("card border-0 shadow-lg h-100"),
-						html.Style(
-							"border-radius: 20px; transition: transform 0.3s ease, box-shadow 0.3s ease;",
-						),
-						html.Div(
-							html.Class("card-body text-center p-4"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-tasks"),
-									html.Style("font-size: 3rem; color: #28a745;"),
-								),
-							),
-							html.H5(
-								html.Class("card-title fw-bold"),
-								gomponents.Text("Management"),
-							),
-							html.P(
-								html.Class("card-text text-muted"),
-								gomponents.Text(
-									"Monitor queues, schedulers, and system performance in real-time",
-								),
-							),
-							html.A(
-								html.Class("btn btn-success btn-sm"),
-								html.Style("border-radius: 15px;"),
-								html.Href("/api/admin/grid/queue"),
-								html.I(html.Class("fas fa-arrow-right me-1")),
-								gomponents.Text("Monitor"),
-							),
-						),
-					),
-				),
+	albums := countRow("SELECT COUNT(*) FROM albums")
+	albumsMissing := countRow("SELECT COUNT(*) FROM albums WHERE missing = 1")
+	books := countRow("SELECT COUNT(*) FROM books")
+	booksMissing := countRow("SELECT COUNT(*) FROM books WHERE missing = 1")
+	audiobooks := countRow("SELECT COUNT(*) FROM audiobooks")
+	audiobooksMissing := countRow("SELECT COUNT(*) FROM audiobooks WHERE missing = 1")
 
-				// Database Card
-				html.Div(
-					html.Class("col-lg-3 col-md-6"),
-					html.Div(
-						html.Class("card border-0 shadow-lg h-100"),
-						html.Style(
-							"border-radius: 20px; transition: transform 0.3s ease, box-shadow 0.3s ease;",
-						),
-						html.Div(
-							html.Class("card-body text-center p-4"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-database"),
-									html.Style("font-size: 3rem; color: #ffc107;"),
-								),
-							),
-							html.H5(html.Class("card-title fw-bold"), gomponents.Text("Database")),
-							html.P(
-								html.Class("card-text text-muted"),
-								gomponents.Text(
-									"Browse and manage media database tables and records",
-								),
-							),
-							html.A(
-								html.Class("btn btn-warning btn-sm"),
-								html.Style("border-radius: 15px;"),
-								html.Href("/api/admin/database/movies"),
-								html.I(html.Class("fas fa-arrow-right me-1")),
-								gomponents.Text("Browse"),
-							),
-						),
-					),
-				),
+	queues := worker.GetQueues()
+	queueActive := len(queues)
 
-				// Tools Card
-				html.Div(
-					html.Class("col-lg-3 col-md-6"),
-					html.Div(
-						html.Class("card border-0 shadow-lg h-100"),
-						html.Style(
-							"border-radius: 20px; transition: transform 0.3s ease, box-shadow 0.3s ease;",
-						),
-						html.Div(
-							html.Class("card-body text-center p-4"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-tools"),
-									html.Style("font-size: 3rem; color: #dc3545;"),
-								),
-							),
-							html.H5(html.Class("card-title fw-bold"), gomponents.Text("Tools")),
-							html.P(
-								html.Class("card-text text-muted"),
-								gomponents.Text(
-									"Access search tools, log viewer, and system utilities",
-								),
-							),
-							html.A(
-								html.Class("btn btn-danger btn-sm"),
-								html.Style("border-radius: 15px;"),
-								html.Href("/api/admin/searchdownload"),
-								html.I(html.Class("fas fa-arrow-right me-1")),
-								gomponents.Text("Search"),
-							),
-						),
-					),
-				),
+	schedules := worker.GetSchedules()
+
+	schedulesRunning := 0
+	for _, s := range schedules {
+		if s.IsRunning {
+			schedulesRunning++
+		}
+	}
+
+	sys := getSystemStatistics()
+
+	return html.Div(
+		html.Class("row g-3"),
+
+		statCard(
+			"fas fa-film",
+			"#0d6efd",
+			"Movies",
+			fmt.Sprintf("%d", movieStats.TotalMovies),
+			fmt.Sprintf(
+				"%d missing · %d available",
+				movieStats.MissingMovies,
+				movieStats.AvailableMovies,
 			),
+			"/api/admin/database/movies",
+			movieStats.MissingMovies > 0,
 		),
 
-		// Feature Highlights
+		statCard(
+			"fas fa-tv",
+			"#6610f2",
+			"Series",
+			fmt.Sprintf("%d", seriesStats.TotalSeries),
+			fmt.Sprintf(
+				"%d episodes · %d missing",
+				seriesStats.TotalEpisodes,
+				seriesStats.MissingEpisodes,
+			),
+			"/api/admin/database/series",
+			seriesStats.MissingEpisodes > 0,
+		),
+
+		statCard("fas fa-compact-disc", "#d63384", "Albums",
+			fmt.Sprintf("%d", albums),
+			fmt.Sprintf("%d missing", albumsMissing),
+			"/api/admin/database/albums", albumsMissing > 0),
+
+		statCard("fas fa-book", "#fd7e14", "Books",
+			fmt.Sprintf("%d", books),
+			fmt.Sprintf("%d missing", booksMissing),
+			"/api/admin/database/books", booksMissing > 0),
+
+		statCard("fas fa-headphones", "#20c997", "Audiobooks",
+			fmt.Sprintf("%d", audiobooks),
+			fmt.Sprintf("%d missing", audiobooksMissing),
+			"/api/admin/database/audiobooks", audiobooksMissing > 0),
+
+		statCard("fas fa-list-ol", "#0dcaf0", "Queue",
+			fmt.Sprintf("%d", queueActive),
+			fmt.Sprintf("%d/%d schedulers running", schedulesRunning, len(schedules)),
+			"/api/admin/grid/queue", false),
+
+		// System mini-card spanning full width on small screens.
 		html.Div(
-			html.Class("bg-light py-5"),
+			html.Class("col-12"),
 			html.Div(
-				html.Class("container"),
+				html.Class("card border-0 shadow-sm"),
+				html.Style("border-radius: 12px;"),
 				html.Div(
-					html.Class("row"),
+					html.Class("card-body d-flex flex-wrap gap-4 align-items-center"),
 					html.Div(
-						html.Class("col-12 text-center mb-5"),
-						html.H2(
-							html.Class("display-6 fw-bold mb-3"),
-							gomponents.Text("Powerful Features"),
+						html.I(
+							html.Class("fas fa-server me-2 text-secondary"),
+							gomponents.Attr("aria-hidden", "true"),
 						),
-						html.P(
-							html.Class("lead text-muted"),
-							gomponents.Text("Everything you need for automated media management"),
-						),
+						html.Span(html.Class("fw-semibold"), gomponents.Text("System")),
 					),
-				),
-				html.Div(
-					html.Class("row g-4"),
-
-					// Smart Automation
-					html.Div(
-						html.Class("col-md-4"),
-						html.Div(
-							html.Class("text-center"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-robot"),
-									html.Style("font-size: 2.5rem; color: #17a2b8;"),
-								),
-							),
-							html.H5(html.Class("fw-bold"), gomponents.Text("Smart Automation")),
-							html.P(
-								html.Class("text-muted"),
-								gomponents.Text(
-									"Automated RSS monitoring, quality filtering, and intelligent download scheduling",
-								),
-							),
-						),
-					),
-
-					// Multi-Platform Support
-					html.Div(
-						html.Class("col-md-4"),
-						html.Div(
-							html.Class("text-center"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-server"),
-									html.Style("font-size: 2.5rem; color: #6610f2;"),
-								),
-							),
-							html.H5(html.Class("fw-bold"), gomponents.Text("Multi-Platform")),
-							html.P(
-								html.Class("text-muted"),
-								gomponents.Text(
-									"Cross-platform support with Docker deployment and extensive indexer compatibility",
-								),
-							),
-						),
-					),
-
-					// Real-time Monitoring
-					html.Div(
-						html.Class("col-md-4"),
-						html.Div(
-							html.Class("text-center"),
-							html.Div(
-								html.Class("mb-3"),
-								html.I(
-									html.Class("fas fa-chart-line"),
-									html.Style("font-size: 2.5rem; color: #fd7e14;"),
-								),
-							),
-							html.H5(html.Class("fw-bold"), gomponents.Text("Real-time Monitoring")),
-							html.P(
-								html.Class("text-muted"),
-								gomponents.Text(
-									"Live statistics, queue monitoring, and comprehensive logging for complete visibility",
-								),
-							),
-						),
+					sysStat("Uptime", formatUptime(sys.UptimeSeconds)),
+					sysStat("Goroutines", fmt.Sprintf("%d", sys.NumGoroutine)),
+					sysStat("Memory", fmt.Sprintf("%.0f MB", sys.MemoryAllocMB)),
+					sysStat("CPUs", fmt.Sprintf("%d", sys.NumCPU)),
+					sysStat("Platform", sys.GOOS+"/"+sys.GOARCH),
+					html.Small(
+						html.Class("text-muted ms-auto"),
+						gomponents.Text("Updated "+time.Now().Format("15:04:05")),
 					),
 				),
 			),
 		),
 	)
+}
+
+// sysStat renders a small label/value pair for the system card.
+func sysStat(label, value string) gomponents.Node {
+	return html.Div(
+		html.Small(html.Class("text-muted d-block"), gomponents.Text(label)),
+		html.Span(html.Class("fw-semibold"), gomponents.Text(value)),
+	)
+}
+
+// statCard renders a single library statistic card.
+func statCard(icon, color, title, big, sub, href string, warn bool) gomponents.Node {
+	subClass := "text-muted mb-0 small"
+	if warn {
+		subClass = "text-danger mb-0 small fw-semibold"
+	}
+
+	return html.Div(
+		html.Class("col-xl-2 col-md-4 col-sm-6"),
+		html.A(
+			html.Href(href),
+			html.Class("text-decoration-none"),
+			html.Div(
+				html.Class("card border-0 shadow-sm h-100 dashboard-stat-card"),
+				html.Style(
+					"border-radius: 12px; transition: transform 0.15s ease, box-shadow 0.15s ease;",
+				),
+				html.Div(
+					html.Class("card-body"),
+					html.Div(
+						html.Class("d-flex align-items-center justify-content-between mb-2"),
+						html.Span(
+							html.Class("text-muted text-uppercase small fw-semibold"),
+							gomponents.Text(title),
+						),
+						html.I(
+							html.Class(icon),
+							html.Style("font-size: 1.4rem; color: "+color+";"),
+							gomponents.Attr("aria-hidden", "true"),
+						),
+					),
+					html.Div(
+						html.Class("h3 mb-1"),
+						html.Style("color: "+color+";"),
+						gomponents.Text(big),
+					),
+					html.P(html.Class(subClass), gomponents.Text(sub)),
+				),
+			),
+		),
+	)
+}
+
+// dashboardQuickActions renders a row of common shortcuts.
+func dashboardQuickActions() gomponents.Node {
+	type action struct {
+		icon, label, href string
+	}
+
+	actions := []action{
+		{"fas fa-magnifying-glass-arrow-right", "Search & Download", "/api/admin/searchdownload"},
+		{"fas fa-film", "Add Movies", "/api/admin/metadata-search/movies"},
+		{"fas fa-tv", "Add Series", "/api/admin/metadata-search/series"},
+		{"fas fa-bullseye", "Wanted", "/api/admin/wanted"},
+		{"fas fa-calendar-alt", "Calendar", "/api/admin/calendar"},
+		{"fas fa-chart-line", "Statistics", "/api/admin/statistics"},
+		{"fas fa-gear", "Configuration", "/api/admin/config/general"},
+		{"fas fa-file-text", "Logs", "/api/admin/logviewer"},
+	}
+
+	buttons := make([]gomponents.Node, 0, len(actions))
+	for _, a := range actions {
+		buttons = append(buttons, html.A(
+			html.Href(a.href),
+			html.Class("btn btn-outline-secondary d-flex align-items-center gap-2"),
+			html.I(html.Class(a.icon), gomponents.Attr("aria-hidden", "true")),
+			gomponents.Text(a.label),
+		))
+	}
+
+	return html.Div(
+		html.Class("mt-4"),
+		html.H2(html.Class("h5 mb-3"), gomponents.Text("Quick Actions")),
+		html.Div(
+			append([]gomponents.Node{html.Class("d-flex flex-wrap gap-2")}, buttons...)...,
+		),
+	)
+}
+
+// formatUptime renders a seconds count as a compact human string.
+func formatUptime(seconds int64) string {
+	if seconds <= 0 {
+		return "just started"
+	}
+
+	d := seconds / 86400
+	h := (seconds % 86400) / 3600
+	m := (seconds % 3600) / 60
+
+	switch {
+	case d > 0:
+		return fmt.Sprintf("%dd %dh", d, h)
+	case h > 0:
+		return fmt.Sprintf("%dh %dm", h, m)
+	default:
+		return fmt.Sprintf("%dm", m)
+	}
+}
+
+// dashboardCardsPartial serves the live dashboard cards as an HTMX fragment.
+func dashboardCardsPartial(ctx *gin.Context) {
+	var buf strings.Builder
+	renderDashboardCards().Render(&buf)
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+	ctx.String(http.StatusOK, buf.String())
 }

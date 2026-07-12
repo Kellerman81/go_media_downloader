@@ -8,53 +8,6 @@ import (
 	"time"
 )
 
-// Mock types for testing
-type mockScheduleMap struct {
-	m  map[uint32]JobSchedule
-	mu sync.RWMutex
-}
-
-func (m *mockScheduleMap) Add(key uint32, value JobSchedule) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.m[key] = value
-}
-
-func (m *mockScheduleMap) UpdateVal(key uint32, value JobSchedule) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.m[key] = value
-}
-
-func (m *mockScheduleMap) Delete(key uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.m, key)
-}
-
-type mockQueueMap struct {
-	m  map[uint32]Job
-	mu sync.RWMutex
-}
-
-func (m *mockQueueMap) Add(key uint32, value Job) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.m[key] = value
-}
-
-func (m *mockQueueMap) UpdateVal(key uint32, value Job) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.m[key] = value
-}
-
-func (m *mockQueueMap) Delete(key uint32) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.m, key)
-}
-
 func TestSyncOpsManagerInit(t *testing.T) {
 	// Reset global manager for test
 	manager = nil
@@ -66,7 +19,7 @@ func TestSyncOpsManagerInit(t *testing.T) {
 		t.Fatal("Manager should be initialized")
 	}
 
-	if !manager.writerActive {
+	if !manager.writerActive.Load() {
 		t.Fatal("Writer should be active")
 	}
 
@@ -114,12 +67,13 @@ func TestSyncMapOperations(t *testing.T) {
 
 func TestWorkerMapOperations(t *testing.T) {
 	// Initialize syncops manager
+	initOnce = sync.Once{}
 	InitSyncOps()
 	defer Shutdown()
 
-	// Create mock worker maps
-	scheduleMap := &mockScheduleMap{m: make(map[uint32]JobSchedule)}
-	queueMap := &mockQueueMap{m: make(map[uint32]Job)}
+	// Create real worker maps
+	scheduleMap := NewSyncMapUint[JobSchedule](10)
+	queueMap := NewSyncMapUint[Job](10)
 
 	// Register the maps
 	RegisterSyncMap(MapTypeSchedule, scheduleMap)
@@ -158,9 +112,140 @@ func TestWorkerMapOperations(t *testing.T) {
 	updatedJob.Started = time.Now()
 	QueueWorkerMapUpdate(MapTypeQueue, 789, updatedJob)
 
+	// Operations are synchronous, so updates are visible immediately.
+	if !scheduleMap.GetVal(123).IsRunning {
+		t.Error("Schedule update not applied")
+	}
+	if queueMap.GetVal(789).Started.IsZero() {
+		t.Error("Job update not applied")
+	}
+
 	// Test WorkerMap Delete operations
 	QueueWorkerMapDelete(MapTypeSchedule, 123)
 	QueueWorkerMapDelete(MapTypeQueue, 789)
+
+	if scheduleMap.Check(123) || queueMap.Check(789) {
+		t.Error("Worker map entries not deleted")
+	}
+}
+
+// TestRegisterSyncMapOverwriteWarns verifies a second registration of the same
+// MapType replaces the first (the warning itself is a log side-effect).
+func TestRegisterSyncMapOverwriteWarns(t *testing.T) {
+	initOnce = sync.Once{}
+	manager = nil
+	InitSyncOps()
+	defer Shutdown()
+
+	first := NewSyncMap[[]string](10)
+	second := NewSyncMap[[]string](10)
+
+	RegisterSyncMap(MapTypeString, first)
+	RegisterSyncMap(MapTypeString, second)
+
+	// Operations must now reach the second map, not the first.
+	QueueSyncMapAdd(MapTypeString, "k", []string{"v"}, 0, false, 0)
+
+	if first.Check("k") {
+		t.Error("operation reached the overwritten (first) map")
+	}
+	if !second.Check("k") {
+		t.Error("operation did not reach the current (second) map")
+	}
+}
+
+// TestQueueOperationReturnsFailure verifies QueueOperation reports false when an
+// operation cannot be applied (unregistered MapType or mismatched value type),
+// instead of silently succeeding.
+func TestQueueOperationReturnsFailure(t *testing.T) {
+	initOnce = sync.Once{}
+	manager = nil
+	InitSyncOps()
+	defer Shutdown()
+
+	// Unregistered MapType.
+	if QueueOperation(SyncOperation{OpType: OpSyncMapAdd, MapType: MapTypeTwoInt, Key: "x", Value: []DbstaticOneStringTwoInt{}}) {
+		t.Error("expected failure for unregistered MapType")
+	}
+
+	// Registered, but value type does not match the map's element type.
+	sm := NewSyncMap[[]string](10)
+	RegisterSyncMap(MapTypeString, sm)
+
+	if QueueOperation(SyncOperation{OpType: OpSyncMapAdd, MapType: MapTypeString, Key: "x", Value: 42}) {
+		t.Error("expected failure for mismatched value type")
+	}
+	if sm.Check("x") {
+		t.Error("mismatched-type operation should not have stored anything")
+	}
+
+	// A well-formed operation still succeeds.
+	if !QueueOperation(SyncOperation{OpType: OpSyncMapAdd, MapType: MapTypeString, Key: "y", Value: []string{"ok"}}) {
+		t.Error("expected success for well-formed operation")
+	}
+}
+
+// TestAddIfAbsent verifies the atomic check-then-add semantics importfeed relies on.
+func TestAddIfAbsent(t *testing.T) {
+	sm := NewSyncMap[struct{}](10)
+
+	if !sm.AddIfAbsent("job", struct{}{}, 0) {
+		t.Fatal("first AddIfAbsent should win")
+	}
+	if sm.AddIfAbsent("job", struct{}{}, 0) {
+		t.Fatal("second AddIfAbsent should lose while entry is live")
+	}
+
+	// An expired entry can be taken over.
+	sm.Delete("job")
+	expired := time.Now().Add(-time.Hour).UnixNano()
+	if !sm.AddIfAbsent("job2", struct{}{}, expired) {
+		t.Fatal("AddIfAbsent into empty map should win")
+	}
+	if !sm.AddIfAbsent("job2", struct{}{}, 0) {
+		t.Fatal("AddIfAbsent should take over an expired entry")
+	}
+}
+
+// TestShutdownUnderLoad spams operations from many goroutines while Shutdown is
+// called concurrently. It must not panic (no send on closed channel) and every
+// caller must return rather than block forever.
+func TestShutdownUnderLoad(t *testing.T) {
+	initOnce = sync.Once{}
+	manager = nil
+	InitSyncOps()
+
+	sm := NewSyncMap[[]string](100)
+	RegisterSyncMap(MapTypeString, sm)
+
+	var wg sync.WaitGroup
+	for i := range 50 {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := range 100 {
+				key := fmt.Sprintf("k_%d_%d", id, j)
+				QueueSyncMapAdd(MapTypeString, key, []string{"v"}, 0, false, 0)
+			}
+		}(i)
+	}
+
+	// Shut down while the goroutines are still submitting.
+	time.Sleep(2 * time.Millisecond)
+	Shutdown()
+
+	// All submitters must finish; the test's overall timeout catches a hang.
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("QueueOperation callers blocked after Shutdown")
+	}
 }
 
 func TestConcurrentOperations(t *testing.T) {
@@ -311,7 +396,7 @@ func TestShutdownAndReinitialization(t *testing.T) {
 	Shutdown()
 
 	// Manager should still exist but not be active
-	if manager.writerActive {
+	if manager.writerActive.Load() {
 		t.Fatal("Writer should not be active after shutdown")
 	}
 
@@ -319,7 +404,7 @@ func TestShutdownAndReinitialization(t *testing.T) {
 	InitSyncOps()
 
 	// Should still use the same manager instance but it should be inactive
-	if manager.writerActive {
+	if manager.writerActive.Load() {
 		t.Fatal("Writer should not be active after sync.Once prevents reinitialization")
 	}
 
@@ -330,7 +415,7 @@ func TestShutdownAndReinitialization(t *testing.T) {
 	InitSyncOps()
 	defer Shutdown()
 
-	if !manager.writerActive {
+	if !manager.writerActive.Load() {
 		t.Fatal("Writer should be active after proper reinitialization")
 	}
 }

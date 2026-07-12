@@ -90,7 +90,10 @@ func TestAudiobookSortWithRuntimeVerification(t *testing.T) {
 		status := "OK"
 		if !matched[i] {
 			status = "UNMATCHED"
-			errors = append(errors, fmt.Sprintf("chapter %d (%s) has no match", i+1, dbTracks[i].Title))
+			errors = append(
+				errors,
+				fmt.Sprintf("chapter %d (%s) has no match", i+1, dbTracks[i].Title),
+			)
 		}
 		t.Logf("  Chapter %2d (%s) <- %-50s [%s]", i+1, dbTracks[i].Title, basename, status)
 	}
@@ -168,7 +171,9 @@ func TestAudiobookSortWithZeroRuntimes(t *testing.T) {
 	}
 
 	if !verifyDiscSequentialOrder(result) {
-		t.Fatal("Files are NOT in disc-sequential order — zero-runtime fallback via track_index failed")
+		t.Fatal(
+			"Files are NOT in disc-sequential order — zero-runtime fallback via track_index failed",
+		)
 	}
 
 	t.Log("\nSUCCESS: Zero DB runtimes correctly fall back to track_index matching")
@@ -320,7 +325,10 @@ func TestKeinKeksDistanceMatch(t *testing.T) {
 		}
 		var hits []hit
 		for i := range dbTracks {
-			hits = append(hits, hit{i + 1, trackDistance(&localTracks[j], &dbTracks[i], false, true, nil)})
+			hits = append(
+				hits,
+				hit{i + 1, trackDistance(&localTracks[j], &dbTracks[i], false, true, nil)},
+			)
 		}
 		sort.Slice(hits, func(a, b int) bool { return hits[a].dist < hits[b].dist })
 		top := hits
@@ -395,7 +403,9 @@ func TestKeinKeksDistanceMatch(t *testing.T) {
 		t.Errorf("matchTracksByDistance FAILED:\n  %s", strings.Join(errors, "\n  "))
 	} else {
 		t.Logf("\nSUCCESS: all %d chapters matched in correct order", len(result))
-		t.Log("Ambiguous pair (chapters 13 & 14, both ~447s) correctly disambiguated by track_index")
+		t.Log(
+			"Ambiguous pair (chapters 13 & 14, both ~447s) correctly disambiguated by track_index",
+		)
 	}
 
 	// === Step 5: audiobookDistanceWithTracks — full distance per candidate ===

@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_r_sshistories_config_list_indexer;

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/antchfx/htmlquery"
 )
 
 // TestHTMLXPathIntegration tests the actual HTML/XPath scraper integration
@@ -370,6 +371,68 @@ func TestHTMLXPathIntegration(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestHTMLXPathFirstEntry fetches the first page and prints the TitleXPath,
+// URLXPath and DateXPath values extracted from the first scene node, so the
+// configured selectors can be verified against the live page.
+// Run with: go test ./scrapers/htmlxpath/ -run TestHTMLXPathFirstEntry -v
+func TestHTMLXPathFirstEntry(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	logger.InitLogger(logger.Config{LogLevel: "info"})
+
+	cfg := &Config{
+		SiteName:        "momsteachsex",
+		StartURL:        "https://momsteachsex.com/video/gallery/0",
+		BaseURL:         "https://momsteachsex.com",
+		SerieName:       "momsteachsex",
+		FirstPageDBOnly: true,
+
+		SceneNodeXPath: "//figure",
+		TitleXPath:     ".//figcaption/div[@class=\"caption-header\"]/span/a",
+		URLXPath:       ".//figcaption/div[@class=\"caption-header\"]/span/a",
+		URLAttribute:   "href",
+		DateXPath:      ".//figcaption/span[@class=\"date\"]",
+		ActorsXPath:    ".//figcaption/div[@class=\"models \"]/a",
+
+		PaginationType: "offset",
+		PageIncrement:  12,
+		PageURLPattern: "https://momsteachsex.com/video/gallery/{page}",
+		DateFormat:     "Jan 2, 2006",
+		WaitSeconds:    15,
+	}
+
+	scraper, err := NewScraper(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create scraper: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	doc, err := scraper.fetchPage(ctx, 0)
+	if err != nil {
+		t.Skipf("Skipping - website may be unavailable or blocking requests: %v", err)
+		return
+	}
+
+	sceneNodes := htmlquery.Find(doc, cfg.SceneNodeXPath)
+	if len(sceneNodes) == 0 {
+		t.Fatalf("No scene nodes found with SceneNodeXPath %q", cfg.SceneNodeXPath)
+	}
+
+	first := sceneNodes[0]
+	title := scraper.extractText(first, cfg.TitleXPath, cfg.TitleAttribute)
+	url := scraper.extractText(first, cfg.URLXPath, cfg.URLAttribute)
+	date := scraper.extractText(first, cfg.DateXPath, "")
+
+	t.Logf("First entry of first page (%d scenes found):", len(sceneNodes))
+	t.Logf("  TitleXPath -> %q", title)
+	t.Logf("  URLXPath   -> %q", url)
+	t.Logf("  DateXPath  -> %q", date)
 }
 
 // TestHTMLXPathPaginationLogic tests pagination URL building logic

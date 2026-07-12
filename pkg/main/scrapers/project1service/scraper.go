@@ -3,10 +3,12 @@ package project1service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,15 +85,15 @@ type Scraper struct {
 //   - error: Any initialization errors
 func NewScraper(cfg *Config) (*Scraper, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config cannot be nil")
+		return nil, errors.New("config cannot be nil")
 	}
 
 	if cfg.StartURL == "" {
-		return nil, fmt.Errorf("start URL is required")
+		return nil, errors.New("start URL is required")
 	}
 
 	if cfg.SerieName == "" {
-		return nil, fmt.Errorf("series name is required")
+		return nil, errors.New("series name is required")
 	}
 
 	return &Scraper{
@@ -109,7 +111,7 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 //
 // Returns:
 //   - error: Any errors during series lookup or creation
-func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
+func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	// First, try to find existing series by name
 	existingID := database.Getdatarow[uint](
 		false,
@@ -180,7 +182,7 @@ func (s *Scraper) getInstanceToken(ctx context.Context) error {
 		return nil
 	}
 
-	return fmt.Errorf("instance_token cookie not found")
+	return errors.New("instance_token cookie not found")
 }
 
 // buildURL constructs the API URL for fetching releases.
@@ -281,6 +283,16 @@ func cleanTitle(title string) string {
 	return cleaned
 }
 
+// buildProject1ItemURL builds the public item page URL for a release, mirroring
+// the original scraping script: the start URL's "/videos/" and "/scenes/" segments
+// are singularised, and the title is slugified (via cleanTitle) and appended after the id.
+func buildProject1ItemURL(startURL string, id int, title string) string {
+	startURL = strings.ReplaceAll(startURL, "/videos/", "/video/")
+	startURL = strings.ReplaceAll(startURL, "/scenes/", "/scene/")
+
+	return startURL + strconv.Itoa(id) + "/" + cleanTitle(title)
+}
+
 // createEpisode creates or updates an episode in the database.
 //
 // Parameters:
@@ -289,7 +301,7 @@ func cleanTitle(title string) string {
 //
 // Returns:
 //   - error: Any errors during episode creation
-func (s *Scraper) createEpisode(ctx context.Context, release *SceneRelease) error {
+func (s *Scraper) createEpisode(_ context.Context, release *SceneRelease) error {
 	if release.DateReleased.IsZero() {
 		return fmt.Errorf("invalid date for scene: %s", release.Title)
 	}
@@ -298,6 +310,11 @@ func (s *Scraper) createEpisode(ctx context.Context, release *SceneRelease) erro
 	dateStr := release.DateReleased.Format("2006-01-02")
 	identifier := dateStr[2:] // Remove "20" prefix
 
+	// Scraper provenance for later re-scraping: the source release id and the item
+	// page URL (built the same way as the original scraping script).
+	scraperID := strconv.Itoa(release.ID)
+	scraperURL := buildProject1ItemURL(s.config.StartURL, release.ID, release.Title)
+
 	episode := database.DbserieEpisode{
 		Identifier: identifier,
 		Title:      release.Title,
@@ -305,8 +322,10 @@ func (s *Scraper) createEpisode(ctx context.Context, release *SceneRelease) erro
 			Time:  release.DateReleased,
 			Valid: true,
 		},
-		DbserieID: s.dbserieID,
-		Overview:  release.Description,
+		DbserieID:  s.dbserieID,
+		Overview:   release.Description,
+		ScraperID:  scraperID,
+		ScraperURL: scraperURL,
 	}
 
 	// Check if episode already exists
@@ -319,12 +338,17 @@ func (s *Scraper) createEpisode(ctx context.Context, release *SceneRelease) erro
 	)
 
 	if existingID > 0 {
-		// Episode exists, update it
+		// Episode exists, update it. Backfill scraper fields only when empty.
 		err := database.ExecNErr(`
 			UPDATE dbserie_episodes SET
-				overview = ?, updated_at = CURRENT_TIMESTAMP
+				overview = ?,
+				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
+				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL THEN ? ELSE scraper_url END,
+				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
 			episode.Overview,
+			episode.ScraperID,
+			episode.ScraperURL,
 			existingID,
 		)
 		if err != nil {
@@ -339,13 +363,15 @@ func (s *Scraper) createEpisode(ctx context.Context, release *SceneRelease) erro
 		// Episode doesn't exist, insert new
 		err := database.ExecNErr(`
 			INSERT INTO dbserie_episodes (
-				identifier, title, first_aired, dbserie_id, overview, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+				identifier, title, first_aired, dbserie_id, overview, scraper_id, scraper_url, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 			episode.Identifier,
 			episode.Title,
 			episode.FirstAired,
 			episode.DbserieID,
 			episode.Overview,
+			episode.ScraperID,
+			episode.ScraperURL,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert episode '%s': %w", release.Title, err)

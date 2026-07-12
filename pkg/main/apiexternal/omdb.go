@@ -196,7 +196,7 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 
 // TestOMDBConnectivity tests the connectivity to the OMDB API
 // Returns status code and error if any.
-func TestOMDBConnectivity(timeout time.Duration) (int, error) {
+func TestOMDBConnectivity(_ time.Duration) (int, error) {
 	// Use v2 provider if available
 	if provider := providers.GetOMDB(); provider != nil {
 		// Test with a simple search

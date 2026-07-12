@@ -125,6 +125,10 @@ func InitCfg() {
 		PopulateSlugs(false)
 	}
 
+	// Repair any empty-string/non-numeric values stored in numeric columns so
+	// the strict sqlite driver can scan them. Idempotent and cheap on clean DBs.
+	NormalizeNumericColumns()
+
 	err = InitImdbdb()
 	if err != nil {
 		logger.Logtype("fatal", 0).
@@ -137,11 +141,12 @@ func InitCfg() {
 
 // DBClose closes any open database connections to the data.db and imdb.db
 // SQLite databases. It is intended to be called when the application is
-// shutting down to cleanly close the connections.
+// shutting down to cleanly close the connections. PRAGMA optimize is run
+// first, per SQLite's recommendation, so the query planner statistics stay
+// fresh across restarts.
 func DBClose() {
-	sqlCTX.Done()
-
 	if dbData != nil {
+		_, _ = dbData.ExecContext(sqlCTX, "PRAGMA optimize")
 		dbData.Close()
 	}
 
@@ -157,23 +162,39 @@ func checkFile(fpath string) bool {
 	return !errors.Is(err, os.ErrNotExist)
 }
 
+// dataDBDSN is the connection string for data.db. The driver is
+// modernc.org/sqlite, which only understands _pragma/_time_format/_txlock
+// options - the previous mattn-style params (_fk, _mutex, rt, _cslike) were
+// silently ignored. Note: foreign_keys is intentionally NOT enabled because
+// the schema/code store 0 (not NULL) in optional reference columns, which
+// would fail FK enforcement; orphan cleanup is handled by CleanupOrphans.
+//   - busy_timeout: wait instead of failing with SQLITE_BUSY when another
+//     connection (migrations, VACUUM INTO backups) holds the lock
+//   - journal_mode(wal): concurrent readers alongside a single writer
+//   - synchronous(normal): safe in WAL mode and substantially faster
+const dataDBDSN = "file:./databases/data.db?mode=rwc&_pragma=busy_timeout(10000)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)"
+
+// imdbDBDSN is the connection string for imdb.db. No WAL here - the file is
+// swapped wholesale by ExchangeImdbDB and WAL sidecar files would complicate
+// the rename.
+const imdbDBDSN = "file:./databases/imdb.db?mode=rwc&_pragma=busy_timeout(10000)"
+
 // InitDB initializes a connection to the data.db SQLite database.
 // It creates the file if it does not exist and sets database
 // connection parameters.
 func InitDB(dbloglevel string) error {
 	if !checkFile("./databases/data.db") {
-		_, err := os.Create("./databases/data.db") // Create SQLite file
+		f, err := os.Create("./databases/data.db") // Create SQLite file
 		if err != nil {
 			return err
 		}
+
+		f.Close()
 	}
 
 	var err error
 
-	dbData, err = sqlx.Connect(
-		"sqlite",
-		"file:./databases/data.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0",
-	)
+	dbData, err = sqlx.Connect("sqlite", dataDBDSN)
 	if err != nil {
 		return err
 	}
@@ -216,28 +237,24 @@ func SetVersion(str string) {
 // OpenImdbdb opens a connection to the imdb.db SQLite database.
 // It creates the file if it does not exist.
 func OpenImdbdb() {
-	dbImdb, _ = sqlx.Open(
-		"sqlite",
-		"file:./databases/imdb.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0",
-	) // sqlite == modernc, sqlite3 = mattn
+	dbImdb, _ = sqlx.Open("sqlite", imdbDBDSN) // sqlite == modernc, sqlite3 = mattn
 }
 
 // InitImdbdb initializes a connection to the imdb.db SQLite database.
 // It creates the file if it does not exist.
 func InitImdbdb() error {
 	if !checkFile("./databases/imdb.db") {
-		_, err := os.Create("./databases/imdb.db") // Create SQLite file
+		f, err := os.Create("./databases/imdb.db") // Create SQLite file
 		if err != nil {
 			return err
 		}
+
+		f.Close()
 	}
 
 	var err error
 
-	dbImdb, err = sqlx.Connect(
-		"sqlite",
-		"file:./databases/imdb.db?_fk=1&mode=rwc&_mutex=full&rt=1&_cslike=0",
-	)
+	dbImdb, err = sqlx.Connect("sqlite", imdbDBDSN)
 	if err != nil {
 		return err
 	}
@@ -412,7 +429,6 @@ func SetVars() {
 	globalCache.addStaticXStmt("select genre from imdb_genres where tconst = ?", true)
 	globalCache.addStaticXStmt("select count() from imdb_akas where tconst = ?", true)
 	globalCache.addStaticXStmt("select title, region, slug from imdb_akas where tconst = ?", true)
-	globalCache.addStaticXStmt("select count() from imdb_akas where tconst = ?", true)
 	globalCache.addStaticXStmt("select region, title, slug from imdb_akas where tconst = ?", true)
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
@@ -627,10 +643,6 @@ func SetVars() {
 		false,
 	)
 	globalCache.addStaticXStmt(
-		"select count() from movies where listname = ? COLLATE NOCASE",
-		false,
-	)
-	globalCache.addStaticXStmt(
 		"select count() from movies where dbmovie_id = ? and listname != ? COLLATE NOCASE",
 		false,
 	)
@@ -726,7 +738,6 @@ func SetVars() {
 		"select count() from series where dbserie_id = ? and listname = ? COLLATE NOCASE",
 		false,
 	)
-	globalCache.addStaticXStmt("select count() from series", false)
 	globalCache.addStaticXStmt(
 		"select id from series where dbserie_id = ? and listname = ? COLLATE NOCASE",
 		false,
@@ -748,7 +759,6 @@ func SetVars() {
 		"select listname from series where dbserie_id in (Select id from dbseries where thetvdb_id=?)",
 		false,
 	)
-	globalCache.addStaticXStmt("select rootpath from series where id = ?", false)
 	globalCache.addStaticXStmt("select rootpath from series where id = ?", false)
 	globalCache.addStaticXStmt("update series SET listname = ?, dbserie_id = ? where id = ?", false)
 	globalCache.addStaticXStmt(
@@ -794,7 +804,6 @@ func SetVars() {
 	globalCache.addStaticXStmt("select dbserie_id from serie_episodes where id = ?", false)
 	globalCache.addStaticXStmt("select serie_id from serie_episodes where id = ?", false)
 	globalCache.addStaticXStmt("select quality_profile from serie_episodes where id = ?", false)
-	globalCache.addStaticXStmt("select quality_profile from serie_episodes where id = ?", false)
 	globalCache.addStaticXStmt(
 		"select quality_profile from serie_episodes where serie_id = ? and quality_profile != '' and quality_profile is not NULL limit 1",
 		false,
@@ -830,14 +839,9 @@ func SetVars() {
 
 	globalCache.addStaticXStmt("select count() from dbseries", false)
 	globalCache.addStaticXStmt("select count() from dbseries where thetvdb_id = ?", false)
-	globalCache.addStaticXStmt("select count() from dbseries", false)
 	globalCache.addStaticXStmt("select id from dbseries where thetvdb_id = ?", false)
 	globalCache.addStaticXStmt("select id from dbseries where slug = ?", false)
 	globalCache.addStaticXStmt("select id from dbseries where seriename = ? COLLATE NOCASE", false)
-	globalCache.addStaticXStmt(
-		"select id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
-		false,
-	)
 	globalCache.addStaticXStmt(
 		"select id,created_at,updated_at,seriename,season,status,firstaired,network,runtime,language,genre,overview,rating,siterating,siterating_count,slug,imdb_id,thetvdb_id,freebase_m_id,freebase_id,tvrage_id,facebook,instagram,twitter,banner,poster,fanart,identifiedby, trakt_id from dbseries where id = ?",
 		false,
@@ -962,15 +966,15 @@ func SetVars() {
 		"insert into r_sshistories (config, list, indexer, last_id) values (?, ?, ?, ?)",
 		false,
 	)
+	globalCache.addStaticXStmt(
+		"insert into r_sshistories (config, list, indexer, last_id) values (?, ?, ?, ?) on conflict (config collate nocase, list collate nocase, indexer collate nocase) do update set last_id = excluded.last_id",
+		false,
+	)
 
 	globalCache.addStaticXStmt("select count() from serie_episode_files where location = ?", false)
 	globalCache.addStaticXStmt("select count() from serie_episode_files", false)
 	globalCache.addStaticXStmt(
 		"select count() from serie_episode_files where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
-		false,
-	)
-	globalCache.addStaticXStmt(
-		"select count() from serie_episode_files where serie_episode_id = ?",
 		false,
 	)
 	globalCache.addStaticXStmt(
@@ -1244,7 +1248,7 @@ func Backup(backupPath *string, maxbackups int) error {
 		}
 	}
 
-	if maxbackups == 0 || maxbackups >= len(backupFiles) {
+	if maxbackups >= len(backupFiles) {
 		return nil
 	}
 
@@ -1273,7 +1277,7 @@ func Backup(backupPath *string, maxbackups int) error {
 func UpgradeDB() error {
 	m, err := migrate.New(
 		"file://./schema/db",
-		"sqlite://./databases/data.db?_fk=1&_cslike=0",
+		"sqlite://./databases/data.db?_pragma=busy_timeout(10000)",
 	)
 	if err != nil {
 		return err
@@ -1292,6 +1296,70 @@ func UpgradeDB() error {
 	)
 
 	return nil
+}
+
+// NormalizeNumericColumns repairs legacy rows that stored an empty string (or
+// other non-numeric text such as "N/A") in an integer/real column — typically
+// from older metadata imports or the admin table editor. The strict sqlite
+// driver refuses to scan such a value into a numeric Go field ("converting
+// driver.Value type string (\"\") to a int"), which breaks core loaders like
+// GetDbmovieByIDP.
+//
+// CAST(col AS INTEGER|REAL) converts "" / "N/A" to 0 while leaving numeric text
+// ("120") intact, and the typeof(col) = 'text' filter means only affected rows
+// are rewritten. It is idempotent: once a value is stored as a number, typeof is
+// no longer 'text' so it is skipped on later runs. Only columns that are
+// genuinely numeric in the schema are listed here — text columns such as
+// dbseries.runtime/rating must NOT be cast or their values would be destroyed.
+func NormalizeNumericColumns() {
+	type tableFix struct {
+		table    string
+		intCols  []string
+		realCols []string
+	}
+
+	fixes := []tableFix{
+		{
+			table: "dbmovies",
+			intCols: []string{
+				"year",
+				"adult",
+				"budget",
+				"revenue",
+				"runtime",
+				"vote_count",
+				"moviedb_id",
+				"trakt_id",
+			},
+			realCols: []string{"popularity", "vote_average"},
+		},
+		{
+			table:   "dbseries",
+			intCols: []string{"thetvdb_id", "trakt_id", "tvrage_id"},
+		},
+		{
+			table:   "dbserie_episodes",
+			intCols: []string{"runtime", "absolute_episode"},
+		},
+	}
+
+	for f := range fixes {
+		for c := range fixes[f].intCols {
+			col := fixes[f].intCols[c]
+			ExecN(fmt.Sprintf(
+				"UPDATE %s SET %s = CAST(%s AS INTEGER) WHERE typeof(%s) = 'text'",
+				fixes[f].table, col, col, col,
+			))
+		}
+
+		for c := range fixes[f].realCols {
+			col := fixes[f].realCols[c]
+			ExecN(fmt.Sprintf(
+				"UPDATE %s SET %s = CAST(%s AS REAL) WHERE typeof(%s) = 'text'",
+				fixes[f].table, col, col, col,
+			))
+		}
+	}
 }
 
 // PopulateSlugs updates empty slug fields for existing records in
@@ -1336,16 +1404,22 @@ func populateTableSlugs(tableName, nameColumn string, force bool) {
 
 	var count int
 
-	for idx := range records {
-		slug := logger.StringToSlugCached(records[idx].Str)
-		if slug == "" {
-			continue
+	// One transaction for all updates - per-statement implicit transactions
+	// pay a full fsync each, which dominates on large tables.
+	_ = ExecNTx(func(exec func(querystring string, args ...any) error) error {
+		for idx := range records {
+			slug := logger.StringToSlugCached(records[idx].Str)
+			if slug == "" {
+				continue
+			}
+
+			if exec(updateQuery, slug, &records[idx].Num) == nil {
+				count++
+			}
 		}
 
-		ExecN(updateQuery, slug, &records[idx].Num)
-
-		count++
-	}
+		return nil
+	})
 
 	if count > 0 {
 		logger.Logtype("info", 0).
@@ -1361,7 +1435,7 @@ func populateTableSlugs(tableName, nameColumn string, force bool) {
 func UpgradeIMDB() {
 	m, err := migrate.New(
 		"file://./schema/imdbdb",
-		"sqlite://./databases/imdb.db?_fk=1&_mutex=no&_cslike=0",
+		"sqlite://./databases/imdb.db?_pragma=busy_timeout(10000)",
 	)
 	if err != nil {
 		logger.Logtype("error", 1).Err(err).Msg("migration failed")

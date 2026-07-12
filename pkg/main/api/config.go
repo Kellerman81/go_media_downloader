@@ -11,7 +11,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -451,6 +451,16 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetString(&cfg.JellyfinServerURL, "JellyfinServerURL").
 		SetString(&cfg.JellyfinToken, "JellyfinToken").
 		SetString(&cfg.JellyfinUsername, "JellyfinUsername").
+		// IRC announce
+		SetString(&cfg.IRCServer, "IRCServer").
+		SetBool(&cfg.IRCUseTLS, "IRCUseTLS").
+		SetString(&cfg.IRCNick, "IRCNick").
+		SetString(&cfg.IRCNickServPassword, "IRCNickServPassword").
+		SetString(&cfg.IRCInviteCommand, "IRCInviteCommand").
+		SetStringArray(&cfg.IRCChannels, "IRCChannels").
+		SetStringArray(&cfg.IRCAnnounceNicks, "IRCAnnounceNicks").
+		SetString(&cfg.IRCAnnounceRegex, "IRCAnnounceRegex").
+		SetInt(&cfg.IRCReadSeconds, "IRCReadSeconds").
 		SetBool(&cfg.Enabled, "Enabled").
 		// Movie Scraper Configuration
 		SetString(&cfg.MovieScraperType, "MovieScraperType").
@@ -548,6 +558,10 @@ func createPathsConfig(index string, c *gin.Context) config.PathsConfig {
 		SetStringArray(&cfg.AllowedOtherExtensions, "AllowedOtherExtensions").
 		SetStringArray(&cfg.AllowedVideoExtensionsNoRename, "AllowedVideoExtensionsNoRename").
 		SetStringArray(&cfg.AllowedOtherExtensionsNoRename, "AllowedOtherExtensionsNoRename").
+		SetStringArray(&cfg.AllowedAudioExtensions, "AllowedAudioExtensions").
+		SetStringArray(&cfg.AllowedAudioExtensionsNoRename, "AllowedAudioExtensionsNoRename").
+		SetStringArray(&cfg.AllowedBookExtensions, "AllowedBookExtensions").
+		SetStringArray(&cfg.AllowedBookExtensionsNoRename, "AllowedBookExtensionsNoRename").
 		SetStringArray(&cfg.Blocked, "Blocked").
 		SetStringArray(&cfg.Disallowed, "Disallowed").
 		SetStringArray(&cfg.AllowedLanguages, "AllowedLanguages").
@@ -863,8 +877,13 @@ func createQualityConfig(index string, c *gin.Context) config.QualityConfig {
 		SetBool(&qualityConfig.UseForPriorityResolution, "UseForPriorityResolution").
 		SetBool(&qualityConfig.UseForPriorityQuality, "UseForPriorityQuality").
 		SetBool(&qualityConfig.UseForPriorityAudio, "UseForPriorityAudio").
+		SetBool(&qualityConfig.UseForPriorityAudioFormat, "UseForPriorityAudioFormat").
+		SetBool(&qualityConfig.UseForPriorityAudioBitrate, "UseForPriorityAudioBitrate").
 		SetBool(&qualityConfig.UseForPriorityCodec, "UseForPriorityCodec").
 		SetBool(&qualityConfig.UseForPriorityOther, "UseForPriorityOther").
+		SetBool(&qualityConfig.PreferLossless, "PreferLossless").
+		SetInt(&qualityConfig.MinAudioBitrate, "MinAudioBitrate").
+		SetStringArray(&qualityConfig.WantedAudioFormats, "WantedAudioFormats").
 		SetInt(&qualityConfig.UseForPriorityMinDifference, "UseForPriorityMinDifference")
 
 	// Parse nested configurations
@@ -1073,6 +1092,48 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 		addConfig.CronDatabaseCheck = val
 	}
 
+	// Artist/author RSS scheduling (music, books, audiobooks)
+	if val := getFormField(c, prefix, index, "IntervalIndexerRssArtists"); val != "" {
+		addConfig.IntervalIndexerRssArtists = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalIndexerRssArtistsUpgrade"); val != "" {
+		addConfig.IntervalIndexerRssArtistsUpgrade = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronIndexerRssArtists"); val != "" {
+		addConfig.CronIndexerRssArtists = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronIndexerRssArtistsUpgrade"); val != "" {
+		addConfig.CronIndexerRssArtistsUpgrade = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalIndexerRssAuthors"); val != "" {
+		addConfig.IntervalIndexerRssAuthors = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalIndexerRssAuthorsUpgrade"); val != "" {
+		addConfig.IntervalIndexerRssAuthorsUpgrade = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronIndexerRssAuthors"); val != "" {
+		addConfig.CronIndexerRssAuthors = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronIndexerRssAuthorsUpgrade"); val != "" {
+		addConfig.CronIndexerRssAuthorsUpgrade = val
+	}
+
+	// Cache refresh scheduling
+	if val := getFormField(c, prefix, index, "IntervalCacheRefresh"); val != "" {
+		addConfig.IntervalCacheRefresh = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronCacheRefresh"); val != "" {
+		addConfig.CronCacheRefresh = val
+	}
+
 	return addConfig
 }
 
@@ -1151,6 +1212,37 @@ func (cb *ConfigBuilder) SetStringMultiSelectArray(
 	value := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName)
 
 	(*target) = value
+	return cb
+}
+
+// SetStringFloatMap sets a map[string]float64 field from the parallel
+// "<fieldName>_key" and "<fieldName>_value" form arrays produced by the
+// "floatmap" widget. Rows with an empty key or an unparseable value are skipped.
+// The target is only replaced when at least one valid pair is present.
+func (cb *ConfigBuilder) SetStringFloatMap(
+	target *map[string]float64,
+	fieldName string,
+) *ConfigBuilder {
+	keys := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName+"_key")
+	values := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName+"_value")
+
+	result := make(map[string]float64, len(keys))
+
+	for i, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" || i >= len(values) {
+			continue
+		}
+
+		if f, err := strconv.ParseFloat(strings.TrimSpace(values[i]), 64); err == nil {
+			result[k] = f
+		}
+	}
+
+	if len(result) > 0 {
+		*target = result
+	}
+
 	return cb
 }
 

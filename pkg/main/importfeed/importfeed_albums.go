@@ -2,6 +2,7 @@ package importfeed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -63,7 +64,10 @@ func JobImportDBAlbum(
 		Int(logger.StrRow, idx).
 		Msg("Import/Update Album")
 
-	return jobImportDBAlbum(ctx, album, cfgp, listid, importMode)
+	err := jobImportDBAlbum(ctx, album, cfgp, listid, importMode)
+	recordImportResult(ctx, err, errAlbumIgnored, errJobRunning)
+
+	return err
 }
 
 // AddAlbumByMusicBrainzID looks up the release on MusicBrainz by its release ID and
@@ -87,6 +91,28 @@ func AddAlbumByMusicBrainzID(
 	var str string
 
 	return addAlbumToDatabase(ctx, &release, cfgp, listid, &str)
+}
+
+// AddAlbumFromSearchResult adds a release returned by any metadata-provider search
+// to dbalbums + the given list. The release is provider-agnostic: if it carries a
+// MusicBrainz ID the album is enriched with full details/tracks from MusicBrainz,
+// otherwise the data present on the search result is inserted as-is.
+func AddAlbumFromSearchResult(
+	ctx context.Context,
+	release *apiexternal_v2.ReleaseSearchResult,
+	cfgp *config.MediaTypeConfig,
+	listid int,
+) error {
+	if release == nil || release.Title == "" {
+		return logger.ErrNotFound
+	}
+
+	artistName := ""
+	if len(release.Artists) > 0 {
+		artistName = release.Artists[0].Name
+	}
+
+	return addAlbumToDatabase(ctx, release, cfgp, listid, &artistName)
 }
 
 // jobImportDBAlbum performs the actual album import based on the import mode.
@@ -241,7 +267,7 @@ func importAlbumsBySeries(
 		// Example: "Bravo Hits AND (format:CD)"
 		query := seriesName
 		if len(mediaFormats) > 0 {
-			var fmtParts []string
+			fmtParts := make([]string, 0, len(mediaFormats))
 			for i := range mediaFormats {
 				fmtParts = append(fmtParts, "format:"+mediaFormats[i])
 			}
@@ -1074,7 +1100,7 @@ func getSeriesIDFromReleaseGroup(
 		}
 	}
 
-	return "", "", fmt.Errorf("release group is not part of a series")
+	return "", "", errors.New("release group is not part of a series")
 }
 
 // getReleaseGroupsInSeries retrieves all release groups that are part of a series.
@@ -1098,7 +1124,7 @@ func getReleaseGroupsInSeries(ctx context.Context, seriesID string) ([]string, e
 	}
 
 	if len(releaseGroupIDs) == 0 {
-		return nil, fmt.Errorf("no release groups found in series")
+		return nil, errors.New("no release groups found in series")
 	}
 
 	logger.Logtype("debug", 2).

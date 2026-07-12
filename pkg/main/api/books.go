@@ -11,7 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 // allowed jobs for books.

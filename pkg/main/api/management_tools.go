@@ -513,6 +513,22 @@ func renderExternalServiceHealthCheckPage(csrfToken string) gomponents.Node {
 							"CheckTMDB": "TMDB API",
 						},
 						"CheckTMDB", "checkbox", true, nil),
+					renderFormGroup("service",
+						map[string]string{
+							"CheckTVMaze": "Test TVmaze service connectivity",
+						},
+						map[string]string{
+							"CheckTVMaze": "TVmaze API",
+						},
+						"CheckTVMaze", "checkbox", true, nil),
+					renderFormGroup("service",
+						map[string]string{
+							"CheckMediaProviders": "Test configured book, audiobook and music providers (MusicBrainz, Last.fm, Discogs, Deezer, TheAudioDB, iTunes, AcoustID, OpenLibrary, Goodreads, Audnex, Audible)",
+						},
+						map[string]string{
+							"CheckMediaProviders": "Book / Audiobook / Music APIs",
+						},
+						"CheckMediaProviders", "checkbox", true, nil),
 				),
 
 				html.Div(
@@ -3581,6 +3597,10 @@ func HandleServiceHealth(c *gin.Context) {
 		c.PostForm("service_CheckTVDB") == "true"
 	checkTMDB := c.PostForm("service_CheckTMDB") == "on" ||
 		c.PostForm("service_CheckTMDB") == "true"
+	checkTVMaze := c.PostForm("service_CheckTVMaze") == "on" ||
+		c.PostForm("service_CheckTVMaze") == "true"
+	checkMediaProviders := c.PostForm("service_CheckMediaProviders") == "on" ||
+		c.PostForm("service_CheckMediaProviders") == "true"
 	timeoutStr := c.PostForm("service_Timeout")
 	retriesStr := c.PostForm("service_Retries")
 	detailedTest := c.PostForm("service_DetailedTest") == "on" ||
@@ -3610,6 +3630,8 @@ func HandleServiceHealth(c *gin.Context) {
 		checkOMDB,
 		checkTVDB,
 		checkTMDB,
+		checkTVMaze,
+		checkMediaProviders,
 		timeout,
 		retries,
 		detailedTest,
@@ -4005,16 +4027,16 @@ func HandleQualityReorder(c *gin.Context) {
 	}
 
 	// Only use empty codec and audio for simplicity (focus on resolution + quality)
-	var getaudios []database.Qualities
+	getaudios := make([]database.Qualities, 0, 1)
 
 	getaudios = append(getaudios, regex0)
 
-	var getcodecs []database.Qualities
+	getcodecs := make([]database.Qualities, 0, 1)
 
 	getcodecs = append(getcodecs, regex0)
 
 	// Include audio formats for music/audiobook profiles
-	var getaudioformats []database.Qualities
+	getaudioformats := make([]database.Qualities, 0, 1+len(database.DBConnect.GetaudioformatsIn))
 
 	getaudioformats = append(getaudioformats, regex0)
 	getaudioformats = append(getaudioformats, database.DBConnect.GetaudioformatsIn...)

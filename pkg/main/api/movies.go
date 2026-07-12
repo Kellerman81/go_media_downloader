@@ -18,7 +18,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 func AddMoviesRoutes(routermovies *gin.RouterGroup) {
@@ -1088,19 +1088,37 @@ func apirefreshMovies(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/refresh/{id} [get].
 func apirefreshMovie(c *gin.Context) {
+	id := c.Param(logger.StrID)
+
+	// Find this movie's list so we pick the movie config that actually owns it.
+	// There may be several movie configs; picking the first one would fail with
+	// "listid not set" when the movie belongs to a different config's list.
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM movies WHERE dbmovie_id = ? LIMIT 1",
+		&id,
+	)
+
 	var cfgp *config.MediaTypeConfig
 	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if media.NamePrefix[:5] == logger.StrMovie {
-			cfgp = media
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+			return false
+		}
+
+		if cfgp == nil {
+			cfgp = media // fall back to the first movie config
+		}
+
+		if listname != "" && media.GetMediaListsEntryListID(listname) != -1 {
+			cfgp = media // this config owns the movie's list
 			return true
 		}
 
 		return false
 	})
 
-	id := c.Param(logger.StrID)
 	worker.Dispatch(
-		"Refresh Single Movie_"+c.Param(logger.StrID),
+		"Refresh Single Movie_"+id,
 		func(_ uint32, _ context.Context) error {
 			return utils.RefreshMovie(cfgp, &id)
 		},

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -226,7 +227,7 @@ func getDiskUsageFallback(path string) (free uint64, total uint64, err error) {
 	free = 1 * 1024 * 1024 * 1024    // 1 GB free
 	total = 100 * 1024 * 1024 * 1024 // 100 GB total
 
-	return free, total, fmt.Errorf("unable to determine disk usage, using fallback values")
+	return free, total, errors.New("unable to determine disk usage, using fallback values")
 }
 
 // testPathPermissions tests if a path has read/write permissions.

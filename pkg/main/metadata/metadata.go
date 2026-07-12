@@ -1,11 +1,10 @@
 package metadata
 
 import (
-	"database/sql"
 	"errors"
 	"slices"
 	"strconv"
-	"time"
+	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -20,9 +19,6 @@ var (
 	// invalidRuntimes is a sorted slice for binary search.
 	// This is more memory efficient than a map for small sets.
 	invalidRuntimes = []int{1, 2, 3, 4, 60, 90, 120}
-
-	// errFound is a sentinel error for early loop termination.
-	errFound = errors.New("found")
 )
 
 // checkaddmovietitlewoslug adds a movie title to the dbmovie_titles table if it does not already exist.
@@ -69,21 +65,6 @@ func checkaddmovietitlewoslug(
 			syncops.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
 		)
 	}
-}
-
-// ParseDate parses a date string in "2006-01-02" format and returns a sql.NullTime.
-// Returns a null sql.NullTime if the date string is empty or fails to parse.
-func parseDate(date string) sql.NullTime {
-	if date == "" {
-		return sql.NullTime{}
-	}
-
-	t, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		return sql.NullTime{}
-	}
-
-	return sql.NullTime{Time: t, Valid: true}
 }
 
 // isValidRuntime checks if a runtime value is valid (not in the invalid list).
@@ -185,7 +166,7 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 		return err
 	}
 
-	updateStringField(&movie.Title, moviedbdetails.Title, overwrite, func(title string) string {
+	UpdateString(&movie.Title, moviedbdetails.Title, overwrite, func(title string) string {
 		return logger.UnquoteUnescape(logger.Checkhtmlentities(title))
 	})
 
@@ -193,24 +174,24 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 		movie.Slug = logger.StringToSlugCached(movie.Title)
 	}
 
-	updateBoolField(&movie.Adult, moviedbdetails.Adult, overwrite)
-	updateIntField(&movie.Budget, moviedbdetails.Budget, overwrite)
-	updateFloatField(&movie.Popularity, moviedbdetails.Popularity, overwrite)
-	updateIntField(&movie.Revenue, moviedbdetails.Revenue, overwrite)
-	updateInt32Field(&movie.VoteCount, moviedbdetails.VoteCount, overwrite)
-	updateFloatField(&movie.VoteAverage, moviedbdetails.VoteAverage, overwrite)
+	UpdateBool(&movie.Adult, moviedbdetails.Adult, overwrite)
+	UpdateInt(&movie.Budget, moviedbdetails.Budget, overwrite)
+	UpdateFloat32(&movie.Popularity, moviedbdetails.Popularity, overwrite)
+	UpdateInt(&movie.Revenue, moviedbdetails.Revenue, overwrite)
+	UpdateInt32(&movie.VoteCount, moviedbdetails.VoteCount, overwrite)
+	UpdateFloat32(&movie.VoteAverage, moviedbdetails.VoteAverage, overwrite)
 
-	updateStringField(&movie.OriginalLanguage, moviedbdetails.OriginalLanguage, overwrite, nil)
-	updateStringField(&movie.OriginalTitle, moviedbdetails.OriginalTitle, overwrite, nil)
-	updateStringField(&movie.Overview, moviedbdetails.Overview, overwrite, nil)
-	updateStringField(&movie.Status, moviedbdetails.Status, overwrite, nil)
-	updateStringField(&movie.Tagline, moviedbdetails.Tagline, overwrite, nil)
-	updateStringField(&movie.Poster, moviedbdetails.Poster, overwrite, nil)
-	updateStringField(&movie.Backdrop, moviedbdetails.Backdrop, overwrite, nil)
+	UpdateString(&movie.OriginalLanguage, moviedbdetails.OriginalLanguage, overwrite, nil)
+	UpdateString(&movie.OriginalTitle, moviedbdetails.OriginalTitle, overwrite, nil)
+	UpdateString(&movie.Overview, moviedbdetails.Overview, overwrite, nil)
+	UpdateString(&movie.Status, moviedbdetails.Status, overwrite, nil)
+	UpdateString(&movie.Tagline, moviedbdetails.Tagline, overwrite, nil)
+	UpdateString(&movie.Poster, moviedbdetails.Poster, overwrite, nil)
+	UpdateString(&movie.Backdrop, moviedbdetails.Backdrop, overwrite, nil)
 
-	// Handle release date and year
-	if moviedbdetails.ReleaseDate != "" && !movie.ReleaseDate.Valid {
-		movie.ReleaseDate = parseDate(moviedbdetails.ReleaseDate)
+	// Handle release date and year (overwrite applies to the date like the year)
+	if moviedbdetails.ReleaseDate != "" && (!movie.ReleaseDate.Valid || overwrite) {
+		movie.ReleaseDate = ParseDateString(moviedbdetails.ReleaseDate)
 		if (movie.Year == 0 || overwrite) && movie.ReleaseDate.Time.Year() != 0 {
 			movie.Year = uint16(movie.ReleaseDate.Time.Year())
 		}
@@ -244,59 +225,6 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 	return nil
 }
 
-// updateStringField updates a string field with a new value if the current field is empty or overwrite is true.
-// It allows an optional transformation function to modify the new value before assignment.
-// If no transform function is provided, the new value is assigned directly.
-// The update occurs only when the new value is non-empty.
-func updateStringField(
-	field *string,
-	newValue string,
-	overwrite bool,
-	transform func(string) string,
-) {
-	if (*field != "" && !overwrite) || newValue == "" {
-		return
-	}
-
-	if transform != nil {
-		*field = transform(newValue)
-	} else {
-		*field = newValue
-	}
-}
-
-// updateBoolField updates a bool field with a new value if the current field is false or overwrite is true.
-// It ensures that only true values are used to update the field, with an optional overwrite behavior.
-func updateBoolField(field *bool, newValue bool, overwrite bool) {
-	if (!*field && newValue) || overwrite {
-		*field = newValue
-	}
-}
-
-// updateIntField updates an int field with a new value if the current field is zero or overwrite is true.
-// It ensures that only non-zero values are used to update the field, with an optional overwrite behavior.
-func updateIntField(field *int, newValue int, overwrite bool) {
-	if (*field == 0 || overwrite) && newValue != 0 {
-		*field = newValue
-	}
-}
-
-// updateInt32Field updates an int32 field with a new value if the current field is zero or overwrite is true.
-// It ensures that only non-zero values are used to update the field, with an optional overwrite behavior.
-func updateInt32Field(field *int32, newValue int32, overwrite bool) {
-	if (*field == 0 || overwrite) && newValue != 0 {
-		*field = newValue
-	}
-}
-
-// updateFloatField updates a float32 field with a new value if the current field is zero or overwrite is true.
-// It ensures that only non-zero values are used to update the field, with an optional overwrite behavior.
-func updateFloatField(field *float32, newValue float32, overwrite bool) {
-	if (*field == 0 || overwrite) && newValue != 0 {
-		*field = newValue
-	}
-}
-
 // movieGetOmdbMetadata retrieves movie metadata from the OMDB API and merges it into the provided Dbmovie struct.
 // It will overwrite existing data in the Dbmovie if the overwrite param is true.
 // The OMDB API is queried using the ImdbID field in the Dbmovie.
@@ -310,7 +238,7 @@ func movieGetOmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 		return
 	}
 
-	updateStringField(&movie.Title, omdbdetails.Title, overwrite, func(title string) string {
+	UpdateString(&movie.Title, omdbdetails.Title, overwrite, func(title string) string {
 		return logger.UnquoteUnescape(logger.Checkhtmlentities(title))
 	})
 
@@ -318,16 +246,23 @@ func movieGetOmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 		movie.Slug = logger.StringToSlugCached(movie.Title)
 	}
 
-	updateStringField(&movie.Genres, omdbdetails.Genre, overwrite, nil)
-	updateStringField(&movie.URL, omdbdetails.Website, overwrite, nil)
-	updateStringField(&movie.Overview, omdbdetails.Plot, overwrite, nil)
+	UpdateString(&movie.Genres, omdbdetails.Genre, overwrite, nil)
+	UpdateString(&movie.URL, omdbdetails.Website, overwrite, nil)
+	UpdateString(&movie.Overview, omdbdetails.Plot, overwrite, nil)
 
 	if (movie.VoteCount == 0 || overwrite) && omdbdetails.ImdbVotes != "" {
-		movie.VoteCount = logger.StringToInt32(omdbdetails.ImdbVotes)
+		// OMDb formats votes with thousands separators ("1,234,567") - strip
+		// them; StringToInt32 would treat the comma as a decimal point and fail.
+		movie.VoteCount = logger.StringToInt32(
+			strings.ReplaceAll(omdbdetails.ImdbVotes, ",", ""),
+		)
 	}
 
 	if (movie.VoteAverage == 0 || overwrite) && omdbdetails.ImdbRating != "" {
-		movie.VoteAverage = float32(logger.StringToInt(omdbdetails.ImdbRating))
+		// Parse as float - converting through int truncated "7.4" to 7.0.
+		if rating, err := strconv.ParseFloat(omdbdetails.ImdbRating, 32); err == nil {
+			movie.VoteAverage = float32(rating)
+		}
 	}
 
 	if (movie.Year == 0 || overwrite) && omdbdetails.Year != "" {
@@ -335,7 +270,11 @@ func movieGetOmdbMetadata(movie *database.Dbmovie, overwrite bool) {
 	}
 
 	if (movie.Runtime == 0 || overwrite) && omdbdetails.Runtime != "" {
-		movie.Runtime = logger.StringToInt(omdbdetails.Runtime)
+		// OMDb formats runtime as "120 min" - parse the leading number;
+		// StringToInt on the full string always returned 0.
+		runtimeStr, _, _ := strings.Cut(omdbdetails.Runtime, " ")
+
+		movie.Runtime = logger.StringToInt(runtimeStr)
 	}
 }
 
@@ -352,7 +291,7 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 		return err
 	}
 
-	updateStringField(&movie.Title, traktdetails.Title, overwrite, func(title string) string {
+	UpdateString(&movie.Title, traktdetails.Title, overwrite, func(title string) string {
 		return logger.UnquoteUnescape(logger.Checkhtmlentities(title))
 	})
 
@@ -364,12 +303,12 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 		movie.Genres = logger.JoinStringsSep(traktdetails.Genres, ",")
 	}
 
-	updateInt32Field(&movie.VoteCount, traktdetails.Votes, overwrite)
-	updateFloatField(&movie.VoteAverage, traktdetails.Rating, overwrite)
-	updateStringField(&movie.Overview, traktdetails.Overview, overwrite, nil)
-	updateStringField(&movie.Status, traktdetails.Status, overwrite, nil)
-	updateStringField(&movie.OriginalLanguage, traktdetails.Language, overwrite, nil)
-	updateStringField(&movie.Tagline, traktdetails.Tagline, overwrite, nil)
+	UpdateInt32(&movie.VoteCount, traktdetails.Votes, overwrite)
+	UpdateFloat32(&movie.VoteAverage, traktdetails.Rating, overwrite)
+	UpdateString(&movie.Overview, traktdetails.Overview, overwrite, nil)
+	UpdateString(&movie.Status, traktdetails.Status, overwrite, nil)
+	UpdateString(&movie.OriginalLanguage, traktdetails.Language, overwrite, nil)
+	UpdateString(&movie.Tagline, traktdetails.Tagline, overwrite, nil)
 
 	if (movie.Year == 0 || overwrite) && traktdetails.Year != 0 {
 		movie.Year = traktdetails.Year
@@ -395,7 +334,7 @@ func movieGetTraktMetadata(movie *database.Dbmovie, overwrite bool) error {
 	}
 
 	if (!movie.ReleaseDate.Valid || overwrite) && traktdetails.Released != "" {
-		movie.ReleaseDate = parseDate(traktdetails.Released)
+		movie.ReleaseDate = ParseDateString(traktdetails.Released)
 	}
 
 	return nil
@@ -444,15 +383,21 @@ func Getmoviemetadata(
 
 	var errTmdb, errTrakt, errImdb error
 	for i := range priorities {
+		// On refresh, only the highest-priority source may overwrite existing
+		// fields; every later source fills gaps only. This keeps the source
+		// priority intact (with the default order that means IMDb data leads)
+		// while making a forced refresh actually replace stale values.
+		overwrite := refresh && i == 0
+
 		switch priorities[i] {
 		case logger.StrImdb:
-			errImdb = dbmovie.MovieGetImdbMetadata(refresh)
+			errImdb = dbmovie.MovieGetImdbMetadata(overwrite)
 		case "tmdb":
-			errTmdb = movieGetTmdbMetadata(dbmovie, false)
+			errTmdb = movieGetTmdbMetadata(dbmovie, overwrite)
 		case "omdb":
-			movieGetOmdbMetadata(dbmovie, false)
+			movieGetOmdbMetadata(dbmovie, overwrite)
 		case "trakt":
-			errTrakt = movieGetTraktMetadata(dbmovie, false)
+			errTrakt = movieGetTraktMetadata(dbmovie, overwrite)
 		}
 	}
 
@@ -505,23 +450,26 @@ func Getmoviemetadata(
 
 		var checkid int
 
+		// Collect the allowed title languages once for the whole run.
+		allowedLangs := collectTitleLanguages()
+
 		// Process IMDb alternate titles
 		if generalSettings.MovieAlternateTitleMetaSourceImdb && dbmovie.ImdbID != "" &&
 			errImdb == nil {
-			processImdbAlternateTitles(dbmovie, titles, &checkid)
+			processImdbAlternateTitles(dbmovie, titles, &checkid, allowedLangs)
 		}
 
 		// Process TMDb alternate titles
 		if generalSettings.MovieAlternateTitleMetaSourceTmdb &&
 			dbmovie.MoviedbID != 0 &&
 			errTmdb == nil {
-			processTmdbAlternateTitles(dbmovie, titles, &checkid)
+			processTmdbAlternateTitles(dbmovie, titles, &checkid, allowedLangs)
 		}
 
 		// Process Trakt alternate titles
 		if generalSettings.MovieAlternateTitleMetaSourceTrakt && dbmovie.ImdbID != "" &&
 			errTrakt == nil {
-			processTraktAlternateTitles(dbmovie, titles, &checkid)
+			processTraktAlternateTitles(dbmovie, titles, &checkid, allowedLangs)
 		}
 	}
 
@@ -589,16 +537,19 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 
 	var checkid int
 
+	// Collect the allowed title languages once for the whole run.
+	allowedLangs := collectTitleLanguages()
+
 	if hasImdb {
-		processImdbAlternateTitles(movie, titles, &checkid)
+		processImdbAlternateTitles(movie, titles, &checkid, allowedLangs)
 	}
 
 	if hasTmdb {
-		processTmdbAlternateTitles(movie, titles, &checkid)
+		processTmdbAlternateTitles(movie, titles, &checkid, allowedLangs)
 	}
 
 	if hasTrakt {
-		processTraktAlternateTitles(movie, titles, &checkid)
+		processTraktAlternateTitles(movie, titles, &checkid, allowedLangs)
 	}
 }
 
@@ -607,6 +558,7 @@ func processImdbAlternateTitles(
 	movie *database.Dbmovie,
 	titles []database.DbstaticTwoString,
 	checkid *int,
+	allowedLangs []string,
 ) {
 	movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
 
@@ -626,7 +578,7 @@ func processImdbAlternateTitles(
 
 	for idx := range arr {
 		aka := &arr[idx]
-		if !shouldProcessTitle(aka.Str1, aka.Str2, titles) {
+		if !ShouldProcessTitle(aka.Str1, aka.Str2, titles, allowedLangs) {
 			continue
 		}
 
@@ -643,6 +595,7 @@ func processTmdbAlternateTitles(
 	movie *database.Dbmovie,
 	titles []database.DbstaticTwoString,
 	checkid *int,
+	allowedLangs []string,
 ) {
 	tbl, err := apiexternal.GetTmdbMovieTitles(movie.MoviedbID)
 	if err != nil || len(tbl.Titles) == 0 {
@@ -654,7 +607,7 @@ func processTmdbAlternateTitles(
 
 	for idx := range tbl.Titles {
 		title := &tbl.Titles[idx]
-		if !shouldProcessTitle(title.Iso31661, title.Title, titles) {
+		if !ShouldProcessTitle(title.Iso31661, title.Title, titles, allowedLangs) {
 			continue
 		}
 
@@ -674,6 +627,7 @@ func processTraktAlternateTitles(
 	movie *database.Dbmovie,
 	titles []database.DbstaticTwoString,
 	checkid *int,
+	allowedLangs []string,
 ) {
 	arr := apiexternal.GetTraktMovieAliases(movie.ImdbID)
 	if len(arr) == 0 {
@@ -685,7 +639,7 @@ func processTraktAlternateTitles(
 
 	for idx := range arr {
 		alias := &arr[idx]
-		if !shouldProcessTitle(alias.Country, alias.Title, titles) {
+		if !ShouldProcessTitle(alias.Country, alias.Title, titles, allowedLangs) {
 			continue
 		}
 
@@ -700,40 +654,28 @@ func processTraktAlternateTitles(
 	}
 }
 
-// shouldProcessTitle checks if a title should be processed based on language filters.
-// Optimized to avoid repeated allocations by collecting languages more efficiently.
-func shouldProcessTitle(
-	region, title string,
-	titles []database.DbstaticTwoString,
-) bool {
-	if title == "" || database.GetDBStaticTwoStringIdx1(titles, title) != -1 {
-		return false
-	}
+// collectTitleLanguages returns the union of MetadataTitleLanguages across all
+// media configs. An empty result means no restrictions are configured (allow
+// all). Collected once per processing run instead of re-scanning every media
+// config for every single alternate title.
+func collectTitleLanguages() []string {
+	var langs []string
 
-	// Early return if no region filter needed
-	if region == "" {
-		return true
-	}
-
-	// Check if any media config has language restrictions
-	var hasMatch, hasLanguages bool
 	config.RangeSettingsMedia(func(_ string, mediaCfg *config.MediaTypeConfig) error {
-		if mediaCfg == nil || len(mediaCfg.MetadataTitleLanguages) == 0 {
+		if mediaCfg == nil {
 			return nil
 		}
 
-		hasLanguages = true
-
-		if logger.SlicesContainsI(mediaCfg.MetadataTitleLanguages, region) {
-			hasMatch = true
-			return errFound // Early termination
+		for _, lang := range mediaCfg.MetadataTitleLanguages {
+			if !logger.SlicesContainsI(langs, lang) {
+				langs = append(langs, lang)
+			}
 		}
 
 		return nil
 	})
 
-	// If no language restrictions configured, allow all
-	return !hasLanguages || hasMatch
+	return langs
 }
 
 // insertMovieTitle inserts a movie title into the database.
@@ -780,8 +722,15 @@ func insertMovieTitle(
 // It populates various serie fields like name, slug etc if empty or overwrite is set.
 // It handles API errors and logs them.
 func serieGetMetadataTmdb(serie *database.Dbserie, overwrite bool) error {
-	if serie.ThetvdbID == 0 || (serie.Seriename != "" && !overwrite) {
+	if serie.ThetvdbID == 0 {
 		return logger.ErrTvdbEmpty
+	}
+
+	// Name already present and no overwrite requested: nothing to do. This is
+	// the normal case for every known series - returning an error here made
+	// the caller log it at error level on every metadata run.
+	if serie.Seriename != "" && !overwrite {
+		return nil
 	}
 
 	moviedb, err := apiexternal.FindTmdbTvdb(serie.ThetvdbID)
@@ -793,7 +742,7 @@ func serieGetMetadataTmdb(serie *database.Dbserie, overwrite bool) error {
 		return errTmdbNotFound
 	}
 
-	updateStringField(&serie.Seriename, moviedb.TvResults[0].Name, overwrite, nil)
+	UpdateString(&serie.Seriename, moviedb.TvResults[0].Name, overwrite, nil)
 
 	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
 		serie.Slug = logger.StringToSlugCached(serie.Seriename)
@@ -815,13 +764,13 @@ func serieGetMetadataTrakt(serie *database.Dbserie, overwrite bool) error {
 		return err
 	}
 
-	updateStringField(&serie.Seriename, traktdetails.Title, overwrite, func(title string) string {
+	UpdateString(&serie.Seriename, traktdetails.Title, overwrite, func(title string) string {
 		return logger.UnquoteUnescape(logger.Checkhtmlentities(title))
 	})
-	updateStringField(&serie.Language, traktdetails.Language, overwrite, nil)
-	updateStringField(&serie.Network, traktdetails.Network, overwrite, nil)
-	updateStringField(&serie.Overview, traktdetails.Overview, overwrite, nil)
-	updateStringField(&serie.Status, traktdetails.Status, overwrite, nil)
+	UpdateString(&serie.Language, traktdetails.Language, overwrite, nil)
+	UpdateString(&serie.Network, traktdetails.Network, overwrite, nil)
+	UpdateString(&serie.Overview, traktdetails.Overview, overwrite, nil)
+	UpdateString(&serie.Status, traktdetails.Status, overwrite, nil)
 
 	if (serie.Slug == "" || overwrite) && serie.Seriename != "" {
 		serie.Slug = logger.StringToSlugCached(serie.Seriename)
@@ -914,19 +863,19 @@ func serieGetMetadataTvdb(
 		}
 	}
 
-	updateStringField(&serie.Seriename, tvdbdetails.Data.SeriesName, overwrite, nil)
-	updateStringField(&serie.Season, tvdbdetails.Data.Season, overwrite, nil)
-	updateStringField(&serie.Status, tvdbdetails.Data.Status, overwrite, nil)
-	updateStringField(&serie.Firstaired, tvdbdetails.Data.FirstAired, overwrite, nil)
-	updateStringField(&serie.Network, tvdbdetails.Data.Network, overwrite, nil)
-	updateStringField(&serie.Runtime, tvdbdetails.Data.Runtime, overwrite, nil)
-	updateStringField(&serie.Language, tvdbdetails.Data.Language, overwrite, nil)
-	updateStringField(&serie.Overview, tvdbdetails.Data.Overview, overwrite, nil)
-	updateStringField(&serie.Rating, tvdbdetails.Data.Rating, overwrite, nil)
-	updateStringField(&serie.Banner, tvdbdetails.Data.Banner, overwrite, nil)
-	updateStringField(&serie.Poster, tvdbdetails.Data.Poster, overwrite, nil)
-	updateStringField(&serie.Fanart, tvdbdetails.Data.Fanart, overwrite, nil)
-	updateStringField(&serie.ImdbID, tvdbdetails.Data.ImdbID, overwrite, nil)
+	UpdateString(&serie.Seriename, tvdbdetails.Data.SeriesName, overwrite, nil)
+	UpdateString(&serie.Season, tvdbdetails.Data.Season, overwrite, nil)
+	UpdateString(&serie.Status, tvdbdetails.Data.Status, overwrite, nil)
+	UpdateString(&serie.Firstaired, tvdbdetails.Data.FirstAired, overwrite, nil)
+	UpdateString(&serie.Network, tvdbdetails.Data.Network, overwrite, nil)
+	UpdateString(&serie.Runtime, tvdbdetails.Data.Runtime, overwrite, nil)
+	UpdateString(&serie.Language, tvdbdetails.Data.Language, overwrite, nil)
+	UpdateString(&serie.Overview, tvdbdetails.Data.Overview, overwrite, nil)
+	UpdateString(&serie.Rating, tvdbdetails.Data.Rating, overwrite, nil)
+	UpdateString(&serie.Banner, tvdbdetails.Data.Banner, overwrite, nil)
+	UpdateString(&serie.Poster, tvdbdetails.Data.Poster, overwrite, nil)
+	UpdateString(&serie.Fanart, tvdbdetails.Data.Fanart, overwrite, nil)
+	UpdateString(&serie.ImdbID, tvdbdetails.Data.ImdbID, overwrite, nil)
 
 	// Handle genres
 	if (serie.Genre == "" || overwrite) && len(tvdbdetails.Data.Genre) > 0 {

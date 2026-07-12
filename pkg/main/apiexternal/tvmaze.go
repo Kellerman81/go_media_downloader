@@ -119,7 +119,7 @@ type TVmazeSeason struct {
 
 // NewTVmazeClient creates a new TVmaze client for making API requests.
 // TVmaze has no API key requirement and allows reasonable rate limiting.
-func NewTVmazeClient(seconds uint8, calls int, disabletls bool, timeoutseconds uint16) {
+func NewTVmazeClient(_ uint8, _ int, disabletls bool, timeoutseconds uint16) {
 	general := config.GetSettingsGeneral()
 
 	tvmazeConfig := base.ClientConfig{
@@ -144,6 +144,22 @@ func NewTVmazeClient(seconds uint8, calls int, disabletls bool, timeoutseconds u
 		logger.Logtype(logger.StatusDebug, 0).
 			Msg("Registered TVMaze metadata provider with rate limiting")
 	}
+}
+
+// TestTVmazeConnectivity tests the connectivity to the TVmaze API.
+// Returns status code and error if any.
+func TestTVmazeConnectivity(_ time.Duration) (int, error) {
+	provider := providers.GetTVMaze()
+	if provider == nil {
+		return 0, logger.ErrNotFound
+	}
+
+	// Test with a simple search; any non-error response proves connectivity.
+	if _, err := provider.SearchSeries(context.Background(), "test", 0); err != nil {
+		return 0, err
+	}
+
+	return 200, nil
 }
 
 // SearchTVmaze searches for TV shows on TVmaze API by name.

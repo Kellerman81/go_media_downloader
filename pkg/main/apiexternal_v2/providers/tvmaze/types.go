@@ -303,7 +303,7 @@ func convertCrewToCredits(crew []tvmazeCrewMember) []apiexternal_v2.CrewMember {
 
 func convertExternalsToExternalIDs(
 	externals tvmazeExternals,
-	tvmazeID int,
+	_ int,
 ) *apiexternal_v2.ExternalIDs {
 	return &apiexternal_v2.ExternalIDs{
 		IMDbID: externals.IMDB,

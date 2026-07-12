@@ -8,7 +8,7 @@ require (
 	github.com/alitto/pond/v2 v2.7.1 //worker pool
 	github.com/antchfx/htmlquery v1.3.6 //xpath query for html
 	github.com/bogem/id3v2/v2 v2.1.4 //id3v2 tag parser for mp3 files
-	github.com/dgraph-io/ristretto/v2 v2.4.0 //memory cache
+	github.com/dgraph-io/ristretto/v2 v2.4.2 //memory cache
 	github.com/fsnotify/fsnotify v1.10.1 //config watcher
 	github.com/gin-gonic/gin v1.12.0 //web framework
 	github.com/goccy/go-json v0.10.6 //json parser
@@ -17,17 +17,18 @@ require (
 	github.com/jmoiron/sqlx v1.4.0 //structscan for db
 	github.com/mewkiz/flac v1.0.13 //flac audio parser
 	github.com/mozillazg/go-unidecode v0.2.0 //unidecode tables
-	github.com/pelletier/go-toml/v2 v2.3.1 //toml config parser
+	github.com/pelletier/go-toml/v2 v2.4.3 //toml config parser
 	github.com/robfig/cron/v3 v3.0.1 //scheduler
 	github.com/rs/zerolog v1.35.1 //logging
 	github.com/stretchr/testify v1.11.1 //testing toolkit
-	golang.org/x/net v0.55.0 //network utilities
+	golang.org/x/net v0.57.0 //network utilities
 	golang.org/x/oauth2 v0.36.0 //used for trakt api
-	golang.org/x/text v0.37.0 //text processing utilities
+	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.40.0 //text processing utilities
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 //log file rotation
 	maragu.dev/gomponents v1.3.0 //html component library
 	maragu.dev/gomponents-htmx v0.6.1 //htmx integration for gomponents
-	modernc.org/sqlite v1.50.1 //sqlite db driver
+	modernc.org/sqlite v1.53.0 //sqlite db driver
 )
 
 require (
@@ -64,11 +65,10 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.72.3 // indirect
+	modernc.org/libc v1.73.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )

@@ -10,12 +10,12 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/spotify"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 )
 
@@ -52,7 +52,9 @@ const (
 
 // loadMusicTestConfig reads music provider API keys from config.toml.
 // Keys are optional per provider — missing keys cause individual tests to skip.
-func loadMusicTestConfig(t *testing.T) (acoustIDKey, lastFMKey, discogsToken, spotifyID, spotifySecret string) {
+func loadMusicTestConfig(
+	t *testing.T,
+) (acoustIDKey, lastFMKey, discogsToken, spotifyID, spotifySecret string) {
 	t.Helper()
 	if config.Configfile == "" || config.Configfile == "./config/config.toml" {
 		config.Configfile = "R:\\golang_ent\\config\\config.toml"
@@ -97,7 +99,12 @@ func TestMusicBrainzReturnsData(t *testing.T) {
 		if len(results) == 0 {
 			t.Fatal("SearchReleases returned no results")
 		}
-		t.Logf("SearchReleases: %d total, first title: %q MBID: %s", total, results[0].Title, results[0].MusicBrainzID)
+		t.Logf(
+			"SearchReleases: %d total, first title: %q MBID: %s",
+			total,
+			results[0].Title,
+			results[0].MusicBrainzID,
+		)
 		if results[0].Title == "" {
 			t.Error("first result has empty title")
 		}
@@ -114,7 +121,12 @@ func TestMusicBrainzReturnsData(t *testing.T) {
 		if details == nil {
 			t.Fatal("GetReleaseByID returned nil")
 		}
-		t.Logf("GetReleaseByID: %q (%s) tracks: %d", details.Title, details.ReleaseDate, details.TrackCount)
+		t.Logf(
+			"GetReleaseByID: %q (%s) tracks: %d",
+			details.Title,
+			details.ReleaseDate,
+			details.TrackCount,
+		)
 		if details.Title == "" {
 			t.Error("release title is empty")
 		}
@@ -146,7 +158,9 @@ func TestAcoustIDReturnsData(t *testing.T) {
 	if len(results) == 0 {
 		// AcoustID track IDs can become stale if the entry has no recordings attached.
 		// The API responding without error means the provider works; skip rather than fail.
-		t.Skip("LookupByTrackID returned no results — track ID may have no recordings in AcoustID database")
+		t.Skip(
+			"LookupByTrackID returned no results — track ID may have no recordings in AcoustID database",
+		)
 	}
 	r := results[0]
 	t.Logf("AcoustID result: AcoustID=%s score=%.3f title=%q artist=%q",
@@ -218,7 +232,12 @@ func TestLastFMReturnsData(t *testing.T) {
 		if details == nil {
 			t.Fatal("GetAlbumInfo returned nil")
 		}
-		t.Logf("GetAlbumInfo: %q by %q tracks: %d", details.Title, artistNames(details.Artists), details.TrackCount)
+		t.Logf(
+			"GetAlbumInfo: %q by %q tracks: %d",
+			details.Title,
+			artistNames(details.Artists),
+			details.TrackCount,
+		)
 		if details.Title == "" {
 			t.Error("album title is empty")
 		}
@@ -251,7 +270,12 @@ func TestDiscogsReturnsData(t *testing.T) {
 			t.Fatal("SearchReleases returned no results")
 		}
 		r := results[0]
-		t.Logf("Discogs SearchReleases first: %q by %q year: %d", r.Title, artistNames(r.Artists), r.ReleaseYear)
+		t.Logf(
+			"Discogs SearchReleases first: %q by %q year: %d",
+			r.Title,
+			artistNames(r.Artists),
+			r.ReleaseYear,
+		)
 		if r.Title == "" {
 			t.Error("first result has empty title")
 		}
@@ -297,7 +321,12 @@ func TestDeezerReturnsData(t *testing.T) {
 			t.Fatal("SearchAlbums returned no results")
 		}
 		r := results[0]
-		t.Logf("Deezer SearchAlbums first: %q by %q DeezerID: %d", r.Title, artistNames(r.Artists), r.DeezerID)
+		t.Logf(
+			"Deezer SearchAlbums first: %q by %q DeezerID: %d",
+			r.Title,
+			artistNames(r.Artists),
+			r.DeezerID,
+		)
 		if r.Title == "" {
 			t.Error("first result has empty title")
 		}
@@ -314,7 +343,12 @@ func TestDeezerReturnsData(t *testing.T) {
 		if details == nil {
 			t.Fatal("GetAlbumByID returned nil")
 		}
-		t.Logf("Deezer GetAlbumByID: %q by %q tracks: %d", details.Title, artistNames(details.Artists), details.TrackCount)
+		t.Logf(
+			"Deezer GetAlbumByID: %q by %q tracks: %d",
+			details.Title,
+			artistNames(details.Artists),
+			details.TrackCount,
+		)
 		if details.Title == "" {
 			t.Error("album title is empty")
 		}
@@ -344,7 +378,10 @@ func TestSpotifyReturnsData(t *testing.T) {
 		results, err := p.SearchAlbums(ctx, testMusicArtist, testMusicAlbum, 5)
 		if err != nil {
 			if strings.Contains(err.Error(), "HTTP 403") {
-				t.Skipf("Spotify returned 403 — credentials may lack required API permissions or token reuse is blocked: %v", err)
+				t.Skipf(
+					"Spotify returned 403 — credentials may lack required API permissions or token reuse is blocked: %v",
+					err,
+				)
 			}
 			t.Fatalf("SearchAlbums error: %v", err)
 		}
@@ -352,7 +389,12 @@ func TestSpotifyReturnsData(t *testing.T) {
 			t.Fatal("SearchAlbums returned no results")
 		}
 		r := results[0]
-		t.Logf("Spotify SearchAlbums first: %q by %q SpotifyID: %s", r.Title, artistNames(r.Artists), r.ID)
+		t.Logf(
+			"Spotify SearchAlbums first: %q by %q SpotifyID: %s",
+			r.Title,
+			artistNames(r.Artists),
+			r.ID,
+		)
 		if r.Title == "" {
 			t.Error("first result has empty title")
 		}
@@ -409,7 +451,10 @@ func TestTheAudioDBReturnsData(t *testing.T) {
 			t.Fatalf("GetTracksByAlbumID error: %v", err)
 		}
 		if details == nil {
-			t.Skipf("GetTracksByAlbumID returned nil for album %s — free-tier API may not return track listings", albumID)
+			t.Skipf(
+				"GetTracksByAlbumID returned nil for album %s — free-tier API may not return track listings",
+				albumID,
+			)
 		}
 		t.Logf("TheAudioDB GetTracksByAlbumID: %q by %q tracks: %d",
 			details.Title, artistNames(details.Artists), details.TrackCount)
@@ -526,7 +571,11 @@ func logTracks(t *testing.T, provider string, details *apiexternal_v2.ReleaseDet
 	if len(details.Artists) > 0 {
 		t.Logf("  [%s] artists from API: %q", provider, artistNames(details.Artists))
 	} else {
-		t.Logf("  [%s] artists from API: (empty — fallback would use folder artist %q)", provider, diagArtist)
+		t.Logf(
+			"  [%s] artists from API: (empty — fallback would use folder artist %q)",
+			provider,
+			diagArtist,
+		)
 	}
 }
 
@@ -559,12 +608,25 @@ func TestFallbackDiag(t *testing.T) {
 			}
 			t.Logf("Last.fm SearchAlbums: %d results", len(results))
 			for i, r := range results {
-				t.Logf("  [%d] %q by %q MBID=%s tracks=%d", i+1, r.Title, artistNames(r.Artists), r.MusicBrainzID, r.TrackCount)
+				t.Logf(
+					"  [%d] %q by %q MBID=%s tracks=%d",
+					i+1,
+					r.Title,
+					artistNames(r.Artists),
+					r.MusicBrainzID,
+					r.TrackCount,
+				)
 			}
 			return
 		}
-		t.Logf("Last.fm GetAlbumInfo: %q by %q tracks=%d fileCount=%d MATCH=%v",
-			details.Title, artistNames(details.Artists), details.TrackCount, diagFileCount, details.TrackCount == diagFileCount)
+		t.Logf(
+			"Last.fm GetAlbumInfo: %q by %q tracks=%d fileCount=%d MATCH=%v",
+			details.Title,
+			artistNames(details.Artists),
+			details.TrackCount,
+			diagFileCount,
+			details.TrackCount == diagFileCount,
+		)
 		logTracks(t, "lastfm", details)
 	})
 
@@ -594,8 +656,15 @@ func TestFallbackDiag(t *testing.T) {
 				t.Logf("  [%d] GetReleaseByID(%d) error: %v", i+1, r.DiscogsID, ferr)
 				continue
 			}
-			t.Logf("  [%d] GetReleaseByID(%d): %q tracks=%d fileCount=%d MATCH=%v",
-				i+1, r.DiscogsID, details.Title, len(details.Tracks), diagFileCount, len(details.Tracks) == diagFileCount)
+			t.Logf(
+				"  [%d] GetReleaseByID(%d): %q tracks=%d fileCount=%d MATCH=%v",
+				i+1,
+				r.DiscogsID,
+				details.Title,
+				len(details.Tracks),
+				diagFileCount,
+				len(details.Tracks) == diagFileCount,
+			)
 			logTracks(t, "discogs", details)
 			if len(details.Tracks) == diagFileCount {
 				break // found a matching candidate
@@ -627,8 +696,15 @@ func TestFallbackDiag(t *testing.T) {
 				t.Logf("  [%d] GetAlbumByID(%d) error: %v", i+1, r.DeezerID, ferr)
 				continue
 			}
-			t.Logf("  [%d] GetAlbumByID(%d): %q tracks=%d fileCount=%d MATCH=%v",
-				i+1, r.DeezerID, details.Title, len(details.Tracks), diagFileCount, len(details.Tracks) == diagFileCount)
+			t.Logf(
+				"  [%d] GetAlbumByID(%d): %q tracks=%d fileCount=%d MATCH=%v",
+				i+1,
+				r.DeezerID,
+				details.Title,
+				len(details.Tracks),
+				diagFileCount,
+				len(details.Tracks) == diagFileCount,
+			)
 			logTracks(t, "deezer", details)
 			if len(details.Tracks) == diagFileCount {
 				break
@@ -660,8 +736,15 @@ func TestFallbackDiag(t *testing.T) {
 				t.Logf("  [%d] GetTracksByAlbumID(%s) error or nil: %v", i+1, r.TheAudioDBID, ferr)
 				continue
 			}
-			t.Logf("  [%d] GetTracksByAlbumID(%s): %q tracks=%d fileCount=%d MATCH=%v",
-				i+1, r.TheAudioDBID, details.Title, len(details.Tracks), diagFileCount, len(details.Tracks) == diagFileCount)
+			t.Logf(
+				"  [%d] GetTracksByAlbumID(%s): %q tracks=%d fileCount=%d MATCH=%v",
+				i+1,
+				r.TheAudioDBID,
+				details.Title,
+				len(details.Tracks),
+				diagFileCount,
+				len(details.Tracks) == diagFileCount,
+			)
 			logTracks(t, "theaudiodb", details)
 			if len(details.Tracks) == diagFileCount {
 				break
@@ -693,8 +776,15 @@ func TestFallbackDiag(t *testing.T) {
 				t.Logf("  [%d] GetAlbumTracks(%d) error: %v", i+1, r.ITunesID, ferr)
 				continue
 			}
-			t.Logf("  [%d] GetAlbumTracks(%d): %q tracks=%d fileCount=%d MATCH=%v",
-				i+1, r.ITunesID, details.Title, len(details.Tracks), diagFileCount, len(details.Tracks) == diagFileCount)
+			t.Logf(
+				"  [%d] GetAlbumTracks(%d): %q tracks=%d fileCount=%d MATCH=%v",
+				i+1,
+				r.ITunesID,
+				details.Title,
+				len(details.Tracks),
+				diagFileCount,
+				len(details.Tracks) == diagFileCount,
+			)
 			logTracks(t, "itunes", details)
 			if len(details.Tracks) == diagFileCount {
 				break

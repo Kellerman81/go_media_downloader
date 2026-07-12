@@ -126,23 +126,23 @@ func RegisterDataFull(fn mediatype.DataFullFunc) {
 }
 
 // GetType returns the media type constant for books.
-func (h *handler) GetType() uint {
+func (*handler) GetType() uint {
 	return config.MediaTypeBook
 }
 
 // GetCategoryName returns the category name for job history.
-func (h *handler) GetCategoryName() string {
+func (*handler) GetCategoryName() string {
 	return "book"
 }
 
 // GetTableName returns the database table name for books.
-func (h *handler) GetTableName() string {
+func (*handler) GetTableName() string {
 	return "books"
 }
 
 // GetDBIDs retrieves database IDs for the parsed book info.
 // It attempts ISBN lookup first, then falls back to title-based search.
-func (h *handler) GetDBIDs(info *database.ParseInfo) error {
+func (*handler) GetDBIDs(info *database.ParseInfo) error {
 	// Handle ISBN lookup
 	if info.ISBN != "" {
 		database.Scanrowsdyn(
@@ -217,7 +217,7 @@ func (h *handler) GetDBIDsFull(
 }
 
 // findInLists attempts to locate a book in configured media lists by its database ID.
-func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
+func (*handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
 			false,
@@ -265,37 +265,37 @@ func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfi
 }
 
 // ValidateIDs checks if all required IDs are set for books.
-func (h *handler) ValidateIDs(info *database.ParseInfo) bool {
+func (*handler) ValidateIDs(info *database.ParseInfo) bool {
 	return info.BookID != 0 && info.DbbookID != 0
 }
 
 // SetTempID sets the temporary ID from BookID.
-func (h *handler) SetTempID(info *database.ParseInfo) {
+func (*handler) SetTempID(info *database.ParseInfo) {
 	info.TempID = info.BookID
 }
 
 // SetDBID sets the DbbookID field.
-func (h *handler) SetDBID(info *database.ParseInfo, dbid uint) {
+func (*handler) SetDBID(info *database.ParseInfo, dbid uint) {
 	info.DbbookID = dbid
 }
 
 // GetDBID returns the DbbookID field.
-func (h *handler) GetDBID(info *database.ParseInfo) uint {
+func (*handler) GetDBID(info *database.ParseInfo) uint {
 	return info.DbbookID
 }
 
 // GetMediaID returns the BookID.
-func (h *handler) GetMediaID(info *database.ParseInfo) uint {
+func (*handler) GetMediaID(info *database.ParseInfo) uint {
 	return info.BookID
 }
 
 // SetMediaID sets the BookID.
-func (h *handler) SetMediaID(info *database.ParseInfo, id uint) {
+func (*handler) SetMediaID(info *database.ParseInfo, id uint) {
 	info.BookID = id
 }
 
 // GetListID retrieves the list ID for the book.
-func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
+func (*handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
 	if info.BookID != 0 {
 		return database.GetMediaListIDGetListname(cfgp, &info.BookID)
 	}
@@ -304,28 +304,28 @@ func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseIn
 }
 
 // ClearUntrustedID clears the ISBN if indexer is not trusted.
-func (h *handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
+func (h *handler) ClearUntrustedID(_ *apiexternal_v2.Nzbwithprio) {
 	// Books don't have a specific trust flag like IMDB/TVDB
 	// Could be extended if needed
 }
 
 // SetNzbID sets the NzbbookID field.
-func (h *handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
+func (*handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
 	entry.NzbbookID = mediaid
 }
 
 // SetEntryTempID sets the temp ID from NzbbookID.
-func (h *handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Info.TempID = entry.NzbbookID
 }
 
 // PerformIDSearch executes a search - books use query-based search only.
-func (h *handler) PerformIDSearch(
-	indcfg *config.IndexersConfig,
-	quality *config.QualityConfig,
-	entry *apiexternal_v2.Nzbwithprio,
-	cats int,
-	raw *apiexternal.NzbSlice,
+func (*handler) PerformIDSearch(
+	_ *config.IndexersConfig,
+	_ *config.QualityConfig,
+	_ *apiexternal_v2.Nzbwithprio,
+	_ int,
+	_ *apiexternal.NzbSlice,
 ) error {
 	// Books don't support ID-based search like IMDB/TVDB
 	// They use query-based search only
@@ -333,30 +333,30 @@ func (h *handler) PerformIDSearch(
 }
 
 // ClearUnmatchedCache removes the file from the book unmatched cache.
-func (h *handler) ClearUnmatchedCache(fpath string) {
+func (*handler) ClearUnmatchedCache(fpath string) {
 	database.SlicesCacheContainsDelete(logger.CacheUnmatchedBook, fpath)
 }
 
 // ShortenYearPattern returns true - books shorten all patterns including year.
-func (h *handler) ShortenYearPattern() bool {
+func (*handler) ShortenYearPattern() bool {
 	return true
 }
 
 // GenerateIdentifier does nothing for books - books don't have episode identifiers.
-func (h *handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool) {
+func (h *handler) GenerateIdentifier(_ *database.ParseInfo, onlyIfEmpty bool) {
 	// Books don't have identifiers like series do
 }
 
 // GetSchedulerRssSeasons returns empty strings for books - no RSS seasons jobs.
-func (h *handler) GetSchedulerRssSeasons(
-	scheduler *config.SchedulerConfig,
-	jobType string,
+func (*handler) GetSchedulerRssSeasons(
+	_ *config.SchedulerConfig,
+	_ string,
 ) (string, string) {
 	return "", ""
 }
 
 // GetSchedulerRssArtistsAuthors returns the interval and cron strings for author-based RSS searches.
-func (h *handler) GetSchedulerRssArtistsAuthors(
+func (*handler) GetSchedulerRssArtistsAuthors(
 	scheduler *config.SchedulerConfig,
 	jobType string,
 ) (string, string) {
@@ -387,15 +387,15 @@ func (h *handler) DataFull() {
 }
 
 // SearchConfigByName returns nil, false for books - config file search is not supported.
-func (h *handler) SearchConfigByName(
-	searchName string,
-	listCfg *config.MediaListsConfig,
+func (*handler) SearchConfigByName(
+	_ string,
+	_ *config.MediaListsConfig,
 ) (*config.ManualConfig, bool) {
 	return nil, false
 }
 
 // RecordDownloadHistory records a book download in the book_histories table.
-func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
 	var (
 		bookID, dbbookID uint
 		qualityProfile   string
@@ -433,9 +433,9 @@ func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetP
 
 // GetDownloadTargetFolder returns the target folder name for a book download.
 // Returns title with author (e.g., "Book Title - Author Name").
-func (h *handler) GetDownloadTargetFolder(
+func (*handler) GetDownloadTargetFolder(
 	nzb *apiexternal_v2.Nzbwithprio,
-	dbExternalID string,
+	_ string,
 ) string {
 	if nzb.NZB.Title != "" {
 		return nzb.NZB.Title
@@ -450,7 +450,7 @@ func (h *handler) GetDownloadTargetFolder(
 
 // FillSearchVar fills search variables from the database for the given book ID.
 // Sets NzbbookID, loads data from DB, validates required fields.
-func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
+func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
 	entry.NzbbookID = mediaid
 	if mediaid == 0 {
 		return logger.ErrNotFoundDbbook
@@ -496,33 +496,33 @@ func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint)
 }
 
 // GetNzbID returns the NzbbookID field.
-func (h *handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbbookID
 }
 
 // GetNzbIDP returns the NzbaudiobookID field.
-func (h *handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
+func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbbookID
 }
 
 // CheckMediaMatch checks if the entry's BookID matches the source's NzbbookID.
-func (h *handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
 	return source.NzbbookID == entry.Info.BookID
 }
 
 // GetUnwantedReason returns "unwanted Book".
-func (h *handler) GetUnwantedReason() string {
+func (*handler) GetUnwantedReason() string {
 	return "unwanted Book"
 }
 
 // GetFoundID returns entry.Info.BookID for logging.
-func (h *handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.BookID
 }
 
 // ValidateRSSIDs validates DbbookID and BookID for RSS processing.
 // Returns error reason string if invalid, empty string if valid.
-func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
+func (*handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 	if entry.Info.DbbookID == 0 {
 		return "unwanted DBBook"
 	}
@@ -535,20 +535,20 @@ func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 }
 
 // SetRSSIDs sets entry.Dbid = DbbookID, entry.NzbbookID = BookID.
-func (h *handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Dbid = entry.Info.DbbookID
 	entry.NzbbookID = entry.Info.BookID
 }
 
 // GetRSSMediaID returns entry.Info.BookID for getrssdata.
-func (h *handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.BookID
 }
 
 // CheckCorrectID validates that the entry's ISBN matches the source's.
 // Returns true if IDs don't match (should skip), false if they match or can't compare.
-func (h *handler) CheckCorrectID(
-	sourceentry, entry *apiexternal_v2.Nzbwithprio,
+func (*handler) CheckCorrectID(
+	_, entry *apiexternal_v2.Nzbwithprio,
 ) (bool, string, string) {
 	// Books don't have a standard ID like IMDB/TVDB in NZB results
 	// ISBN matching could be added if indexers support it
@@ -556,12 +556,12 @@ func (h *handler) CheckCorrectID(
 }
 
 // GetRuntimeBonus returns 0 - books don't have runtime bonus.
-func (h *handler) GetRuntimeBonus(info *database.ParseInfo) int {
+func (h *handler) GetRuntimeBonus(_ *database.ParseInfo) int {
 	return 0
 }
 
 // SkipMultipleFiles returns true - books should be single files.
-func (h *handler) SkipMultipleFiles() bool {
+func (*handler) SkipMultipleFiles() bool {
 	return true
 }
 
@@ -580,10 +580,10 @@ func (h *handler) FillNotifyData(
 
 // FillNamingData fills NamingData for books from the database.
 // Returns clearFolder=true for books (folder name should be cleared when rootpath exists).
-func (h *handler) FillNamingData(
+func (*handler) FillNamingData(
 	dbid *uint,
 	videofile string,
-	m *database.ParseInfo,
+	_ *database.ParseInfo,
 	data *mediatype.NamingData,
 ) (bool, bool) {
 	// Books need a different approach - we'll use Dbmovie fields for compatibility
@@ -604,26 +604,53 @@ func (h *handler) FillNamingData(
 	return false, true // clearFolder=false for books
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated ISBN IDs).
-func (h *handler) GetRefreshIncData() any {
+// refreshListArgs returns the list-name bind arguments for cfgp, matching the
+// "listname in (?" + cfgp.ListsQu + ")" placeholder count.
+func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
+	args := make([]any, 0, len(cfgp.Lists))
+	for i := range cfgp.Lists {
+		args = append(args, &cfgp.Lists[i].Name)
+	}
+
+	return args
+}
+
+// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// ISBN IDs in the config's lists).
+func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbbooks.isbn_13 from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.isbn_13 != '' group by dbbooks.isbn_13 order by dbbooks.updated_at desc limit 100",
+		"select distinct dbbooks.isbn_13 from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.isbn_13 != '' and books.listname in (?"+cfgp.ListsQu+") group by dbbooks.isbn_13 order by dbbooks.updated_at desc limit 100",
+		args...,
 	)
 }
 
-// GetRefreshFullData returns data for full refresh (all ISBN IDs).
-func (h *handler) GetRefreshFullData() any {
+// GetRefreshFullData returns data for full refresh (all ISBN IDs in the config's lists).
+func (*handler) GetRefreshFullData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+	join := "from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.isbn_13 != '' and books.listname in (?" + cfgp.ListsQu + ")"
+
 	return database.GetrowsN[string](
 		false,
-		database.Getdatarow[uint](false, "select count() from dbbooks where isbn_13 != ''"),
-		"select distinct dbbooks.isbn_13 from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.isbn_13 != '' group by dbbooks.isbn_13",
+		database.Getdatarow[uint](false, "select count(distinct dbbooks.isbn_13) "+join, args...),
+		"select distinct dbbooks.isbn_13 "+join+" group by dbbooks.isbn_13",
+		args...,
 	)
 }
 
 // GetSchedulerJobNames returns the job name pairs for books scheduler configuration.
-func (h *handler) GetSchedulerJobNames() [][2]string {
+func (*handler) GetSchedulerJobNames() [][2]string {
 	return [][2]string{
 		{logger.StrSearchMissingInc, logger.StrSearchMissingInc},
 		{logger.StrSearchMissingFull, logger.StrSearchMissingFull},
@@ -648,7 +675,7 @@ func (h *handler) GetSchedulerJobNames() [][2]string {
 }
 
 // CleanupAfterRemove handles cleanup after a book file is removed.
-func (h *handler) CleanupAfterRemove(
+func (*handler) CleanupAfterRemove(
 	folder, rootpath, pathCfgName string,
 	walkCleanupFn func(string),
 	_ func(),
@@ -667,7 +694,7 @@ func (h *handler) CleanupAfterRemove(
 }
 
 // MoveOtherFilesAfterOrganize handles moving additional files after main book is organized.
-func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
+func (*handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
 		return logger.ErrPathTemplateNotFound
 	}
@@ -690,25 +717,25 @@ func (h *handler) CheckExtensions(pathcfg *config.PathsConfig, ext string) (bool
 }
 
 // SupportsIDSearch returns false - books use query-based search only (no IMDB/TVDB).
-func (h *handler) SupportsIDSearch() bool { return false }
+func (*handler) SupportsIDSearch() bool { return false }
 
 // SupportsSeasonSearch returns false - books don't have season/episode structure.
-func (h *handler) SupportsSeasonSearch() bool { return false }
+func (*handler) SupportsSeasonSearch() bool { return false }
 
 // RequiresYearCheck returns false - books don't require strict year matching.
-func (h *handler) RequiresYearCheck() bool { return false }
+func (*handler) RequiresYearCheck() bool { return false }
 
 // HasSearchID returns false - books use query-based search only (no standard ID in NZB results).
-func (h *handler) HasSearchID(_ *apiexternal_v2.Nzbwithprio) bool { return false }
+func (*handler) HasSearchID(_ *apiexternal_v2.Nzbwithprio) bool { return false }
 
 // SupportsAbsoluteEpisode returns false - books don't have episode structure.
-func (h *handler) SupportsAbsoluteEpisode() bool { return false }
+func (*handler) SupportsAbsoluteEpisode() bool { return false }
 
 // HandleRSSListID does nothing for books - list ID is determined by book lookup.
-func (h *handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
+func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
 
 // CheckEpisodeMatch returns false - books don't have episode validation.
-func (h *handler) CheckEpisodeMatch(
+func (*handler) CheckEpisodeMatch(
 	_, _ *apiexternal_v2.Nzbwithprio,
 	_ string,
 	_ func(string, *apiexternal_v2.Nzbwithprio),
@@ -717,36 +744,36 @@ func (h *handler) CheckEpisodeMatch(
 }
 
 // SupportsVideoFile returns false - books use ebook files, not video.
-func (h *handler) SupportsVideoFile() bool { return false }
+func (*handler) SupportsVideoFile() bool { return false }
 
 // GetRuntimeMultiplier returns 1 - books are single items.
-func (h *handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
+func (*handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
 
 // ShouldCheckOldFilePriority returns false - books don't check file priority.
-func (h *handler) ShouldCheckOldFilePriority() bool { return false }
+func (*handler) ShouldCheckOldFilePriority() bool { return false }
 
 // HasConfiguredExtensions returns true if book extensions are configured.
-func (h *handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
+func (*handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
 	return pathcfg.AllowedBookExtensionsLen > 0 || pathcfg.AllowedBookExtensionsNoRenameLen > 0
 }
 
 // IsExternalIDImdb returns false - books don't use IMDB.
-func (h *handler) IsExternalIDImdb() bool { return false }
+func (*handler) IsExternalIDImdb() bool { return false }
 
 // UsesGroupedFileProcessing returns false - books are processed individually.
-func (h *handler) UsesGroupedFileProcessing() bool { return false }
+func (*handler) UsesGroupedFileProcessing() bool { return false }
 
 // GetCacheUnmatchedKey returns the cache key for unmatched books.
-func (h *handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedBook }
+func (*handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedBook }
 
 // GetCacheFilesKey returns the cache key for book files.
-func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesBook }
+func (*handler) GetCacheFilesKey() string { return logger.CacheFilesBook }
 
 // UsesListNameAsQualityProfile returns false - books use quality config name.
-func (h *handler) UsesListNameAsQualityProfile() bool { return false }
+func (*handler) UsesListNameAsQualityProfile() bool { return false }
 
 // GetStringsMap returns a book-specific string for the given key.
-func (h *handler) GetStringsMap(key string) string {
+func (*handler) GetStringsMap(key string) string {
 	return StringsMap[key]
 }
 

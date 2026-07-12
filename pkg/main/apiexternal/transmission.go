@@ -16,7 +16,7 @@ import (
 // It first tries to use a registered v2 transmission provider from the providers registry.
 // Falls back to creating a legacy client if no provider is registered.
 func SendToTransmission(
-	downloaderName, server, username, password, urlv, dlpath string,
+	downloaderName, _, _, password, urlv, dlpath string,
 	addpaused bool,
 ) error {
 	// Try v2 provider first

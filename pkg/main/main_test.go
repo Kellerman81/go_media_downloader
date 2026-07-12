@@ -1464,7 +1464,7 @@ func BenchmarkQuery15(b *testing.B) {
 	var x string
 
 	for b.Loop() {
-		importfeed.JobImportMovies(x, nil, -1, false)
+		importfeed.JobImportMovies(x, nil, -1, false, false)
 	}
 }
 

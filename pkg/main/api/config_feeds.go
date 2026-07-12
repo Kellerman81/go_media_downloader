@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -8,7 +9,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
@@ -22,52 +23,37 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 	// Get available media configurations
 	media := config.GetSettingsMediaAll()
 
-	var mediaConfigs []SelectOption
-	for i := range media.Movies {
-		mediaConfigs = append(
-			mediaConfigs,
-			SelectOption{Label: media.Movies[i].NamePrefix, Value: media.Movies[i].NamePrefix},
-		)
+	// All media group types - movies, series, books, audiobooks and music.
+	mediaGroups := [][]config.MediaTypeConfig{
+		media.Movies, media.Series, media.Books, media.AudioBooks, media.Music,
 	}
 
-	for i := range media.Series {
-		mediaConfigs = append(
-			mediaConfigs,
-			SelectOption{Label: media.Series[i].NamePrefix, Value: media.Series[i].NamePrefix},
-		)
-	}
+	var (
+		mediaConfigs []SelectOption
+		// Create a mapping of media configs to their lists
+		mediaToLists []SelectOption
+	)
 
-	// Create a mapping of media configs to their lists
-	var mediaToLists []SelectOption
-	for i := range media.Movies {
-		config := &media.Movies[i]
+	for _, group := range mediaGroups {
+		for i := range group {
+			cfg := &group[i]
 
-		var lists []string
-		for j := range config.Lists {
-			lists = append(lists, config.Lists[j].Name)
-		}
-
-		if len(lists) > 0 {
-			mediaToLists = append(
-				mediaToLists,
-				SelectOption{Label: config.NamePrefix, Value: lists},
+			mediaConfigs = append(
+				mediaConfigs,
+				SelectOption{Label: cfg.NamePrefix, Value: cfg.NamePrefix},
 			)
-		}
-	}
 
-	for i := range media.Series {
-		config := &media.Series[i]
+			var lists []string
+			for j := range cfg.Lists {
+				lists = append(lists, cfg.Lists[j].Name)
+			}
 
-		var lists []string
-		for j := range config.Lists {
-			lists = append(lists, config.Lists[j].Name)
-		}
-
-		if len(lists) > 0 {
-			mediaToLists = append(
-				mediaToLists,
-				SelectOption{Label: config.NamePrefix, Value: lists},
-			)
+			if len(lists) > 0 {
+				mediaToLists = append(
+					mediaToLists,
+					SelectOption{Label: cfg.NamePrefix, Value: lists},
+				)
+			}
 		}
 	}
 
@@ -75,21 +61,6 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 	logger.Logtype("debug", 0).
 		Any("mediaToLists", mediaToLists).
 		Msg("Media to lists mapping created")
-
-	// If no media configurations have lists, add some test data for debugging
-	if len(mediaToLists) == 0 {
-		logger.Logtype("debug", 0).
-			Msg("No media configurations with lists found, creating test data")
-
-		mediaToLists = append(
-			mediaToLists,
-			SelectOption{Label: "test_movies", Value: []string{"test_list_1", "test_list_2"}},
-			SelectOption{
-				Label: "test_series",
-				Value: []string{"test_series_list_1", "test_series_list_2"},
-			},
-		)
-	}
 
 	// Create better feed type descriptions
 	feedTypes := []SelectOption{
@@ -472,29 +443,21 @@ func HandleFeedLists(c *gin.Context) {
 	media := config.GetSettingsMediaAll()
 
 	mediaToLists := make(map[string][]string)
-	for i := range media.Movies {
-		config := &media.Movies[i]
 
-		var lists []string
-		for j := range config.Lists {
-			lists = append(lists, config.Lists[j].Name)
-		}
+	for _, group := range [][]config.MediaTypeConfig{
+		media.Movies, media.Series, media.Books, media.AudioBooks, media.Music,
+	} {
+		for i := range group {
+			cfg := &group[i]
 
-		if len(lists) > 0 {
-			mediaToLists[config.NamePrefix] = lists
-		}
-	}
+			var lists []string
+			for j := range cfg.Lists {
+				lists = append(lists, cfg.Lists[j].Name)
+			}
 
-	for i := range media.Series {
-		config := &media.Series[i]
-
-		var lists []string
-		for j := range config.Lists {
-			lists = append(lists, config.Lists[j].Name)
-		}
-
-		if len(lists) > 0 {
-			mediaToLists[config.NamePrefix] = lists
+			if len(lists) > 0 {
+				mediaToLists[cfg.NamePrefix] = lists
+			}
 		}
 	}
 
@@ -543,7 +506,7 @@ func parseFeedParsingRequest(c *gin.Context) (*FeedParsingRequest, error) {
 	}
 
 	if req.MediaConfig == "" || req.FeedType == "" {
-		return nil, fmt.Errorf("please fill in all required fields")
+		return nil, errors.New("please fill in all required fields")
 	}
 
 	return req, nil
@@ -608,16 +571,22 @@ func HandleFeedParsing(c *gin.Context) {
 
 	// Prepare result with actual parsed data
 	result := map[string]any{
-		"media_config": req.MediaConfig,
-		"feed_type":    req.FeedType,
-		"list_name":    req.ListName,
-		"dry_run":      req.DryRun,
-		"limit":        req.Limit,
-		"movies_found": len(feedResults.Movies),
-		"series_found": len(feedResults.Series),
-		"movies":       feedResults.Movies,
-		"series":       feedResults.Series,
-		"success":      true,
+		"media_config":     req.MediaConfig,
+		"feed_type":        req.FeedType,
+		"list_name":        req.ListName,
+		"dry_run":          req.DryRun,
+		"limit":            req.Limit,
+		"movies_found":     len(feedResults.Movies),
+		"series_found":     len(feedResults.Series),
+		"books_found":      len(feedResults.Books),
+		"audiobooks_found": len(feedResults.Audiobooks),
+		"albums_found":     len(feedResults.Albums),
+		"movies":           feedResults.Movies,
+		"series":           feedResults.Series,
+		"books":            feedResults.Books,
+		"audiobooks":       feedResults.Audiobooks,
+		"albums":           feedResults.Albums,
+		"success":          true,
 	}
 
 	c.String(http.StatusOK, renderFeedParsingResults(result))
@@ -677,26 +646,56 @@ func renderFeedParsingResults(result map[string]any) string {
 		feedComponents []gomponents.Node
 	)
 
-	if strings.HasPrefix(mediaConfig, "movie_") {
+	// renderManual lists []config.ManualConfig entries (series/book/audiobook/music).
+	// TVDB IDs are only meaningful for series, so they are shown only there.
+	renderManual := func(label string, items []config.ManualConfig, withTVDB bool) {
+		count = len(items)
+		if count == 0 {
+			return
+		}
+
+		feedComponents = append(
+			feedComponents,
+			html.H6(gomponents.Text(fmt.Sprintf("%s (%d)", label, count))),
+		)
+
+		maxDisplay := min(count, 20)
+
+		listItems := make([]gomponents.Node, 0, maxDisplay+1)
+		for i := range maxDisplay {
+			text := items[i].Name
+			if withTVDB {
+				text = fmt.Sprintf("%s (TVDB ID: %d)", items[i].Name, items[i].TvdbID)
+			}
+
+			listItems = append(listItems, html.Li(gomponents.Text(text)))
+		}
+
+		if count > 20 {
+			listItems = append(listItems, html.Li(
+				html.Em(gomponents.Text(fmt.Sprintf("... and %d more", count-20))),
+			))
+		}
+
+		feedComponents = append(feedComponents, html.Ul(listItems...))
+	}
+
+	switch {
+	case strings.HasPrefix(mediaConfig, "movie_"):
 		movies, _ := result["movies"].([]string)
 
 		count = len(movies)
-
-		// Display movies if found
 		if count > 0 {
-			feedComponents = append(feedComponents,
-
+			feedComponents = append(
+				feedComponents,
 				html.H6(gomponents.Text(fmt.Sprintf("Movies (%d)", count))),
 			)
 
-			// Show first 20 movies, with option to show more
 			maxDisplay := min(count, 20)
 
-			var movieItems []gomponents.Node
+			movieItems := make([]gomponents.Node, 0, maxDisplay+1)
 			for i := range maxDisplay {
-				movieItems = append(movieItems, html.Li(
-					html.Code(gomponents.Text(movies[i])),
-				))
+				movieItems = append(movieItems, html.Li(html.Code(gomponents.Text(movies[i]))))
 			}
 
 			if count > 20 {
@@ -707,37 +706,18 @@ func renderFeedParsingResults(result map[string]any) string {
 
 			feedComponents = append(feedComponents, html.Ul(movieItems...))
 		}
-	} else {
+	case strings.HasPrefix(mediaConfig, "book_"):
+		books, _ := result["books"].([]config.ManualConfig)
+		renderManual("Books", books, false)
+	case strings.HasPrefix(mediaConfig, "audiobook_"):
+		audiobooks, _ := result["audiobooks"].([]config.ManualConfig)
+		renderManual("Audiobooks", audiobooks, false)
+	case strings.HasPrefix(mediaConfig, "music_"):
+		albums, _ := result["albums"].([]config.ManualConfig)
+		renderManual("Albums", albums, false)
+	default:
 		series, _ := result["series"].([]config.ManualConfig)
-
-		count = len(series)
-		// Display series if found
-		if count > 0 {
-			feedComponents = append(feedComponents,
-
-				html.H6(gomponents.Text(fmt.Sprintf("Series (%d)", count))),
-			)
-
-			// Show first 20 series, with option to show more
-			maxDisplay := min(count, 20)
-
-			var seriesItems []gomponents.Node
-			for i := range maxDisplay {
-				serie := series[i]
-
-				seriesItems = append(seriesItems, html.Li(
-					gomponents.Text(fmt.Sprintf("%s (TVDB ID: %d)", serie.Name, serie.TvdbID)),
-				))
-			}
-
-			if count > 20 {
-				seriesItems = append(seriesItems, html.Li(
-					html.Em(gomponents.Text(fmt.Sprintf("... and %d more series", count-20))),
-				))
-			}
-
-			feedComponents = append(feedComponents, html.Ul(seriesItems...))
-		}
+		renderManual("Series", series, true)
 	}
 
 	AllNodes := append([]gomponents.Node{html.Class("mt-3")}, feedComponents...)

@@ -6,11 +6,24 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
+
+// dropdownListnameColumns maps a per-config item dropdown table to the listname
+// column used to scope its options to a selected media configuration's lists.
+var dropdownListnameColumns = map[string]string{
+	"movies":     "movies.listname",
+	"series":     "series.listname",
+	"albums":     "albums.listname",
+	"books":      "books.listname",
+	"audiobooks": "audiobooks.listname",
+	"artists":    "artists.listname",
+	"authors":    "authors.listname",
+}
 
 // apiAdminDropdownData provides AJAX endpoint for dynamic dropdown data loading.
 func apiAdminDropdownData(ctx *gin.Context) {
@@ -25,15 +38,17 @@ func apiAdminDropdownData(ctx *gin.Context) {
 	}
 
 	// Handle both GET and POST parameters
-	var search, page, idLookup string
+	var search, page, idLookup, mediaConfig string
 	if ctx.Request.Method == "POST" {
 		search = ctx.PostForm("search")
 		page = ctx.DefaultPostForm("page", "1")
 		idLookup = ctx.PostForm("id")
+		mediaConfig = ctx.PostForm("media_config")
 	} else {
 		search = ctx.Query("search")
 		page = ctx.DefaultQuery("page", "1")
 		idLookup = ctx.Query("id")
+		mediaConfig = ctx.Query("media_config")
 	}
 
 	// Limit search length to prevent header size issues
@@ -196,22 +211,33 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			searchArgs = append(searchArgs, "%"+search+"%")
 
 		case "listnames":
-			if tableName == "movies" {
-				searchFilter = " WHERE listname LIKE ?"
-			} else {
-				searchFilter = " WHERE listname LIKE ?"
-			}
+			searchFilter = " WHERE listname LIKE ?"
 
 			searchArgs = append(searchArgs, "%"+search+"%")
 
 		case "quality_profiles":
-			if tableName == "movies" {
-				searchFilter = " WHERE quality_profile LIKE ?"
-			} else {
-				searchFilter = " WHERE quality_profile LIKE ?"
-			}
+			searchFilter = " WHERE quality_profile LIKE ?"
 
 			searchArgs = append(searchArgs, "%"+search+"%")
+		}
+	}
+
+	// When a media configuration is supplied, restrict per-config item lookups to
+	// rows whose listname belongs to that config's lists. This keeps the content
+	// dropdown (movie/series/album/...) scoped to the selected configuration.
+	if mediaConfig != "" {
+		if col, ok := dropdownListnameColumns[tableName]; ok {
+			if cfgp := config.GetSettingsMedia(mediaConfig); cfgp != nil && cfgp.ListsLen > 0 {
+				if searchFilter == "" {
+					searchFilter = " WHERE " + col + " IN (?" + cfgp.ListsQu + ")"
+				} else {
+					searchFilter += " AND " + col + " IN (?" + cfgp.ListsQu + ")"
+				}
+
+				for i := range cfgp.ListsNames {
+					searchArgs = append(searchArgs, cfgp.ListsNames[i])
+				}
+			}
 		}
 	}
 
@@ -516,7 +542,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "books":
 		query := fmt.Sprintf(
-			"SELECT dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id%s ORDER BY dbbooks.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE((SELECT au.name FROM dbauthors au WHERE au.id = dbbooks.dbauthor_id) || ' - ', '') || dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id%s ORDER BY CASE WHEN dbbooks.title IS NULL OR dbbooks.title = '' THEN 1 ELSE 0 END, dbbooks.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		books := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -577,7 +603,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "audiobooks":
 		query := fmt.Sprintf(
-			"SELECT dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id%s ORDER BY dbaudiobooks.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE((SELECT au.name FROM dbaudiobook_authors aba JOIN dbauthors au ON au.id = aba.dbauthor_id WHERE aba.dbaudiobook_id = dbaudiobooks.id LIMIT 1) || ' - ', '') || dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id%s ORDER BY CASE WHEN dbaudiobooks.title IS NULL OR dbaudiobooks.title = '' THEN 1 ELSE 0 END, dbaudiobooks.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		audiobooks := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -638,7 +664,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "albums":
 		query := fmt.Sprintf(
-			"SELECT dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id%s ORDER BY dbalbums.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE((SELECT ar.name FROM dbalbum_artists aa JOIN dbartists ar ON ar.id = aa.dbartist_id WHERE aa.dbalbum_id = dbalbums.id LIMIT 1) || ' - ', '') || dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id%s ORDER BY CASE WHEN dbalbums.title IS NULL OR dbalbums.title = '' THEN 1 ELSE 0 END, dbalbums.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		albums := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -937,11 +963,20 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 	tabledefault := database.GetTableDefaults(tableName)
 	columns := strings.Split(tabledefault.DefaultColumns, ",")
 
-	orderid := getParam(ctx, "iSortCol_0", "0")
+	// DataTables sends the sort column index in iSortCol_0. Guard against an index
+	// that is out of range (e.g. the non-data "Actions" column) so we never panic
+	// on an out-of-bounds slice access.
+	order := "id"
+	if len(columns) > 0 {
+		orderidx := logger.StringToInt(getParam(ctx, "iSortCol_0", "0"))
+		if orderidx < 0 || orderidx >= len(columns) {
+			orderidx = 0
+		}
 
-	order := columns[logger.StringToInt(orderid)]
-	if logger.ContainsI(order, " as ") {
-		order = strings.Split(order, " as ")[1]
+		order = strings.TrimSpace(columns[orderidx])
+		if logger.ContainsI(order, " as ") {
+			order = strings.Split(order, " as ")[1]
+		}
 	}
 
 	direction := getParam(ctx, "sSortDir_0", "asc")
@@ -1156,1118 +1191,24 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 		return
 	}
 
-	var rowMap map[string]any
-
-	switch tableName {
-	case "dbmovies":
-		// Get real movie data using StructscanT
-		movie, err := database.Structscan[database.Dbmovie](
-			"SELECT ID, Title, Year, Imdb_id, Original_title, overview, runtime, genres, original_language, status, vote_average, vote_count, popularity, budget, revenue, created_at, updated_at FROM dbmovies WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":                movie.ID,
-			"title":             movie.Title,
-			"year":              movie.Year,
-			"imdb_id":           movie.ImdbID,
-			"original_title":    movie.OriginalTitle,
-			"overview":          movie.Overview,
-			"runtime":           movie.Runtime,
-			"genres":            movie.Genres,
-			"original_language": movie.OriginalLanguage,
-			"status":            movie.Status,
-			"vote_average":      movie.VoteAverage,
-			"vote_count":        movie.VoteCount,
-			"popularity":        movie.Popularity,
-			"budget":            movie.Budget,
-			"revenue":           movie.Revenue,
-			"created_at":        movie.CreatedAt,
-			"updated_at":        movie.UpdatedAt,
-		}
-
-	case "dbmovie_titles":
-		dbmovietitle, err := database.Structscan[database.DbmovieTitle](
-			"SELECT id, title, slug, region, created_at, updated_at, dbmovie_id FROM dbmovie_titles WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         dbmovietitle.ID,
-			"title":      dbmovietitle.Title,
-			"slug":       dbmovietitle.Slug,
-			"region":     dbmovietitle.Region,
-			"created_at": dbmovietitle.CreatedAt,
-			"updated_at": dbmovietitle.UpdatedAt,
-			"dbmovie_id": dbmovietitle.DbmovieID,
-		}
-
-	case "dbseries":
-		// Get real series data using StructscanT
-		serie, err := database.Structscan[database.Dbserie](
-			"SELECT id, seriename, imdb_id, thetvdb_id, status, firstaired, network, runtime, language, genre, overview, rating, created_at, updated_at FROM dbseries WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         serie.ID,
-			"seriename":  serie.Seriename,
-			"imdb_id":    serie.ImdbID,
-			"thetvdb_id": serie.ThetvdbID,
-			"status":     serie.Status,
-			"firstaired": serie.Firstaired,
-			"network":    serie.Network,
-			"runtime":    serie.Runtime,
-			"language":   serie.Language,
-			"genre":      serie.Genre,
-			"overview":   serie.Overview,
-			"rating":     serie.Rating,
-			"created_at": serie.CreatedAt,
-			"updated_at": serie.UpdatedAt,
-		}
-
-	case "dbserie_episodes":
-		// Get real episode data using StructscanT
-		episode, err := database.Structscan[database.DbserieEpisode](
-			"SELECT id, title, season, episode, identifier, first_aired, overview, runtime, dbserie_id, created_at, updated_at FROM dbserie_episodes WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":          episode.ID,
-			"title":       episode.Title,
-			"season":      episode.Season,
-			"episode":     episode.Episode,
-			"identifier":  episode.Identifier,
-			"first_aired": episode.FirstAired.Time,
-			"overview":    episode.Overview,
-			"runtime":     episode.Runtime,
-			"dbserie_id":  episode.DbserieID,
-			"created_at":  episode.CreatedAt,
-			"updated_at":  episode.UpdatedAt,
-		}
-
-	case "dbserie_alternates":
-		// Get real alternate data using StructscanT
-		alt, err := database.Structscan[database.DbserieAlternate](
-			"SELECT id, title, slug, region, dbserie_id, created_at, updated_at FROM dbserie_alternates WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         alt.ID,
-			"title":      alt.Title,
-			"slug":       alt.Slug,
-			"region":     alt.Region,
-			"dbserie_id": alt.DbserieID,
-			"created_at": alt.CreatedAt,
-			"updated_at": alt.UpdatedAt,
-		}
-
-	case "movies":
-		// Get real movies table data using StructscanT
-		movie, err := database.Structscan[database.Movie](
-			"SELECT id, listname, rootpath, dbmovie_id, quality_profile, quality_reached, missing, blacklisted, dont_upgrade, dont_search, created_at, updated_at FROM movies WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              movie.ID,
-			"listname":        movie.Listname,
-			"rootpath":        movie.Rootpath,
-			"dbmovie_id":      movie.DbmovieID,
-			"quality_profile": movie.QualityProfile,
-			"quality_reached": movie.QualityReached,
-			"missing":         movie.Missing,
-			"blacklisted":     movie.Blacklisted,
-			"dont_upgrade":    movie.DontUpgrade,
-			"dont_search":     movie.DontSearch,
-			"created_at":      movie.CreatedAt,
-			"updated_at":      movie.UpdatedAt,
-		}
-
-	case "movie_file_unmatcheds":
-		// Get real movie file unmatched data using StructscanT
-		movieFileUnmatched, err := database.Structscan[database.MovieFileUnmatched](
-			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM movie_file_unmatcheds WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           movieFileUnmatched.ID,
-			"listname":     movieFileUnmatched.Listname,
-			"filepath":     movieFileUnmatched.Filepath,
-			"parsed_data":  movieFileUnmatched.ParsedData,
-			"last_checked": movieFileUnmatched.LastChecked.Time,
-			"created_at":   movieFileUnmatched.CreatedAt,
-			"updated_at":   movieFileUnmatched.UpdatedAt,
-		}
-
-	case "movie_histories":
-		// Get real movie history data using StructscanT
-		movieHistory, err := database.Structscan[database.MovieHistory](
-			"SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, blacklisted FROM movie_histories WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              movieHistory.ID,
-			"title":           movieHistory.Title,
-			"url":             movieHistory.URL,
-			"indexer":         movieHistory.Indexer,
-			"target":          movieHistory.Target,
-			"quality_profile": movieHistory.QualityProfile,
-			"created_at":      movieHistory.CreatedAt,
-			"updated_at":      movieHistory.UpdatedAt,
-			"downloaded_at":   movieHistory.DownloadedAt,
-			"resolution_id":   movieHistory.ResolutionID,
-			"quality_id":      movieHistory.QualityID,
-			"codec_id":        movieHistory.CodecID,
-			"audio_id":        movieHistory.AudioID,
-			"movie_id":        movieHistory.MovieID,
-			"dbmovie_id":      movieHistory.DbmovieID,
-			"blacklisted":     movieHistory.Blacklisted,
-		}
-
-	case "movie_files":
-		// Get real movie files data using StructscanT
-		movieFile, err := database.Structscan[database.MovieFile](
-			"SELECT id, location, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, movie_id, dbmovie_id, height, width, proper, extended, repack FROM movie_files WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              movieFile.ID,
-			"location":        movieFile.Location,
-			"extension":       movieFile.Extension,
-			"quality_profile": movieFile.QualityProfile,
-			"created_at":      movieFile.CreatedAt,
-			"updated_at":      movieFile.UpdatedAt,
-			"resolution_id":   movieFile.ResolutionID,
-			"quality_id":      movieFile.QualityID,
-			"codec_id":        movieFile.CodecID,
-			"audio_id":        movieFile.AudioID,
-			"movie_id":        movieFile.MovieID,
-			"dbmovie_id":      movieFile.DbmovieID,
-			"height":          movieFile.Height,
-			"width":           movieFile.Width,
-			"proper":          movieFile.Proper,
-			"extended":        movieFile.Extended,
-			"repack":          movieFile.Repack,
-		}
-
-	case "series":
-		// Get real series table data using StructscanT
-		serie, err := database.Structscan[database.Serie](
-			"SELECT id, listname, rootpath, dbserie_id, dont_upgrade, dont_search, created_at, updated_at FROM series WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           serie.ID,
-			"listname":     serie.Listname,
-			"rootpath":     serie.Rootpath,
-			"dbserie_id":   serie.DbserieID,
-			"dont_upgrade": serie.DontUpgrade,
-			"dont_search":  serie.DontSearch,
-			"created_at":   serie.CreatedAt,
-			"updated_at":   serie.UpdatedAt,
-		}
-
-	case "serie_episodes":
-		// Get real serie episodes data using StructscanT
-		episode, err := database.Structscan[database.SerieEpisode](
-			"SELECT id, quality_profile, lastscan, created_at, updated_at, dbserie_episode_id, serie_id, dbserie_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search, ignore_runtime FROM serie_episodes WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":                 episode.ID,
-			"quality_profile":    episode.QualityProfile,
-			"lastscan":           episode.Lastscan.Time,
-			"created_at":         episode.CreatedAt,
-			"updated_at":         episode.UpdatedAt,
-			"dbserie_episode_id": episode.DbserieEpisodeID,
-			"serie_id":           episode.SerieID,
-			"dbserie_id":         episode.DbserieID,
-			"blacklisted":        episode.Blacklisted,
-			"quality_reached":    episode.QualityReached,
-			"missing":            episode.Missing,
-			"dont_upgrade":       episode.DontUpgrade,
-			"dont_search":        episode.DontSearch,
-			"ignore_runtime":     episode.IgnoreRuntime,
-		}
-
-	case "serie_episode_files":
-		// Get real serie files
-		serieFile, err := database.Structscan[database.SerieEpisodeFile](
-			"SELECT id, location, filename, extension, quality_profile, created_at, updated_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, proper, extended, repack FROM serie_episode_files WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":                 serieFile.ID,
-			"location":           serieFile.Location,
-			"filename":           serieFile.Filename,
-			"extension":          serieFile.Extension,
-			"quality_profile":    serieFile.QualityProfile,
-			"created_at":         serieFile.CreatedAt,
-			"updated_at":         serieFile.UpdatedAt,
-			"resolution_id":      serieFile.ResolutionID,
-			"quality_id":         serieFile.QualityID,
-			"codec_id":           serieFile.CodecID,
-			"audio_id":           serieFile.AudioID,
-			"serie_id":           serieFile.SerieID,
-			"serie_episode_id":   serieFile.SerieEpisodeID,
-			"dbserie_episode_id": serieFile.DbserieEpisodeID,
-			"dbserie_id":         serieFile.DbserieID,
-			"height":             serieFile.Height,
-			"width":              serieFile.Width,
-			"proper":             serieFile.Proper,
-			"extended":           serieFile.Extended,
-			"repack":             serieFile.Repack,
-		}
-
-	case "serie_file_unmatcheds":
-		// Get real serie file unmatched data using StructscanT
-		serieFileUnmatched, err := database.Structscan[database.SerieFileUnmatched](
-			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM serie_file_unmatcheds WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           serieFileUnmatched.ID,
-			"listname":     serieFileUnmatched.Listname,
-			"filepath":     serieFileUnmatched.Filepath,
-			"parsed_data":  serieFileUnmatched.ParsedData,
-			"last_checked": serieFileUnmatched.LastChecked.Time,
-			"created_at":   serieFileUnmatched.CreatedAt,
-			"updated_at":   serieFileUnmatched.UpdatedAt,
-		}
-
-	case "serie_episode_histories":
-		// Get real serie episode history data using StructscanT
-		serieEpisodeHistory, err := database.Structscan[database.SerieEpisodeHistory](
-			"SELECT id, title, url, indexer, target, quality_profile, created_at, updated_at, downloaded_at, resolution_id, quality_id, codec_id, audio_id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id FROM serie_episode_histories WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":                 serieEpisodeHistory.ID,
-			"title":              serieEpisodeHistory.Title,
-			"url":                serieEpisodeHistory.URL,
-			"indexer":            serieEpisodeHistory.Indexer,
-			"target":             serieEpisodeHistory.Target,
-			"quality_profile":    serieEpisodeHistory.QualityProfile,
-			"created_at":         serieEpisodeHistory.CreatedAt,
-			"updated_at":         serieEpisodeHistory.UpdatedAt,
-			"downloaded_at":      serieEpisodeHistory.DownloadedAt,
-			"resolution_id":      serieEpisodeHistory.ResolutionID,
-			"quality_id":         serieEpisodeHistory.QualityID,
-			"codec_id":           serieEpisodeHistory.CodecID,
-			"audio_id":           serieEpisodeHistory.AudioID,
-			"serie_id":           serieEpisodeHistory.SerieID,
-			"serie_episode_id":   serieEpisodeHistory.SerieEpisodeID,
-			"dbserie_episode_id": serieEpisodeHistory.DbserieEpisodeID,
-			"dbserie_id":         serieEpisodeHistory.DbserieID,
-		}
-
-	case "job_histories":
-		// Get real job history data using StructscanT
-		job, err := database.Structscan[database.JobHistory](
-			"SELECT id, job_type, job_category, job_group, started, ended, created_at, updated_at FROM job_histories WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           job.ID,
-			"job_type":     job.JobType,
-			"job_category": job.JobCategory,
-			"job_group":    job.JobGroup,
-			"started":      job.Started.Time,
-			"ended":        job.Ended.Time,
-			"created_at":   job.CreatedAt,
-			"updated_at":   job.UpdatedAt,
-		}
-
-	case "qualities":
-		// Get real quality data using StructscanT
-		quality, err := database.Structscan[database.Qualities](
-			"SELECT id, name, regex, strings, created_at, updated_at, type, priority, regexgroup, use_regex FROM qualities WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         quality.ID,
-			"name":       quality.Name,
-			"regex":      quality.Regex,
-			"strings":    quality.Strings,
-			"created_at": quality.CreatedAt,
-			"updated_at": quality.UpdatedAt,
-			"type":       quality.QualityType,
-			"priority":   quality.Priority,
-			"regexgroup": quality.Regexgroup,
-			"use_regex":  quality.UseRegex,
-		}
-
-	// Book tables
-	case "dbbooks":
-		book, err := database.Structscan[database.Dbbook](
-			"SELECT id, title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at FROM dbbooks WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":               book.ID,
-			"title":            book.Title,
-			"original_title":   book.OriginalTitle,
-			"isbn_13":          book.ISBN13,
-			"isbn_10":          book.ISBN10,
-			"asin":             book.ASIN,
-			"openlibrary_id":   book.OpenlibraryID,
-			"goodreads_id":     book.GoodreadsID,
-			"description":      book.Description,
-			"publisher":        book.Publisher,
-			"publish_date":     book.PublishDate.Time,
-			"page_count":       book.PageCount,
-			"language":         book.Language,
-			"genres":           book.Genres,
-			"cover_url":        book.CoverURL,
-			"dbauthor_id":      book.DbauthorID,
-			"dbbook_series_id": book.DbbookSeriesID,
-			"series_position":  book.SeriesPosition,
-			"average_rating":   book.AverageRating,
-			"ratings_count":    book.RatingsCount,
-			"year":             book.Year,
-			"slug":             book.Slug,
-			"created_at":       book.CreatedAt,
-			"updated_at":       book.UpdatedAt,
-		}
-
-	case "dbauthors":
-		author, err := database.Structscan[database.Dbauthor](
-			"SELECT id, name, aliases, bio, birth_date, death_date, goodreads_id, openlibrary_id, website, image_url, created_at, updated_at FROM dbauthors WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":             author.ID,
-			"name":           author.Name,
-			"aliases":        author.Aliases,
-			"bio":            author.Bio,
-			"birth_date":     author.BirthDate,
-			"death_date":     author.DeathDate,
-			"goodreads_id":   author.GoodreadsID,
-			"openlibrary_id": author.OpenlibraryID,
-			"website":        author.Website,
-			"image_url":      author.ImageURL,
-			"created_at":     author.CreatedAt,
-			"updated_at":     author.UpdatedAt,
-		}
-
-	case "dbbook_titles":
-		bookTitle, err := database.Structscan[database.DbbookTitle](
-			"SELECT id, title, slug, region, dbbook_id, created_at, updated_at FROM dbbook_titles WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         bookTitle.ID,
-			"title":      bookTitle.Title,
-			"slug":       bookTitle.Slug,
-			"region":     bookTitle.Region,
-			"dbbook_id":  bookTitle.DbbookID,
-			"created_at": bookTitle.CreatedAt,
-			"updated_at": bookTitle.UpdatedAt,
-		}
-
-	case "dbbook_series":
-		bookSeries, err := database.Structscan[database.DbbookSeries](
-			"SELECT id, name, description, goodreads_id, openlibrary_id, created_at, updated_at FROM dbbook_series WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":             bookSeries.ID,
-			"name":           bookSeries.Name,
-			"description":    bookSeries.Description,
-			"goodreads_id":   bookSeries.GoodreadsID,
-			"openlibrary_id": bookSeries.OpenlibraryID,
-			"created_at":     bookSeries.CreatedAt,
-			"updated_at":     bookSeries.UpdatedAt,
-		}
-
-	case "books":
-		book, err := database.Structscan[database.Book](
-			"SELECT id, quality_profile, listname, rootpath, lastscan, created_at, updated_at, dbbook_id, book_series_id, author_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search FROM books WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              book.ID,
-			"quality_profile": book.QualityProfile,
-			"listname":        book.Listname,
-			"rootpath":        book.Rootpath,
-			"lastscan":        book.Lastscan.Time,
-			"created_at":      book.CreatedAt,
-			"updated_at":      book.UpdatedAt,
-			"dbbook_id":       book.DbbookID,
-			"book_series_id":  book.BookSeriesID,
-			"author_id":       book.AuthorID,
-			"blacklisted":     book.Blacklisted,
-			"quality_reached": book.QualityReached,
-			"missing":         book.Missing,
-			"dont_upgrade":    book.DontUpgrade,
-			"dont_search":     book.DontSearch,
-		}
-
-	case "book_files":
-		bookFile, err := database.Structscan[database.BookFile](
-			"SELECT id, location, filename, extension, format, quality_profile, created_at, updated_at, book_id, dbbook_id, file_size FROM book_files WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              bookFile.ID,
-			"location":        bookFile.Location,
-			"filename":        bookFile.Filename,
-			"extension":       bookFile.Extension,
-			"format":          bookFile.Format,
-			"quality_profile": bookFile.QualityProfile,
-			"created_at":      bookFile.CreatedAt,
-			"updated_at":      bookFile.UpdatedAt,
-			"book_id":         bookFile.BookID,
-			"dbbook_id":       bookFile.DbbookID,
-			"file_size":       bookFile.FileSize,
-		}
-
-	case "authors":
-		author, err := database.Structscan[database.Author](
-			"SELECT id, listname, track_mode, created_at, updated_at, dbauthor_id, dont_search FROM authors WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":          author.ID,
-			"listname":    author.Listname,
-			"track_mode":  author.TrackMode,
-			"created_at":  author.CreatedAt,
-			"updated_at":  author.UpdatedAt,
-			"dbauthor_id": author.DbauthorID,
-			"dont_search": author.DontSearch,
-		}
-
-	case "book_series":
-		bookSeries, err := database.Structscan[database.BookSeries](
-			"SELECT id, listname, created_at, updated_at, dbbook_series_id, author_id, dont_search FROM book_series WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":               bookSeries.ID,
-			"listname":         bookSeries.Listname,
-			"created_at":       bookSeries.CreatedAt,
-			"updated_at":       bookSeries.UpdatedAt,
-			"dbbook_series_id": bookSeries.DbbookSeriesID,
-			"author_id":        bookSeries.AuthorID,
-			"dont_search":      bookSeries.DontSearch,
-		}
-
-	case "book_file_unmatcheds":
-		bookFileUnmatched, err := database.Structscan[database.BookFileUnmatched](
-			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM book_file_unmatcheds WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           bookFileUnmatched.ID,
-			"listname":     bookFileUnmatched.Listname,
-			"filepath":     bookFileUnmatched.Filepath,
-			"parsed_data":  bookFileUnmatched.ParsedData,
-			"last_checked": bookFileUnmatched.LastChecked.Time,
-			"created_at":   bookFileUnmatched.CreatedAt,
-			"updated_at":   bookFileUnmatched.UpdatedAt,
-		}
-
-	case "book_histories":
-		bookHistory, err := database.Structscan[database.BookHistory](
-			"SELECT id, title, url, indexer, type, target, quality_profile, created_at, updated_at, downloaded_at, book_id, dbbook_id, blacklisted FROM book_histories WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              bookHistory.ID,
-			"title":           bookHistory.Title,
-			"url":             bookHistory.URL,
-			"indexer":         bookHistory.Indexer,
-			"type":            bookHistory.HistoryType,
-			"target":          bookHistory.Target,
-			"quality_profile": bookHistory.QualityProfile,
-			"created_at":      bookHistory.CreatedAt,
-			"updated_at":      bookHistory.UpdatedAt,
-			"downloaded_at":   bookHistory.DownloadedAt,
-			"book_id":         bookHistory.BookID,
-			"dbbook_id":       bookHistory.DbbookID,
-			"blacklisted":     bookHistory.Blacklisted,
-		}
-
-	// Audiobook tables
-	case "dbaudiobooks":
-		audiobook, err := database.Structscan[database.Dbaudiobook](
-			"SELECT id, title, asin, audible_id, runtime_minutes, chapter_count, release_date, publisher, language, abridged, cover_url, sample_url, average_rating, ratings_count, year, slug, dbbook_id, description, created_at, updated_at FROM dbaudiobooks WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              audiobook.ID,
-			"title":           audiobook.Title,
-			"asin":            audiobook.ASIN,
-			"audible_id":      audiobook.AudibleID,
-			"runtime_minutes": audiobook.RuntimeMinutes,
-			"chapter_count":   audiobook.ChapterCount,
-			"release_date":    audiobook.ReleaseDate.Time,
-			"publisher":       audiobook.Publisher,
-			"language":        audiobook.Language,
-			"abridged":        audiobook.Abridged,
-			"cover_url":       audiobook.CoverURL,
-			"sample_url":      audiobook.SampleURL,
-			"average_rating":  audiobook.AverageRating,
-			"ratings_count":   audiobook.RatingsCount,
-			"year":            audiobook.Year,
-			"slug":            audiobook.Slug,
-			"dbbook_id":       audiobook.DbbookID,
-			"description":     audiobook.Description,
-			"created_at":      audiobook.CreatedAt,
-			"updated_at":      audiobook.UpdatedAt,
-		}
-
-	case "dbnarrators":
-		narrator, err := database.Structscan[database.Dbnarrator](
-			"SELECT id, name, audible_id, bio, image_url, created_at, updated_at FROM dbnarrators WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         narrator.ID,
-			"name":       narrator.Name,
-			"audible_id": narrator.AudibleID,
-			"bio":        narrator.Bio,
-			"image_url":  narrator.ImageURL,
-			"created_at": narrator.CreatedAt,
-			"updated_at": narrator.UpdatedAt,
-		}
-
-	case "dbaudiobook_titles":
-		audiobookTitle, err := database.Structscan[database.DbaudiobookTitle](
-			"SELECT id, title, slug, region, dbaudiobook_id, created_at, updated_at FROM dbaudiobook_titles WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":             audiobookTitle.ID,
-			"title":          audiobookTitle.Title,
-			"slug":           audiobookTitle.Slug,
-			"region":         audiobookTitle.Region,
-			"dbaudiobook_id": audiobookTitle.DbaudiobookID,
-			"created_at":     audiobookTitle.CreatedAt,
-			"updated_at":     audiobookTitle.UpdatedAt,
-		}
-
-	case "audiobooks":
-		audiobook, err := database.Structscan[database.Audiobook](
-			"SELECT id, quality_profile, listname, rootpath, lastscan, created_at, updated_at, dbaudiobook_id, author_id, book_series_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search FROM audiobooks WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              audiobook.ID,
-			"quality_profile": audiobook.QualityProfile,
-			"listname":        audiobook.Listname,
-			"rootpath":        audiobook.Rootpath,
-			"lastscan":        audiobook.Lastscan.Time,
-			"created_at":      audiobook.CreatedAt,
-			"updated_at":      audiobook.UpdatedAt,
-			"dbaudiobook_id":  audiobook.DbaudiobookID,
-			"author_id":       audiobook.AuthorID,
-			"book_series_id":  audiobook.BookSeriesID,
-			"blacklisted":     audiobook.Blacklisted,
-			"quality_reached": audiobook.QualityReached,
-			"missing":         audiobook.Missing,
-			"dont_upgrade":    audiobook.DontUpgrade,
-			"dont_search":     audiobook.DontSearch,
-		}
-
-	case "audiobook_files":
-		audiobookFile, err := database.Structscan[database.AudiobookFile](
-			"SELECT id, location, filename, extension, format, quality_profile, created_at, updated_at, audiobook_id, dbaudiobook_id, file_size, bitrate, runtime_ms, track_number, disc_number FROM audiobook_files WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              audiobookFile.ID,
-			"location":        audiobookFile.Location,
-			"filename":        audiobookFile.Filename,
-			"extension":       audiobookFile.Extension,
-			"format":          audiobookFile.Format,
-			"quality_profile": audiobookFile.QualityProfile,
-			"created_at":      audiobookFile.CreatedAt,
-			"updated_at":      audiobookFile.UpdatedAt,
-			"audiobook_id":    audiobookFile.AudiobookID,
-			"dbaudiobook_id":  audiobookFile.DbaudiobookID,
-			"file_size":       audiobookFile.FileSize,
-			"bitrate":         audiobookFile.Bitrate,
-			"runtime_ms":      audiobookFile.RuntimeMs,
-			"track_number":    audiobookFile.TrackNumber,
-			"disc_number":     audiobookFile.DiscNumber,
-		}
-
-	case "audiobook_file_unmatcheds":
-		audiobookFileUnmatched, err := database.Structscan[database.AudiobookFileUnmatched](
-			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM audiobook_file_unmatcheds WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           audiobookFileUnmatched.ID,
-			"listname":     audiobookFileUnmatched.Listname,
-			"filepath":     audiobookFileUnmatched.Filepath,
-			"parsed_data":  audiobookFileUnmatched.ParsedData,
-			"last_checked": audiobookFileUnmatched.LastChecked.Time,
-			"created_at":   audiobookFileUnmatched.CreatedAt,
-			"updated_at":   audiobookFileUnmatched.UpdatedAt,
-		}
-
-	case "audiobook_histories":
-		audiobookHistory, err := database.Structscan[database.AudiobookHistory](
-			"SELECT id, title, url, indexer, type, target, quality_profile, created_at, updated_at, downloaded_at, audiobook_id, dbaudiobook_id, blacklisted FROM audiobook_histories WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              audiobookHistory.ID,
-			"title":           audiobookHistory.Title,
-			"url":             audiobookHistory.URL,
-			"indexer":         audiobookHistory.Indexer,
-			"type":            audiobookHistory.HistoryType,
-			"target":          audiobookHistory.Target,
-			"quality_profile": audiobookHistory.QualityProfile,
-			"created_at":      audiobookHistory.CreatedAt,
-			"updated_at":      audiobookHistory.UpdatedAt,
-			"downloaded_at":   audiobookHistory.DownloadedAt,
-			"audiobook_id":    audiobookHistory.AudiobookID,
-			"dbaudiobook_id":  audiobookHistory.DbaudiobookID,
-			"blacklisted":     audiobookHistory.Blacklisted,
-		}
-
-	// Music tables
-	case "dbalbums":
-		album, err := database.Structscan[database.Dbalbum](
-			"SELECT id, title, musicbrainz_release_group_id, musicbrainz_release_id, discogs_master_id, discogs_release_id, spotify_id, upc, release_date, release_type, format, label, country, total_tracks, total_runtime_ms, genres, styles, cover_url, year, slug, created_at, updated_at FROM dbalbums WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":                           album.ID,
-			"title":                        album.Title,
-			"musicbrainz_release_group_id": album.MusicbrainzReleaseGroupID,
-			"musicbrainz_release_id":       album.MusicbrainzReleaseID,
-			"discogs_master_id":            album.DiscogsMasterID,
-			"discogs_release_id":           album.DiscogsReleaseID,
-			"spotify_id":                   album.SpotifyID,
-			"upc":                          album.UPC,
-			"release_date":                 album.ReleaseDate.Time,
-			"release_type":                 album.ReleaseType,
-			"format":                       album.Format,
-			"label":                        album.Label,
-			"country":                      album.Country,
-			"total_tracks":                 album.TotalTracks,
-			"total_runtime_ms":             album.TotalRuntimeMs,
-			"genres":                       album.Genres,
-			"styles":                       album.Styles,
-			"cover_url":                    album.CoverURL,
-			"year":                         album.Year,
-			"slug":                         album.Slug,
-			"created_at":                   album.CreatedAt,
-			"updated_at":                   album.UpdatedAt,
-		}
-
-	case "dbartists":
-		artist, err := database.Structscan[database.Dbartist](
-			"SELECT id, name, sort_name, musicbrainz_id, discogs_id, spotify_id, artist_type, country, begin_date, end_date, disambiguation, bio, image_url, genres, created_at, updated_at FROM dbartists WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":             artist.ID,
-			"name":           artist.Name,
-			"sort_name":      artist.SortName,
-			"musicbrainz_id": artist.MusicbrainzID,
-			"discogs_id":     artist.DiscogsID,
-			"spotify_id":     artist.SpotifyID,
-			"artist_type":    artist.ArtistType,
-			"country":        artist.Country,
-			"begin_date":     artist.BeginDate,
-			"end_date":       artist.EndDate,
-			"disambiguation": artist.Disambiguation,
-			"bio":            artist.Bio,
-			"image_url":      artist.ImageURL,
-			"genres":         artist.Genres,
-			"created_at":     artist.CreatedAt,
-			"updated_at":     artist.UpdatedAt,
-		}
-
-	case "dbalbum_titles":
-		albumTitle, err := database.Structscan[database.DbalbumTitle](
-			"SELECT id, title, slug, region, dbalbum_id, created_at, updated_at FROM dbalbum_titles WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":         albumTitle.ID,
-			"title":      albumTitle.Title,
-			"slug":       albumTitle.Slug,
-			"region":     albumTitle.Region,
-			"dbalbum_id": albumTitle.DbalbumID,
-			"created_at": albumTitle.CreatedAt,
-			"updated_at": albumTitle.UpdatedAt,
-		}
-
-	case "dbtracks":
-		track, err := database.Structscan[database.Dbtrack](
-			"SELECT id, title, musicbrainz_recording_id, isrc, acoustid, created_at, updated_at, runtime_ms, dbalbum_id, disc_number, track_number, explicit FROM dbtracks WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":                       track.ID,
-			"title":                    track.Title,
-			"musicbrainz_recording_id": track.MusicbrainzRecordingID,
-			"isrc":                     track.ISRC,
-			"acoustid":                 track.AcoustID,
-			"created_at":               track.CreatedAt,
-			"updated_at":               track.UpdatedAt,
-			"runtime_ms":               track.RuntimeMs,
-			"dbalbum_id":               track.DbalbumID,
-			"disc_number":              track.DiscNumber,
-			"track_number":             track.TrackNumber,
-			"explicit":                 track.Explicit,
-		}
-
-	case "artists":
-		artist, err := database.Structscan[database.Artist](
-			"SELECT id, listname, track_mode, created_at, updated_at, dbartist_id, dont_search FROM artists WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":          artist.ID,
-			"listname":    artist.Listname,
-			"track_mode":  artist.TrackMode,
-			"created_at":  artist.CreatedAt,
-			"updated_at":  artist.UpdatedAt,
-			"dbartist_id": artist.DbartistID,
-			"dont_search": artist.DontSearch,
-		}
-
-	case "albums":
-		album, err := database.Structscan[database.Album](
-			"SELECT id, quality_profile, listname, rootpath, lastscan, created_at, updated_at, dbalbum_id, artist_id, blacklisted, quality_reached, missing, dont_upgrade, dont_search FROM albums WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              album.ID,
-			"quality_profile": album.QualityProfile,
-			"listname":        album.Listname,
-			"rootpath":        album.Rootpath,
-			"lastscan":        album.Lastscan.Time,
-			"created_at":      album.CreatedAt,
-			"updated_at":      album.UpdatedAt,
-			"dbalbum_id":      album.DbalbumID,
-			"artist_id":       album.ArtistID,
-			"blacklisted":     album.Blacklisted,
-			"quality_reached": album.QualityReached,
-			"missing":         album.Missing,
-			"dont_upgrade":    album.DontUpgrade,
-			"dont_search":     album.DontSearch,
-		}
-
-	case "album_files":
-		albumFile, err := database.Structscan[database.AlbumFile](
-			"SELECT id, location, filename, extension, format, quality_profile, acoustid, created_at, updated_at, album_id, dbalbum_id, dbtrack_id, file_size, bitrate, sample_rate, bit_depth, runtime_ms, disc_number, track_number FROM album_files WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              albumFile.ID,
-			"location":        albumFile.Location,
-			"filename":        albumFile.Filename,
-			"extension":       albumFile.Extension,
-			"format":          albumFile.Format,
-			"quality_profile": albumFile.QualityProfile,
-			"acoustid":        albumFile.AcoustID,
-			"created_at":      albumFile.CreatedAt,
-			"updated_at":      albumFile.UpdatedAt,
-			"album_id":        albumFile.AlbumID,
-			"dbalbum_id":      albumFile.DbalbumID,
-			"dbtrack_id":      albumFile.DbtrackID,
-			"file_size":       albumFile.FileSize,
-			"bitrate":         albumFile.Bitrate,
-			"sample_rate":     albumFile.SampleRate,
-			"bit_depth":       albumFile.BitDepth,
-			"runtime_ms":      albumFile.RuntimeMs,
-			"disc_number":     albumFile.DiscNumber,
-			"track_number":    albumFile.TrackNumber,
-		}
-
-	case "album_file_unmatcheds":
-		albumFileUnmatched, err := database.Structscan[database.AlbumFileUnmatched](
-			"SELECT id, listname, filepath, parsed_data, last_checked, created_at, updated_at FROM album_file_unmatcheds WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":           albumFileUnmatched.ID,
-			"listname":     albumFileUnmatched.Listname,
-			"filepath":     albumFileUnmatched.Filepath,
-			"parsed_data":  albumFileUnmatched.ParsedData,
-			"last_checked": albumFileUnmatched.LastChecked.Time,
-			"created_at":   albumFileUnmatched.CreatedAt,
-			"updated_at":   albumFileUnmatched.UpdatedAt,
-		}
-
-	case "album_histories":
-		albumHistory, err := database.Structscan[database.AlbumHistory](
-			"SELECT id, title, url, indexer, type, target, quality_profile, created_at, updated_at, downloaded_at, album_id, dbalbum_id, blacklisted FROM album_histories WHERE ID = ?",
-			false,
-			id,
-		)
-		if err != nil {
-			sendBadRequest(ctx, err.Error())
-			return
-		}
-
-		rowMap = map[string]any{
-			"id":              albumHistory.ID,
-			"title":           albumHistory.Title,
-			"url":             albumHistory.URL,
-			"indexer":         albumHistory.Indexer,
-			"type":            albumHistory.HistoryType,
-			"target":          albumHistory.Target,
-			"quality_profile": albumHistory.QualityProfile,
-			"created_at":      albumHistory.CreatedAt,
-			"updated_at":      albumHistory.UpdatedAt,
-			"downloaded_at":   albumHistory.DownloadedAt,
-			"album_id":        albumHistory.AlbumID,
-			"dbalbum_id":      albumHistory.DbalbumID,
-			"blacklisted":     albumHistory.Blacklisted,
-		}
+	// Validate the table against the known admin tables; this also guards the
+	// table name interpolated into the query below.
+	if database.GetTableDefaults(tableName).Table == "" {
+		sendBadRequest(ctx, "unknown table: "+tableName)
+		return
 	}
+
+	// Load the row generically with every real column so the edit form always
+	// exposes the same fields as the add form (which uses all columns). MapScan
+	// tolerates legacy non-numeric values in numeric columns, so the per-table
+	// CAST/COALESCE scans are no longer needed.
+	rows := database.GetrowsType(nil, false, 1, "SELECT * FROM "+tableName+" WHERE id = ?", id)
+	if len(rows) == 0 {
+		sendBadRequest(ctx, "record not found")
+		return
+	}
+
+	rowMap := rows[0]
 
 	var buf strings.Builder
 	renderTableEditForm(tableName, rowMap, id, getCSRFToken(ctx)).Render(&buf)

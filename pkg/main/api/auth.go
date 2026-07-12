@@ -225,6 +225,7 @@ func loginPage(c *gin.Context) {
 					html.Content("width=device-width, initial-scale=1, shrink-to-fit=no"),
 				),
 				html.Title("Go Media Downloader - Sign In"),
+				faviconLinks(),
 				html.Link(
 					html.Href(
 						"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",
@@ -331,18 +332,20 @@ func loginPage(c *gin.Context) {
 					.logo-icon {
 						width: 64px;
 						height: 64px;
-						background: linear-gradient(135deg, #3b7ddd 0%, #6f42c1 100%);
-						border-radius: 50%;
+						border-radius: 16px;
 						display: flex;
 						align-items: center;
 						justify-content: center;
 						margin: 0 auto 1rem;
+						overflow: hidden;
 						box-shadow: 0 4px 12px rgba(59, 125, 221, 0.3);
 					}
 
-					.logo-icon i {
-						font-size: 1.75rem;
-						color: white;
+					.logo-icon img {
+						width: 100%;
+						height: 100%;
+						object-fit: cover;
+						display: block;
 					}
 				`)),
 			),
@@ -365,7 +368,10 @@ func loginPage(c *gin.Context) {
 										html.Class("text-center mt-4"),
 										html.Div(
 											html.Class("logo-icon"),
-											html.I(html.Class("fas fa-download")),
+											html.Img(
+												html.Src("/static/img/icons/icon-192x192.png"),
+												html.Alt("Go Media Downloader"),
+											),
 										),
 										html.H1(
 											html.Class("h2"),
@@ -627,6 +633,7 @@ func NotFoundPage(c *gin.Context) {
 					html.Content("width=device-width, initial-scale=1, shrink-to-fit=no"),
 				),
 				html.Title("404 - Page Not Found | Go Media Downloader"),
+				faviconLinks(),
 				html.Link(
 					html.Href(
 						"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap",

@@ -356,6 +356,14 @@ var (
 	PLArrAny                  pool.Poolobj[Arrany]
 )
 
+// IsRateLimitError reports whether err is any rate-limit variant produced by
+// the API clients ("rate limit exceeded", "daily rate limit", "server rate
+// limit", "total rate limit"). Centralized here so the searcher and importfeed
+// packages share one definition of what counts as a rate-limit error.
+func IsRateLimitError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "rate limit")
+}
+
 // local vars.
 var (
 	timeFormat = time.RFC3339Nano
@@ -374,6 +382,12 @@ var (
 		"titleThe":    titleThe,
 	})
 	poolsOnce sync.Once
+	// textparserMu guards mutation of the shared textparser template tree.
+	// text/template's Parse/New mutate a shared namespace map that Lookup reads,
+	// and those are not internally synchronized — concurrent template parsing
+	// from worker goroutines would otherwise race. Execute is concurrency-safe
+	// and runs outside this lock.
+	textparserMu sync.Mutex
 	// subRuneSet is a pre-computed boolean array that efficiently checks if a rune is an allowed character
 	// for filename or path generation, including lowercase letters, numbers, and hyphen.
 	subRuneSet = [256]bool{
@@ -588,8 +602,9 @@ func xe(season string, episode int) string {
 	return fmt.Sprintf("%sx%02d", season, episode)
 }
 
-// seMulti formats a season with multiple episodes as S01E01-E03.
-// Episodes slice must be sorted.
+// seMulti formats a season with multiple episodes in Plex/Kodi style, listing
+// every episode: S01E01E02E03. With no episodes it returns just the season
+// (S01); with one it returns S01E01. The episodes slice must be sorted.
 func seMulti(season string, episodes []int) string {
 	s, _ := strconv.Atoi(season)
 	if len(episodes) == 0 {
@@ -630,16 +645,24 @@ func ParseStringTemplate(message string, messagedata any) (bool, string, error) 
 		return false, "", nil
 	}
 
+	// Lookup-or-parse mutates the shared template tree, so serialize it. Execute
+	// (below) is concurrency-safe and runs without the lock held.
+	textparserMu.Lock()
+
 	tmplmessage := textparser.Lookup(message)
 	if tmplmessage == nil {
 		var err error
 
 		tmplmessage, err = textparser.New(message).Parse(message)
 		if err != nil {
+			textparserMu.Unlock()
 			Logtype("error", 1).Err(err).Msg("template")
+
 			return true, "", err
 		}
 	}
+
+	textparserMu.Unlock()
 
 	initializePools()
 
@@ -983,32 +1006,17 @@ func getfirstinstring(s string, cutset []rune) int {
 // 	return -1
 // }
 
-// getlastinstring returns the index of the last character in the string s that is not in the cutset.
-// If no such character is found, it returns -1.
+// getlastinstring returns the byte index just past the last character in s that
+// is not in cutset (i.e. the slice end for a right trim). If every character is
+// in cutset, it returns -1. Walks runes from the end in O(n).
 func getlastinstring(s string, cutset []rune) int {
-	for idx := len(s) - 1; idx >= 0; idx-- {
-		found := false
-
-		var x rune
-
-		for idx2, y := range s {
-			if idx2 == idx {
-				x = y
-				break
-			}
+	for len(s) > 0 {
+		r, size := utf8.DecodeLastRuneInString(s)
+		if !slices.Contains(cutset, r) {
+			return len(s)
 		}
 
-		if slices.Contains(cutset, x) {
-			found = true
-		}
-
-		if !found && idx == 0 {
-			return -1
-		}
-
-		if !found && idx > 0 {
-			return idx + 1
-		}
+		s = s[:len(s)-size]
 	}
 
 	return -1
@@ -1440,30 +1448,11 @@ func StringToInt(s string) int {
 	return in
 }
 
-// StringToDuration converts the given string to a time.Duration.
-// It first tries to parse the string as a float and then cast it to time.Duration.
-// If that fails, it tries to parse the string directly as an int and then cast it to time.Duration.
-// If both attempts fail, it returns 0.
+// StringToDuration converts the given string to a duration value in the same
+// units the caller expects (treated as a plain integer count). It accepts both
+// decimal-separated floats and integers; on any parse failure it returns 0.
 func StringToDuration(s string) int {
-	if s == "" || s == "0" {
-		return 0
-	}
-
-	if strings.ContainsRune(s, '.') || strings.ContainsRune(s, ',') {
-		in, err := strconv.ParseFloat(StringReplaceWith(s, ',', '.'), 64)
-		if err != nil {
-			return 0
-		}
-
-		return int(in)
-	}
-
-	in, err := strconv.Atoi(s)
-	if err != nil {
-		return 0
-	}
-
-	return in
+	return StringToInt(s)
 }
 
 // StringToInt32 converts the given string to an int32.

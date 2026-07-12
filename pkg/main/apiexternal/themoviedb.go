@@ -645,7 +645,7 @@ func GetTVExternal(id int) (*TheMovieDBTVExternal, error) {
 
 // TestTMDBConnectivity tests the connectivity to the TMDB API
 // Returns status code and error if any.
-func TestTMDBConnectivity(timeout time.Duration) (int, error) {
+func TestTMDBConnectivity(_ time.Duration) (int, error) {
 	// Use v2 provider if available
 	if provider := providers.GetTMDB(); provider != nil {
 		// Test with a simple search

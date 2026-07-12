@@ -35,6 +35,9 @@ type rlHTTPClient struct {
 
 type NzbSlice struct {
 	Arr []apiexternal_v2.Nzbwithprio
+	// mu protects Arr during concurrent indexer searches. Per-instance so
+	// concurrent searches don't serialize on a single global lock.
+	mu sync.Mutex
 }
 
 var (
@@ -54,7 +57,6 @@ var (
 
 	bytesRequestLimitReached = []byte("Request limit reached")
 	strtimefound             = "time found"
-	nzbmu                    = sync.Mutex{}
 )
 
 func getPlexAPI() *plexClient {
@@ -86,10 +88,31 @@ func setJellyfinAPI(client *jellyfinClient) {
 // Add appends the given Nzbwithprio to the NzbSlice's Arr field, with synchronization
 // to ensure thread-safety.
 func (n *NzbSlice) Add(nzb *apiexternal_v2.Nzbwithprio) {
-	nzbmu.Lock()
-	defer nzbmu.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
 	n.Arr = append(n.Arr, *nzb)
+}
+
+// AddSlice appends all entries to the NzbSlice under a single lock acquisition.
+func (n *NzbSlice) AddSlice(arr []apiexternal_v2.Nzbwithprio) {
+	if len(arr) == 0 {
+		return
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.Arr = append(n.Arr, arr...)
+}
+
+// Len returns the current number of entries, safe to call while
+// concurrent searches are appending.
+func (n *NzbSlice) Len() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	return len(n.Arr)
 }
 
 // checkLimiter checks if the rate limiter allows a request. It handles retrying with increasing backoff if rate limited.

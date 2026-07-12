@@ -9,6 +9,7 @@ type Serie struct {
 	Listname       string    `comment:"Configuration list name"                             displayname:"Configuration List"`
 	Rootpath       string    `comment:"Series storage directory"                            displayname:"Storage Path"`
 	Aliases        string    `comment:"Alternative series names (language/config specific)" displayname:"Alternative Names"`
+	QualityProfile string    `comment:"Wanted quality settings for new episodes"            displayname:"Quality Settings"   db:"quality_profile"`
 	CreatedAt      time.Time `comment:"Record creation timestamp"                           displayname:"Date Created"       db:"created_at"`
 	UpdatedAt      time.Time `comment:"Last modification timestamp"                         displayname:"Last Updated"       db:"updated_at"`
 	ID             uint      `comment:"Unique series identifier"                            displayname:"Series ID"`
@@ -155,6 +156,8 @@ type DbserieEpisode struct {
 	Title           string       `comment:"Episode title name"          displayname:"Episode Title"`
 	Overview        string       `comment:"Episode plot summary"        displayname:"Episode Summary"`
 	Poster          string       `comment:"Episode poster image"        displayname:"Episode Poster"`
+	ScraperID       string       `comment:"Source scraper identifier"   displayname:"Scraper ID"         db:"scraper_id"`
+	ScraperURL      string       `comment:"Source scraper page URL"     displayname:"Scraper URL"        db:"scraper_url"`
 	FirstAired      sql.NullTime `comment:"Original air date"           displayname:"Original Air Date"  db:"first_aired"      json:"first_aired" time_format:"2006-01-02" time_utc:"1"`
 	CreatedAt       time.Time    `comment:"Record creation timestamp"   displayname:"Date Created"       db:"created_at"`
 	UpdatedAt       time.Time    `comment:"Last modification timestamp" displayname:"Last Updated"       db:"updated_at"`
@@ -184,7 +187,7 @@ func (s *Dbserie) GetDbserieByIDP(id *uint) error {
 // Returns an error if there was a problem retrieving the data.
 func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,runtime,dbserie_id from dbserie_episodes where id = ?",
+		"select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,scraper_id,scraper_url,runtime,dbserie_id from dbserie_episodes where id = ?",
 		u,
 		id,
 	)

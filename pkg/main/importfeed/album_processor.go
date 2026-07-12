@@ -73,12 +73,6 @@ func MatchAudioFolderAsAlbum(
 	data *config.MediaDataConfig,
 	addToDatabase bool,
 ) (*parser_v2.AlbumInfo, string, *MatchReport) {
-	// logger.Logtype("debug", 0).
-	// 	Str("folder", folder).
-	// 	Uint("mediaType", cfgp.IsType).
-	// 	Bool("addToDatabase", addToDatabase).
-	// 	Msg("DEBUG: MatchAudioFolderAsAlbum called")
-
 	// Step 1: Collect files only (no tag reading yet)
 	files, err := parser_v2.CollectFilesOnly(folder, parser_v2.AudioExtensions)
 	if err != nil {
@@ -183,11 +177,6 @@ func MatchAudioFolderAsAlbum(
 			files = allFiles
 		}
 	}
-
-	// logger.Logtype("debug", 0).
-	// 	Str("folder", folder).
-	// 	Int("fileCount", len(files)).
-	// 	Msg("DEBUG: Collected audio files")
 
 	// Route to appropriate handler based on media type
 	switch cfgp.IsType {
@@ -471,15 +460,7 @@ func matchAudiobookFolder(
 
 	// Try by ASIN first (most reliable)
 	if asin != "" {
-		// var searchErr error
 		dbMatch, _ = database.FindAudiobookByASIN(asin)
-		// if searchErr == nil && dbMatch != nil {
-		// 	logger.Logtype("debug", 0).
-		// 		Str("folder", folder).
-		// 		Str("asin", asin).
-		// 		Uint("dbID", dbMatch.ID).
-		// 		Msg("DEBUG: Found audiobook by ASIN")
-		// }
 	}
 
 	// Try by tag ASIN if different from folder ASIN
@@ -530,49 +511,13 @@ func matchAudiobookFolder(
 		}
 	}
 
-	if dbMatch == nil && albumTitle != "" {
-		if len(allMatches) > 0 {
-			minChapters, maxChapters := allMatches[0].ChapterCount, allMatches[0].ChapterCount
-			for _, m := range allMatches[1:] {
-				if m.ChapterCount < minChapters {
-					minChapters = m.ChapterCount
-				}
-
-				if m.ChapterCount > maxChapters {
-					maxChapters = m.ChapterCount
-				}
-			}
-
-			// logger.Logtype("debug", 0).
-			// 	Str("folder", folder).
-			// 	Str("author", artist).
-			// 	Str("title", albumTitle).
-			// 	Int("wantedTracks", fileCount).
-			// 	Int("minChapters", minChapters).
-			// 	Int("maxChapters", maxChapters).
-			// 	Int("totalCandidates", len(allMatches)).
-			// 	Msg("DEBUG: No audiobook chapter count match - listing candidates")
-			// for i, m := range allMatches {
-			// 	logger.Logtype("debug", 0).
-			// 		Str("folder", folder).
-			// 		Int("candidateIdx", i).
-			// 		Uint("id", m.ID).
-			// 		Str("candidateTitle", m.Title).
-			// 		Str("candidateAuthor", m.Author).
-			// 		Str("asin", m.ASIN).
-			// 		Int("chapters", m.ChapterCount).
-			// 		Int("runtimeMin", m.Runtime).
-			// 		Str("deniedBy", "track_count").
-			// 		Msg("DEBUG: Candidate details")
-			// }
-		} else {
-			logger.Logtype("debug", 0).
-				Str("folder", folder).
-				Str("author", artist).
-				Str("title", albumTitle).
-				Int("searchPairsTried", len(searchPairs)).
-				Msg("No audiobook match found after trying all combinations")
-		}
+	if dbMatch == nil && albumTitle != "" && len(allMatches) == 0 {
+		logger.Logtype("debug", 0).
+			Str("folder", folder).
+			Str("author", artist).
+			Str("title", albumTitle).
+			Int("searchPairsTried", len(searchPairs)).
+			Msg("No audiobook match found after trying all combinations")
 	}
 
 	// Build album info structure
@@ -590,9 +535,6 @@ func matchAudiobookFolder(
 		album.DatabaseID = dbMatch.ID
 		album.ExpectedTracks = dbMatch.ChapterCount
 	}
-
-	// Store candidates for runtime verification after reading tracks
-	_ = bestCandidates // Will be used after track reading
 
 	// Step 4b: If ASIN still unknown, search Audible using all the same search pairs
 	// already built above (including stripped episode/series prefix variants).
@@ -639,19 +581,6 @@ func matchAudiobookFolder(
 
 	// If still no match, can't proceed
 	if album.DatabaseID == 0 {
-		// if len(allMatches) > 0 {
-		// 	// The book was found in the database but no candidate had a matching
-		// 	// chapter count. Use "wrong_track_count" so these folders end up in a
-		// 	// separate bucket from books that are genuinely absent from the DB.
-		// 	logger.Logtype("debug", 0).
-		// 		Str("folder", folder).
-		// 		Str("title", album.Title).
-		// 		Str("artist", album.Artist).
-		// 		Int("localFiles", fileCount).
-		// 		Int("dbCandidates", len(allMatches)).
-		// 		Msg("Audiobook found in DB but chapter count mismatch - skipping")
-		// 	return nil, "wrong_track_count"
-		// }
 		logger.Logtype("debug", 0).
 			Str("folder", folder).
 			Str("title", album.Title).
@@ -747,12 +676,6 @@ func matchAudiobookFolder(
 		)
 	}
 
-	// logger.Logtype("debug", 0).
-	// 	Str("folder", folder).
-	// 	Uint("databaseID", album.DatabaseID).
-	// 	Int("trackCount", album.TrackCount).
-	// 	Msg("DEBUG: About to add audiobook files to database")
-
 	// Deferred author discovery from addFound - only runs after track/runtime verification succeeds
 	if addFoundAudiobookEntry != nil && artist != "" && data.AddFound {
 		logger.Logtype("debug", 0).
@@ -785,21 +708,6 @@ func matchAudiobookFolder(
 
 	return album, "", nil
 }
-
-// processMusicFolder handles music album-specific folder processing.
-// Uses MusicBrainzID/UPC for identification and MusicBrainz/Discogs for matching.
-// Does NOT perform language validation (unlike audiobooks).
-// Wrapper that calls matchMusicFolder with addToDatabase=true.
-// func processMusicFolder(
-// 	ctx context.Context,
-// 	folder string,
-// 	files []string,
-// 	cfgp *config.MediaTypeConfig,
-// 	data *config.MediaDataConfig,
-// ) bool {
-// 	_, success := matchMusicFolder(ctx, folder, files, cfgp, data, true)
-// 	return success
-// }
 
 // matchAudiobookFolderForced matches an audiobook folder against a single,
 // caller-supplied ASIN, bypassing all text-search and scoring logic.
@@ -1147,14 +1055,6 @@ func matchMusicFolder(
 		if len(bestCandidates) > 0 {
 			// Use first candidate initially, will verify runtime later
 			dbMatch = bestCandidates[0]
-			// logger.Logtype("debug", 0).
-			// 	Str("folder", folder).
-			// 	Int("totalCandidates", len(allMatches)).
-			// 	Int("bestCandidates", len(bestCandidates)).
-			// 	Int("fileCount", fileCount).
-			// 	Uint("selectedID", dbMatch.ID).
-			// 	Int("selectedTracks", dbMatch.TotalTracks).
-			// 	Msg("DEBUG: Selected best album candidates for runtime verification")
 		} else {
 			// No candidates passed the distance threshold.  Sort allMatches by
 			// album distance so the best-matching title is used as the fallback
@@ -1188,13 +1088,6 @@ func matchMusicFolder(
 
 			dbMatch = allMatches[0]
 			bestCandidates = allMatches
-			// logger.Logtype("debug", 0).
-			// 	Str("folder", folder).
-			// 	Int("totalCandidates", len(allMatches)).
-			// 	Int("fileCount", fileCount).
-			// 	Uint("selectedID", dbMatch.ID).
-			// 	Int("selectedTracks", dbMatch.TotalTracks).
-			// 	Msg("DEBUG: No exact track count match - using title match for alternative release search")
 		}
 	}
 
@@ -1486,13 +1379,6 @@ func searchAndImportAlternativeRelease(
 	if strings.EqualFold(*artist, "VA") || strings.EqualFold(*artist, "V.A.") {
 		searchArtist = VariousArtistsName
 	}
-
-	// logger.Logtype("debug", 0).
-	// 	Str("artist", searchArtist).
-	// 	Str("album", albumTitle).
-	// 	Int("fileCount", fileCount).
-	// 	Int64("localRuntimeMs", localTotalRuntimeMs).
-	// 	Msg("DEBUG: Searching MusicBrainz for alternative release with matching track count and runtime")
 
 	// Calculate runtime tolerance (configurable, default 3 seconds per track).
 	// Shared by all provider paths below.

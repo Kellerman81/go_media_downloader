@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -147,12 +148,12 @@ func triggerEpisodeDownloads(
 
 		// Find media configuration for this series
 		var mediaConfig *config.MediaTypeConfig
-		config.RangeSettingsMedia(func(name string, media *config.MediaTypeConfig) error {
+		config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
 			// Check if this series belongs to this media config
 			for _, listName := range media.Lists {
 				if listName.Name == serieData.Listname {
 					mediaConfig = media
-					return fmt.Errorf("found") // Break the loop
+					return errors.New("found") // Break the loop
 				}
 			}
 
@@ -241,7 +242,7 @@ func triggerEpisodeSearch(
 		nil,
 	)
 	if searcherInstance == nil {
-		return fmt.Errorf("failed to create searcher instance")
+		return errors.New("failed to create searcher instance")
 	}
 
 	// Log the search attempt

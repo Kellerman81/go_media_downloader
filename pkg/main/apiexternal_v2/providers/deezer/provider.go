@@ -66,12 +66,12 @@ func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return apiexternal_v2.ProviderDeezer
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "deezer"
 }
 

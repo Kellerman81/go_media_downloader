@@ -33,8 +33,6 @@ var (
 	defaultproviders         = []string{"imdb", "tmdb", "omdb"}
 )
 
-// var importJobRunning string
-
 // checkimdbyearsingle checks if the year from IMDB matches the year
 // in the FileParser, allowing a 1 year difference. It returns true if
 // the years match or are within 1 year difference.
@@ -226,11 +224,14 @@ func processprovider(
 
 			tbl, err := apiexternal.SearchTmdbMovie(m.Title)
 			if err != nil {
+				// API failure: fall through to the next provider in the chain
+				// instead of aborting the whole lookup.
 				m.Cleanimdbdbmovie()
-				return true
+				return false
 			}
 
 			for idx := range tbl.Results {
+				m.Imdb = ""
 				database.Scanrowsdyn(
 					false,
 					"select imdb_id from dbmovies where moviedb_id = ?",
@@ -240,20 +241,14 @@ func processprovider(
 
 				if m.Imdb == "" {
 					moviedbexternal, err := apiexternal.GetTmdbMovieExternal(tbl.Results[idx].ID)
-					if err != nil {
+					if err != nil || moviedbexternal.ImdbID == "" {
 						continue
 					}
 
 					m.Imdb = moviedbexternal.ImdbID
-					m.MovieFindDBIDByImdbParser()
-
-					return true
 				}
 
-				if m.Imdb == "" {
-					continue
-				}
-
+				haveyear = 0
 				database.Scanrowsdyn(
 					true,
 					"select start_year from imdb_titles where tconst = ?",
@@ -261,10 +256,18 @@ func processprovider(
 					&m.Imdb,
 				)
 
-				if checkimdbyearsingle(m, cfgp, &m.Imdb, haveyear) {
-					m.MovieFindDBIDByImdbParser()
-					return true
+				// Validate the year when both sides are known so the first TMDB
+				// title hit can't win for a same-named movie from another year.
+				// When either year is unavailable (e.g. no local IMDB database)
+				// accept the candidate as before.
+				if haveyear != 0 && m.Year != 0 &&
+					!checkimdbyearsingle(m, cfgp, &m.Imdb, haveyear) {
+					continue
 				}
+
+				m.MovieFindDBIDByImdbParser()
+
+				return true
 			}
 
 			m.Cleanimdbdbmovie()
@@ -274,8 +277,9 @@ func processprovider(
 		if config.GetSettingsGeneral().MovieMetaSourceOmdb {
 			tbl, err := apiexternal.SearchOmdbMovie(m.Title, "")
 			if err != nil {
+				// API failure: fall through to the next provider in the chain.
 				m.Cleanimdbdbmovie()
-				return true
+				return false
 			}
 
 			for idx := range tbl.Search {
@@ -310,7 +314,7 @@ func JobImportMoviesByList(
 	idx int,
 	cfgp *config.MediaTypeConfig,
 	listid int,
-	addnew bool,
+	addnew, force bool,
 ) error {
 	if listid == -1 {
 		return errListidNotSet
@@ -325,8 +329,10 @@ func JobImportMoviesByList(
 		Int(logger.StrRow, idx).
 		Msg("Import/Update Movie")
 
-	_, err := JobImportMovies(entry, cfgp, listid, addnew)
-	if err != nil && err.Error() != "movie ignored" {
+	_, err := JobImportMovies(entry, cfgp, listid, addnew, force)
+	recordImportResult(ctx, err, errIgnoredMovie, errJobRunning)
+
+	if err != nil && !errors.Is(err, errIgnoredMovie) {
 		logger.Logtype("error", 1).
 			Str(logger.StrImdb, entry).
 			Err(err).
@@ -345,7 +351,7 @@ func JobImportMovies(
 	imdb string,
 	cfgp *config.MediaTypeConfig,
 	listid int,
-	addnew bool,
+	addnew, force bool,
 ) (uint, error) {
 	if cfgp.Name == "" {
 		return 0, logger.ErrCfgpNotFound
@@ -355,12 +361,11 @@ func JobImportMovies(
 		return 0, logger.ErrImdbEmpty
 	}
 
-	if importJobRunning.Check(imdb) {
+	if !startJobIfAbsent(imdb) {
 		return 0, errJobRunning
 	}
 
-	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, imdb, struct{}{}, 0, false, 0)
-	defer syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, imdb)
+	defer endJob(imdb)
 
 	var (
 		dbmovieadded bool
@@ -436,9 +441,10 @@ func JobImportMovies(
 			dbmovie.ImdbID = imdb
 		}
 
-		if !dbmovieadded &&
+		if !dbmovieadded && !force &&
 			logger.TimeAfter(dbmovie.UpdatedAt, logger.TimeGetNow().Add(-1*time.Hour)) {
-			// update only if updated more than an hour ago
+			// update only if updated more than an hour ago (force bypasses this,
+			// e.g. a manual single-movie refresh)
 			logger.Logtype("debug", 1).
 				Str(logger.StrJob, dbmovie.ImdbID).
 				Msg("Skipped update metadata for dbmovie")
@@ -463,7 +469,7 @@ func JobImportMovies(
 		return 0, logger.ErrListnameEmpty
 	}
 
-	err := Checkaddmovieentry(&dbmovie.ID, &cfgp.Lists[listid], imdb)
+	err := Checkaddmovieentry(&dbmovie.ID, cfgp, &cfgp.Lists[listid], imdb)
 	if err != nil {
 		return 0, err
 	}
@@ -471,10 +477,50 @@ func JobImportMovies(
 	return dbmovie.ID, nil
 }
 
+// existsInConfigList reports whether dbid already has a row in table (matched on
+// idCol) under ANY list of the media group cfgp. It enforces "one entry per
+// media group config": an item may exist once per config, but must never be
+// inserted a second time from a sibling list of the same config — a safety net
+// beyond ignore_template_lists / replace_template_lists.
+func existsInConfigList(table, idCol string, dbid *uint, cfgp *config.MediaTypeConfig) bool {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return false
+	}
+
+	args := logger.PLArrAny.Get()
+
+	args.Arr = append(args.Arr, dbid)
+
+	for idx := range cfgp.ListsNames {
+		args.Arr = append(args.Arr, &cfgp.ListsNames[idx])
+	}
+
+	var cnt uint
+
+	database.ScanrowsNArr(
+		false,
+		logger.JoinStrings(
+			"select count() from ", table, " where ", idCol,
+			" = ? and listname in (?", cfgp.ListsQu, ")",
+		),
+		&cnt,
+		args.Arr,
+	)
+	logger.PLArrAny.Put(args)
+
+	return cnt >= 1
+}
+
 // Checkaddmovieentry checks if a movie with the given ID should be added to
 // the given list. It handles ignore lists, replacing existing lists, and
-// inserting into the DB if needed.
-func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb string) error {
+// inserting into the DB if needed. Insertion is denied when the movie already
+// exists under any sibling list of cfgp (one entry per media group config).
+func Checkaddmovieentry(
+	dbid *uint,
+	cfgp *config.MediaTypeConfig,
+	cfgplist *config.MediaListsConfig,
+	imdb string,
+) error {
 	if cfgplist == nil || cfgplist.Name == "" {
 		return logger.ErrListnameEmpty
 	}
@@ -594,13 +640,10 @@ func Checkaddmovieentry(dbid *uint, cfgplist *config.MediaListsConfig, imdb stri
 		}
 	}
 
-	database.Scanrowsdyn(
-		false,
-		"select count() from movies where dbmovie_id = ? and listname = ?",
-		&getcount,
-		dbid,
-		&cfgplist.Name,
-	)
+	getcount = 0
+	if existsInConfigList("movies", "dbmovie_id", dbid, cfgp) {
+		getcount = 1
+	}
 
 	if cfgplist.IgnoreMapListsLen >= 1 {
 		if getcount == 0 {
@@ -772,11 +815,11 @@ func findSerieConfigByName(seriesName string) (*config.ManualConfig, *config.Med
 	// Normalize search name for case-insensitive comparison
 	searchName := strings.TrimSpace(seriesName)
 
-	// Search across all media configurations
-	config.RangeSettingsMedia(func(_ string, mediaCfg *config.MediaTypeConfig) error {
+	// Search across all media configurations, stopping at the first match.
+	config.RangeSettingsMediaBreak(func(_ string, mediaCfg *config.MediaTypeConfig) bool {
 		handler := mediatype.Get(mediaCfg.IsType)
 		if handler == nil {
-			return nil
+			return false
 		}
 
 		// Check each list in this media config
@@ -788,11 +831,12 @@ func findSerieConfigByName(seriesName string) (*config.ManualConfig, *config.Med
 				foundSerie = serieConfig
 				foundCfgp = mediaCfg
 				foundListID = listIdx
-				return nil
+
+				return true
 			}
 		}
 
-		return nil
+		return false
 	})
 
 	return foundSerie, foundCfgp, foundListID
@@ -802,15 +846,16 @@ func findSerieConfigByName(seriesName string) (*config.ManualConfig, *config.Med
 func JobImportDBSeriesStatic(
 	row *database.DbstaticTwoStringOneRInt,
 	cfgp *config.MediaTypeConfig,
+	firstPageOnly bool,
 ) error {
 	serieConfig, foundCfgp, foundListID := findSerieConfigByName(row.Str1)
 	if serieConfig != nil && foundCfgp != nil && foundListID >= 0 {
-		// logger.Logtype(logger.StatusInfo, 0).
-		// 	Str("series_name", row.Val1).
-		// 	Int("tvdb_id", row.Val3).
-		// 	Str("source", serieConfig.Source).
-		// 	Str("found_config", foundCfgp.Name).
-		// 	Msg("Series found in config file - using JobImportDBSeries with scraper support")
+		// Per-series config files usually omit the TVDB id, so fall back to the id
+		// stored on the dbseries row. Without this the TVDB episode-collection block
+		// (gated on TvdbID != 0) is skipped and a refresh adds no episodes.
+		if serieConfig.TvdbID == 0 && row.Num != 0 {
+			serieConfig.TvdbID = row.Num
+		}
 
 		// Use the modern import path with scraper support
 		return jobImportDBSeries(
@@ -819,6 +864,7 @@ func JobImportDBSeriesStatic(
 			foundListID,
 			true, // checkall = true for scraper support
 			false,
+			firstPageOnly,
 		)
 	}
 
@@ -828,6 +874,7 @@ func JobImportDBSeriesStatic(
 		cfgp.GetMediaListsEntryListID(row.Str2),
 		true,
 		false,
+		firstPageOnly,
 	)
 }
 
@@ -849,7 +896,9 @@ func JobImportDBSeries(
 		Int(logger.StrRow, idxserie).
 		Msg("Import/Update Serie")
 
-	err := jobImportDBSeries(serie, cfgp, listid, false, true)
+	err := jobImportDBSeries(serie, cfgp, listid, false, true, false)
+	recordImportResult(ctx, err, errSeriesSkipped, errJobRunning)
+
 	if err != nil {
 		logger.Logtype("error", 1).
 			Int(logger.StrSeries, serie.TvdbID).
@@ -869,7 +918,7 @@ func jobImportDBSeries(
 	serieconfig *config.ManualConfig,
 	cfgp *config.MediaTypeConfig,
 	listid int,
-	checkall, addnew bool,
+	checkall, addnew, firstPageOnly bool,
 ) error {
 	if cfgp == nil {
 		return logger.ErrCfgpNotFound
@@ -894,12 +943,11 @@ func jobImportDBSeries(
 		return errJobnameMissing
 	}
 
-	if importJobRunning.Check(jobName) {
+	if !startJobIfAbsent(jobName) {
 		return errJobRunning
 	}
 
-	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, jobName, struct{}{}, 0, false, 0)
-	defer syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, jobName)
+	defer endJob(jobName)
 
 	if !addnew && listid == -1 {
 		listid = cfgp.GetMediaListsEntryListID(
@@ -918,7 +966,7 @@ func jobImportDBSeries(
 		count   uint
 	)
 
-	if serieconfig.Source == "none" || strings.EqualFold(serieconfig.Source, "none") {
+	if strings.EqualFold(serieconfig.Source, "none") {
 		database.Scanrowsdyn(
 			false,
 			"select id from dbseries where seriename = ? COLLATE NOCASE",
@@ -947,7 +995,7 @@ func jobImportDBSeries(
 		}
 	}
 
-	if serieconfig.Source == "scraper" || strings.EqualFold(serieconfig.Source, "scraper") {
+	if strings.EqualFold(serieconfig.Source, "scraper") {
 		// Look up existing series by name
 		database.Scanrowsdyn(
 			false,
@@ -986,13 +1034,19 @@ func jobImportDBSeries(
 			mainCfg := config.GetToml()
 			scraperSvc := scrapers.NewService(&mainCfg)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			// Catalogue scrapes can run many pages with a per-page WaitSeconds
+			// delay, so the overall deadline must be generous; 10m was exhausted
+			// part-way through large sites.
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 			defer cancel()
 
+			// Newly added series always scrape the full catalogue. Existing
+			// series use the caller's choice: incremental refresh scrapes only
+			// the first pages for new episodes; a full refresh re-scrapes all.
 			_, err := scraperSvc.RunScrapersForSeries(
 				ctx,
 				serieconfig.Name,
-				!checkall && !dbserieadded,
+				firstPageOnly && !dbserieadded,
 			)
 			if err != nil {
 				logger.Logtype(logger.StatusError, 1).
@@ -1004,8 +1058,7 @@ func jobImportDBSeries(
 		}
 	}
 
-	if serieconfig.Source == "" || serieconfig.Source == logger.StrTvdb ||
-		strings.EqualFold(serieconfig.Source, logger.StrTvdb) {
+	if serieconfig.Source == "" || strings.EqualFold(serieconfig.Source, logger.StrTvdb) {
 		database.Scanrowsdyn(
 			false,
 			"select count() from dbseries where thetvdb_id = ?",
@@ -1210,7 +1263,7 @@ func jobImportDBSeries(
 				}
 
 				if (checkall || dbserieadded || !addnew) &&
-					(serieconfig.Source == "" || serieconfig.Source == logger.StrTvdb || strings.EqualFold(serieconfig.Source, logger.StrTvdb)) {
+					(serieconfig.Source == "" || strings.EqualFold(serieconfig.Source, logger.StrTvdb)) {
 					logger.Logtype("debug", 1).
 						Int(logger.StrTvdb, serieconfig.TvdbID).
 						Msg("Get episodes for")
@@ -1269,12 +1322,7 @@ func jobImportDBSeries(
 			}
 		}
 
-		if database.Getdatarow[uint](
-			false,
-			"select count() from series where dbserie_id = ? and listname = ? COLLATE NOCASE",
-			&dbserie.ID,
-			&cfgp.Lists[listid].Name,
-		) == 0 {
+		if !existsInConfigList("series", "dbserie_id", &dbserie.ID, cfgp) {
 			logger.Logtype("debug", 2).
 				Str(logger.StrListname, cfgp.Lists[listid].Name).
 				Int(logger.StrTvdb, serieconfig.TvdbID).
@@ -1282,8 +1330,16 @@ func jobImportDBSeries(
 
 			serieAliases := logger.JoinStringsSep(serieconfig.AlternateName, ",")
 
+			// Store the wanted quality on the series row: the list's quality
+			// template wins, falling back to the media group's default. Episodes
+			// created below inherit this instead of re-deriving it.
+			serieQuality := cfgp.Lists[listid].TemplateQuality
+			if serieQuality == "" {
+				serieQuality = cfgp.TemplateQuality
+			}
+
 			serieid, err := database.ExecNid(
-				"Insert into series (dbserie_id, listname, rootpath, aliases, search_specials, dont_search, dont_upgrade) values (?, ?, ?, ?, ?, ?, ?)",
+				"Insert into series (dbserie_id, listname, rootpath, aliases, search_specials, dont_search, dont_upgrade, quality_profile) values (?, ?, ?, ?, ?, ?, ?, ?)",
 				&dbserie.ID,
 				&cfgp.Lists[listid].Name,
 				&serieconfig.Target,
@@ -1291,6 +1347,7 @@ func jobImportDBSeries(
 				&serieconfig.SearchSpecials,
 				&serieconfig.DontSearch,
 				&serieconfig.DontUpgrade,
+				&serieQuality,
 			)
 			if err != nil {
 				return err
@@ -1333,6 +1390,13 @@ func jobImportDBSeries(
 		&dbserie.ID,
 	)
 
+	// Set of existing (dbserie_episode_id, serie_id) links for O(1) lookups -
+	// the previous nested linear scan was O(series x dbepisodes x episodes).
+	existingEpisodes := make(map[database.DbstaticTwoUint]struct{}, len(episodes))
+	for idx := range episodes {
+		existingEpisodes[episodes[idx]] = struct{}{}
+	}
+
 	arr := database.Getrowssize[uint](
 		false,
 		database.QuerySeriesCountByDBID,
@@ -1340,25 +1404,59 @@ func jobImportDBSeries(
 		&dbserie.ID,
 	)
 	for idx := range arr {
+		// The series row carries the wanted quality for its list/config; this is
+		// authoritative and correct even when a different config is doing the import.
 		quality := database.Getdatarow[string](
 			false,
-			"select quality_profile from serie_episodes where serie_id = ? and quality_profile != '' and quality_profile is not NULL limit 1",
+			"select quality_profile from series where id = ?",
 			&arr[idx],
 		)
+
 		if quality == "" {
-			quality = cfgp.TemplateQuality
+			// Legacy series rows (added before quality_profile existed) reuse an
+			// existing episode's quality if present.
+			quality = database.Getdatarow[string](
+				false,
+				"select quality_profile from serie_episodes where serie_id = ? and quality_profile != '' and quality_profile is not NULL limit 1",
+				&arr[idx],
+			)
 		}
 
-	labeldbser:
-		for idxdb := range dbseries {
-			for idxepi := range episodes {
-				if episodes[idxepi].Num1 == dbseries[idxdb] && episodes[idxepi].Num2 == arr[idx] {
-					continue labeldbser
+		if quality == "" {
+			// Last resort: the list's quality template, then the media group default.
+			quality = cfgp.TemplateQuality
+
+			listname := database.Getdatarow[string](
+				false,
+				"select listname from series where id = ?",
+				&arr[idx],
+			)
+			if lid := cfgp.GetMediaListsEntryListID(listname); lid >= 0 &&
+				cfgp.Lists[lid].TemplateQuality != "" {
+				quality = cfgp.Lists[lid].TemplateQuality
+			}
+		}
+
+		// One transaction for all missing-episode inserts of this series -
+		// per-statement implicit transactions pay a full fsync each.
+		_ = database.ExecNTx(func(exec func(querystring string, args ...any) error) error {
+			for idxdb := range dbseries {
+				key := database.DbstaticTwoUint{Num1: dbseries[idxdb], Num2: arr[idx]}
+				if _, exists := existingEpisodes[key]; exists {
+					continue
 				}
+
+				_ = exec(
+					"Insert into serie_episodes (dbserie_id, serie_id, missing, quality_profile, dbserie_episode_id) values (?, ?, 1, ?, ?)",
+					&dbserie.ID,
+					&arr[idx],
+					&quality,
+					&dbseries[idxdb],
+				)
 			}
 
-			database.ExecN("Insert into serie_episodes (dbserie_id, serie_id, missing, quality_profile, dbserie_episode_id) values (?, ?, 1, ?, ?)", &dbserie.ID, &arr[idx], &quality, &dbseries[idxdb])
-		}
+			return nil
+		})
 	}
 
 	return nil

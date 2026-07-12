@@ -2,6 +2,7 @@ package apiexternal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -123,7 +124,7 @@ type JellyfinUsersResponse []JellyfinUser
 // GetJellyfinWatchlist retrieves the watchlist from a Jellyfin server.
 func GetJellyfinWatchlist(serverURL, apiKey, username string) ([]JellyfinWatchlistItem, error) {
 	if serverURL == "" || apiKey == "" || username == "" {
-		return nil, fmt.Errorf("jellyfin server URL, API key, and username are required")
+		return nil, errors.New("jellyfin server URL, API key, and username are required")
 	}
 
 	// First, get the user ID from the username
@@ -155,7 +156,7 @@ func GetJellyfinWatchlist(serverURL, apiKey, username string) ([]JellyfinWatchli
 		getJellyfinClient(),
 		fullURL,
 		false,
-		func(ctx context.Context, r *http.Response) error {
+		func(_ context.Context, r *http.Response) error {
 			return json.NewDecoder(r.Body).Decode(&response)
 		},
 		nil,
@@ -191,7 +192,7 @@ func getJellyfinUserID(serverURL, apiKey, username string) (string, error) {
 		getJellyfinClient(),
 		fullURL,
 		false,
-		func(ctx context.Context, r *http.Response) error {
+		func(_ context.Context, r *http.Response) error {
 			return json.NewDecoder(r.Body).Decode(&response)
 		},
 		nil,

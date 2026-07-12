@@ -6,7 +6,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -1803,13 +1803,49 @@ func addCSS() gomponents.Node {
 				`))
 }
 
+// faviconLinks returns the favicon / app-icon <link> tags shared by every page.
+// Sized PNGs (generated from app-icon.png) let the browser pick a small file for
+// the tab and a larger one for the home-screen icon; the full-size app-icon.png
+// is listed last as a fallback so an icon always shows even before the sized
+// files have been generated.
+func faviconLinks() gomponents.Node {
+	const dir = "/static/img/icons/"
+
+	sized := func(rel, size string) gomponents.Node {
+		return html.Link(
+			html.Rel(rel),
+			html.Type("image/png"),
+			gomponents.Attr("sizes", size),
+			html.Href(dir+"icon-"+size+".png"),
+		)
+	}
+
+	return gomponents.Group([]gomponents.Node{
+		sized("icon", "16x16"),
+		sized("icon", "32x32"),
+		sized("icon", "192x192"),
+		html.Link(
+			html.Rel("apple-touch-icon"),
+			gomponents.Attr("sizes", "180x180"),
+			html.Href(dir+"icon-180x180.png"),
+		),
+		// Fallback used when none of the sized files exist yet.
+		html.Link(html.Rel("icon"), html.Type("image/png"), html.Href(dir+"app-icon.png")),
+	})
+}
+
 func page(
-	_ string,
+	title string,
 	activeConfig bool,
 	activeDatabase bool,
 	activeManagement bool,
 	addcontent ...gomponents.Node,
 ) gomponents.Node {
+	pageTitle := "Media Downloader Management"
+	if strings.TrimSpace(title) != "" {
+		pageTitle = title + " · Media Downloader"
+	}
+
 	return html.Doctype(
 		html.HTML(
 			html.Lang("en"),
@@ -1819,7 +1855,8 @@ func page(
 					html.Name("viewport"),
 					html.Content("width=device-width, initial-scale=1"),
 				),
-				html.Title("Media Downloader Management"),
+				html.TitleEl(gomponents.Text(pageTitle)),
+				faviconLinks(),
 
 				// Load jQuery first
 				html.Script(html.Src("https://code.jquery.com/jquery-3.7.1.min.js")),
@@ -1838,15 +1875,33 @@ func page(
 				// adminStyles(),
 			),
 			html.Body(
+				html.A(
+					html.Href("#main-content"),
+					html.Class("visually-hidden-focusable"),
+					html.Style(
+						"position:absolute; left:8px; top:8px; z-index:2000; background:#fff; padding:0.5rem 1rem; border-radius:6px;",
+					),
+					gomponents.Text("Skip to main content"),
+				),
 				html.Div(html.Class("wrapper"),
 					createNavbar(activeConfig, activeDatabase, activeManagement),
-					html.Div(html.Class("main"),
+					html.Div(
+						html.Class("main"),
 						html.Nav(html.Class("navbar navbar-expand navbar-light navbar-bg"),
 							html.A(html.Class("sidebar-toggle js-sidebar-toggle"),
-								html.I(html.Class("hamburger align-self-center")),
+								html.Href("#"),
+								html.Role("button"),
+								gomponents.Attr("aria-label", "Toggle navigation sidebar"),
+								html.I(
+									html.Class("hamburger align-self-center"),
+									gomponents.Attr("aria-hidden", "true"),
+								),
 							),
 						),
-						html.Main(html.Class("content"),
+						html.Main(
+							html.Class("content"),
+							html.ID("main-content"),
+							html.TabIndex("-1"),
 							html.Div(html.Class("container-fluid p-0"),
 								// html.H1(html.Class("h3 mb-3"), gomponents.Text(headertext)),
 								html.Div(
@@ -2320,7 +2375,7 @@ func adminPageSearchDownload(ctx *gin.Context) {
 
 func adminPagePushoverTest(ctx *gin.Context) {
 	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Pushover Test", false, false, true, renderPushoverTestPage(csrfToken))
+	pageNode := page("Notification Test", false, false, true, renderPushoverTestPage(csrfToken))
 
 	var buf strings.Builder
 	pageNode.Render(&buf)

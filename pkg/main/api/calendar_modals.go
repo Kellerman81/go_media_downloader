@@ -197,7 +197,7 @@ function searchCalendarEvent(id, type, searchByTitle) {
 		confirmMsg = searchByTitle ? 'Start search for this episode by Title?' : 'Start search for this episode by TVDB ID?';
 	}
 
-	if (confirm(confirmMsg)) {
+	confirmAction('Please confirm', confirmMsg, function() {
 		fetch(url, {
 			method: 'GET',
 			headers: {
@@ -217,7 +217,7 @@ function searchCalendarEvent(id, type, searchByTitle) {
 		.catch(error => {
 			alert('Error starting search: ' + error.message);
 		});
-	}
+	})
 }
 
 function showMoreEvents(day, month, year) {

@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -119,12 +120,15 @@ type SystemStatistics struct {
 
 // OverallStatistics aggregates all statistics.
 type OverallStatistics struct {
-	Movies  MovieStatistics   `json:"movies"`
-	Series  SeriesStatistics  `json:"series"`
-	Storage StorageStatistics `json:"storage"`
-	HTTP    HTTPStatistics    `json:"http"`
-	Workers worker.Stats      `json:"workers"`
-	System  SystemStatistics  `json:"system"`
+	Movies     MovieStatistics   `json:"movies"`
+	Series     SeriesStatistics  `json:"series"`
+	Music      MediaLibraryStats `json:"music"`
+	Books      MediaLibraryStats `json:"books"`
+	Audiobooks MediaLibraryStats `json:"audiobooks"`
+	Storage    StorageStatistics `json:"storage"`
+	HTTP       HTTPStatistics    `json:"http"`
+	Workers    worker.Stats      `json:"workers"`
+	System     SystemStatistics  `json:"system"`
 }
 
 // Statistics collection functions
@@ -282,69 +286,193 @@ func getSeriesStatistics(_ context.Context) (SeriesStatistics, error) {
 	return stats, nil
 }
 
+// MediaLibraryStats is a generic library breakdown shared by music, books and
+// audiobooks (which all have the same total/available/missing/quality shape).
+type MediaLibraryStats struct {
+	Total            int            `json:"total"`
+	Available        int            `json:"available"`
+	Missing          int            `json:"missing"`
+	QualityReached   int            `json:"quality_reached"`
+	UpgradeAvailable int            `json:"upgrade_available"`
+	ByQuality        map[string]int `json:"by_quality"`
+	ByList           map[string]int `json:"by_list"`
+}
+
+// getLibraryStatistics computes a generic media-library breakdown. table is the
+// list table (e.g. "albums"), fileTable its files table (e.g. "album_files") and
+// fk the foreign-key column on the files table (e.g. "album_id"). Identifiers are
+// internal constants, never user input.
+func getLibraryStatistics(table, fileTable, fk string) MediaLibraryStats {
+	stats := MediaLibraryStats{
+		ByQuality: make(map[string]int),
+		ByList:    make(map[string]int),
+	}
+
+	stats.Total = int(database.Getdatarow[uint](false,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s", table)))
+
+	stats.Available = int(database.Getdatarow[uint](false,
+		fmt.Sprintf(
+			"SELECT COUNT(DISTINCT t.id) FROM %s t INNER JOIN %s f ON f.%s = t.id",
+			table, fileTable, fk,
+		)))
+	stats.Missing = stats.Total - stats.Available
+
+	stats.QualityReached = int(database.Getdatarow[uint](false,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE quality_reached = 1", table)))
+
+	stats.UpgradeAvailable = int(database.Getdatarow[uint](false,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE quality_reached = 0 AND missing = 0", table)))
+
+	qualityData := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 0,
+		fmt.Sprintf(
+			`SELECT quality_profile, COUNT(*) as count FROM %s
+			WHERE quality_profile IS NOT NULL AND quality_profile != ''
+			GROUP BY quality_profile ORDER BY count DESC`, table))
+	for _, q := range qualityData {
+		if q.Str != "" {
+			stats.ByQuality[q.Str] = int(q.Num)
+		}
+	}
+
+	listData := database.GetrowsN[database.DbstaticOneStringOneUInt](false, 0,
+		fmt.Sprintf(
+			`SELECT listname, COUNT(*) as count FROM %s
+			WHERE listname IS NOT NULL AND listname != ''
+			GROUP BY listname ORDER BY count DESC`, table))
+	for _, l := range listData {
+		if l.Str != "" {
+			stats.ByList[l.Str] = int(l.Num)
+		}
+	}
+
+	return stats
+}
+
+// getMusicStatistics returns album library statistics.
+func getMusicStatistics() MediaLibraryStats {
+	return getLibraryStatistics("albums", "album_files", "album_id")
+}
+
+// getBookStatistics returns book library statistics.
+func getBookStatistics() MediaLibraryStats {
+	return getLibraryStatistics("books", "book_files", "book_id")
+}
+
+// getAudiobookStatistics returns audiobook library statistics.
+func getAudiobookStatistics() MediaLibraryStats {
+	return getLibraryStatistics("audiobooks", "audiobook_files", "audiobook_id")
+}
+
+// mediaTypeConfigured reports whether any media group of the given kind
+// ("music", "book", "audiobook") is configured, so the dashboard can hide
+// unused library types.
+func mediaTypeConfigured(kind string) bool {
+	allMedia := config.GetSettingsMediaAll()
+	if allMedia == nil {
+		return false
+	}
+
+	switch kind {
+	case "music":
+		return len(allMedia.Music) > 0
+	case "book":
+		return len(allMedia.Books) > 0
+	case "audiobook":
+		return len(allMedia.AudioBooks) > 0
+	}
+
+	return false
+}
+
 // getStorageStatistics retrieves storage statistics by walking configured media paths.
+//
+// Each unique path is walked concurrently. Walking sequentially let one very
+// large path (e.g. an audiobook library with tens of thousands of files) consume
+// the whole request deadline, after which every remaining path's walk started
+// with an already-expired context, returned nothing, and was dropped — so only
+// the first big path showed up. Running them in parallel gives every path the
+// full deadline window independently.
 func getStorageStatistics(ctx context.Context) StorageStatistics {
 	stats := StorageStatistics{
 		ByPath: make(map[string]PathStatistic),
 	}
 
-	// Track unique paths to avoid duplicates
+	type pathJob struct {
+		key       string
+		path      string
+		mediaType uint
+	}
+
+	var jobs []pathJob
+
+	// Track unique paths to avoid duplicates.
 	processedPaths := make(map[string]bool)
 
-	// Iterate through all media configurations
-	config.RangeSettingsMedia(func(mediaName string, mediaConfig *config.MediaTypeConfig) error {
-		// Process Data paths
-		for _, dataConfig := range mediaConfig.Data {
-			if dataConfig.CfgPath == nil || dataConfig.CfgPath.Path == "" {
-				continue
-			}
-
-			path := dataConfig.CfgPath.Path
-			if processedPaths[path] {
-				continue
-			}
-
-			processedPaths[path] = true
-
-			pathStat := walkPath(ctx, path, mediaName)
-			if pathStat.FileCount > 0 || pathStat.FolderCount > 0 {
-				stats.ByPath[mediaName+" ("+dataConfig.CfgPath.Name+")"] = pathStat
-
-				stats.TotalFileCount += pathStat.FileCount
-				stats.TotalPaths++
-			}
+	addPath := func(key, path string, mediaType uint) {
+		if path == "" || processedPaths[path] {
+			return
 		}
 
-		// Process DataImport paths
+		processedPaths[path] = true
+		jobs = append(jobs, pathJob{key: key, path: path, mediaType: mediaType})
+	}
+
+	config.RangeSettingsMedia(func(mediaName string, mediaConfig *config.MediaTypeConfig) error {
+		for _, dataConfig := range mediaConfig.Data {
+			if dataConfig.CfgPath == nil {
+				continue
+			}
+
+			addPath(mediaName+" ("+dataConfig.CfgPath.Name+")", dataConfig.CfgPath.Path, mediaConfig.IsType)
+		}
+
 		for _, importConfig := range mediaConfig.DataImport {
-			if importConfig.CfgPath == nil || importConfig.CfgPath.Path == "" {
+			if importConfig.CfgPath == nil {
 				continue
 			}
 
-			path := importConfig.CfgPath.Path
-			if processedPaths[path] {
-				continue
-			}
-
-			processedPaths[path] = true
-
-			pathStat := walkPath(ctx, path, mediaName+" Import")
-			if pathStat.FileCount > 0 || pathStat.FolderCount > 0 {
-				stats.ByPath[mediaName+" Import ("+importConfig.CfgPath.Name+")"] = pathStat
-
-				stats.TotalFileCount += pathStat.FileCount
-				stats.TotalPaths++
-			}
+			addPath(
+				mediaName+" Import ("+importConfig.CfgPath.Name+")",
+				importConfig.CfgPath.Path,
+				mediaConfig.IsType,
+			)
 		}
 
 		return nil
 	})
 
+	// Walk every path concurrently; each is independent filesystem I/O.
+	results := make([]PathStatistic, len(jobs))
+
+	var wg sync.WaitGroup
+
+	for i := range jobs {
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+			results[i] = walkPath(ctx, jobs[i].path, jobs[i].mediaType)
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i := range jobs {
+		ps := results[i]
+		if ps.FileCount > 0 || ps.FolderCount > 0 {
+			stats.ByPath[jobs[i].key] = ps
+			stats.TotalFileCount += ps.FileCount
+			stats.TotalPaths++
+		}
+	}
+
 	return stats
 }
 
-// walkPath walks a filesystem path and returns statistics.
-func walkPath(ctx context.Context, rootPath string, _ string) PathStatistic {
+// walkPath walks a filesystem path and returns statistics, counting files that
+// match the media type stored at that path (video, audio, audiobook or ebook).
+func walkPath(ctx context.Context, rootPath string, mediaType uint) PathStatistic {
 	stat := PathStatistic{
 		Path: rootPath,
 	}
@@ -376,9 +504,9 @@ func walkPath(ctx context.Context, rootPath string, _ string) PathStatistic {
 		if d.IsDir() {
 			stat.FolderCount++
 		} else {
-			// Only count video files
+			// Count media files appropriate for this path's media type.
 			ext := strings.ToLower(filepath.Ext(d.Name()))
-			if isVideoFile(ext) {
+			if isMediaFileForType(ext, mediaType) {
 				stat.FileCount++
 				if info, err := d.Info(); err == nil {
 					stat.TotalSize += info.Size()
@@ -400,28 +528,50 @@ func walkPath(ctx context.Context, rootPath string, _ string) PathStatistic {
 	return stat
 }
 
-// isVideoFile checks if the file extension is a video file.
-func isVideoFile(ext string) bool {
-	videoExtensions := map[string]bool{
-		".mkv":  true,
-		".mp4":  true,
-		".avi":  true,
-		".m4v":  true,
-		".mov":  true,
-		".wmv":  true,
-		".flv":  true,
-		".webm": true,
-		".mpg":  true,
-		".mpeg": true,
-		".m2ts": true,
-		".ts":   true,
-		".vob":  true,
-		".3gp":  true,
-		".divx": true,
-		".xvid": true,
+// Media file extension sets used by the storage walker, keyed by file extension
+// (lowercase, including the leading dot).
+var (
+	videoExtensions = map[string]bool{
+		".mkv": true, ".mp4": true, ".avi": true, ".m4v": true, ".mov": true,
+		".wmv": true, ".flv": true, ".webm": true, ".mpg": true, ".mpeg": true,
+		".m2ts": true, ".ts": true, ".vob": true, ".3gp": true, ".divx": true,
+		".xvid": true, ".ogv": true,
 	}
+	audioExtensions = map[string]bool{
+		".mp3": true, ".flac": true, ".m4a": true, ".aac": true, ".ogg": true,
+		".opus": true, ".wav": true, ".wma": true, ".alac": true, ".aiff": true,
+		".aif": true, ".ape": true, ".wv": true, ".dsf": true, ".dff": true,
+		".mka": true,
+	}
+	audiobookExtensions = map[string]bool{
+		".m4b": true, ".mp3": true, ".m4a": true, ".aax": true, ".aa": true,
+		".ogg": true, ".opus": true, ".flac": true,
+	}
+	bookExtensions = map[string]bool{
+		".epub": true, ".mobi": true, ".azw": true, ".azw3": true, ".azw4": true,
+		".pdf": true, ".cbz": true, ".cbr": true, ".cb7": true, ".fb2": true,
+		".djvu": true, ".txt": true, ".lit": true, ".pdb": true, ".rtf": true,
+		".kepub": true,
+	}
+)
 
-	return videoExtensions[ext]
+// isMediaFileForType reports whether ext is a relevant media file for the given
+// media type. Unknown/custom types accept any known media extension so nothing is
+// missed.
+func isMediaFileForType(ext string, mediaType uint) bool {
+	switch mediaType {
+	case config.MediaTypeMovie, config.MediaTypeSeries:
+		return videoExtensions[ext]
+	case config.MediaTypeMusic:
+		return audioExtensions[ext]
+	case config.MediaTypeAudiobook:
+		return audiobookExtensions[ext]
+	case config.MediaTypeBook:
+		return bookExtensions[ext]
+	default:
+		return videoExtensions[ext] || audioExtensions[ext] ||
+			audiobookExtensions[ext] || bookExtensions[ext]
+	}
 }
 
 // getHTTPStatistics retrieves HTTP client statistics.
@@ -682,6 +832,9 @@ func gatherAllStatistics(ctx context.Context) (OverallStatistics, error) {
 		return overall, fmt.Errorf("failed to get series statistics: %w", err)
 	}
 
+	overall.Music = getMusicStatistics()
+	overall.Books = getBookStatistics()
+	overall.Audiobooks = getAudiobookStatistics()
 	overall.Storage = getStorageStatistics(ctx)
 	overall.HTTP = getHTTPStatistics()
 	overall.Workers = worker.GetStats()
@@ -853,8 +1006,79 @@ func webStatisticsSeries(ctx *gin.Context) {
 	_ = component.Render(ctx.Writer)
 }
 
+// statTypeParam resolves the summary/detail selector from query or HX header.
+func statTypeParam(ctx *gin.Context) string {
+	t := ctx.Query("type")
+	if t == "" {
+		t = ctx.GetHeader("HX-Card-Type")
+	}
+
+	return t
+}
+
+func webStatisticsMusic(ctx *gin.Context) {
+	stats := getMusicStatistics()
+
+	var component gomponents.Node
+	if statTypeParam(ctx) == "summary" {
+		component = renderLibraryCard(
+			stats,
+			"Total Albums",
+			"fa-solid fa-compact-disc",
+			"text-danger",
+		)
+	} else {
+		component = renderLibraryDetails(stats,
+			"card-header bg-danger text-white", "badge badge-danger text-dark",
+			"fa-solid fa-compact-disc mr-2", "Music Details")
+	}
+
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+
+	_ = component.Render(ctx.Writer)
+}
+
+func webStatisticsBooks(ctx *gin.Context) {
+	stats := getBookStatistics()
+
+	var component gomponents.Node
+	if statTypeParam(ctx) == "summary" {
+		component = renderLibraryCard(stats, "Total Books", "fa-solid fa-book", "text-warning")
+	} else {
+		component = renderLibraryDetails(stats,
+			"card-header bg-warning text-dark", "badge badge-warning text-dark",
+			"fa-solid fa-book mr-2", "Book Details")
+	}
+
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+
+	_ = component.Render(ctx.Writer)
+}
+
+func webStatisticsAudiobooks(ctx *gin.Context) {
+	stats := getAudiobookStatistics()
+
+	var component gomponents.Node
+	if statTypeParam(ctx) == "summary" {
+		component = renderLibraryCard(
+			stats,
+			"Total Audiobooks",
+			"fa-solid fa-headphones",
+			"text-info",
+		)
+	} else {
+		component = renderLibraryDetails(stats,
+			"card-header bg-secondary text-white", "badge badge-secondary text-dark",
+			"fa-solid fa-headphones mr-2", "Audiobook Details")
+	}
+
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+
+	_ = component.Render(ctx.Writer)
+}
+
 func webStatisticsStorage(ctx *gin.Context) {
-	requestCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	requestCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	stats := getStorageStatistics(requestCtx)

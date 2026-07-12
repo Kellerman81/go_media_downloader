@@ -315,7 +315,9 @@ func (p *Provider) makeJSONRPCCall(
 
 	jsonData, err := json.Marshal(request)
 	if err != nil {
-		return nil, errors.New(logger.JoinStrings("failed to marshal JSON-RPC request: ", err.Error()))
+		return nil, errors.New(
+			logger.JoinStrings("failed to marshal JSON-RPC request: ", err.Error()),
+		)
 	}
 
 	// Build custom headers
@@ -340,11 +342,20 @@ func (p *Provider) makeJSONRPCCall(
 		nil,
 		func(resp *http.Response) error {
 			if decodeErr := json.NewDecoder(resp.Body).Decode(&response); decodeErr != nil {
-				return errors.New(logger.JoinStrings("failed to decode JSON-RPC response: ", decodeErr.Error()))
+				return errors.New(
+					logger.JoinStrings("failed to decode JSON-RPC response: ", decodeErr.Error()),
+				)
 			}
 
 			if response.Error != nil {
-				return errors.New(logger.JoinStrings("JSON-RPC error ", strconv.Itoa(response.Error.Code), ": ", response.Error.Message))
+				return errors.New(
+					logger.JoinStrings(
+						"JSON-RPC error ",
+						strconv.Itoa(response.Error.Code),
+						": ",
+						response.Error.Message,
+					),
+				)
 			}
 
 			return nil
@@ -475,7 +486,12 @@ func (p *Provider) AddNZBExtended(
 		nil,
 		func(resp *http.Response) error {
 			if resp.StatusCode != http.StatusOK {
-				return errors.New(logger.JoinStrings("failed to download NZB: HTTP ", strconv.Itoa(resp.StatusCode)))
+				return errors.New(
+					logger.JoinStrings(
+						"failed to download NZB: HTTP ",
+						strconv.Itoa(resp.StatusCode),
+					),
+				)
 			}
 
 			// Store Content-Disposition header for later

@@ -211,7 +211,7 @@ func IsNZBFormatString(input string) bool {
 
 // looksLikeMediaFilename checks if a string looks like an actual media filename
 // rather than just a short par2/rar reference name.
-func (n *NZBPreprocessor) looksLikeMediaFilename(name string) bool {
+func (*NZBPreprocessor) looksLikeMediaFilename(name string) bool {
 	// Check for year pattern (1900-2099)
 	if database.GetCachedRegexp(reNZBYear).MatchString(name) {
 		return true

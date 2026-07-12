@@ -340,7 +340,8 @@ func getSeriesCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 	var events []calendarEvent
 
 	seriesData := database.StructscanT[SeriesCalendarQuery](false, 0, `
-		SELECT se.id, ds.seriename, dse.first_aired, dse.season, dse.episode,
+		SELECT se.id, ds.seriename, dse.first_aired,
+			   CAST(dse.season AS INTEGER) as season, CAST(dse.episode AS INTEGER) as episode,
 			   dse.title as episode_title, dse.overview, ds.network, ds.thetvdb_id, ds.trakt_id,
 			   CASE WHEN sef.id IS NOT NULL THEN 1 ELSE 0 END as downloaded,
 			   CASE WHEN se.dont_search = 0 THEN 1 ELSE 0 END as monitored,

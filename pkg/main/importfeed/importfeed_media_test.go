@@ -810,7 +810,11 @@ func TestAudnexAuthorSearch(t *testing.T) {
 
 	if resp2.StatusCode != 200 {
 		body, _ := io.ReadAll(resp2.Body)
-		t.Logf("Author books endpoint not supported (status %d): %s", resp2.StatusCode, string(body))
+		t.Logf(
+			"Author books endpoint not supported (status %d): %s",
+			resp2.StatusCode,
+			string(body),
+		)
 		return
 	}
 
@@ -1318,7 +1322,11 @@ func TestAddFoundNoMBID(t *testing.T) {
 	for _, w := range titleWords {
 		releaseTokens = append(releaseTokens, "release:"+w)
 	}
-	titleTokenQuery := fmt.Sprintf(`artist:"%s" AND %s`, artist, strings.Join(releaseTokens, " AND "))
+	titleTokenQuery := fmt.Sprintf(
+		`artist:"%s" AND %s`,
+		artist,
+		strings.Join(releaseTokens, " AND "),
+	)
 
 	// Best working query: unquoted release tokens, no artist field
 	bestQuery := fmt.Sprintf(`release:%s`, searchTitle)

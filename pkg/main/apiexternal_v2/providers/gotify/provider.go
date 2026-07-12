@@ -62,12 +62,12 @@ func NewProviderWithConfig(
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
 	return apiexternal_v2.NotificationGotify
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "gotify"
 }
 

@@ -2,6 +2,7 @@ package apiexternal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -124,7 +125,7 @@ type PlexUser struct {
 // GetPlexWatchlist retrieves the watchlist from a Plex server.
 func GetPlexWatchlist(serverURL, token, username string) ([]PlexWatchlistItem, error) {
 	if serverURL == "" || token == "" || username == "" {
-		return nil, fmt.Errorf("plex server URL, token, and username are required")
+		return nil, errors.New("plex server URL, token, and username are required")
 	}
 
 	// Note: For now we're using the watchlist endpoint directly
@@ -150,7 +151,7 @@ func GetPlexWatchlist(serverURL, token, username string) ([]PlexWatchlistItem, e
 		getPlexClient(),
 		fullURL,
 		false,
-		func(ctx context.Context, r *http.Response) error {
+		func(_ context.Context, r *http.Response) error {
 			return json.NewDecoder(r.Body).Decode(&response)
 		},
 		nil,

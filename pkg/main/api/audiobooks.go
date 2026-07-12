@@ -12,7 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 // allowed jobs for audiobooks.
@@ -797,7 +797,7 @@ func apiAudiobooksAddAuthor(c *gin.Context) {
 	authorIDCopy := authorID
 	worker.Dispatch(
 		"add_author_"+authorID+"_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
+		func(_ uint32, ctx context.Context) error {
 			// Import all audiobooks by this author into dbaudiobooks and audiobooks.
 			// CheckaddAudiobookEntry (called internally) creates the authors tracking entry.
 			return importfeed.JobImportDBAudiobook(ctx, &config.ManualConfig{

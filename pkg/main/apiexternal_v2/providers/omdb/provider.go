@@ -34,12 +34,12 @@ func NewProviderWithConfig(config base.ClientConfig) *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return apiexternal_v2.ProviderOMDb
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "omdb"
 }
 
@@ -71,7 +71,7 @@ func (p *Provider) SearchMovies(
 }
 
 // GetMovieByID retrieves detailed movie information by OMDB/IMDb ID.
-func (p *Provider) GetMovieByID(ctx context.Context, id int) (*apiexternal_v2.MovieDetails, error) {
+func (p *Provider) GetMovieByID(_ context.Context, _ int) (*apiexternal_v2.MovieDetails, error) {
 	// OMDB uses IMDb ID format, so convert if needed
 	// For now, return error as OMDB doesn't use numeric IDs
 	return nil, errors.New("OMDB requires IMDb ID (use FindMovieByIMDbID instead)")
@@ -136,9 +136,9 @@ func (p *Provider) SearchSeries(
 }
 
 // GetSeriesByID retrieves detailed series information (OMDB requires IMDb ID).
-func (p *Provider) GetSeriesByID(
-	ctx context.Context,
-	id int,
+func (*Provider) GetSeriesByID(
+	_ context.Context,
+	_ int,
 ) (*apiexternal_v2.SeriesDetails, error) {
 	return nil, errors.New("OMDB requires IMDb ID (use FindSeriesByIMDbID instead)")
 }

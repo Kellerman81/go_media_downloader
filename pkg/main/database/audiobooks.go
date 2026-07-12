@@ -212,7 +212,7 @@ type AudiobookSearchResult struct {
 
 // FindAudiobookByTitleAuthor searches for an audiobook by title and author.
 // Returns the best matching audiobook or an error if not found.
-func FindAudiobookByTitleAuthor(title, author *string) (*AudiobookSearchResult, error) {
+func FindAudiobookByTitleAuthor(title, _ *string) (*AudiobookSearchResult, error) {
 	if title == nil || *title == "" {
 		return nil, logger.ErrNotFoundDbaudiobook
 	}

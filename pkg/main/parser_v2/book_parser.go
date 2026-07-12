@@ -231,7 +231,7 @@ func (bp *BookParser) extractAuthorTitle(name string, result *BookParseResult) {
 }
 
 // looksLikeAuthor checks if a string looks like an author name.
-func (bp *BookParser) looksLikeAuthor(s string) bool {
+func (*BookParser) looksLikeAuthor(s string) bool {
 	s = strings.TrimSpace(s)
 	if len(s) < 2 {
 		return false
@@ -254,7 +254,7 @@ func (bp *BookParser) looksLikeAuthor(s string) bool {
 }
 
 // extractASIN extracts the ASIN from a match.
-func (bp *BookParser) extractASIN(match string) string {
+func (*BookParser) extractASIN(match string) string {
 	// Remove "ASIN:" prefix if present
 	return strings.ToUpper(
 		strings.TrimSpace(
@@ -264,7 +264,7 @@ func (bp *BookParser) extractASIN(match string) string {
 }
 
 // calculateConfidence calculates the confidence score based on extracted data.
-func (bp *BookParser) calculateConfidence(result *BookParseResult) float64 {
+func (*BookParser) calculateConfidence(result *BookParseResult) float64 {
 	var conf float64
 
 	// Title is essential

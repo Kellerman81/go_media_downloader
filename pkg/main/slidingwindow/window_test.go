@@ -102,6 +102,9 @@ func runConcurrencyTest(
 	name string,
 	allowFunc func() (bool, time.Duration),
 ) TestResults {
+	t.Helper()
+	t.Logf("%s: starting concurrency test (%d goroutines, %s)", name, testGoroutines, testDuration)
+
 	var results TestResults
 	var wg sync.WaitGroup
 	var currentConcurrent atomic.Int64
@@ -121,8 +124,7 @@ func runConcurrencyTest(
 			for time.Since(startTime) < testDuration {
 				// Track concurrent requests
 				currentConcurrent.Add(1)
-				if current := currentConcurrent.Load(,
-				); current > results.MaxConcurrent {
+				if current := currentConcurrent.Load(); current > results.MaxConcurrent {
 					atomic.StoreInt64(&results.MaxConcurrent, current)
 				}
 
@@ -222,7 +224,6 @@ func testRaceConditions(t *testing.T, limiterName string, createLimiter func() R
 	// Launch many goroutines simultaneously
 	for range raceGoroutines {
 		wg.Go(func() {
-
 			for j := range raceIterations {
 				allowed, _ := limiter.Allow()
 				if allowed {

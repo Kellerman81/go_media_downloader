@@ -203,23 +203,23 @@ func applyTVmazeMetadata(
 	var updated fieldTracker
 
 	// Update basic string fields
-	if updateStringFieldTracked(&serie.Seriename, show.Name, overwrite, nil) {
+	if UpdateString(&serie.Seriename, show.Name, overwrite, nil) {
 		updated |= fieldName
 	}
 
-	if updateStringFieldTracked(&serie.Status, show.Status, overwrite, nil) {
+	if UpdateString(&serie.Status, show.Status, overwrite, nil) {
 		updated |= fieldStatus
 	}
 
-	if updateStringFieldTracked(&serie.Network, getNetworkName(show), overwrite, nil) {
+	if UpdateString(&serie.Network, getNetworkName(show), overwrite, nil) {
 		updated |= fieldNetwork
 	}
 
-	if updateStringFieldTracked(&serie.Language, show.OriginalLanguage, overwrite, nil) {
+	if UpdateString(&serie.Language, show.OriginalLanguage, overwrite, nil) {
 		updated |= fieldLanguage
 	}
 
-	if updateStringFieldTracked(&serie.Overview, show.Overview, overwrite, nil) {
+	if UpdateString(&serie.Overview, show.Overview, overwrite, nil) {
 		updated |= fieldOverview
 	}
 
@@ -241,7 +241,7 @@ func applyTVmazeMetadata(
 
 	// Handle premiere date
 	if !show.FirstAirDate.IsZero() {
-		if updateStringFieldTracked(
+		if UpdateString(
 			&serie.Firstaired,
 			show.FirstAirDate.Format("2006-01-02"),
 			overwrite,
@@ -253,21 +253,23 @@ func applyTVmazeMetadata(
 
 	// Handle genres
 	if len(show.Genres) > 0 {
-		genres := buildGenreNamesString(show.Genres)
-		if updateStringFieldTracked(&serie.Genre, genres, overwrite, nil) {
+		genres := buildCommaSeparated(show.Genres, func(g apiexternal_v2.Genre) string {
+			return g.Name
+		})
+		if UpdateString(&serie.Genre, genres, overwrite, nil) {
 			updated |= fieldGenres
 		}
 	}
 
 	// Handle images
 	if show.PosterPath != "" {
-		if updateStringFieldTracked(&serie.Poster, show.PosterPath, overwrite, nil) {
+		if UpdateString(&serie.Poster, show.PosterPath, overwrite, nil) {
 			updated |= fieldPoster
 		}
 	}
 
 	if show.BackdropPath != "" {
-		if updateStringFieldTracked(&serie.Banner, show.BackdropPath, overwrite, nil) {
+		if UpdateString(&serie.Banner, show.BackdropPath, overwrite, nil) {
 			updated |= fieldBanner
 		}
 	}
@@ -317,31 +319,6 @@ func applyExternalIDs(serie *database.Dbserie, show *apiexternal_v2.SeriesDetail
 	return added
 }
 
-// buildGenreNamesString builds a comma-separated string of genre names.
-func buildGenreNamesString(genres []apiexternal_v2.Genre) string {
-	if len(genres) == 0 {
-		return ""
-	}
-
-	// Fast path for single genre
-	if len(genres) == 1 {
-		return genres[0].Name
-	}
-
-	bld := logger.PlAddBuffer.Get()
-	defer logger.PlAddBuffer.Put(bld)
-
-	for i, genre := range genres {
-		if i > 0 {
-			bld.WriteByte(',')
-		}
-
-		bld.WriteString(genre.Name)
-	}
-
-	return bld.String()
-}
-
 // getNetworkName extracts network name from TVmaze show data.
 func getNetworkName(show *apiexternal_v2.SeriesDetails) string {
 	if len(show.Networks) > 0 && show.Networks[0].Name != "" {
@@ -349,26 +326,4 @@ func getNetworkName(show *apiexternal_v2.SeriesDetails) string {
 	}
 
 	return ""
-}
-
-// updateStringField updates a string field and returns true if it was changed.
-// This version returns a boolean to support the fieldTracker pattern.
-func updateStringFieldTracked(
-	field *string,
-	newValue string,
-	overwrite bool,
-	transform func(string) string,
-) bool {
-	if (*field == "" || overwrite) && newValue != "" {
-		oldValue := *field
-		if transform != nil {
-			*field = transform(newValue)
-		} else {
-			*field = newValue
-		}
-
-		return *field != oldValue
-	}
-
-	return false
 }

@@ -98,7 +98,7 @@ func validateConfigStructure[T any](configs []T, configType string, validator fu
 func validateDownloaderConfigsAlternative(configs []config.DownloaderConfig) error {
 	return validateConfigStructure(configs, "downloader", func(cfg config.DownloaderConfig) error {
 		if cfg.Name == "" {
-			return fmt.Errorf("name cannot be empty")
+			return errors.New("name cannot be empty")
 		}
 
 		if err := validatePositiveInteger(cfg.Port, "port"); err != nil {

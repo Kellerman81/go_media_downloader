@@ -145,6 +145,7 @@ var (
 	DBVersion               = "1"
 	DBLogLevel              = "Info"
 	errWrongNumberOfColumns = errors.New("wrong number of columns")
+	errStmtFailed           = errors.New("statement prepare failed")
 )
 
 // GetMutex returns the shared read-write mutex used for database operations.
@@ -374,9 +375,14 @@ func Structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
+	row := queryRowxContext(querystring, imdb, id)
+	if row == nil {
+		return nil, errStmtFailed
+	}
+
 	var u t
 
-	err := queryRowxContext(querystring, imdb, id).StructScan(&u)
+	err := row.StructScan(&u)
 	if err != nil {
 		logSQLError(err, querystring)
 		return nil, err
@@ -392,7 +398,13 @@ func Structscan[t any](querystring string, imdb bool, id ...any) (*t, error) {
 func structscan1(querystring string, u any, id *uint) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
-	return queryRowxContext(querystring, false, []any{id}).StructScan(u)
+
+	row := queryRowxContext(querystring, false, []any{id})
+	if row == nil {
+		return errStmtFailed
+	}
+
+	return row.StructScan(u)
 }
 
 // StructscanT executes a SQL query and scans the result into a slice of the provided struct type.
@@ -512,7 +524,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbserie_episodes":
 		q.Table = "dbserie_episodes LEFT JOIN dbseries ON dbserie_episodes.dbserie_id = dbseries.id"
-		q.DefaultColumns = "dbserie_episodes.id as id,dbserie_episodes.created_at as created_at,dbserie_episodes.updated_at as updated_at,dbserie_episodes.episode as episode,dbserie_episodes.season as season,dbserie_episodes.identifier as identifier,dbserie_episodes.title as title,dbserie_episodes.first_aired as first_aired,dbserie_episodes.overview as overview,dbserie_episodes.poster as poster,dbserie_episodes.runtime as runtime,dbserie_episodes.dbserie_id as dbserie_id,dbseries.seriename as series_name"
+		q.DefaultColumns = "dbserie_episodes.id as id,dbserie_episodes.created_at as created_at,dbserie_episodes.updated_at as updated_at,dbserie_episodes.episode as episode,dbserie_episodes.season as season,dbserie_episodes.identifier as identifier,dbserie_episodes.title as title,dbserie_episodes.first_aired as first_aired,dbserie_episodes.overview as overview,dbserie_episodes.poster as poster,dbserie_episodes.scraper_id as scraper_id,dbserie_episodes.scraper_url as scraper_url,dbserie_episodes.runtime as runtime,dbserie_episodes.dbserie_id as dbserie_id,dbseries.seriename as series_name"
 		q.DefaultQuery = " where dbserie_episodes.id like ? or dbserie_episodes.episode like ? or dbserie_episodes.season like ? or dbserie_episodes.dbserie_id like ? or dbserie_episodes.title like ? or dbserie_episodes.identifier like ?"
 		q.DefaultQueryParamCount = 6
 		q.DefaultOrderBy = " order by dbserie_episodes.id desc"
@@ -528,7 +540,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "series":
 		q.Table = "series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id"
-		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,series.aliases as aliases,dbseries.seriename as series_name"
+		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,series.quality_profile as quality_profile,series.aliases as aliases,dbseries.seriename as series_name"
 		q.DefaultQuery = " where series.id like ? or series.listname like ? or series.rootpath like ? or series.dbserie_id like ?"
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by series.id desc"
@@ -1263,9 +1275,14 @@ func ScanrowsNArr(imdb bool, querystring string, obj any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	err := queryRowContext(querystring, imdb, args).Scan(obj)
+	row := queryRowContext(querystring, imdb, args)
+	if row == nil {
+		checkerrorvalue(obj)
+		return
+	}
+
 	logSQLErrorReset(
-		err,
+		row.Scan(obj),
 		obj,
 		querystring,
 	)
@@ -1361,8 +1378,13 @@ func scandatarow(imdb bool, querystring string, s any, args []any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	err := queryRowContext(querystring, imdb, args).Scan(s)
-	logSQLErrorReset(err, s, querystring)
+	row := queryRowContext(querystring, imdb, args)
+	if row == nil {
+		checkerrorvalue(s)
+		return
+	}
+
+	logSQLErrorReset(row.Scan(s), s, querystring)
 }
 
 // ScanRowVal2 executes a query with two typed arguments and returns the first column as R.
@@ -1377,7 +1399,9 @@ func ScanRowVal2[A, B, R any](query string, arg1 A, arg2 B) R {
 	defer readWriteMu.RUnlock()
 
 	var result R
-	stmtp.QueryRowContext(sqlCTX, arg1, arg2).Scan(&result) //nolint:errcheck
+	// ErrNoRows is routine here (lookup misses); logSQLError skips it but
+	// surfaces real failures that were previously swallowed.
+	logSQLError(stmtp.QueryRowContext(sqlCTX, arg1, arg2).Scan(&result), query)
 
 	return result
 }
@@ -1391,14 +1415,17 @@ func ScanRowVal2[A, B, R any](query string, arg1 A, arg2 B) R {
 // - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
 // - args: variadic arguments to pass to the SQL query
 //
-// Returns a *sql.Row from executing the query.
+// Returns a *sql.Row from executing the query, or nil when the statement
+// could not be prepared. Callers must check for nil - calling Scan on a
+// zero-value sql.Row panics in the standard library.
 func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 	stmtp := globalCache.getXStmt(querystring, imdb)
 	if stmtp == nil {
 		logger.Logtype("error", 1).
 			Str(strQuery, querystring).
 			Msg("stmt failed")
-		return &sql.Row{}
+
+		return nil
 	}
 
 	return stmtp.QueryRowContext(sqlCTX, args...)
@@ -1413,14 +1440,17 @@ func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 // - imdb: a boolean indicating whether to use the "imdb" database connection or the default one
 // - args: variadic arguments to pass to the SQL query
 //
-// Returns a *sqlx.Row from executing the query.
+// Returns a *sqlx.Row from executing the query, or nil when the statement
+// could not be prepared. Callers must check for nil - scanning a zero-value
+// sqlx.Row panics.
 func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 	stmt := globalCache.getXStmt(querystring, imdb)
 	if stmt == nil {
 		logger.Logtype("error", 1).
 			Str(strQuery, querystring).
 			Msg("stmt failed")
-		return &sqlx.Row{}
+
+		return nil
 	}
 
 	return stmt.QueryRowxContext(sqlCTX, args...)
@@ -1468,7 +1498,9 @@ func Getdatarow[o any](imdb bool, querystring string, args ...any) o {
 	defer readWriteMu.RUnlock()
 
 	var s o
-	stmtp.QueryRowContext(sqlCTX, args...).Scan(&s) //nolint:errcheck
+	// ErrNoRows is routine here (lookup misses); logSQLError skips it but
+	// surfaces real failures that were previously swallowed.
+	logSQLError(stmtp.QueryRowContext(sqlCTX, args...).Scan(&s), querystring)
 
 	return s
 }
@@ -1515,9 +1547,13 @@ func GetdatarowArgs(querystring string, arg any, objs ...any) {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	err := queryRowContext(querystring, false, []any{arg}).Scan(objs...)
+	row := queryRowContext(querystring, false, []any{arg})
+	if row == nil {
+		return
+	}
+
 	logSQLError(
-		err,
+		row.Scan(objs...),
 		querystring,
 	)
 }
@@ -1530,7 +1566,12 @@ func GetdatarowArgsImdb(querystring string, arg any, objs ...any) error {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
-	err := queryRowContext(querystring, true, []any{arg}).Scan(objs...)
+	row := queryRowContext(querystring, true, []any{arg})
+	if row == nil {
+		return errStmtFailed
+	}
+
+	err := row.Scan(objs...)
 	logSQLError(
 		err,
 		querystring,
@@ -1566,7 +1607,7 @@ func GetrowsN[t any](imdb bool, size uint, querystring string, args ...any) []t 
 	return queryGenericsT[t](size, rows, querystring)
 }
 
-func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
+func GetrowsType(_ any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
 	readWriteMu.RLock()
 	defer readWriteMu.RUnlock()
 
@@ -1592,50 +1633,6 @@ func GetrowsType(o any, imdb bool, size uint, querystring string, args ...any) [
 		if err == nil {
 			result = append(result, o)
 		}
-	}
-
-	logSQLError(rows.Err(), querystring)
-
-	return result
-}
-
-func GetrowsTypeOLD(o any, imdb bool, size uint, querystring string, args ...any) []map[string]any {
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
-
-	rows, err := queryxContext(querystring, imdb, args)
-	if err != nil || rows == nil {
-		logSQLError(err, querystring)
-		return nil
-	}
-
-	defer rows.Close()
-
-	capacity := size
-	if capacity == 0 {
-		capacity = 16 // reasonable default
-	}
-
-	result := make([]map[string]any, 0, capacity)
-
-	columns, _ := rows.Columns()
-	count := len(columns)
-	values := make([]any, count)
-	valuePtrs := make([]any, count)
-
-	for rows.Next() {
-		for i := range columns {
-			valuePtrs[i] = &values[i]
-		}
-
-		rows.Scan(valuePtrs...)
-
-		obj := map[string]any{}
-		for i, column := range columns {
-			obj[column] = values[i]
-		}
-
-		result = append(result, obj)
 	}
 
 	logSQLError(rows.Err(), querystring)
@@ -1691,6 +1688,87 @@ func ExecNMap(isType uint, query string, args ...any) {
 	ExecN(mtstrings.GetStringsMap(isType, query), args...)
 }
 
+// ExecNTx runs fn inside a single database transaction, exposing an exec
+// function that mirrors ExecNErr. All statements share one commit/fsync,
+// making bulk writes (episode linking, slug population) far faster than
+// per-statement implicit transactions. When fn returns an error the
+// transaction is rolled back and the error returned.
+// No database reads may be performed inside fn - the write lock is held and
+// read helpers would deadlock; gather all lookups before calling.
+func ExecNTx(fn func(exec func(querystring string, args ...any) error) error) error {
+	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
+
+	tx, err := dbData.BeginTxx(sqlCTX, nil)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Err(err).
+			Msg("begin tx")
+
+		return err
+	}
+
+	execFn := func(querystring string, args ...any) error {
+		_, errsub := tx.ExecContext(sqlCTX, querystring, args...)
+		if errsub != nil {
+			logger.Logtype("error", 1).
+				Str(strQuery, querystring).
+				Err(errsub).
+				Msg("query exec tx")
+		}
+
+		return errsub
+	}
+
+	if err := fn(execFn); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// ExecNTxNid is like ExecNTx but the exec function also returns the
+// LastInsertId of the executed statement, for transactional batches that need
+// generated ids for subsequent statements (e.g. inserting tracks, then their
+// artist links). The same no-reads-inside-fn constraint applies.
+func ExecNTxNid(fn func(exec func(querystring string, args ...any) (int64, error)) error) error {
+	readWriteMu.Lock()
+	defer readWriteMu.Unlock()
+
+	tx, err := dbData.BeginTxx(sqlCTX, nil)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Err(err).
+			Msg("begin tx")
+
+		return err
+	}
+
+	execFn := func(querystring string, args ...any) (int64, error) {
+		res, errsub := tx.ExecContext(sqlCTX, querystring, args...)
+		if errsub != nil {
+			logger.Logtype("error", 1).
+				Str(strQuery, querystring).
+				Err(errsub).
+				Msg("query exec tx")
+
+			return 0, errsub
+		}
+
+		newid, _ := res.LastInsertId()
+
+		return newid, nil
+	}
+
+	if err := fn(execFn); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // ExecNid executes the given querystring with multiple arguments, returns the generated ID from the insert statement, handles errors.
 func ExecNid(querystring string, args ...any) (int64, error) {
 	dbresult, err := exec(querystring, args)
@@ -1716,6 +1794,11 @@ func exec(querystring string, args []any) (sql.Result, error) {
 	defer readWriteMu.Unlock()
 
 	stmt := globalCache.getXStmt(querystring, false)
+	if stmt == nil {
+		// Prepare failed (bad SQL or DB closing) - getXStmt already logged it.
+		// Returning an error instead of calling ExecContext on nil avoids a panic.
+		return nil, errStmtFailed
+	}
 
 	r, err := stmt.ExecContext(sqlCTX, args...)
 	if err != nil {

@@ -84,22 +84,63 @@ func renderSystemCard(stats SystemStatistics) gomponents.Node {
 	)
 }
 
-// renderMovieDetails renders the movie details section.
-func renderMovieDetails(stats MovieStatistics) gomponents.Node {
+// renderLibraryCard renders a generic media-library summary card (music/books/audiobooks).
+func renderLibraryCard(stats MediaLibraryStats, label, icon, colorClass string) gomponents.Node {
+	return html.Div(
+		html.Class("card-body text-center"),
+		html.H1(html.Class("display-4 "+colorClass), gomponents.Textf("%d", stats.Total)),
+		html.P(
+			html.Class("text-muted mb-2"),
+			html.I(html.Class(icon+" mr-2")),
+			gomponents.Text(label),
+		),
+		html.P(html.Class("mb-0"),
+			html.Span(html.Class("text-success mr-3"),
+				gomponents.Textf("%d Available", stats.Available)),
+			gomponents.Text(" | "),
+			html.Span(html.Class("text-danger"),
+				gomponents.Textf("%d Missing", stats.Missing)),
+		),
+	)
+}
+
+// renderLibraryDetails renders a generic media-library detail card (music/books/audiobooks).
+func renderLibraryDetails(
+	stats MediaLibraryStats,
+	headerClass, qualityBadge, icon, title string,
+) gomponents.Node {
+	return renderMediaDetailsCard(
+		stats.ByQuality,
+		stats.ByList,
+		headerClass,
+		qualityBadge,
+		icon,
+		title,
+	)
+}
+
+// renderMediaDetailsCard renders a media "details" card with By-Quality and By-List
+// tables. headerClass is the card-header colour class, qualityBadge the quality count
+// badge class, icon the header icon class, and title the card title. Shared by the
+// movie and series detail sections.
+func renderMediaDetailsCard(
+	byQuality, byList map[string]int,
+	headerClass, qualityBadge, icon, title string,
+) gomponents.Node {
 	qualityRows := []gomponents.Node{}
-	if len(stats.ByQuality) == 0 {
+	if len(byQuality) == 0 {
 		qualityRows = append(qualityRows, html.Tr(
 			html.Td(gomponents.Attr("colspan", "2"), html.Class("text-center text-muted"),
 				gomponents.Text("No data")),
 		))
 	} else {
-		for quality, count := range stats.ByQuality {
+		for quality, count := range byQuality {
 			qualityRows = append(qualityRows, html.Tr(
 				html.Td(gomponents.Text(quality)),
 				html.Td(
 					html.Class("text-right"),
 					html.Span(
-						html.Class("badge badge-primary text-dark"),
+						html.Class(qualityBadge),
 						gomponents.Textf("%d", count),
 					),
 				),
@@ -108,13 +149,13 @@ func renderMovieDetails(stats MovieStatistics) gomponents.Node {
 	}
 
 	listRows := []gomponents.Node{}
-	if len(stats.ByList) == 0 {
+	if len(byList) == 0 {
 		listRows = append(listRows, html.Tr(
 			html.Td(gomponents.Attr("colspan", "2"), html.Class("text-center text-muted"),
 				gomponents.Text("No data")),
 		))
 	} else {
-		for list, count := range stats.ByList {
+		for list, count := range byList {
 			listRows = append(listRows, html.Tr(
 				html.Td(gomponents.Text(list)),
 				html.Td(
@@ -130,11 +171,11 @@ func renderMovieDetails(stats MovieStatistics) gomponents.Node {
 
 	return html.Div(
 		html.Div(
-			html.Class("card-header bg-primary text-white"),
+			html.Class(headerClass),
 			html.H5(
 				html.Class("mb-0"),
-				html.I(html.Class("fa-solid fa-film mr-2")),
-				gomponents.Text("Movie Details"),
+				html.I(html.Class(icon)),
+				gomponents.Text(title),
 			),
 		),
 		html.Div(html.Class("card-body"),
@@ -162,81 +203,25 @@ func renderMovieDetails(stats MovieStatistics) gomponents.Node {
 	)
 }
 
+// renderMovieDetails renders the movie details section.
+func renderMovieDetails(stats MovieStatistics) gomponents.Node {
+	return renderMediaDetailsCard(
+		stats.ByQuality, stats.ByList,
+		"card-header bg-primary text-white",
+		"badge badge-primary text-dark",
+		"fa-solid fa-film mr-2",
+		"Movie Details",
+	)
+}
+
 // renderSeriesDetails renders the series details section.
 func renderSeriesDetails(stats SeriesStatistics) gomponents.Node {
-	qualityRows := []gomponents.Node{}
-	if len(stats.ByQuality) == 0 {
-		qualityRows = append(qualityRows, html.Tr(
-			html.Td(gomponents.Attr("colspan", "2"), html.Class("text-center text-muted"),
-				gomponents.Text("No data")),
-		))
-	} else {
-		for quality, count := range stats.ByQuality {
-			qualityRows = append(qualityRows, html.Tr(
-				html.Td(gomponents.Text(quality)),
-				html.Td(
-					html.Class("text-right"),
-					html.Span(
-						html.Class("badge badge-success text-dark"),
-						gomponents.Textf("%d", count),
-					),
-				),
-			))
-		}
-	}
-
-	listRows := []gomponents.Node{}
-	if len(stats.ByList) == 0 {
-		listRows = append(listRows, html.Tr(
-			html.Td(gomponents.Attr("colspan", "2"), html.Class("text-center text-muted"),
-				gomponents.Text("No data")),
-		))
-	} else {
-		for list, count := range stats.ByList {
-			listRows = append(listRows, html.Tr(
-				html.Td(gomponents.Text(list)),
-				html.Td(
-					html.Class("text-right"),
-					html.Span(
-						html.Class("badge badge-info text-dark"),
-						gomponents.Textf("%d", count),
-					),
-				),
-			))
-		}
-	}
-
-	return html.Div(
-		html.Div(
-			html.Class("card-header bg-success text-white"),
-			html.H5(
-				html.Class("mb-0"),
-				html.I(html.Class("fa-solid fa-tv mr-2")),
-				gomponents.Text("Series Details"),
-			),
-		),
-		html.Div(html.Class("card-body"),
-			html.H6(html.Class("text-muted"), gomponents.Text("By Quality Profile")),
-			html.Table(html.Class("table table-sm table-hover"),
-				html.THead(
-					html.Tr(
-						html.Th(gomponents.Text("Quality")),
-						html.Th(html.Class("text-right"), gomponents.Text("Count")),
-					),
-				),
-				html.TBody(qualityRows...),
-			),
-			html.H6(html.Class("text-muted mt-3"), gomponents.Text("By List")),
-			html.Table(html.Class("table table-sm table-hover"),
-				html.THead(
-					html.Tr(
-						html.Th(gomponents.Text("List")),
-						html.Th(html.Class("text-right"), gomponents.Text("Count")),
-					),
-				),
-				html.TBody(listRows...),
-			),
-		),
+	return renderMediaDetailsCard(
+		stats.ByQuality, stats.ByList,
+		"card-header bg-success text-white",
+		"badge badge-success text-dark",
+		"fa-solid fa-tv mr-2",
+		"Series Details",
 	)
 }
 
@@ -329,7 +314,7 @@ func renderWorkerPoolStats(stats worker.Stats) gomponents.Node {
 		{"Indexer RSS", stats.WorkerIndexRSS},
 	}
 
-	rows := []gomponents.Node{}
+	rows := make([]gomponents.Node, 0, len(pools))
 	for _, pool := range pools {
 		s := pool.stats
 

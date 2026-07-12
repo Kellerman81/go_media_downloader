@@ -107,11 +107,11 @@ func TestDispatch(t *testing.T) {
 
 	t.Run("submit function", func(t *testing.T) {
 		err := Dispatch("test_submit_job", func(u uint32, _ context.Context) error {
-			time.Sleep(10 * time.Second)
+			time.Sleep(50 * time.Millisecond)
 			return nil
 		}, QueueData)
-		if err == nil {
-			t.Errorf("Expected error for nil function, got nil")
+		if err != nil {
+			t.Errorf("Expected successful dispatch, got error: %v", err)
 		}
 	})
 
@@ -157,10 +157,7 @@ func TestCheckQueue(t *testing.T) {
 			name:    "job in queue",
 			jobName: "test_job",
 			setup: func() {
-				globalQueueSet.Add(1, syncops.Job{
-					Name:    "test_job",
-					Started: time.Time{},
-				})
+				jobNameIndex.Add("test_job", struct{}{}, 0, false, 0)
 			},
 			expected: true,
 		},
@@ -168,10 +165,7 @@ func TestCheckQueue(t *testing.T) {
 			name:    "alternative job names",
 			jobName: "searchmissinginc_test",
 			setup: func() {
-				globalQueueSet.Add(1, syncops.Job{
-					Name:    "searchmissingfull_test",
-					Started: time.Time{},
-				})
+				jobNameIndex.Add("searchmissingfull_test", struct{}{}, 0, false, 0)
 			},
 			expected: true,
 		},
@@ -180,6 +174,7 @@ func TestCheckQueue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			globalQueueSet = syncops.NewSyncMapUint[syncops.Job](100)
+			jobNameIndex = syncops.NewSyncMap[struct{}](100)
 			tt.setup()
 			result := checkQueue(tt.jobName)
 			if result != tt.expected {

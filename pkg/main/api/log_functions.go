@@ -178,7 +178,7 @@ func analyzeErrorPatterns(entries []LogEntry) []ErrorPattern {
 	}
 
 	// Convert to slice and sort by count
-	var patterns_result []ErrorPattern
+	patterns_result := make([]ErrorPattern, 0, len(errorCounts))
 	for pattern, count := range errorCounts {
 		patterns_result = append(patterns_result, ErrorPattern{
 			Pattern:  pattern,
@@ -194,6 +194,35 @@ func analyzeErrorPatterns(entries []LogEntry) []ErrorPattern {
 	})
 
 	return patterns_result
+}
+
+// determineSeverity classifies an error pattern into a severity bucket
+// ("critical", "high", "medium" or "low") from keywords found in the pattern
+// name and a representative example message.
+func determineSeverity(pattern, example string) string {
+	haystack := strings.ToLower(pattern + " " + example)
+
+	switch {
+	case strings.Contains(haystack, "panic"),
+		strings.Contains(haystack, "fatal"),
+		strings.Contains(haystack, "deadlock"),
+		strings.Contains(haystack, "corrupt"):
+		return "critical"
+	case strings.Contains(haystack, "timeout"),
+		strings.Contains(haystack, "connection"),
+		strings.Contains(haystack, "refused"),
+		strings.Contains(haystack, "database"),
+		strings.Contains(haystack, "unauthorized"),
+		strings.Contains(haystack, "denied"):
+		return "high"
+	case strings.Contains(haystack, "not found"),
+		strings.Contains(haystack, "missing"),
+		strings.Contains(haystack, "invalid"),
+		strings.Contains(haystack, "failed"):
+		return "medium"
+	default:
+		return "low"
+	}
 }
 
 // analyzePerformanceMetrics analyzes log entries for performance data.
@@ -339,7 +368,7 @@ func analyzeAccessPatterns(entries []LogEntry) []AccessPattern {
 		count    int
 	}
 
-	var endpoints []endpointCount
+	endpoints := make([]endpointCount, 0, len(endpointCounts))
 	for endpoint, count := range endpointCounts {
 		endpoints = append(endpoints, endpointCount{endpoint, count})
 	}

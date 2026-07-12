@@ -2,6 +2,7 @@ package searcher
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -180,7 +181,7 @@ func (s *ConfigSearcher) validateSize(entry *apiexternal_v2.Nzbwithprio) bool {
 	}
 
 	skipemptysize := s.Quality.QualityIndexerByQualityAndTemplateSkipEmpty(entry.NZB.Indexer)
-	if !skipemptysize {
+	if !skipemptysize && len(s.Quality.Indexer) > 0 {
 		if ok := config.TestSettingsList(entry.NZB.Indexer.Name); ok {
 			skipemptysize = s.Quality.Indexer[0].SkipEmptySize
 		} else if entry.NZB.Indexer.Getlistbyindexer() != nil {
@@ -440,9 +441,18 @@ func (s *ConfigSearcher) checkhistory(
 	return false
 }
 
+// normalizedTitleKey builds a case-insensitive dedupe key from a release title
+// and its size bucketed to 10 MiB, so the same release listed by multiple
+// indexers (differing URL, case, or slightly different reported size) is only
+// parsed once.
+func normalizedTitleKey(title string, size int64) string {
+	return strings.ToLower(strings.TrimSpace(title)) + "|" + strconv.FormatInt(size/(10<<20), 10)
+}
+
 // checkprocessed checks if the given entry is already processed using O(1) map lookups
 // instead of O(n) loops through denied and accepted lists for better performance.
-// Returns true if a match is found on the download URL or title.
+// Returns true if a match is found on the download URL, exact title, or the
+// normalized title+size key (cross-indexer duplicates of the same release).
 func (s *ConfigSearcher) checkprocessed(entry *apiexternal_v2.Nzb) bool {
 	// O(1) lookup for URL duplicates
 	if entry.DownloadURL != "" {
@@ -454,6 +464,10 @@ func (s *ConfigSearcher) checkprocessed(entry *apiexternal_v2.Nzb) bool {
 	// O(1) lookup for title duplicates
 	if entry.Title != "" {
 		if _, exists := s.processedTitles[entry.Title]; exists {
+			return true
+		}
+
+		if _, exists := s.processedNorm[normalizedTitleKey(entry.Title, entry.Size)]; exists {
 			return true
 		}
 	}
@@ -587,7 +601,7 @@ func (s *ConfigSearcher) checktitle(
 		return false
 	}
 
-	if !entry.NZB.Indexer.CheckTitleOnIDSearch && entry.IDSearched {
+	if entry.NZB.Indexer != nil && !entry.NZB.Indexer.CheckTitleOnIDSearch && entry.IDSearched {
 		return false
 	}
 
@@ -788,7 +802,7 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 // It handles cases where the original identifier uses a hyphen separator, and checks if the entry title
 // contains the same identifier with dot or space separators instead.
 // Returns true if an alternative format match is found, otherwise false.
-func (s *ConfigSearcher) checkAlternativeFormats(
+func (*ConfigSearcher) checkAlternativeFormats(
 	sourceentry, entry *apiexternal_v2.Nzbwithprio,
 ) bool {
 	if sourceentry.NZB.Season == "" && sourceentry.NZB.Episode == "" &&
@@ -814,7 +828,7 @@ func (s *ConfigSearcher) checkAlternativeFormats(
 // checkAlternativeIdentifier checks for alternative identifier formats by converting and transforming the source identifier.
 // It handles cases like removing leading 's/S', converting 'E/e' to 'x' format, and checking for alternative separators.
 // Returns true if an alternative identifier match is found in the entry title, otherwise false.
-func (s *ConfigSearcher) checkAlternativeIdentifier(
+func (*ConfigSearcher) checkAlternativeIdentifier(
 	sourceentry, entry *apiexternal_v2.Nzbwithprio,
 ) bool {
 	altIdentifier := logger.TrimLeft(sourceentry.Info.Identifier, 's', 'S', '0')

@@ -29,6 +29,7 @@ func NewManager() *Manager {
 	m.RegisterHandler(NewMP3Handler())
 	m.RegisterHandler(NewFLACHandlerWithConfig())
 	m.RegisterHandler(NewOGGHandler())
+	m.RegisterHandler(NewMP4Handler())
 
 	return m
 }

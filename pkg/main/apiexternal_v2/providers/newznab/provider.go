@@ -321,7 +321,7 @@ func (p *Provider) Search(
 func (p *Provider) SearchMovies(
 	ctx context.Context,
 	query string,
-	year int,
+	_ int,
 	additionalParams string,
 	ind *config.IndexersConfig, qual *config.QualityConfig,
 ) ([]apiexternal_v2.Nzbwithprio, error) {
@@ -1187,7 +1187,7 @@ func (p *Provider) convertJSON2Items(
 }
 
 // processAttributeForNzb processes a custom Newznab attribute and populates the NZB fields.
-func (p *Provider) processAttributeForNzb(
+func (*Provider) processAttributeForNzb(
 	nzb *apiexternal_v2.Nzb,
 	name, value string,
 ) {

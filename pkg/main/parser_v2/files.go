@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -121,8 +122,10 @@ var (
 	// losslessFormats lists all lossless audio format names (lowercase, without dot).
 	losslessFormats = []string{"flac", "alac", "wav", "aiff", "ape", "wv", "wavpack", "dsd", "dsf"}
 
-	// musicParserInstance is a singleton MusicParser for folder name parsing.
-	musicParserInstance *MusicParser
+	// getMusicParser returns the singleton MusicParser for folder name parsing.
+	// sync.OnceValue makes the lazy initialization safe for the concurrent
+	// folder-import workers that call ParseAudioFolder.
+	getMusicParser = sync.OnceValue(NewMusicParser)
 )
 
 // WalkFiles walks a directory and returns all files matching the given extensions.
@@ -189,15 +192,6 @@ func HasExtension(filename string, extensions []string) bool {
 	}
 
 	return false
-}
-
-// getMusicParser returns a singleton MusicParser instance.
-func getMusicParser() *MusicParser {
-	if musicParserInstance == nil {
-		musicParserInstance = NewMusicParser()
-	}
-
-	return musicParserInstance
 }
 
 // ParseAudioFolder extracts album/book info from a folder name.
@@ -480,25 +474,33 @@ func readTagsForFirstFileCtx(ctx context.Context, files []string) *TrackInfo {
 	// Try up to 5 files to find one with valid tags
 	maxTries := min(len(files), 5)
 
+	// Remember the first successfully-read track so it can serve as the
+	// fallback (might have a MusicBrainzID) without re-reading the file.
+	var first *TrackInfo
+
 	for i := range maxTries {
-		track, err := readAudioTagsCtx(ctx, files[i])
+		track, err := readAudioTagsCtx(ctx, files[i], false)
 		if err != nil {
 			continue
 		}
 
 		// Check if we have useful tag data (artist or album)
 		if track.Artist != "" || track.AlbumArtist != "" || track.Album != "" {
+			if first != nil {
+				PutTrackInfo(first)
+			}
+
 			return track
+		}
+
+		if first == nil {
+			first = track
+		} else {
+			PutTrackInfo(track)
 		}
 	}
 
-	// If no files have valid tags, return the first one anyway (might have MusicBrainzID)
-	track, err := readAudioTagsCtx(ctx, files[0])
-	if err != nil {
-		return nil
-	}
-
-	return track
+	return first
 }
 
 func init() {
@@ -525,10 +527,13 @@ func ReadAudioTags(filePath string) (*TrackInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	return readAudioTagsCtx(ctx, filePath)
+	return readAudioTagsCtx(ctx, filePath, true)
 }
 
-func readAudioTagsCtx(ctx context.Context, filePath string) (*TrackInfo, error) {
+// readAudioTagsCtx reads tags into a pooled *TrackInfo (caller must PutTrackInfo).
+// When needDuration is false, the duration backfill (native parse or ffprobe) is
+// skipped — callers that only need text tags avoid that extra I/O entirely.
+func readAudioTagsCtx(ctx context.Context, filePath string, needDuration bool) (*TrackInfo, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	info := plTrackInfo.Get()
 
@@ -592,9 +597,14 @@ func readAudioTagsCtx(ctx context.Context, filePath string) (*TrackInfo, error) 
 				}
 			}
 
-			// If native tags succeeded but duration is missing, get it from ffprobe
-			if info.RuntimeMS == 0 {
-				if ffResult, ffErr := runFFProbeAudio(
+			// If native tags succeeded but duration is missing (MP3 without a TLEN
+			// frame, Ogg), compute it natively first and only spawn ffprobe if that
+			// fails — avoids an external process per file during batch processing.
+			if needDuration && info.RuntimeMS == 0 {
+				if d, ok := tags.NativeDuration(filePath); ok {
+					info.Runtime = d
+					info.RuntimeMS = d.Milliseconds()
+				} else if ffResult, ffErr := runFFProbeAudio(
 					ctx, filePath,
 				); ffErr == nil &&
 					ffResult.Format.Duration != "" {
@@ -621,6 +631,7 @@ func readAudioTagsCtx(ctx context.Context, filePath string) (*TrackInfo, error) 
 	// Fall back to ffprobe for unsupported formats (M4A, M4B, AAC, etc.)
 	result, err := runFFProbeAudio(ctx, filePath)
 	if err != nil {
+		PutTrackInfo(info) // return the pooled struct on the error path
 		return nil, err
 	}
 
@@ -854,8 +865,11 @@ func ReadAudioTagsBatch(filepaths []string) ([]*TrackInfo, error) {
 	for i := range filepaths {
 		track, err := ReadAudioTags(filepaths[i])
 		if err != nil {
-			// Use filename parsing as fallback
-			// track = ParseAudioFilename(filepaths[i])
+			// Return the pooled structs collected so far before bailing out.
+			for j := range tracks {
+				PutTrackInfo(tracks[j])
+			}
+
 			return nil, err
 		}
 
@@ -885,17 +899,39 @@ func CollectTracksFromFiles(files []string) []TrackInfo {
 	return tracks
 }
 
+// enrichTagWorkers bounds the concurrent tag reads in EnrichTracksWithTags.
+const enrichTagWorkers = 4
+
 // EnrichTracksWithTags reads tags for all tracks and updates their info.
 // This is called when we need full tag data for duration/chapter matching.
+// Tag reading is I/O bound, so files are read concurrently (bounded); each
+// goroutine writes only its own index, preserving order.
 func EnrichTracksWithTags(tracks []TrackInfo) []TrackInfo {
 	enriched := make([]TrackInfo, len(tracks))
 
-	for i, track := range tracks {
-		taggedTrack, err := ReadAudioTags(track.Filepath)
-		if err != nil {
-			// Keep original parsed data
-			enriched[i] = track
-		} else {
+	var wg sync.WaitGroup
+
+	sem := make(chan struct{}, enrichTagWorkers)
+
+	for i := range tracks {
+		wg.Add(1)
+
+		sem <- struct{}{}
+
+		go func(i int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			defer logger.HandlePanic()
+
+			track := tracks[i]
+
+			taggedTrack, err := ReadAudioTags(track.Filepath)
+			if err != nil {
+				// Keep original parsed data
+				enriched[i] = track
+				return
+			}
+
 			// Merge: prefer tag data but keep parsed data as fallback
 			enriched[i] = *taggedTrack
 			PutTrackInfo(taggedTrack)
@@ -909,8 +945,10 @@ func EnrichTracksWithTags(tracks []TrackInfo) []TrackInfo {
 			if enriched[i].DiscNumber == 0 && track.DiscNumber > 0 {
 				enriched[i].DiscNumber = track.DiscNumber
 			}
-		}
+		}(i)
 	}
+
+	wg.Wait()
 
 	// Post-process: detect encoded disc+track numbers (e.g., 101=disc1/track01, 201=disc2/track01)
 	NormalizeDiscTrackNumbers(enriched)

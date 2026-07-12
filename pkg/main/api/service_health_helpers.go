@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 // ServiceHealthResults holds the results of service health checks.
@@ -33,9 +35,17 @@ type ServiceInfo struct {
 	Details      map[string]any
 }
 
-// performServiceHealthCheck performs comprehensive service health checks.
+// performServiceHealthCheck performs comprbnehensive service health checks.
+//
+// Each selected service is probed concurrently: probes are independent network
+// round-trips (each with its own retries and timeout), so running them in
+// parallel makes the overall check take about as long as the slowest single
+// service rather than the sum of all of them. Results are collected under a
+// mutex and counters are only incremented for services that actually run a test
+// (disabled indexers/notifications are listed but not counted).
 func performServiceHealthCheck(
-	checkIMDB, checkTrakt, checkIndexers, checkNotifications, checkOMDB, checkTVDB, checkTMDB bool,
+	checkIMDB, checkTrakt, checkIndexers, checkNotifications bool,
+	checkOMDB, checkTVDB, checkTMDB, checkTVMaze, checkMediaProviders bool,
 	timeout, retries int,
 	detailedTest, _, _ bool,
 ) *ServiceHealthResults {
@@ -47,114 +57,109 @@ func performServiceHealthCheck(
 
 	httpTimeout := time.Duration(timeout) * time.Second
 
-	// Check IMDB service
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+
+	// record appends a single result and, when countable, folds it into the
+	// online/failed/total counters. Safe for concurrent callers.
+	record := func(service ServiceInfo, countable bool) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		results.ServiceDetails = append(results.ServiceDetails, service)
+
+		if !countable {
+			return
+		}
+
+		results.TotalServices++
+		if service.Status == "online" {
+			results.OnlineServices++
+		} else {
+			results.FailedServices++
+		}
+	}
+
+	// run launches fn in its own goroutine and records the single service it returns.
+	run := func(fn func() ServiceInfo) {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			record(fn(), true)
+		}()
+	}
+
 	if checkIMDB {
-		results.TotalServices++
-
-		imdbService := checkIMDBService(retries, detailedTest)
-
-		results.ServiceDetails = append(results.ServiceDetails, imdbService)
-		if imdbService.Status == "online" {
-			results.OnlineServices++
-		} else {
-			results.FailedServices++
-		}
+		run(func() ServiceInfo { return checkIMDBService(retries, detailedTest) })
 	}
 
-	// Check Trakt service
 	if checkTrakt {
-		results.TotalServices++
-
-		traktService := checkTraktService(httpTimeout, retries, detailedTest)
-
-		results.ServiceDetails = append(results.ServiceDetails, traktService)
-		if traktService.Status == "online" {
-			results.OnlineServices++
-		} else {
-			results.FailedServices++
-		}
+		run(func() ServiceInfo { return checkTraktService(httpTimeout, retries, detailedTest) })
 	}
 
-	// Check indexer services
-	if checkIndexers {
-		indexerServices := checkIndexerServices(httpTimeout, retries, detailedTest)
-		for _, service := range indexerServices {
-			results.ServiceDetails = append(results.ServiceDetails, service)
-			// Only count enabled services in metrics
-			if service.Status == "disabled" {
-				continue
-			}
-
-			results.TotalServices++
-			if service.Status == "online" {
-				results.OnlineServices++
-			} else {
-				results.FailedServices++
-			}
-		}
-	}
-
-	// Check notification services
-	if checkNotifications {
-		notificationServices := checkNotificationServices(httpTimeout, retries, detailedTest)
-		for _, service := range notificationServices {
-			results.ServiceDetails = append(results.ServiceDetails, service)
-			// Only count enabled services in metrics
-			if service.Status != "disabled" {
-				results.TotalServices++
-				if service.Status == "online" {
-					results.OnlineServices++
-				} else {
-					results.FailedServices++
-				}
-			}
-		}
-	}
-
-	// Check OMDB service
 	if checkOMDB {
-		results.TotalServices++
-
-		omdbService := checkOMDBService(httpTimeout, retries, detailedTest)
-
-		results.ServiceDetails = append(results.ServiceDetails, omdbService)
-		if omdbService.Status == "online" {
-			results.OnlineServices++
-		} else {
-			results.FailedServices++
-		}
+		run(func() ServiceInfo { return checkOMDBService(httpTimeout, retries, detailedTest) })
 	}
 
-	// Check TVDB service
 	if checkTVDB {
-		results.TotalServices++
-
-		tvdbService := checkTVDBService(httpTimeout, retries, detailedTest)
-
-		results.ServiceDetails = append(results.ServiceDetails, tvdbService)
-		if tvdbService.Status == "online" {
-			results.OnlineServices++
-		} else {
-			results.FailedServices++
-		}
+		run(func() ServiceInfo { return checkTVDBService(httpTimeout, retries, detailedTest) })
 	}
 
-	// Check TMDB service
 	if checkTMDB {
-		results.TotalServices++
-
-		tmdbService := checkTMDBService(httpTimeout, retries, detailedTest)
-
-		results.ServiceDetails = append(results.ServiceDetails, tmdbService)
-		if tmdbService.Status == "online" {
-			results.OnlineServices++
-		} else {
-			results.FailedServices++
-		}
+		run(func() ServiceInfo { return checkTMDBService(httpTimeout, retries, detailedTest) })
 	}
+
+	if checkTVMaze {
+		run(func() ServiceInfo { return checkTVmazeService(httpTimeout, retries, detailedTest) })
+	}
+
+	// Indexers and notifications each return a slice of services; disabled ones
+	// are listed but excluded from the metrics (countable == false).
+	if checkIndexers {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for _, service := range checkIndexerServices(httpTimeout, retries, detailedTest) {
+				record(service, service.Status != "disabled")
+			}
+		}()
+	}
+
+	if checkNotifications {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for _, service := range checkNotificationServices(httpTimeout, retries, detailedTest) {
+				record(service, service.Status != "disabled")
+			}
+		}()
+	}
+
+	// Book / audiobook / music metadata providers (registry-driven, all countable).
+	if checkMediaProviders {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			for _, service := range checkMediaProviderServices(httpTimeout, retries, detailedTest) {
+				record(service, true)
+			}
+		}()
+	}
+
+	wg.Wait()
 
 	// Determine overall status
-	if results.FailedServices >= results.TotalServices/2 {
+	if results.TotalServices > 0 && results.FailedServices >= results.TotalServices/2 {
 		results.OverallStatus = "critical"
 	} else if results.FailedServices > 0 {
 		results.OverallStatus = "warning"
@@ -456,6 +461,61 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	return service
 }
 
+// checkTVmazeService checks TVmaze service availability.
+func checkTVmazeService(timeout time.Duration, retries int, _ bool) ServiceInfo {
+	service := ServiceInfo{
+		Name:    "TVmaze",
+		Type:    "Metadata",
+		URL:     "https://api.tvmaze.com",
+		Details: make(map[string]any),
+	}
+
+	startTime := time.Now()
+
+	for attempt := range retries {
+		statusCode, err := apiexternal.TestTVmazeConnectivity(timeout)
+		if err != nil {
+			if strings.Contains(err.Error(), "not initialized") ||
+				strings.Contains(err.Error(), "missing API key") {
+				service.Status = "error"
+				service.ErrorMessage = err.Error()
+				break // Don't retry initialization errors
+			}
+
+			service.Status = "timeout"
+
+			service.ErrorMessage = fmt.Sprintf(
+				"Connection failed (attempt %d/%d): %v",
+				attempt+1,
+				retries,
+				err,
+			)
+			if attempt < retries-1 {
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			continue
+		}
+
+		if statusCode >= 200 && statusCode < 500 {
+			service.Status = "online"
+			service.ResponseTime = time.Since(startTime)
+			service.Details["status_code"] = statusCode
+			break
+		}
+
+		service.Status = "error"
+		service.ErrorMessage = fmt.Sprintf("HTTP %d", statusCode)
+		service.Details["status_code"] = statusCode
+	}
+
+	if service.Status == "" {
+		service.Status = "offline"
+	}
+
+	return service
+}
+
 // checkTVDBService checks TVDB service availability.
 func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
@@ -570,4 +630,193 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	}
 
 	return service
+}
+
+// mediaProbe is a single book/audiobook/music provider health probe. probe
+// performs a real, minimal API call (a search / lookup that injects the
+// configured API key); a nil error means the service genuinely responded. A bare
+// base-URL request returns HTTP 404 for most of these APIs, which is not a valid
+// "reachable" signal, so a real call is used instead.
+type mediaProbe struct {
+	name     string
+	category string
+	url      string
+	probe    func(context.Context) error
+}
+
+// collectMediaProbes builds a real API probe for every configured book,
+// audiobook and music provider. Unconfigured providers are nil and skipped.
+func collectMediaProbes() []mediaProbe {
+	out := make([]mediaProbe, 0, 12)
+
+	// Music metadata providers.
+	if p := providers.GetMusicBrainz(); p != nil {
+		out = append(out, mediaProbe{"MusicBrainz", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchArtists(ctx, "test", 1)
+			return err
+		}})
+	}
+
+	if p := providers.GetLastFM(); p != nil {
+		out = append(out, mediaProbe{"Last.fm", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.GetTopArtists(ctx, 1, 1)
+			return err
+		}})
+	}
+
+	if p := providers.GetDiscogs(); p != nil {
+		out = append(out, mediaProbe{"Discogs", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.Search(ctx, "test", "artist", 1, 1)
+			return err
+		}})
+	}
+
+	if p := providers.GetDeezer(); p != nil {
+		out = append(out, mediaProbe{"Deezer", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchAlbums(ctx, "test", 1)
+			return err
+		}})
+	}
+
+	if p := providers.GetTheAudioDB(); p != nil {
+		out = append(out, mediaProbe{"TheAudioDB", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchAlbums(ctx, "test", "test")
+			return err
+		}})
+	}
+
+	if p := providers.GetITunes(); p != nil {
+		out = append(out, mediaProbe{"iTunes", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchAlbums(ctx, "test", "test", 1)
+			return err
+		}})
+	}
+
+	if p := providers.GetAcoustID(); p != nil {
+		out = append(out, mediaProbe{"AcoustID", "Music", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.LookupByTrackID(ctx, "00000000-0000-0000-0000-000000000000")
+			return err
+		}})
+	}
+
+	// Book metadata providers.
+	if p := providers.GetOpenLibrary(); p != nil {
+		out = append(out, mediaProbe{"OpenLibrary", "Book", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchBooks(ctx, "test", "", 1)
+			return err
+		}})
+	}
+
+	if p := providers.GetGoodreads(); p != nil {
+		out = append(out, mediaProbe{"Goodreads", "Book", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchBooks(ctx, "test", 1)
+			return err
+		}})
+	}
+
+	// Audiobook metadata providers.
+	if p := providers.GetAudnex(); p != nil {
+		out = append(out, mediaProbe{"Audnex", "Audiobook", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchAuthorByName(ctx, "test")
+			return err
+		}})
+	}
+
+	for region, p := range providers.GetAllAudible() {
+		if p == nil {
+			continue
+		}
+
+		p := p
+
+		out = append(out, mediaProbe{"Audible (" + region + ")", "Audiobook", p.GetBaseURL(), func(ctx context.Context) error {
+			_, err := p.SearchAudiobooks(ctx, "test", 1)
+			return err
+		}})
+	}
+
+	return out
+}
+
+// probeMediaProvider runs a real API probe (with retries) against a single
+// book/audiobook/music provider. The service is "online" only when the call
+// actually succeeds; any error (including HTTP 4xx such as 404/401) is reported
+// as not reachable.
+func probeMediaProvider(mp mediaProbe, timeout time.Duration, retries int) ServiceInfo {
+	service := ServiceInfo{
+		Name:    mp.name,
+		Type:    mp.category,
+		URL:     mp.url,
+		Details: make(map[string]any),
+	}
+
+	startTime := time.Now()
+
+	for attempt := range retries {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		err := mp.probe(ctx)
+
+		cancel()
+
+		if err == nil {
+			service.Status = "online"
+			service.ResponseTime = time.Since(startTime)
+			break
+		}
+
+		msg := err.Error()
+
+		// Configuration problems are not transient - don't retry them.
+		if strings.Contains(msg, "not initialized") ||
+			strings.Contains(strings.ToLower(msg), "missing api key") ||
+			strings.Contains(strings.ToLower(msg), "no api key") {
+			service.Status = "error"
+			service.ErrorMessage = msg
+
+			break
+		}
+
+		service.Status = "timeout"
+		service.ErrorMessage = fmt.Sprintf(
+			"Request failed (attempt %d/%d): %v",
+			attempt+1,
+			retries,
+			err,
+		)
+
+		if attempt < retries-1 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	if service.Status == "" {
+		service.Status = "offline"
+	}
+
+	return service
+}
+
+// checkMediaProviderServices probes every configured book, audiobook and music
+// provider via a real API call. The probes run concurrently since each is an
+// independent network round-trip.
+func checkMediaProviderServices(timeout time.Duration, retries int, _ bool) []ServiceInfo {
+	probes := collectMediaProbes()
+
+	services := make([]ServiceInfo, len(probes))
+
+	var wg sync.WaitGroup
+
+	for i := range probes {
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+
+			services[i] = probeMediaProvider(probes[i], timeout, retries)
+		}(i)
+	}
+
+	wg.Wait()
+
+	return services
 }

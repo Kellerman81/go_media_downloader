@@ -14,9 +14,9 @@ import (
 // download location path. name is the name to save the torrent
 // as in rTorrent. Returns any error.
 func SendToRtorrent(
-	downloaderName, hostname string,
-	insecure bool,
-	urlv, dlpath, name string,
+	downloaderName, _ string,
+	_ bool,
+	urlv, dlpath, _ string,
 ) error {
 	// Try v2 provider first
 	provider := providers.GetRTorrent(downloaderName)

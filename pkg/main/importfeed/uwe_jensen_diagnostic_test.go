@@ -222,9 +222,17 @@ func TestUweJensenDiagnostic(t *testing.T) {
 			}
 
 			if relRuntimeMs == 0 {
-				t.Logf("       → MB has no duration data (relRuntimeMs=0): FAIL-OPEN → WOULD IMPORT%s", targetMark)
+				t.Logf(
+					"       → MB has no duration data (relRuntimeMs=0): FAIL-OPEN → WOULD IMPORT%s",
+					targetMark,
+				)
 			} else if runtimeDiff <= toleranceMs {
-				t.Logf("       → runtime OK (diff=%dms <= tol=%dms) → WOULD IMPORT%s", runtimeDiff, toleranceMs, targetMark)
+				t.Logf(
+					"       → runtime OK (diff=%dms <= tol=%dms) → WOULD IMPORT%s",
+					runtimeDiff,
+					toleranceMs,
+					targetMark,
+				)
 			} else {
 				t.Logf("       → SKIP: runtime diff %dms > tolerance %dms (relRuntime=%dms)%s",
 					runtimeDiff, toleranceMs, relRuntimeMs, targetMark)
@@ -286,7 +294,17 @@ func TestUweJensenDiagnostic(t *testing.T) {
 		t.Logf("  local album      : %q", albumTitle)
 
 		data := &config.MediaDataConfig{}
-		dist := albumMatchDistance(candidate, artist, albumTitle, tagMBID, "", "", year, fileCount, data)
+		dist := albumMatchDistance(
+			candidate,
+			artist,
+			albumTitle,
+			tagMBID,
+			"",
+			"",
+			year,
+			fileCount,
+			data,
+		)
 		t.Logf("  albumMatchDistance: %.4f  (strong=%.2f medium=%.2f)",
 			dist, strongRecThresh, mediumRecThresh)
 

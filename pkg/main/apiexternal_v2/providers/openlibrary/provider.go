@@ -55,12 +55,12 @@ func NewProvider() *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return apiexternal_v2.ProviderOpenLibrary
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "openlibrary"
 }
 
@@ -186,12 +186,12 @@ func (p *Provider) GetEditionsByWork(
 // GetCoverURL returns the URL for a book cover.
 // coverType: "id" (cover ID), "isbn", "oclc", "lccn", "olid"
 // size: "S" (small), "M" (medium), "L" (large)
-func (p *Provider) GetCoverURL(coverType, value, size string) string {
+func (*Provider) GetCoverURL(coverType, value, size string) string {
 	return fmt.Sprintf("https://covers.openlibrary.org/b/%s/%s-%s.jpg", coverType, value, size)
 }
 
 // GetAuthorPhotoURL returns the URL for an author photo.
 // size: "S" (small), "M" (medium), "L" (large)
-func (p *Provider) GetAuthorPhotoURL(authorID, size string) string {
+func (*Provider) GetAuthorPhotoURL(authorID, size string) string {
 	return fmt.Sprintf("https://covers.openlibrary.org/a/olid/%s-%s.jpg", authorID, size)
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 // allowed jobs for music.
@@ -875,7 +875,7 @@ func apiMusicAddArtist(c *gin.Context) {
 	artistIDCopy := artistID
 	worker.Dispatch(
 		"add_artist_"+artistID+"_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
+		func(_ uint32, ctx context.Context) error {
 			// Add artist to dbartists and artists tracking table with track_mode=albums.
 			_, err := importfeed.JobImportArtist(ctx, &importfeed.ArtistConfig{
 				MusicBrainzID: artistIDCopy,

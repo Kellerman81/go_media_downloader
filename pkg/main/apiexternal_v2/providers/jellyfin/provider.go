@@ -51,12 +51,12 @@ func NewProvider(serverURL, token, userID string) *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return "jellyfin"
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "jellyfin"
 }
 
@@ -79,7 +79,7 @@ type JellyfinItemsResponse struct {
 // GetWatchlist retrieves the watchlist for a Jellyfin user.
 func (p *Provider) GetWatchlist(
 	ctx context.Context,
-	username string,
+	_ string,
 ) ([]apiexternal_v2.WatchlistItem, error) {
 	// Jellyfin uses Favorites as watchlist
 	endpoint := fmt.Sprintf(
@@ -127,7 +127,7 @@ func (p *Provider) GetWatchlist(
 func (p *Provider) AddToWatchlist(
 	ctx context.Context,
 	username string,
-	itemType string,
+	_ string,
 	id int,
 ) error {
 	endpoint := fmt.Sprintf("/Users/%s/FavoriteItems/%d", p.userID, id)
@@ -144,7 +144,7 @@ func (p *Provider) AddToWatchlist(
 func (p *Provider) RemoveFromWatchlist(
 	ctx context.Context,
 	username string,
-	itemType string,
+	_ string,
 	id int,
 ) error {
 	endpoint := fmt.Sprintf("/Users/%s/FavoriteItems/%d", p.userID, id)

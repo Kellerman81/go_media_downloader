@@ -336,7 +336,7 @@ func renderMonthViewWithFilter(
 			break
 		}
 
-		var weekCells []gomponents.Node
+		weekCells := make([]gomponents.Node, 0, 7)
 		for day := range 7 {
 			cellContent := []gomponents.Node{}
 
@@ -490,7 +490,7 @@ func renderWeekViewWithFilter(
 		"Saturday",
 	}
 
-	var weekCells []gomponents.Node
+	weekCells := make([]gomponents.Node, 0, 7)
 
 	for day := range 7 {
 		currentDay := startOfWeek.AddDate(0, 0, day)
@@ -620,7 +620,7 @@ func renderWeekViewWithFilter(
 		html.Div(
 			html.Class("row text-center fw-bold bg-light py-2"),
 			gomponents.Group(func() []gomponents.Node {
-				var headers []gomponents.Node
+				headers := make([]gomponents.Node, 0, len(dayNames))
 				for _, name := range dayNames {
 					headers = append(headers, html.Div(html.Class("col"), gomponents.Text(name)))
 				}
@@ -636,7 +636,7 @@ func renderWeekViewWithFilter(
 }
 
 func renderEventCards(events []calendarEvent) []gomponents.Node {
-	var cards []gomponents.Node
+	cards := make([]gomponents.Node, 0, len(events))
 
 	for _, event := range events {
 		cards = append(cards, html.Div(

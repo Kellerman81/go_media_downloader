@@ -65,7 +65,10 @@ func JobImportDBBook(
 		Int(logger.StrRow, idx).
 		Msg("Import/Update Book")
 
-	return jobImportDBBook(ctx, book, cfgp, listid, importMode)
+	err := jobImportDBBook(ctx, book, cfgp, listid, importMode)
+	recordImportResult(ctx, err, errBookIgnored, errJobRunning)
+
+	return err
 }
 
 // jobImportDBBook performs the actual book import based on the import mode.
@@ -639,7 +642,10 @@ func JobImportDBAudiobook(
 		Int(logger.StrRow, idx).
 		Msg("Import/Update Audiobook")
 
-	return jobImportDBAudiobook(ctx, audiobook, cfgp, listid, importMode)
+	err := jobImportDBAudiobook(ctx, audiobook, cfgp, listid, importMode)
+	recordImportResult(ctx, err, errAudiobookIgnored, errJobRunning)
+
+	return err
 }
 
 // getOrCreateAudibleProvider returns an Audible provider for the specified region.
@@ -1866,7 +1872,7 @@ func DiscoverAndAddAuthorAudiobooks(
 	authorName string,
 	cfgp *config.MediaTypeConfig,
 	listid int,
-	maxAudiobooks int,
+	_ int,
 ) int {
 	if authorName == "" || listid == -1 {
 		return 0

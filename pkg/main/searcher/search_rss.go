@@ -3,7 +3,6 @@ package searcher
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync/atomic"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
@@ -98,7 +97,7 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 	}
 
 	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) &&
-		!strings.Contains(err.Error(), "] rate limit") {
+		!isRateLimitError(err) {
 		logger.Logtype("error", 2).
 			Str(logger.StrIndexer, indcfg.Name).
 			Str("quality", s.Quality.Name).
@@ -151,7 +150,7 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 	}
 
 	if !errors.Is(err, logger.Errnoresults) && !errors.Is(err, logger.ErrToWait) &&
-		!strings.Contains(err.Error(), "] rate limit") {
+		!isRateLimitError(err) {
 		logger.Logtype("error", 5).
 			Str(logger.StrIndexer, indcfg.Name).
 			Str("quality", s.Quality.Name).
@@ -185,6 +184,10 @@ func (s *ConfigSearcher) getRSSFeed(
 	}
 
 	s.searchActionType = logger.StrRss
+
+	if s.Quality == nil {
+		return errSearchQualityEmpty
+	}
 
 	intid := s.findIndexerConfig(listentry.TemplateList)
 	if intid == -1 || s.Quality.Indexer[intid].TemplateRegex == "" {
@@ -464,12 +467,12 @@ func searchseason(
 			return nil
 		}
 
-		return NewSearcher(
-			cfgp,
-			cfgp.Lists[listid].CfgQuality,
-			logger.StrRss,
-			nil,
-		).searchSeriesRSSByName(ctx, cfgp, cfgp.Lists[listid].CfgQuality, seriename, true)
+		searcher := NewSearcher(cfgp, cfgp.Lists[listid].CfgQuality, logger.StrRss, nil)
+		defer searcher.Close()
+
+		return searcher.searchSeriesRSSByName(
+			ctx, cfgp, cfgp.Lists[listid].CfgQuality, seriename, true,
+		)
 	}
 
 	seasonCount := database.Getdatarow[uint](
@@ -505,6 +508,10 @@ func searchseason(
 
 	var err error
 	for i := range seasons {
+		if errctx := logger.CheckContextEnded(ctx); errctx != nil {
+			return errctx
+		}
+
 		if errsub := NewSearcher(
 			cfgp,
 			cfgp.Lists[listid].CfgQuality,
@@ -616,27 +623,17 @@ func SearchSerieRSSSeasonSingle(
 }
 
 // addrsshistory updates the rss history table with the last processed item id
-// for the given rss feed url, quality profile name, and config name. It will
-// insert a new row if one does not exist yet for that combination.
+// for the given rss feed url, quality profile name, and config name.
+// Uses a single atomic upsert so concurrent indexer searches cannot insert
+// duplicate rows (the previous select-then-insert was racy).
 func addrsshistory(urlv, lastid *string, quality *config.QualityConfig, configv *string) {
-	id := database.Getdatarow[uint](
-		false,
-		"select id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE",
+	database.ExecN(
+		"insert into r_sshistories (config, list, indexer, last_id) values (?, ?, ?, ?) on conflict (config collate nocase, list collate nocase, indexer collate nocase) do update set last_id = excluded.last_id",
 		configv,
 		&quality.Name,
 		urlv,
+		lastid,
 	)
-	if id >= 1 {
-		database.ExecN("update r_sshistories set last_id = ? where id = ?", lastid, &id)
-	} else {
-		database.ExecN(
-			"insert into r_sshistories (config, list, indexer, last_id) values (?, ?, ?, ?)",
-			configv,
-			&quality.Name,
-			urlv,
-			lastid,
-		)
-	}
 }
 
 // Getnewznabrss queries Newznab indexers from the given MediaListsConfig
@@ -671,6 +668,10 @@ func searchseasons(
 
 	var err error
 	for idx := range tbl {
+		if errctx := logger.CheckContextEnded(ctx); errctx != nil {
+			return errctx
+		}
+
 		if errsub := searchseason(
 			ctx,
 			cfgp,

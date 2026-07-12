@@ -448,6 +448,17 @@ func GetAudible(region string) *audible.Provider {
 	return audibleProviders[region]
 }
 
+// GetAllAudible returns a copy of all registered Audible providers keyed by region.
+func GetAllAudible() map[string]*audible.Provider {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+
+	out := make(map[string]*audible.Provider, len(audibleProviders))
+	maps.Copy(out, audibleProviders)
+
+	return out
+}
+
 // SetAudnex sets the global Audnex provider instance.
 func SetAudnex(provider *audnex.Provider) {
 	registryMutex.Lock()

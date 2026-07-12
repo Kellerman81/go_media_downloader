@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +32,7 @@ func NewFLACHandler() *FLACHandler {
 }
 
 // SupportedFormats returns the file extensions supported by this handler.
-func (h *FLACHandler) SupportedFormats() []string {
+func (*FLACHandler) SupportedFormats() []string {
 	return []string{".flac"}
 }
 
@@ -87,7 +88,7 @@ func (h *FLACHandler) parseFLACMeta(r io.Reader, withCover bool) (*AudioTags, er
 	}
 
 	if sig != [4]byte{'f', 'L', 'a', 'C'} {
-		return nil, fmt.Errorf("not a FLAC file")
+		return nil, errors.New("not a FLAC file")
 	}
 
 	tags := &AudioTags{}
@@ -158,7 +159,7 @@ func (h *FLACHandler) parseFLACMeta(r io.Reader, withCover bool) (*AudioTags, er
 }
 
 // parseVorbisComments extracts tag values from Vorbis Comment fields.
-func (h *FLACHandler) parseVorbisComments(comments [][2]string, tags *AudioTags) {
+func (*FLACHandler) parseVorbisComments(comments [][2]string, tags *AudioTags) {
 	for i := range comments {
 		key := strings.ToUpper(comments[i][0])
 		value := comments[i][1]
@@ -289,7 +290,7 @@ func (h *FLACHandler) WriteTags(ctx context.Context, filepath string, tags *Audi
 }
 
 // buildTagArgs builds the metaflac arguments for setting tags.
-func (h *FLACHandler) buildTagArgs(tags *AudioTags) []string {
+func (*FLACHandler) buildTagArgs(tags *AudioTags) []string {
 	var args []string
 
 	addTag := func(key, value string) {

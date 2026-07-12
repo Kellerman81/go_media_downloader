@@ -71,8 +71,12 @@ func TestBuildPrioStr(t *testing.T) {
 }
 
 func TestGetDBIDs(t *testing.T) {
-	if err := os.Chdir(".."); err != nil {
-		t.Fatal("Failed to change to parent directory: ", err)
+	// Idempotent: only step up to pkg/main if we aren't already there, so the
+	// full suite (where several tests Chdir) doesn't overshoot past the config dir.
+	if _, err := os.Stat("config"); err != nil {
+		if err := os.Chdir(".."); err != nil {
+			t.Fatal("Failed to change to parent directory: ", err)
+		}
 	}
 	if err := config.LoadCfgDB(false); err != nil {
 		t.Skip("Skipping: config not available - ", err)
@@ -182,9 +186,12 @@ func TestLoadDBPatterns(t *testing.T) {
 }
 
 func TestGenerateAllQualityPriorities(t *testing.T) {
-	// Tests run from parser/ dir, but config expects ./config/config.toml from pkg/main/
-	if err := os.Chdir(".."); err != nil {
-		t.Fatal("Failed to change to parent directory: ", err)
+	// Tests run from parser/ dir, but config expects ./config/config.toml from pkg/main/.
+	// Idempotent so the full suite (multiple tests Chdir) doesn't overshoot.
+	if _, err := os.Stat("config"); err != nil {
+		if err := os.Chdir(".."); err != nil {
+			t.Fatal("Failed to change to parent directory: ", err)
+		}
 	}
 	if err := config.LoadCfgDB(false); err != nil {
 		t.Skip("Skipping: config not available - ", err)
@@ -231,17 +238,17 @@ func TestGenerateAllQualityPriorities(t *testing.T) {
 	GenerateCutoffPriorities()
 
 	// Verify priorities were generated
-	if len(allQualityPrioritiesT) == 0 {
+	if len(Getcompleteallprios()) == 0 {
 		t.Error("GenerateAllQualityPriorities() failed to generate any priorities")
 	}
 
-	if len(allQualityPrioritiesWantedT) == 0 {
+	if len(Getallprios()) == 0 {
 		t.Error("GenerateAllQualityPriorities() failed to generate any wanted priorities")
 	}
 
 	// Verify priorities are unique per quality group
 	seen := make(map[string]bool)
-	for _, p := range allQualityPrioritiesT {
+	for _, p := range Getcompleteallprios() {
 		key := p.QualityGroup + "_" + BuildPrioStr(
 			p.ResolutionID,
 			p.QualityID,
@@ -313,7 +320,7 @@ func TestGetImdbFilename(t *testing.T) {
 
 func TestGetallprios(t *testing.T) {
 	// Initialize test data
-	allQualityPrioritiesWantedT = []Prioarr{
+	wanted := []Prioarr{
 		{
 			QualityGroup: "test1",
 			Priority:     100,
@@ -331,20 +338,21 @@ func TestGetallprios(t *testing.T) {
 			AudioID:      8,
 		},
 	}
+	setPrioritiesForTest(nil, wanted)
 
 	result := Getallprios()
 
 	// Verify we get a copy of the data
-	if len(result) != len(allQualityPrioritiesWantedT) {
+	if len(result) != len(wanted) {
 		t.Errorf(
 			"Getallprios() returned %d items; want %d",
 			len(result),
-			len(allQualityPrioritiesWantedT),
+			len(wanted),
 		)
 	}
 
 	// Verify content matches
-	for i, expected := range allQualityPrioritiesWantedT {
+	for i, expected := range wanted {
 		if i >= len(result) {
 			t.Errorf("Getallprios() missing item at index %d", i)
 			continue
@@ -362,10 +370,10 @@ func TestGetallprios(t *testing.T) {
 	}
 
 	// Verify that Getallprios returns a copy, not a reference.
-	// Mutating the returned slice must not affect the underlying allQualityPrioritiesWantedT.
+	// Mutating the returned slice must not affect the active snapshot.
 	if len(result) > 0 {
 		result[0].Priority = 999
-		if allQualityPrioritiesWantedT[0].Priority == 999 {
+		if Getallprios()[0].Priority == 999 {
 			t.Error("Getallprios() returned a reference; expected an independent copy")
 		}
 	}
@@ -373,7 +381,7 @@ func TestGetallprios(t *testing.T) {
 
 func TestGetcompleteallprios(t *testing.T) {
 	// Initialize test data
-	allQualityPrioritiesT = []Prioarr{
+	all := []Prioarr{
 		{
 			QualityGroup: "complete1",
 			Priority:     150,
@@ -399,20 +407,21 @@ func TestGetcompleteallprios(t *testing.T) {
 			AudioID:      120,
 		},
 	}
+	setPrioritiesForTest(all, nil)
 
 	result := Getcompleteallprios()
 
 	// Verify we get a copy of the data
-	if len(result) != len(allQualityPrioritiesT) {
+	if len(result) != len(all) {
 		t.Errorf(
 			"Getcompleteallprios() returned %d items; want %d",
 			len(result),
-			len(allQualityPrioritiesT),
+			len(all),
 		)
 	}
 
 	// Verify content matches
-	for i, expected := range allQualityPrioritiesT {
+	for i, expected := range all {
 		if i >= len(result) {
 			t.Errorf("Getcompleteallprios() missing item at index %d", i)
 			continue

@@ -3,8 +3,10 @@ package htmlxpath
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -61,27 +63,27 @@ type Scraper struct {
 func NewScraper(cfg *Config) (*Scraper, error) {
 	// Validate required configuration
 	if cfg.SiteName == "" {
-		return nil, fmt.Errorf("site_name is required")
+		return nil, errors.New("site_name is required")
 	}
 
 	if cfg.StartURL == "" {
-		return nil, fmt.Errorf("start_url is required")
+		return nil, errors.New("start_url is required")
 	}
 
 	if cfg.SerieName == "" {
-		return nil, fmt.Errorf("serie_name is required")
+		return nil, errors.New("serie_name is required")
 	}
 
 	if cfg.SceneNodeXPath == "" {
-		return nil, fmt.Errorf("scene_node_xpath is required")
+		return nil, errors.New("scene_node_xpath is required")
 	}
 
 	if cfg.TitleXPath == "" {
-		return nil, fmt.Errorf("title_xpath is required")
+		return nil, errors.New("title_xpath is required")
 	}
 
 	if cfg.DateXPath == "" {
-		return nil, fmt.Errorf("date_xpath is required")
+		return nil, errors.New("date_xpath is required")
 	}
 
 	// Set defaults
@@ -117,7 +119,7 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 }
 
 // getOrCreateSerie gets the series ID by name, creating it if it doesn't exist.
-func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
+func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	// First, try to find existing series by name
 	existingID := database.Getdatarow[uint](
 		false,
@@ -219,7 +221,7 @@ func (s *Scraper) fetchPage(ctx context.Context, pageNum int) (*html.Node, error
 //
 // Returns:
 //   - string: Extracted text value
-func (s *Scraper) extractText(node *html.Node, xpath, attribute string) string {
+func (*Scraper) extractText(node *html.Node, xpath, attribute string) string {
 	targetNode := htmlquery.FindOne(node, xpath)
 	if targetNode == nil {
 		return ""
@@ -246,7 +248,7 @@ func (s *Scraper) extractText(node *html.Node, xpath, attribute string) string {
 //
 // Returns:
 //   - string: Comma-separated actor names
-func (s *Scraper) extractActors(node *html.Node, xpath string) string {
+func (*Scraper) extractActors(node *html.Node, xpath string) string {
 	if xpath == "" {
 		return ""
 	}
@@ -295,9 +297,30 @@ func (s *Scraper) parseDate(dateStr string) (time.Time, error) {
 //
 // Returns:
 //   - error: Any errors during database operations
+//
+// resolveURL turns a possibly-relative reference into an absolute URL using base.
+// Returns "" for an empty reference and the reference unchanged on parse errors.
+func resolveURL(base, ref string) string {
+	if ref == "" {
+		return ""
+	}
+
+	b, err := url.Parse(base)
+	if err != nil {
+		return ref
+	}
+
+	r, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+
+	return b.ResolveReference(r).String()
+}
+
 func (s *Scraper) createEpisode(
-	ctx context.Context,
-	title, url string,
+	_ context.Context,
+	title, episodeURL string,
 	date time.Time,
 	actors string,
 ) error {
@@ -311,8 +334,9 @@ func (s *Scraper) createEpisode(
 			Time:  date,
 			Valid: true,
 		},
-		DbserieID: s.dbserieID,
-		Overview:  actors, // Store actors in overview field
+		DbserieID:  s.dbserieID,
+		Overview:   actors, // Store actors in overview field
+		ScraperURL: episodeURL,
 	}
 
 	// Check if episode already exists
@@ -325,13 +349,18 @@ func (s *Scraper) createEpisode(
 	)
 
 	if existingID > 0 {
-		// Episode exists, update it
+		// Episode exists, update it. Backfill scraper fields only when empty.
 		err := database.ExecNErr(`
 			UPDATE dbserie_episodes
-			SET first_aired = ?, overview = ?, updated_at = CURRENT_TIMESTAMP
+			SET first_aired = ?, overview = ?,
+				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
+				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL THEN ? ELSE scraper_url END,
+				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
 			episode.FirstAired,
 			episode.Overview,
+			episode.ScraperID,
+			episode.ScraperURL,
 			existingID,
 		)
 		if err != nil {
@@ -350,13 +379,15 @@ func (s *Scraper) createEpisode(
 	// Create new episode
 	err := database.ExecNErr(`
 		INSERT INTO dbserie_episodes (
-			dbserie_id, identifier, title, first_aired, overview, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			dbserie_id, identifier, title, first_aired, overview, scraper_id, scraper_url, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		episode.DbserieID,
 		episode.Identifier,
 		episode.Title,
 		episode.FirstAired,
 		episode.Overview,
+		episode.ScraperID,
+		episode.ScraperURL,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create episode: %w", err)
@@ -425,7 +456,12 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 		for _, sceneNode := range sceneNodes {
 			// Extract data from scene node
 			title := s.extractText(sceneNode, s.config.TitleXPath, s.config.TitleAttribute)
-			url := s.extractText(sceneNode, s.config.URLXPath, s.config.URLAttribute)
+			// Resolve possibly-relative hrefs against the page base so the stored
+			// scraper URL is usable for re-scraping later.
+			url := resolveURL(
+				s.config.StartURL,
+				s.extractText(sceneNode, s.config.URLXPath, s.config.URLAttribute),
+			)
 			dateStr := s.extractText(sceneNode, s.config.DateXPath, "")
 			actors := s.extractActors(sceneNode, s.config.ActorsXPath)
 

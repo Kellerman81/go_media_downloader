@@ -94,19 +94,22 @@ const (
 	reVideoSeasonEpisodeAlt  = `(?i)season\s*(\d{1,2})\s*episode\s*(\d{1,3})`
 	reVideoSeasonEpisodeDate = `(\d{2,4})[\s._-](\d{2})[\s._-](\d{2})`
 	reVideoEpisodeOnly       = `(?i)(?:e|ep|episode\s?)(\d{1,3})`
-	reVideoResolution        = `(?i)(?:(\d{3,4})(?:p|i)|4k|uhd|hd|sd)`
-	reVideoQuality           = `(?i)(blu[\s-]?ray|bdrip|brrip|web[\s-]?dl|web[\s-]?rip|webrip|web|hdtv|dvd[\s-]?rip|dvd[\s-]?scr|hdcam|hdrip|hd[\s-]?ts|tele[\s-]?sync|ts|cam|r5|ppv[\s-]?rip|pdtv|dsr|sat[\s-]?rip|vod[\s-]?rip|amazon|amzn|nf|netflix|dsnp|disney\+?|hmax|hulu|atvp|atv\+?|pcok|peacock|hbo[\s-]?max|itunes)`
-	reVideoCodec             = `(?i)(x264|x\.264|h\.?264|avc|x265|x\.265|h\.?265|hevc|xvid|divx|av1|mpeg[\s-]?2|vc[\s-]?1)`
-	reVideoAudio             = `(?i)(dts[\s-]?hd[\s-]?ma|dts[\s-]?hd|dts[\s-]?x|dts|dolby[\s-]?atmos|atmos|truehd|ddp?\+?|dd[\s-]?5\.1|dd|ac[\s-]?3|eac[\s-]?3|aac[\s-]?2\.0|aac|flac|mp3|lpcm|pcm|opus|vorbis)`
-	reVideoGroup             = `(?:-|\[)([a-zA-Z0-9]+)(?:\])?$`
-	reVideoExtended          = `(?i)(?:[\[\(\s]|\.)(extended|uncut|unrated|directors?[\s._-]?cut|theatrical)(?:[\]\)\s]|\.)`
-	reVideoProper            = `(?i)(?:[\[\(\s]|\.)(proper|real)(?:[\]\)\s]|\.)`
-	reVideoRepack            = `(?i)(?:[\[\(\s]|\.)(repack|rerip)(?:[\]\)\s]|\.)`
-	reVideoRemux             = `(?i)(remux)`
-	reVideoHDR               = `(?i)(hdr10\+?|dolby[\s-]?vision|(?:^|[\s._-])dv(?:$|[\s._-])|hlg|hdr)`
-	reVideoComplete          = `(?i)(?:[\[\(\s]|\.)(complete|full[\s._-]?series)(?:[\]\)\s]|\.)`
-	reVideoMultiSeason       = `(?i)s(\d{1,2})[\s._-]*[-–][\s._-]*s(\d{1,2})`
-	reVideoLanguage          = `(?i)[\s._](german|deutsch|french|francais|spanish|espanol|italiano|portuguese|portuguese|russian|japanese|korean|chinese|mandarin|hindi|arabic|dutch|polish|swedish|norwegian|danish|finnish|turkish|greek|hebrew|czech|hungarian|romanian|thai|vietnamese|indonesian|malay|tagalog|multi|dual[\s._-]?audio|dubbed|subbed|subs?)[\s._](?:(?:19|20)\d{2}[\s._]|$)`
+	reVideoResolution        = `(?i)(?:(\d{3,4})(?:p|i)|8k|4k|uhd|hd|sd)`
+	// Tokens must be whole words (delimited by a separator or string boundary) so
+	// short source tags like "nf"/"ts"/"cam" can't match inside a title word
+	// (for example "nf" inside the word "Unforgettable").
+	reVideoQuality     = `(?i)(?:^|[\s._-])(blu[\s-]?ray|bdrip|brrip|web[\s-]?dl|web[\s-]?rip|webrip|web|hdtv|dvd[\s-]?rip|dvd[\s-]?scr|hdcam|hdrip|hd[\s-]?ts|tele[\s-]?sync|ts|cam|r5|ppv[\s-]?rip|pdtv|dsr|sat[\s-]?rip|vod[\s-]?rip|amazon|amzn|nf|netflix|dsnp|disney\+?|hmax|hulu|atvp|atv\+?|pcok|peacock|hbo[\s-]?max|itunes)(?:[\s._-]|$)`
+	reVideoCodec       = `(?i)(x264|x\.264|h\.?264|avc|x265|x\.265|h\.?265|hevc|xvid|divx|av1|mpeg[\s-]?2|vc[\s-]?1)`
+	reVideoAudio       = `(?i)(dts[\s-]?hd[\s-]?ma|dts[\s-]?hd|dts[\s-]?x|dts|dolby[\s-]?atmos|atmos|truehd|ddp?\+?|dd[\s-]?5\.1|dd|ac[\s-]?3|eac[\s-]?3|aac[\s-]?2\.0|aac|flac|mp3|lpcm|pcm|opus|vorbis)`
+	reVideoGroup       = `(?:-|\[)([a-zA-Z0-9]+)(?:\])?$`
+	reVideoExtended    = `(?i)(?:[\[\(\s]|\.)(extended|uncut|unrated|directors?[\s._-]?cut|theatrical)(?:[\]\)\s]|\.)`
+	reVideoProper      = `(?i)(?:[\[\(\s]|\.)(proper|real)(?:[\]\)\s]|\.)`
+	reVideoRepack      = `(?i)(?:[\[\(\s]|\.)(repack|rerip)(?:[\]\)\s]|\.)`
+	reVideoRemux       = `(?i)(remux)`
+	reVideoHDR         = `(?i)(hdr10\+?|dolby[\s-]?vision|(?:^|[\s._-])dv(?:$|[\s._-])|hlg|hdr)`
+	reVideoComplete    = `(?i)(?:[\[\(\s]|\.)(complete|full[\s._-]?series)(?:[\]\)\s]|\.)`
+	reVideoMultiSeason = `(?i)s(\d{1,2})[\s._-]*[-–][\s._-]*s(\d{1,2})`
+	reVideoLanguage    = `(?i)[\s._](german|deutsch|french|francais|spanish|espanol|italiano|portuguese|portuguese|russian|japanese|korean|chinese|mandarin|hindi|arabic|dutch|polish|swedish|norwegian|danish|finnish|turkish|greek|hebrew|czech|hungarian|romanian|thai|vietnamese|indonesian|malay|tagalog|multi|dual[\s._-]?audio|dubbed|subbed|subs?)[\s._](?:(?:19|20)\d{2}[\s._]|$)`
 )
 
 var (
@@ -252,9 +255,6 @@ func (vp *VideoParser) ParseWithPath(fullpath string) *VideoParseResult {
 
 	return result
 }
-
-// defaultVideoParser is a shared VideoParser instance for package-level functions.
-// var defaultVideoParser = NewVideoParser()
 
 // ParseFile parses a video file and returns parsed information.
 // It retrieves a ParseInfo object from the pool, populates it with parsed data,
@@ -417,16 +417,6 @@ func extractASINFromPath(folderPath string) string {
 
 	return ""
 }
-
-// extractASINFromString finds an ASIN pattern in a string.
-// func extractASINFromString(s string) string {
-// 	// ASIN pattern: starts with B, followed by 9 alphanumeric characters
-// 	asinPattern := regexp.MustCompile(`\bB[0-9A-Z]{9}\b`)
-// 	if match := asinPattern.FindString(s); match != "" {
-// 		return match
-// 	}
-// 	return ""
-// }
 
 // parseBookFileToParseInfo parses a book file to extract metadata.
 func parseBookFileToParseInfo(
@@ -702,47 +692,103 @@ func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 	}
 }
 
+// matchDBField looks up a single pattern field (resolution/quality/codec/audio)
+// in the database pattern store, trying the fast string match first and falling
+// back to the configured regexes. Returns the matched name and its database ID.
+func matchDBField(ps *DBPatternStore, name string, pt PatternType) (string, uint) {
+	if n, _, _ := ps.MatchString(name, pt); n != "" {
+		return n, ps.GetPatternID(n, pt)
+	}
+
+	if n, _, _, _ := ps.MatchRegex(name, pt); n != "" {
+		return n, ps.GetPatternID(n, pt)
+	}
+
+	return "", 0
+}
+
 // extractQualityToParseInfo extracts quality info from a filename to ParseInfo.
+//
+// Resolution/quality/codec/audio are detected from the database-configured
+// patterns (the same source as the legacy parser's GetresolutionsIn/
+// GetqualitiesIn/GetcodecsIn/GetaudiosIn) when the pattern store is loaded, so
+// config changes take effect without code edits. The hardcoded reVideo*
+// regexes are used as a per-field fallback when the store is unavailable or
+// has no match, so detection can never regress below the builtin coverage.
 func extractQualityToParseInfo(
 	vp *VideoParser,
 	name string,
 	m *database.ParseInfo,
 	onlyIfEmpty bool,
 ) {
-	// Extract resolution
+	useDB := vp.useDBPattern && vp.patternStore != nil
+
+	// Resolution
 	if !onlyIfEmpty || m.Resolution == "" {
-		if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 0 {
-			m.Resolution = normalizeResolution(name[loc[0]:loc[1]])
+		if useDB {
+			if n, id := matchDBField(vp.patternStore, name, PatternTypeResolution); n != "" {
+				m.Resolution, m.ResolutionID = n, id
+			}
+		}
+
+		if m.Resolution == "" {
+			if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 0 {
+				m.Resolution = normalizeResolution(name[loc[0]:loc[1]])
+			}
 		}
 	}
 
-	// Extract quality source
+	// Quality source
 	if !onlyIfEmpty || m.Quality == "" {
-		if loc := vp.patterns.quality.FindStringSubmatchIndex(name); len(loc) > 2 {
-			m.Quality = normalizeQuality(name[loc[2]:loc[3]])
+		if useDB {
+			if n, id := matchDBField(vp.patternStore, name, PatternTypeQuality); n != "" {
+				m.Quality, m.QualityID = n, id
+			}
+		}
+
+		if m.Quality == "" {
+			if loc := vp.patterns.quality.FindStringSubmatchIndex(name); len(loc) > 2 {
+				m.Quality = normalizeQuality(name[loc[2]:loc[3]])
+			}
 		}
 	}
 
-	// Check for REMUX
+	// REMUX is a builtin high-quality indicator that overrides the source.
 	if vp.patterns.remux.MatchString(name) {
 		m.Quality = "REMUX"
 	}
 
-	// Extract codec
+	// Codec
 	if !onlyIfEmpty || m.Codec == "" {
-		if loc := vp.patterns.codec.FindStringSubmatchIndex(name); len(loc) > 2 {
-			m.Codec = normalizeCodec(name[loc[2]:loc[3]])
+		if useDB {
+			if n, id := matchDBField(vp.patternStore, name, PatternTypeCodec); n != "" {
+				m.Codec, m.CodecID = n, id
+			}
+		}
+
+		if m.Codec == "" {
+			if loc := vp.patterns.codec.FindStringSubmatchIndex(name); len(loc) > 2 {
+				m.Codec = normalizeCodec(name[loc[2]:loc[3]])
+			}
 		}
 	}
 
-	// Extract audio
+	// Audio
 	if !onlyIfEmpty || m.Audio == "" {
-		if loc := vp.patterns.audio.FindStringSubmatchIndex(name); len(loc) > 2 {
-			m.Audio = normalizeAudio(name[loc[2]:loc[3]])
+		if useDB {
+			if n, id := matchDBField(vp.patternStore, name, PatternTypeAudio); n != "" {
+				m.Audio, m.AudioID = n, id
+			}
+		}
+
+		if m.Audio == "" {
+			if loc := vp.patterns.audio.FindStringSubmatchIndex(name); len(loc) > 2 {
+				m.Audio = normalizeAudio(name[loc[2]:loc[3]])
+			}
 		}
 	}
 
-	// Extract extended/proper/repack
+	// Extended/proper/repack are always builtin.
 	if !onlyIfEmpty || !m.Extended {
 		m.Extended = vp.patterns.extended.MatchString(name)
 	}
@@ -959,21 +1005,35 @@ func (vp *VideoParser) extractQualityInfoFromDB(name string, result *VideoParseR
 
 // extractTitle attempts to extract the title from the cleaned name.
 func (vp *VideoParser) extractTitle(cleanName string, _ *VideoParseResult) string {
-	// Find the first quality/episode indicator to determine title boundary
-	indicatorPatterns := []*regexp.Regexp{
+	// Structural anchors reliably mark the end of the title in standard naming:
+	// the title comes before the season/episode marker, the year, the
+	// resolution or a trailing language tag. These are checked first.
+	// The language pattern only matches a language word immediately followed by
+	// a year or end-of-string, so genuine title words ("The Italian Job") are
+	// never treated as a boundary.
+	anchorPatterns := []*regexp.Regexp{
 		vp.patterns.seasonEpisode,
 		vp.patterns.seasonEpisodeAlt,
 		vp.patterns.seasonEpisodeDate,
 		vp.patterns.year,
 		vp.patterns.resolution,
-		vp.patterns.quality,
-		vp.patterns.language, // Language codes also indicate end of title
+		vp.patterns.language,
 	}
 
 	minIdx := len(cleanName)
 
-	for _, pattern := range indicatorPatterns {
+	for _, pattern := range anchorPatterns {
 		if loc := pattern.FindStringIndex(cleanName); loc != nil && loc[0] < minIdx {
+			minIdx = loc[0]
+		}
+	}
+
+	// The quality/source token is only used as a boundary when no structural
+	// anchor was found. Otherwise a source word that is genuinely part of the
+	// title (e.g. "Amazon" in "Love on the Amazon 2026") would wrongly truncate
+	// the title before the year, since the quality pattern matches "amazon".
+	if minIdx == len(cleanName) {
+		if loc := vp.patterns.quality.FindStringIndex(cleanName); loc != nil && loc[0] < minIdx {
 			minIdx = loc[0]
 		}
 	}
@@ -990,7 +1050,7 @@ func (vp *VideoParser) extractTitle(cleanName string, _ *VideoParseResult) strin
 }
 
 // buildIdentifier creates an episode identifier string.
-func (vp *VideoParser) buildIdentifier(season, episode int) string {
+func (*VideoParser) buildIdentifier(season, episode int) string {
 	return formatIdentifier(season, episode)
 }
 
@@ -1000,12 +1060,12 @@ func formatIdentifier(season, episode int) string {
 }
 
 // buildMultiIdentifier creates a multi-episode identifier string.
-func (vp *VideoParser) buildMultiIdentifier(season, startEp, endEp int) string {
+func (*VideoParser) buildMultiIdentifier(season, startEp, endEp int) string {
 	return logger.JoinStrings("S", padInt(season), "E", padInt(startEp), "-E", padInt(endEp))
 }
 
 // calculateConfidence calculates the confidence score for the parse.
-func (vp *VideoParser) calculateConfidence(result *VideoParseResult) float64 {
+func (*VideoParser) calculateConfidence(result *VideoParseResult) float64 {
 	var conf float64
 
 	// Title is essential
@@ -1071,6 +1131,8 @@ func normalizeIMDB(imdb string) string {
 // normalizeResolution normalizes resolution strings.
 func normalizeResolution(res string) string {
 	switch {
+	case logger.ContainsI(res, "4320") || logger.ContainsI(res, "8k"):
+		return "4320p"
 	case logger.ContainsI(res, "2160") || logger.ContainsI(res, "4k") || logger.ContainsI(res, "uhd"):
 		return "2160p"
 	case logger.ContainsI(res, "1080"):

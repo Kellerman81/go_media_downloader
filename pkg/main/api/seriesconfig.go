@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -207,7 +208,7 @@ func renderSeriesConfigContent(
 
 // renderFileOptions renders option elements for file select dropdown.
 func renderFileOptions(files []string, selectedFile string) gomponents.Node {
-	var options []gomponents.Node
+	options := make([]gomponents.Node, 0, len(files))
 	for _, file := range files {
 		options = append(options, html.Option(
 			html.Value(file),
@@ -309,7 +310,7 @@ func renderSeriesList(filename string, series []config.ManualConfig) gomponents.
 
 // renderSeriesRows renders table rows for each series.
 func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.Node {
-	var rows []gomponents.Node
+	rows := make([]gomponents.Node, 0, len(series))
 	for i, s := range series {
 		searchStatus := "Enabled"
 		if s.DontSearch {
@@ -337,7 +338,7 @@ func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.
 					),
 					gomponents.Attr(
 						"onclick",
-						"return confirm('Are you sure you want to delete this series configuration?')",
+						"event.preventDefault(); var h=this.href; confirmAction('Delete series configuration', 'Delete this series configuration? This cannot be undone.', function(){ window.location.href=h; });",
 					),
 					html.I(html.Class("fa-solid fa-trash")),
 				),
@@ -1067,7 +1068,7 @@ type CollectionInfo struct {
 func detectScraperType(startURL string) string {
 	client := &http.Client{
 		Timeout: 15 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return nil // Allow redirects
 		},
 	}
@@ -1224,7 +1225,7 @@ func getAlgoliaCredentials(resp *http.Response) (string, string, error) {
 		return matches[2], matches[1], nil
 	}
 
-	return "", "", fmt.Errorf("algolia API credentials not found")
+	return "", "", errors.New("algolia API credentials not found")
 }
 
 // discoverAlgoliaConfig discovers Algolia configuration.
@@ -2086,7 +2087,7 @@ func renderCSRFAPIDiscoveredData(data *ScraperDiscoveryData) gomponents.Node {
 
 // renderFacetRows renders facet values with counts as table rows.
 func renderFacetRows(facets []FacetValue) gomponents.Node {
-	var rows []gomponents.Node
+	rows := make([]gomponents.Node, 0, len(facets))
 	for _, facet := range facets {
 		rows = append(rows, html.Tr(
 			html.Td(html.Code(gomponents.Text(facet.Value))),
@@ -2099,7 +2100,7 @@ func renderFacetRows(facets []FacetValue) gomponents.Node {
 
 // renderFieldList renders a list of field names.
 func renderFieldList(fields []string) gomponents.Node {
-	var nodes []gomponents.Node
+	nodes := make([]gomponents.Node, 0, len(fields))
 	for _, field := range fields {
 		nodes = append(nodes, html.Span(
 			html.Class("badge bg-secondary me-1 mb-1"),
@@ -2174,7 +2175,7 @@ func renderOtherFacets(allFacets map[string][]FacetValue) gomponents.Node {
 
 // renderCollectionRows renders collection table rows.
 func renderCollectionRows(collections []CollectionInfo) gomponents.Node {
-	var rows []gomponents.Node
+	rows := make([]gomponents.Node, 0, len(collections))
 	for _, col := range collections {
 		rows = append(rows, html.Tr(
 			html.Td(html.Code(gomponents.Text(fmt.Sprintf("%d", col.ID)))),

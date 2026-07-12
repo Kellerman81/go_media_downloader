@@ -34,12 +34,12 @@ func NewProviderWithConfig(config base.ClientConfig) *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return apiexternal_v2.ProviderTVMaze
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "tvmaze"
 }
 
@@ -80,7 +80,7 @@ func (p *Provider) FindMovieByIMDbID(
 func (p *Provider) SearchSeries(
 	ctx context.Context,
 	query string,
-	year int,
+	_ int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
 	endpoint := fmt.Sprintf("/search/shows?q=%s", query)
 

@@ -11,8 +11,10 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
@@ -44,9 +46,10 @@ func MovieMetadataSearchPage(c *gin.Context) {
 // SeriesMetadataSearchPage renders the series metadata search page.
 func SeriesMetadataSearchPage(c *gin.Context) {
 	seriesLists := getMediaListsByType("series")
+	qualityProfiles := getQualityProfileNames()
 	csrfToken := getCSRFToken(c)
 
-	content := seriesMetadataSearchContent(seriesLists, csrfToken)
+	content := seriesMetadataSearchContent(seriesLists, qualityProfiles, csrfToken)
 
 	pageNode := page(
 		"Series Metadata Search",
@@ -401,7 +404,10 @@ func movieMetadataSearchContent(
 	)
 }
 
-func seriesMetadataSearchContent(mediaConfigs []string, csrfToken string) gomponents.Node {
+func seriesMetadataSearchContent(
+	mediaConfigs, qualityProfiles []string,
+	csrfToken string,
+) gomponents.Node {
 	return html.Div(
 		html.Class("config-section-enhanced"),
 
@@ -485,6 +491,27 @@ func seriesMetadataSearchContent(mediaConfigs []string, csrfToken string) gompon
 										html.Name("series_list"),
 										gomponents.Attr("required", "true"),
 										renderSelectOptions(mediaConfigs, ""),
+									),
+								),
+
+								html.Div(
+									html.Class("mb-3"),
+									html.Label(
+										html.For("series_quality_profile"),
+										html.Class("form-label"),
+										gomponents.Text("Quality Profile"),
+									),
+									html.Select(
+										html.Class("form-select"),
+										html.ID("series_quality_profile"),
+										html.Name("series_quality_profile"),
+										renderSelectOptions(qualityProfiles, ""),
+									),
+									html.Small(
+										html.Class("form-text text-muted"),
+										gomponents.Text(
+											"Leave to use the list's default quality.",
+										),
 									),
 								),
 
@@ -1174,16 +1201,79 @@ func AddSeriesToDatabase(c *gin.Context) {
 		return
 	}
 
+	// Resolve the wanted quality for this list so the series row (and the episodes
+	// imported from it) carry the correct profile instead of an arbitrary one. An
+	// explicitly selected profile wins; otherwise fall back to the list's quality
+	// template, then the media group default.
+	cfgp, listid := findSeriesCfgpAndListID(listName)
+
+	qualityProfile := c.PostForm("series_quality_profile")
+	if qualityProfile == "" && cfgp != nil && listid >= 0 {
+		qualityProfile = cfgp.Lists[listid].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = cfgp.TemplateQuality
+		}
+	}
+
 	// Add to series table
 	database.ExecN(
-		"INSERT INTO series (dbserie_id, listname, rootpath, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 0, 0, ?, ?)",
+		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
 		dbSeriesID,
 		listName,
+		qualityProfile,
 		nowTime,
 		nowTime,
 	)
 
+	// Kick off episode import in the background so the series is actually populated
+	// (the previous flow added the series row but never imported any episodes).
+	if cfgp != nil && listid >= 0 {
+		serieName := series.Name
+
+		worker.Dispatch(
+			"add_series_"+strconv.Itoa(tvdbID)+"_"+listName,
+			func(_ uint32, ctx context.Context) error {
+				err := importfeed.JobImportDBSeries(
+					ctx,
+					&config.ManualConfig{Name: serieName, TvdbID: tvdbID},
+					0,
+					cfgp,
+					listid,
+				)
+				logger.Logtype("info", 0).
+					Str("series", serieName).
+					Str("list", listName).
+					Err(err).
+					Msg("AddSeriesToDatabase: episode import completed")
+
+				return nil
+			},
+			"Data",
+		)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"success": "Series added successfully to " + listName})
+}
+
+// findSeriesCfgpAndListID resolves a series list name to its media config and list index.
+func findSeriesCfgpAndListID(listName string) (*config.MediaTypeConfig, int) {
+	allMedia := config.GetSettingsMediaAll()
+	if allMedia == nil {
+		return nil, -1
+	}
+
+	for i := range allMedia.Series {
+		cfgp := config.GetSettingsMedia("serie_" + allMedia.Series[i].Name)
+		if cfgp == nil {
+			continue
+		}
+
+		if listid, ok := cfgp.ListsMapIdx[listName]; ok {
+			return cfgp, listid
+		}
+	}
+
+	return nil, -1
 }
 
 // AddMovieManual handles manual movie entry.
@@ -1377,10 +1467,19 @@ func AddSeriesManual(c *gin.Context) {
 		return
 	}
 
+	qualityProfile := ""
+	if cfgp, listid := findSeriesCfgpAndListID(listName); cfgp != nil && listid >= 0 {
+		qualityProfile = cfgp.Lists[listid].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = cfgp.TemplateQuality
+		}
+	}
+
 	database.ExecN(
-		"INSERT INTO series (dbserie_id, listname, rootpath, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 0, 0, ?, ?)",
+		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
 		int(newID),
 		listName,
+		qualityProfile,
 		nowTime,
 		nowTime,
 	)
@@ -1489,9 +1588,9 @@ document.getElementById('movieSearchForm').addEventListener('submit', function(e
 					return;
 				}
 
-				if (confirm('Add "' + movieTitle + '" to list "' + selectedList + '" with quality profile "' + selectedQualityProfile + '"?')) {
+				confirmAction('Please confirm', 'Add "' + movieTitle + '" to list "' + selectedList + '" with quality profile "' + selectedQualityProfile + '"?', function() {
 					addMovieToDatabase(tmdbId, selectedList, selectedQualityProfile, this);
-				}
+				})
 			});
 		});
 	})
@@ -1618,10 +1717,12 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 				const tmdbId = this.getAttribute('data-tmdb-id');
 				const seriesTitle = this.getAttribute('data-title');
 				const selectedList = document.getElementById('series_list').value;
+				const selectedQualityProfile = document.getElementById('series_quality_profile').value;
+				const addBtn = this;
 
-				if (confirm('Add "' + seriesTitle + '" to list "' + selectedList + '"?')) {
-					addSeriesToDatabase(tmdbId, selectedList, this);
-				}
+				confirmAction('Please confirm', 'Add "' + seriesTitle + '" to list "' + selectedList + '"?', function() {
+					addSeriesToDatabase(tmdbId, selectedList, selectedQualityProfile, addBtn);
+				})
 			});
 		});
 	})
@@ -1631,7 +1732,7 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 	});
 });
 
-function addSeriesToDatabase(tmdbId, listName, button) {
+function addSeriesToDatabase(tmdbId, listName, qualityProfile, button) {
 	const originalText = button.innerHTML;
 	button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
 	button.disabled = true;
@@ -1642,7 +1743,7 @@ function addSeriesToDatabase(tmdbId, listName, button) {
 			'Content-Type': 'application/x-www-form-urlencoded',
 			'X-CSRF-Token': '` + csrfToken + `',
 		},
-		body: 'tmdb_id=' + tmdbId + '&series_list=' + encodeURIComponent(listName)
+		body: 'tmdb_id=' + tmdbId + '&series_list=' + encodeURIComponent(listName) + '&series_quality_profile=' + encodeURIComponent(qualityProfile || '')
 	})
 	.then(response => response.json())
 	.then(data => {

@@ -3,6 +3,7 @@ package csrfapi
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,23 +70,23 @@ type Scraper struct {
 func NewScraper(cfg *Config) (*Scraper, error) {
 	// Validate required configuration
 	if cfg.SiteName == "" {
-		return nil, fmt.Errorf("site_name is required")
+		return nil, errors.New("site_name is required")
 	}
 
 	if cfg.StartURL == "" {
-		return nil, fmt.Errorf("start_url is required")
+		return nil, errors.New("start_url is required")
 	}
 
 	if cfg.SerieName == "" {
-		return nil, fmt.Errorf("serie_name is required")
+		return nil, errors.New("serie_name is required")
 	}
 
 	if cfg.APIURLPattern == "" {
-		return nil, fmt.Errorf("api_url_pattern is required")
+		return nil, errors.New("api_url_pattern is required")
 	}
 
 	if cfg.ResultsArrayPath == "" {
-		return nil, fmt.Errorf("results_array_path is required")
+		return nil, errors.New("results_array_path is required")
 	}
 
 	// Set defaults
@@ -133,7 +134,7 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 }
 
 // getOrCreateSerie gets the series ID by name, creating it if it doesn't exist.
-func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
+func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	// First, try to find existing series by name
 	existingID := database.Getdatarow[uint](
 		false,
@@ -299,7 +300,7 @@ func (s *Scraper) extractResults(data map[string]any) []any {
 //
 // Returns:
 //   - string: Extracted value
-func (s *Scraper) extractStringField(obj map[string]any, fieldName string) string {
+func (*Scraper) extractStringField(obj map[string]any, fieldName string) string {
 	if fieldName == "" {
 		return ""
 	}
@@ -372,7 +373,7 @@ func (s *Scraper) parseDate(dateVal any) (time.Time, error) {
 	// Try as string
 	dateStr, ok := dateVal.(string)
 	if !ok {
-		return time.Time{}, fmt.Errorf("date is not a string or time.Time")
+		return time.Time{}, errors.New("date is not a string or time.Time")
 	}
 
 	// Try ISO 8601 format first
@@ -400,9 +401,30 @@ func (s *Scraper) parseDate(dateVal any) (time.Time, error) {
 //
 // Returns:
 //   - error: Any errors during database operations
+//
+// resolveURL turns a possibly-relative reference into an absolute URL using base.
+// Returns "" for an empty reference and the reference unchanged on parse errors.
+func resolveURL(base, ref string) string {
+	if ref == "" {
+		return ""
+	}
+
+	b, err := url.Parse(base)
+	if err != nil {
+		return ref
+	}
+
+	r, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+
+	return b.ResolveReference(r).String()
+}
+
 func (s *Scraper) createEpisode(
-	ctx context.Context,
-	title, urlPath string,
+	_ context.Context,
+	title, episodeURL string,
 	date time.Time,
 	actors string,
 ) error {
@@ -418,6 +440,9 @@ func (s *Scraper) createEpisode(
 		},
 		DbserieID: s.dbserieID,
 		Overview:  actors, // Store actors in overview field
+		// URLField is a site-relative path (e.g. "/model/.../movie/..."); resolve
+		// it against BaseURL so the stored scraper URL is absolute.
+		ScraperURL: resolveURL(s.config.BaseURL, episodeURL),
 	}
 
 	// Check if episode already exists
@@ -430,13 +455,18 @@ func (s *Scraper) createEpisode(
 	)
 
 	if existingID > 0 {
-		// Episode exists, update it
+		// Episode exists, update it. Backfill scraper fields only when empty.
 		err := database.ExecNErr(`
 			UPDATE dbserie_episodes
-			SET first_aired = ?, overview = ?, updated_at = CURRENT_TIMESTAMP
+			SET first_aired = ?, overview = ?,
+				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
+				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL OR scraper_url NOT LIKE 'http%' THEN ? ELSE scraper_url END,
+				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
 			episode.FirstAired,
 			episode.Overview,
+			episode.ScraperID,
+			episode.ScraperURL,
 			existingID,
 		)
 		if err != nil {
@@ -455,13 +485,15 @@ func (s *Scraper) createEpisode(
 	// Create new episode
 	err := database.ExecNErr(`
 		INSERT INTO dbserie_episodes (
-			dbserie_id, identifier, title, first_aired, overview, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			dbserie_id, identifier, title, first_aired, overview, scraper_id, scraper_url, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		episode.DbserieID,
 		episode.Identifier,
 		episode.Title,
 		episode.FirstAired,
 		episode.Overview,
+		episode.ScraperID,
+		episode.ScraperURL,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create episode: %w", err)

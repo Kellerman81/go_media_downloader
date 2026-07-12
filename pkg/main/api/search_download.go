@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -27,7 +28,11 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 	// Get available media configurations
 	media := config.GetSettingsMediaAll()
 
-	var mediaConfigs []string
+	mediaConfigs := make(
+		[]string,
+		0,
+		len(media.Movies)+len(media.Series)+len(media.Music)+len(media.Books)+len(media.AudioBooks),
+	)
 	for i := range media.Movies {
 		mediaConfigs = append(mediaConfigs, media.Movies[i].NamePrefix)
 	}
@@ -36,10 +41,26 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 		mediaConfigs = append(mediaConfigs, media.Series[i].NamePrefix)
 	}
 
-	// Movie, series, and episode options will be populated dynamically via apiAdminDropdownData
+	for i := range media.Music {
+		mediaConfigs = append(mediaConfigs, media.Music[i].NamePrefix)
+	}
+
+	for i := range media.Books {
+		mediaConfigs = append(mediaConfigs, media.Books[i].NamePrefix)
+	}
+
+	for i := range media.AudioBooks {
+		mediaConfigs = append(mediaConfigs, media.AudioBooks[i].NamePrefix)
+	}
+
+	// Movie, series, episode and item options are populated dynamically via apiAdminDropdownData
 
 	searchTypes := []string{
-		"movies_rss", "movies_search", "series_rss", "series_search", "series_episode_search",
+		"movies_rss", "movies_search",
+		"series_rss", "series_search", "series_episode_search",
+		"music_rss", "music_search",
+		"books_rss", "books_search",
+		"audiobooks_rss", "audiobooks_search",
 	}
 
 	return html.Div(
@@ -60,7 +81,7 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Search for movies, TV series, and episodes across your configured indexers. View results and optionally download selected items.",
+							"Search for movies, TV series, episodes, music, books and audiobooks across your configured indexers. View results and optionally download selected items.",
 						),
 					),
 				),
@@ -154,6 +175,7 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 									html.Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
 									html.Data("placeholder", "-- Select Movie --"),
 									html.Data("allow-clear", "true"),
+									html.Data("config-source", "search_MediaConfig"),
 									html.Option(
 										gomponents.Attr("value", ""),
 										gomponents.Text("-- Select Movie --"),
@@ -181,6 +203,7 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 									html.Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
 									html.Data("placeholder", "-- Select Series --"),
 									html.Data("allow-clear", "true"),
+									html.Data("config-source", "search_MediaConfig"),
 									html.Option(
 										gomponents.Attr("value", ""),
 										gomponents.Text("-- Select Series --"),
@@ -220,6 +243,15 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 									),
 								),
 							),
+						),
+
+						searchItemSelect("AlbumID", "Album", "albums", "-- Select Album --"),
+						searchItemSelect("BookID", "Book", "books", "-- Select Book --"),
+						searchItemSelect(
+							"AudiobookID",
+							"Audiobook",
+							"audiobooks",
+							"-- Select Audiobook --",
 						),
 					),
 				),
@@ -422,11 +454,17 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 				const serieSelect = document.getElementById('SerieID');
 				const seasonInput = document.querySelector('input[name="search_SeasonNum"]');
 				const episodeSelect = document.getElementById('EpisodeNum');
-				
+				const albumSelect = document.getElementById('AlbumID');
+				const bookSelect = document.getElementById('BookID');
+				const audiobookSelect = document.getElementById('AudiobookID');
+
 				const movieFields = movieSelect ? movieSelect.closest('.form-group-enhanced') : null;
 				const serieFields = serieSelect ? serieSelect.closest('.form-group-enhanced') : null;
 				const seasonFields = seasonInput ? seasonInput.closest('.form-group') : null;
 				const episodeFields = episodeSelect ? episodeSelect.closest('.form-group-enhanced') : null;
+				const albumFields = albumSelect ? albumSelect.closest('.form-group-enhanced') : null;
+				const bookFields = bookSelect ? bookSelect.closest('.form-group-enhanced') : null;
+				const audiobookFields = audiobookSelect ? audiobookSelect.closest('.form-group-enhanced') : null;
 				
 				function toggleFields() {
 					if (!searchTypeSelect) {
@@ -440,7 +478,10 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 					if (serieFields) serieFields.style.display = 'none';
 					if (seasonFields) seasonFields.style.display = 'none';
 					if (episodeFields) episodeFields.style.display = 'none';
-					
+					if (albumFields) albumFields.style.display = 'none';
+					if (bookFields) bookFields.style.display = 'none';
+					if (audiobookFields) audiobookFields.style.display = 'none';
+
 					// Show relevant fields based on search type
 					switch(searchType) {
 						case 'movies_search':
@@ -455,6 +496,15 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 						case 'series_episode_search':
 							if (serieFields) serieFields.style.display = 'block';
 							if (episodeFields) episodeFields.style.display = 'block';
+							break;
+						case 'music_search':
+							if (albumFields) albumFields.style.display = 'block';
+							break;
+						case 'books_search':
+							if (bookFields) bookFields.style.display = 'block';
+							break;
+						case 'audiobooks_search':
+							if (audiobookFields) audiobookFields.style.display = 'block';
 							break;
 					}
 				}
@@ -525,8 +575,62 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 					});
 				}
 				
+				const mediaConfigSelect = document.getElementById('search_MediaConfig');
+
+				// Restrict the Media Configuration options to those matching the
+				// selected search type (movies_* -> movie_ configs, etc.). When the
+				// current selection no longer fits, switch to the first valid one.
+				function filterMediaConfigs() {
+					if (!mediaConfigSelect || !searchTypeSelect) return;
+
+					const prefixByType = {
+						'movies_rss': 'movie_', 'movies_search': 'movie_',
+						'series_rss': 'serie_', 'series_search': 'serie_', 'series_episode_search': 'serie_',
+						'music_rss': 'music_', 'music_search': 'music_',
+						'books_rss': 'book_', 'books_search': 'book_',
+						'audiobooks_rss': 'audiobook_', 'audiobooks_search': 'audiobook_'
+					};
+					const prefix = prefixByType[searchTypeSelect.value] || '';
+
+					let firstVisible = null;
+					let currentStillValid = false;
+
+					Array.from(mediaConfigSelect.options).forEach(function(opt) {
+						if (!opt.value) { opt.hidden = false; return; }
+						const match = opt.value.indexOf(prefix) === 0;
+						opt.hidden = !match;
+						opt.disabled = !match;
+						if (match) {
+							if (firstVisible === null) firstVisible = opt.value;
+							if (opt.value === mediaConfigSelect.value) currentStillValid = true;
+						}
+					});
+
+					if (!currentStillValid) {
+						mediaConfigSelect.value = firstVisible || '';
+						mediaConfigSelect.dispatchEvent(new Event('change'));
+					}
+				}
+
+				// Reload the content dropdowns (movie/series/...) so their options
+				// are scoped to the newly selected media configuration's lists.
+				function refreshContentDropdowns() {
+					['MovieID', 'SerieID', 'AlbumID', 'BookID', 'AudiobookID'].forEach(function(elId) {
+						const el = document.getElementById(elId);
+						if (el && typeof el.choicesReload === 'function') {
+							el.choicesReload();
+						}
+					});
+				}
+
 				if (searchTypeSelect) {
-					searchTypeSelect.addEventListener('change', toggleFields);
+					searchTypeSelect.addEventListener('change', function() {
+						toggleFields();
+						filterMediaConfigs();
+					});
+				}
+				if (mediaConfigSelect) {
+					mediaConfigSelect.addEventListener('change', refreshContentDropdowns);
 				}
 				if (serieSelect) {
 					// Listen for Choices.js change events
@@ -534,6 +638,7 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 					serieSelect.addEventListener('choice', loadEpisodes);
 				}
 				toggleFields(); // Initial setup
+				filterMediaConfigs();
 				
 				// Initialize basic Choices.js for episode dropdown (no AJAX)
 				setTimeout(function() {
@@ -560,6 +665,38 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 }
 
 // HandleSearchDownload handles search and download requests.
+// searchItemSelect renders an AJAX-backed dropdown for selecting a music/book/
+// audiobook item by id on the Search & Download page.
+func searchItemSelect(id, label, table, placeholder string) gomponents.Node {
+	return html.Div(
+		html.Class("form-group-enhanced mb-4"),
+		html.Div(
+			html.Class("form-field-card p-3 border rounded-3"),
+			html.Style(
+				"background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);",
+			),
+			html.Div(
+				html.Class("d-flex align-items-center mb-2"),
+				html.I(
+					html.Class("fa-solid fa-list text-primary me-2"),
+					gomponents.Attr("aria-hidden", "true"),
+				),
+				createFormLabel(id, label, false),
+			),
+			html.Select(
+				html.ID(id),
+				html.Name(id),
+				html.Class("form-select choices-ajax"),
+				html.Data("ajax-url", "/api/admin/dropdown/"+table+"/id"),
+				html.Data("placeholder", placeholder),
+				html.Data("allow-clear", "true"),
+				html.Data("config-source", "search_MediaConfig"),
+				html.Option(gomponents.Attr("value", ""), gomponents.Text(placeholder)),
+			),
+		),
+	)
+}
+
 func HandleSearchDownload(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to parse form data: "+err.Error(), "danger"))
@@ -591,9 +728,26 @@ func HandleSearchDownload(c *gin.Context) {
 
 	// Get search parameters based on type
 	var (
-		movieID, serieID, seasonNum, episodeID int
-		err                                    error
+		movieID, serieID, seasonNum, episodeID, itemID int
+		err                                            error
 	)
+
+	switch {
+	case strings.HasPrefix(searchType, "music"):
+		if v := c.PostForm("AlbumID"); v != "" {
+			itemID, _ = strconv.Atoi(v)
+		}
+
+	case strings.HasPrefix(searchType, "audiobooks"):
+		if v := c.PostForm("AudiobookID"); v != "" {
+			itemID, _ = strconv.Atoi(v)
+		}
+
+	case strings.HasPrefix(searchType, "books"):
+		if v := c.PostForm("BookID"); v != "" {
+			itemID, _ = strconv.Atoi(v)
+		}
+	}
 
 	if strings.Contains(searchType, "movies") {
 		movieIDStr := c.PostForm("MovieID")
@@ -636,6 +790,7 @@ func HandleSearchDownload(c *gin.Context) {
 		serieID,
 		seasonNum,
 		episodeID,
+		itemID,
 		limit,
 		titleSearch,
 	)
@@ -700,7 +855,7 @@ func formatFileSize(bytes int64) string {
 // performSearch executes real search calls based on the specified type and parameters.
 func performSearch(
 	searchType, mediaConfig string,
-	movieID, serieID, seasonNum, episodeID, limit int,
+	movieID, serieID, seasonNum, episodeID, itemID, limit int,
 	titleSearch bool,
 ) (*SearchResults, error) {
 	var searchResults *searcher.ConfigSearcher
@@ -769,7 +924,7 @@ func performSearch(
 
 		if listConfig == nil {
 			// logger.Logtype("info", 1).Any("id", movieID).Msg("movie list search")
-			return nil, fmt.Errorf("list configuration for movie not found")
+			return nil, errors.New("list configuration for movie not found")
 		}
 
 		searchResults = searcher.NewSearcher(
@@ -833,16 +988,66 @@ func performSearch(
 		}
 
 		if listConfig == nil {
-			return nil, fmt.Errorf("list configuration for series not found")
+			return nil, errors.New("list configuration for series not found")
 		}
 
-		searchResults = searcher.NewSearcher(
+		// A series is not itself a searchable unit - its episodes are. Search the
+		// series' missing episodes individually (MediaSearch expects a
+		// serie_episodes id; passing the series id searched an unrelated episode
+		// that happened to share the numeric id). Bounded to the config's
+		// incremental batch size so a large catalogue doesn't stall the request.
+		episodeLimit := int(mediaTypeConfig.SearchmissingIncremental)
+		if episodeLimit <= 0 {
+			episodeLimit = 20
+		}
+
+		episodeIDs := database.GetrowsN[uint](
+			false,
+			uint(episodeLimit),
+			"select id from serie_episodes where serie_id = ? and missing = 1 order by id limit ?",
+			serie.ID,
+			episodeLimit,
+		)
+
+		sr := searcher.NewSearcher(
 			mediaTypeConfig,
 			listConfig.CfgQuality,
 			"search",
 			&serie.ID,
 		)
-		err = searchResults.MediaSearch(ctx, mediaTypeConfig, serie.ID, titleSearch, false, false)
+		defer sr.Close()
+
+		// Each MediaSearch resets sr.Accepted/sr.Denied, so convert and aggregate
+		// after every episode rather than relying on the shared extraction below.
+		var seriesAccepted, seriesDenied []SearchResult
+
+		for i := range episodeIDs {
+			if e := sr.MediaSearch(
+				ctx, mediaTypeConfig, episodeIDs[i], titleSearch, false, false,
+			); e != nil {
+				continue // skip this episode, keep searching the rest
+			}
+
+			for _, nzb := range sr.Accepted {
+				seriesAccepted = append(seriesAccepted, convertNzbwithprioToSearchResult(nzb))
+			}
+
+			for _, nzb := range sr.Denied {
+				seriesDenied = append(seriesDenied, convertNzbwithprioToSearchResult(nzb))
+			}
+		}
+
+		if limit > 0 {
+			if len(seriesAccepted) > limit {
+				seriesAccepted = seriesAccepted[:limit]
+			}
+
+			if len(seriesDenied) > limit {
+				seriesDenied = seriesDenied[:limit]
+			}
+		}
+
+		return &SearchResults{Accepted: seriesAccepted, Denied: seriesDenied}, nil
 
 	case "series_episode_search":
 		if episodeID <= 0 {
@@ -880,7 +1085,7 @@ func performSearch(
 		}
 
 		if listConfig == nil {
-			return nil, fmt.Errorf("list configuration for series not found")
+			return nil, errors.New("list configuration for series not found")
 		}
 
 		searchResults = searcher.NewSearcher(
@@ -890,6 +1095,37 @@ func performSearch(
 			&episode.ID,
 		)
 		err = searchResults.MediaSearch(ctx, mediaTypeConfig, episode.ID, titleSearch, false, false)
+
+	case "music_rss", "books_rss", "audiobooks_rss":
+		// RSS search is media-type agnostic; the searcher branches on cfg.IsType.
+		searchResults = searcher.NewSearcher(
+			mediaTypeConfig,
+			mediaTypeConfig.CfgQuality,
+			logger.StrRss,
+			nil,
+		)
+		err = searchResults.SearchRSS(
+			ctx,
+			mediaTypeConfig,
+			mediaTypeConfig.CfgQuality,
+			false,
+			false,
+		)
+
+	case "music_search", "books_search", "audiobooks_search":
+		if itemID <= 0 {
+			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
+		}
+
+		id := uint(itemID)
+
+		searchResults = searcher.NewSearcher(
+			mediaTypeConfig,
+			mediaTypeConfig.CfgQuality,
+			"search",
+			&id,
+		)
+		err = searchResults.MediaSearch(ctx, mediaTypeConfig, id, titleSearch, false, false)
 
 	default:
 		return nil, fmt.Errorf("unsupported search type: %s", searchType)
@@ -1273,7 +1509,7 @@ func renderResultsTable(
 	}
 
 	// Create table rows
-	var rows []gomponents.Node
+	rows := make([]gomponents.Node, 0, len(results))
 	for i, result := range results {
 		rowCells := []gomponents.Node{
 			html.Td(

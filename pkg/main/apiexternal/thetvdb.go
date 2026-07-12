@@ -113,7 +113,7 @@ func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uin
 // GetTvdbSeries retrieves TV series data from the TheTVDB API for the given series ID.
 // If a non-empty language is provided, it will be set in the API request headers.
 // Returns the TV series data, or an error if one occurs.
-func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
+func GetTvdbSeries(id int, _ string) (*TheTVDBSeries, error) {
 	if id == 0 {
 		return nil, logger.ErrNotFound
 	}
@@ -166,7 +166,7 @@ func GetTvdbSeries(id int, language string) (*TheTVDBSeries, error) {
 // CollectTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
 // TheTVDB API and returns them as a map keyed by "season-episode" for easy merging.
 // This function does NOT write to the database - use WriteCollectedEpisodesToDB for that.
-func CollectTvdbSeriesEpisodes(id int, language string) map[string]*CollectedEpisode {
+func CollectTvdbSeriesEpisodes(id int, _ string) map[string]*CollectedEpisode {
 	episodes := make(map[string]*CollectedEpisode)
 
 	// Use v2 provider if available
@@ -260,20 +260,22 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 	WriteCollectedEpisodesToDB(episodes, dbid)
 }
 
-// TestTVDBConnectivity tests the connectivity to the TVDB API
-// Note: timeout parameter is currently unused as ProcessHTTPNoRateCheck handles its own timeouts
-// Returns status code and error if any.
-func TestTVDBConnectivity(timeout time.Duration) (int, error) {
-	// Use v2 provider if available
-	if provider := providers.GetTVDB(); provider != nil {
-		// Test with a simple series lookup
-		_, err := provider.GetSeriesByID(context.Background(), 1)
-		if err != nil {
-			return 0, err
-		}
-
-		return 200, nil
+// TestTVDBConnectivity tests the connectivity to the TVDB API by performing a
+// real search, which returns HTTP 200 for a healthy, authenticated API. The
+// previous probe (a lookup of series ID 1) returned HTTP 404 because that record
+// does not exist, wrongly reading as "down"; a base-URL probe returns 404 too,
+// which is not a valid "reachable" signal. A search exercises the real endpoint
+// and only succeeds when the service is genuinely working.
+// Returns status code 200 on success, or an error.
+func TestTVDBConnectivity(_ time.Duration) (int, error) {
+	provider := providers.GetTVDB()
+	if provider == nil {
+		return 400, errClientEmpty
 	}
 
-	return 400, errClientEmpty
+	if _, err := provider.SearchSeries(context.Background(), "test", 0); err != nil {
+		return 0, err
+	}
+
+	return 200, nil
 }

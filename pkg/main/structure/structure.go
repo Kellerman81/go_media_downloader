@@ -86,6 +86,17 @@ type inputNotifier struct {
 	Serie database.Serie
 	// DbserieEpisode is the DbserieEpisode struct for TV series episodes
 	DbserieEpisode database.DbserieEpisode
+	// Book / audiobook / music metadata structs, populated from the database so
+	// notification templates can reference rich fields for those media types.
+	Dbaudiobook        database.Dbaudiobook
+	DbaudiobookChapter database.DbaudiobookChapter
+	Dbbook             database.Dbbook
+	Dbalbum            database.Dbalbum
+	Dbtrack            database.Dbtrack
+	Author             database.Dbauthor
+	BookSeries         database.DbbookSeries
+	Artist             database.Dbartist
+	AlbumArtist        database.Dbartist
 	// Replaced is a list of replaced strings during processing
 	Replaced []string
 	// Targetpath is the target path for the file
@@ -269,20 +280,53 @@ func TestInputnotifier(parsestring string) (string, error) {
 			FirstAired: sql.NullTime{Time: time.Now(), Valid: true},
 			Runtime:    58,
 		},
-		Title:          "Breaking Bad",
-		Year:           "2008",
-		Season:         "1",
-		Episode:        "1",
-		Series:         "Breaking Bad",
-		EpisodeTitle:   "Pilot",
-		Configuration:  "series-hd",
-		SourcePath:     "/downloads/Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv",
-		Targetpath:     "/media/tv/Breaking Bad/Season 01/Breaking Bad - S01E01 - Pilot.mkv",
-		Imdb:           "tt0903747",
-		Tvdb:           "81189",
-		Time:           "2024-01-15 14:30:00",
-		ReplacedPrefix: "Replaced: ",
-		Replaced:       []string{"/old/Breaking.Bad.S01E01.720p.mkv"},
+		Dbalbum: database.Dbalbum{
+			Title:       "The Dark Side of the Moon",
+			Year:        1973,
+			ReleaseType: "album",
+			Format:      "vinyl",
+			Label:       "Harvest",
+			Genres:      "Progressive Rock",
+			TotalTracks: 10,
+		},
+		Dbtrack:     database.Dbtrack{Title: "Time", TrackNumber: 4, DiscNumber: 1},
+		Artist:      database.Dbartist{Name: "Pink Floyd", SortName: "Pink Floyd"},
+		AlbumArtist: database.Dbartist{Name: "Pink Floyd"},
+		Dbbook: database.Dbbook{
+			Title:          "The Hobbit",
+			Year:           1937,
+			ISBN13:         "9780261103344",
+			Publisher:      "George Allen & Unwin",
+			Language:       "English",
+			SeriesPosition: "1",
+		},
+		Author:     database.Dbauthor{Name: "J.R.R. Tolkien"},
+		BookSeries: database.DbbookSeries{Name: "Middle-earth"},
+		Dbaudiobook: database.Dbaudiobook{
+			Title:          "The Hobbit",
+			Year:           2012,
+			ASIN:           "B007978PI2",
+			Publisher:      "Recorded Books",
+			Language:       "English",
+			SeriesName:     "The Lord of the Rings",
+			SeriesPosition: "1",
+			RuntimeMinutes: 660,
+		},
+		DbaudiobookChapter: database.DbaudiobookChapter{Title: "An Unexpected Party", ChapterNumber: 1},
+		Title:              "Breaking Bad",
+		Year:               "2008",
+		Season:             "1",
+		Episode:            "1",
+		Series:             "Breaking Bad",
+		EpisodeTitle:       "Pilot",
+		Configuration:      "series-hd",
+		SourcePath:         "/downloads/Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS.mkv",
+		Targetpath:         "/media/tv/Breaking Bad/Season 01/Breaking Bad - S01E01 - Pilot.mkv",
+		Imdb:               "tt0903747",
+		Tvdb:               "81189",
+		Time:               "2024-01-15 14:30:00",
+		ReplacedPrefix:     "Replaced: ",
+		Replaced:           []string{"/old/Breaking.Bad.S01E01.720p.mkv"},
 		Source: &database.ParseInfo{
 			Title:      "Breaking Bad",
 			Year:       uint16(2008),
@@ -395,6 +439,51 @@ func TestParsertype(parsestring string) (string, error) {
 			Repack:     false,
 			Languages:  []string{"English"},
 		},
+		Dbalbum: database.Dbalbum{
+			Title:       "The Dark Side of the Moon",
+			Year:        1973,
+			ReleaseType: "album",
+			Format:      "vinyl",
+			Label:       "Harvest",
+			Genres:      "Progressive Rock",
+			TotalTracks: 10,
+		},
+		Dbtrack: database.Dbtrack{
+			Title:       "Time",
+			TrackNumber: 4,
+			DiscNumber:  1,
+		},
+		Artist:      database.Dbartist{Name: "Pink Floyd", SortName: "Pink Floyd"},
+		AlbumArtist: database.Dbartist{Name: "Pink Floyd"},
+		Dbbook: database.Dbbook{
+			Title:          "The Hobbit",
+			OriginalTitle:  "The Hobbit",
+			Year:           1937,
+			ISBN13:         "9780261103344",
+			Publisher:      "George Allen & Unwin",
+			Language:       "English",
+			SeriesPosition: "1",
+		},
+		Author:     database.Dbauthor{Name: "J.R.R. Tolkien"},
+		BookSeries: database.DbbookSeries{Name: "Middle-earth"},
+		Dbaudiobook: database.Dbaudiobook{
+			Title:          "The Hobbit",
+			Year:           2012,
+			ASIN:           "B007978PI2",
+			Publisher:      "Recorded Books",
+			Language:       "English",
+			SeriesName:     "The Lord of the Rings",
+			SeriesPosition: "1",
+			RuntimeMinutes: 660,
+		},
+		DbaudiobookChapter: database.DbaudiobookChapter{
+			Title:         "An Unexpected Party",
+			ChapterNumber: 1,
+		},
+		Title:              "The Hobbit",
+		Track:              4,
+		Disc:               1,
+		TotalDiscs:         1,
 		TitleSource:        "Breaking.Bad.S01E01.Pilot.1080p.BluRay.x264-ROVERS",
 		EpisodeTitleSource: "Pilot",
 		Identifier:         "S01E01",
@@ -481,23 +570,27 @@ func (s *Organizer) cleanUpFolder(folder string) error {
 	logger.Logtype("debug", 0).Int64(logger.StrSize, leftsize).Msg("Left size")
 
 	if cleanupsizeByte >= leftsize || leftsize == 0 {
-		filepath.WalkDir(folder, func(fpath string, _ fs.DirEntry, errw error) error {
-			if errw != nil {
-				return errw
-			}
-
-			if err := os.Chmod(fpath, 0o777); err != nil {
-				logger.Logtype("error", 1).
-					Str(logger.StrFile, fpath).
-					Err(err).
-					Msg("Failed to change file permissions")
-			}
-
-			return nil
-		})
-
+		// Try removal directly; only walk the tree to clear read-only bits if the
+		// first attempt fails. This avoids a second full walk in the common case.
 		if err := os.RemoveAll(folder); err != nil {
-			return err
+			filepath.WalkDir(folder, func(fpath string, _ fs.DirEntry, errw error) error {
+				if errw != nil {
+					return errw
+				}
+
+				if err := os.Chmod(fpath, 0o777); err != nil {
+					logger.Logtype("error", 1).
+						Str(logger.StrFile, fpath).
+						Err(err).
+						Msg("Failed to change file permissions")
+				}
+
+				return nil
+			})
+
+			if err := os.RemoveAll(folder); err != nil {
+				return err
+			}
 		}
 
 		logger.Logtype("info", 1).
@@ -1656,6 +1749,26 @@ func (s *Organizer) notify(o *Organizerdata, m *database.ParseInfo, id *uint, ol
 		return
 	}
 
+	// Populate the rich metadata structs (movie/series/book/audiobook/music) so
+	// notification templates can reference fields like {{.Dbalbum.Label}} or
+	// {{.Dbmovie.Genres}}, not just the scalar fields below.
+	namingData := &mediatype.NamingData{}
+	if _, ok := handler.FillNamingData(id, o.MediaFile, m, namingData); ok {
+		notify.Dbmovie = namingData.Dbmovie
+		notify.Dbserie = namingData.Dbserie
+		notify.Serie = namingData.Serie
+		notify.DbserieEpisode = namingData.DbserieEpisode
+		notify.Dbaudiobook = namingData.Dbaudiobook
+		notify.DbaudiobookChapter = namingData.DbaudiobookChapter
+		notify.Dbbook = namingData.Dbbook
+		notify.Dbalbum = namingData.Dbalbum
+		notify.Dbtrack = namingData.Dbtrack
+		notify.Author = namingData.Author
+		notify.BookSeries = namingData.BookSeries
+		notify.Artist = namingData.Artist
+		notify.AlbumArtist = namingData.AlbumArtist
+	}
+
 	title, year, externalID, series, season, episode, identifier, ok := handler.FillNotifyData(id)
 	if !ok {
 		return
@@ -2207,6 +2320,9 @@ func (s *Organizer) walkorganizefolder(
 
 	defer m.Close()
 
+	// The handler is constant for this media type; fetch it once and reuse.
+	handler := mediatype.Get(s.Cfgp.IsType)
+
 	err := parser.GetDBIDs(m, cfgp, true, addFound)
 	if err != nil || !s.hasValidIDs(m) {
 		logger.Logtype("warn", 1).
@@ -2268,8 +2384,8 @@ func (s *Organizer) walkorganizefolder(
 		}
 	}
 
-	if h := mediatype.Get(s.Cfgp.IsType); h != nil {
-		h.SetTempID(m)
+	if handler != nil {
+		handler.SetTempID(m)
 	}
 
 	if m.ListID == -1 {
@@ -2294,8 +2410,8 @@ func (s *Organizer) walkorganizefolder(
 		)
 	}
 
-	if h := mediatype.Get(s.Cfgp.IsType); h != nil {
-		if !h.ValidateIDs(m) {
+	if handler != nil {
+		if !handler.ValidateIDs(m) {
 			m.TempTitle = fpath
 			m.AddUnmatched(cfgp, &logger.StrStructure, errNoValidIDs)
 			return false, "no_match", nil
@@ -2313,8 +2429,8 @@ func (s *Organizer) walkorganizefolder(
 		return false, "subfiles_check", nil
 	}
 
-	if s.manualID != 0 {
-		mediatype.Get(s.Cfgp.IsType).SetMediaID(m, s.manualID)
+	if s.manualID != 0 && handler != nil {
+		handler.SetMediaID(m, s.manualID)
 	}
 
 	var (
@@ -2337,8 +2453,8 @@ func (s *Organizer) walkorganizefolder(
 		return false, "no_match", logger.ErrNotFound
 	}
 
-	if h := mediatype.Get(s.Cfgp.IsType); h != nil {
-		h.SetDBID(m, dbid)
+	if handler != nil {
+		handler.SetDBID(m, dbid)
 	}
 
 	if m.ListID == -1 {
@@ -2363,7 +2479,6 @@ func (s *Organizer) walkorganizefolder(
 	}
 
 	o := Organizerdata{Folder: folder, MediaFile: fpath, Listid: m.ListID, Rootpath: rootpath}
-	h := mediatype.Get(s.Cfgp.IsType)
 
 	err = s.Organize(
 		ctx,
@@ -2397,7 +2512,9 @@ func (s *Organizer) walkorganizefolder(
 		return false, moveReason, nil
 	}
 
-	h.ClearUnmatchedCache(fpath)
+	if handler != nil {
+		handler.ClearUnmatchedCache(fpath)
+	}
 
 	s.cleanUpFolder(folder)
 
@@ -2610,4 +2727,135 @@ func getrootpath(foldername string) string {
 	}
 
 	return root
+}
+
+// OrganizePreview describes where a single media file would be organized to,
+// computed without moving any file or modifying the database.
+type OrganizePreview struct {
+	SourceFile   string `json:"source_file"`
+	TargetFolder string `json:"target_folder"`
+	TargetFile   string `json:"target_file"`
+	Title        string `json:"title"`
+	Year         int    `json:"year"`
+	Season       string `json:"season,omitempty"`
+	Episode      string `json:"episode,omitempty"`
+}
+
+// PreviewOrganizeFile parses a single-file media item (movie, series episode, or
+// book) and computes the folder and filename it would be organized into, without
+// touching the filesystem or writing to the database. It is the single-file
+// counterpart to ForceMatchAlbumFolder's preview mode and mirrors the read-only
+// portion of walkorganizefolder/Organize (no video probe, no deletions).
+func PreviewOrganizeFile(
+	fpath string,
+	cfgp *config.MediaTypeConfig,
+	sourceTemplate, targetTemplate string,
+) (*OrganizePreview, error) {
+	s := NewStructure(cfgp, sourceTemplate, targetTemplate, false, false, 0)
+	if s == nil {
+		return nil, logger.ErrNotFound
+	}
+
+	defer s.Close()
+
+	m := parser_v2.ParseFile(fpath, true, true, cfgp, -1)
+	if m == nil {
+		return nil, logger.ErrNotFound
+	}
+
+	defer m.Close()
+
+	if err := parser.GetDBIDs(m, cfgp, true, false); err != nil {
+		return nil, err
+	}
+
+	handler := mediatype.Get(cfgp.IsType)
+	if handler == nil || !handler.ValidateIDs(m) {
+		return nil, errNoValidIDs
+	}
+
+	handler.SetTempID(m)
+
+	if m.ListID == -1 {
+		m.ListID = database.GetMediaListIDGetListname(cfgp, &m.TempID)
+	}
+
+	if m.ListID < 0 || m.ListID >= len(cfgp.Lists) {
+		return nil, errNoListIDFound
+	}
+
+	var (
+		dbid               uint
+		listname, rootpath string
+	)
+
+	database.GetdatarowArgs(
+		mtstrings.GetStringsMap(cfgp.IsType, "GetOrganizeData"),
+		&m.TempID,
+		&dbid,
+		&rootpath,
+		&listname,
+	)
+
+	if dbid == 0 {
+		return nil, errNoDbidFound
+	}
+
+	handler.SetDBID(m, dbid)
+
+	cfgQuality := cfgp.Lists[m.ListID].CfgQuality
+	parser.GetPriorityMapQual(m, cfgp, cfgQuality, true, true)
+
+	o := Organizerdata{
+		Folder:    filepath.Dir(fpath),
+		MediaFile: fpath,
+		Listid:    m.ListID,
+		Rootpath:  rootpath,
+	}
+
+	// Resolve the naming ID the same way Organize does for each media type.
+	var namingID *uint
+	switch cfgp.IsType {
+	case config.MediaTypeSeries:
+		if err := m.Getepisodestoimport(); err != nil {
+			return nil, err
+		}
+
+		if len(m.Episodes) == 0 {
+			return nil, logger.ErrNotFoundEpisode
+		}
+
+		namingID = &m.Episodes[0].Num1
+
+	case config.MediaTypeMovie:
+		namingID = &m.DbmovieID
+
+	case config.MediaTypeBook:
+		namingID = &m.DbbookID
+
+	default:
+		namingID = &dbid
+	}
+
+	s.GenerateNamingTemplate(&o, m, namingID)
+
+	if o.Filename == "" {
+		return nil, errGeneratingFilename
+	}
+
+	// Compute the target folder identically to moveMediaFile.
+	target := filepath.Join(s.targetpathCfg.Path, o.Foldername)
+	if o.Rootpath != "" && o.Rootpath != s.targetpathCfg.Path {
+		target = filepath.Join(o.Rootpath, o.Foldername)
+	}
+
+	return &OrganizePreview{
+		SourceFile:   fpath,
+		TargetFolder: target,
+		TargetFile:   o.Filename,
+		Title:        m.Title,
+		Year:         int(m.Year),
+		Season:       m.SeasonStr,
+		Episode:      m.EpisodeStr,
+	}, nil
 }

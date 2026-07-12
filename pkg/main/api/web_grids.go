@@ -16,7 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	htmx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
@@ -92,8 +92,85 @@ func renderQueuePage(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// renderQueueGrid creates a grid showing active queue items.
+// renderQueuePartial returns just the live queue card fragment for HTMX polling.
+func renderQueuePartial(ctx *gin.Context) {
+	var buf strings.Builder
+	renderQueueCard().Render(&buf)
+	ctx.Header("Content-Type", "text/html; charset=utf-8")
+	ctx.String(http.StatusOK, buf.String())
+}
+
+// renderQueueGrid creates the queue monitoring page: a static header plus a
+// live region that is refreshed in place via HTMX (no full-page reload).
 func renderQueueGrid() gomponents.Node {
+	return html.Div(
+		html.Class("config-section-enhanced"),
+		queueHeader(),
+		html.Div(
+			html.ID("queue-refresh-region"),
+			renderQueueCard(),
+		),
+		queueScript(),
+	)
+}
+
+// queueHeader renders the static page header with manual refresh / pause controls.
+func queueHeader() gomponents.Node {
+	return html.Div(
+		html.Class("page-header-enhanced"),
+		html.Div(
+			html.Class("header-content"),
+			html.Div(
+				html.Class("header-icon-wrapper"),
+				html.I(
+					html.Class("fas fa-tasks header-icon"),
+					gomponents.Attr("aria-hidden", "true"),
+				),
+			),
+			html.Div(
+				html.Class("header-text"),
+				html.H2(html.Class("header-title"), gomponents.Text("Queue Monitor")),
+				html.P(
+					html.Class("header-subtitle"),
+					gomponents.Text(
+						"Real-time monitoring of active job queues and background tasks",
+					),
+				),
+			),
+			html.Div(
+				html.Class("ms-auto d-flex align-items-center gap-2"),
+				html.Button(
+					html.Type("button"),
+					html.ID("queue-pause-btn"),
+					html.Class("btn btn-outline-secondary btn-sm"),
+					gomponents.Attr("aria-label", "Pause automatic queue refresh"),
+					html.I(
+						html.Class("fas fa-pause me-1"),
+						gomponents.Attr("aria-hidden", "true"),
+					),
+					html.Span(html.ID("queue-pause-label"), gomponents.Text("Pause")),
+				),
+				html.Button(
+					html.Type("button"),
+					html.Class("btn btn-outline-secondary btn-sm"),
+					gomponents.Attr("aria-label", "Refresh queue now"),
+					htmx.Get("/api/admin/queue/partial"),
+					htmx.Target("#queue-refresh-region"),
+					htmx.Swap("innerHTML"),
+					html.I(
+						html.Class("fas fa-sync-alt me-1"),
+						gomponents.Attr("aria-hidden", "true"),
+					),
+					gomponents.Text("Refresh"),
+				),
+			),
+		),
+	)
+}
+
+// renderQueueCard renders the live data card. It is the fragment returned by the
+// HTMX partial endpoint and swapped into #queue-refresh-region on each poll.
+func renderQueueCard() gomponents.Node {
 	queueData := make([]map[string]any, 0, len(worker.GetQueues()))
 
 	for i, value := range worker.GetQueues() {
@@ -156,213 +233,205 @@ func renderQueueGrid() gomponents.Node {
 					html.Style("border-radius: 20px; padding: 0.4rem 1rem;"),
 					html.Type("button"),
 					html.Data("queue-id", fmt.Sprintf("%v", item["id"])),
-					html.I(html.Class("fas fa-times me-1")),
+					gomponents.Attr("aria-label", fmt.Sprintf("Cancel job #%v", item["id"])),
+					html.I(
+						html.Class("fas fa-times me-1"),
+						gomponents.Attr("aria-hidden", "true"),
+					),
 					gomponents.Text("Cancel"),
 				),
 			),
 		))
 	}
 
-	if len(rows) == 0 {
-		rows = append(rows, html.Tr(
-			html.Td(
-				html.ColSpan("6"),
-				html.Class("text-center text-muted p-5"),
-				html.I(
-					html.Class("fas fa-inbox mb-3"),
-					html.Style("font-size: 4rem; color: #dee2e6;"),
-				),
-				html.Div(
-					html.H5(
-						html.Class("text-muted mb-2"),
-						gomponents.Text("No Active Queue Items"),
-					),
-					html.P(
-						html.Class("text-muted mb-0"),
-						gomponents.Text("All background tasks have completed successfully"),
-					),
-				),
-			),
-		))
-	}
-
 	return html.Div(
-		html.Class("config-section-enhanced"),
-		// Enhanced page header with gradient background
+		html.Class("row"),
 		html.Div(
-			html.Class("page-header-enhanced"),
+			html.Class("col-12"),
 			html.Div(
-				html.Class("header-content"),
+				html.Class("card border-0 shadow-sm"),
+				html.Style("border-radius: 15px; overflow: hidden;"),
 				html.Div(
-					html.Class("header-icon-wrapper"),
-					html.I(html.Class("fas fa-tasks header-icon")),
-				),
-				html.Div(
-					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Queue Monitor")),
-					html.P(
-						html.Class("header-subtitle"),
-						gomponents.Text(
-							"Real-time monitoring of active job queues and background tasks",
-						),
+					html.Class("card-header border-0"),
+					html.Style(
+						"background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%); padding: 1.5rem;",
 					),
-				),
-			),
-		),
-
-		html.Div(
-			html.Class("row"),
-			html.Div(
-				html.Class("col-12"),
-				html.Div(
-					html.Class("card border-0 shadow-sm"),
-					html.Style("border-radius: 15px; overflow: hidden;"),
 					html.Div(
-						html.Class("card-header border-0"),
-						html.Style(
-							"background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%); padding: 1.5rem;",
+						html.Class("d-flex align-items-center justify-content-between"),
+						html.Div(
+							html.Class("d-flex align-items-center"),
+							html.I(
+								html.Class("fas fa-list-alt me-2"),
+								html.Style("color: #6c757d; font-size: 1.2rem;"),
+							),
+							html.H5(
+								html.Class("card-title mb-0"),
+								html.Style("color: #495057; font-weight: 600;"),
+								gomponents.Text("Active Queue Items"),
+							),
 						),
 						html.Div(
-							html.Class("d-flex align-items-center justify-content-between"),
-							html.Div(
-								html.Class("d-flex align-items-center"),
-								html.I(
-									html.Class("fas fa-list-alt me-2"),
-									html.Style("color: #6c757d; font-size: 1.2rem;"),
-								),
-								html.H5(
-									html.Class("card-title mb-0"),
-									html.Style("color: #495057; font-weight: 600;"),
-									gomponents.Text("Active Queue Items"),
-								),
+							html.Class("badge badge-primary px-3 py-2"),
+							html.Style(
+								"background: linear-gradient(45deg, #007bff, #0056b3); border-radius: 20px;",
 							),
-							html.Div(
-								html.Class("badge badge-primary px-3 py-2"),
-								html.Style(
-									"background: linear-gradient(45deg, #007bff, #0056b3); border-radius: 20px;",
-								),
-								html.I(html.Class("fas fa-clock me-1")),
-								gomponents.Text(fmt.Sprintf("%d Active", len(queueData))),
-							),
+							html.I(html.Class("fas fa-clock me-1")),
+							gomponents.Text(fmt.Sprintf("%d Active", len(queueData))),
 						),
 					),
-					html.Div(
-						html.Class("card-body p-0"),
-						func() gomponents.Node {
-							if len(rows) == 0 || (len(rows) == 1 && len(queueData) == 0) {
-								return html.Div(
-									html.Class("text-center p-5"),
-									html.I(
-										html.Class("fas fa-inbox mb-3"),
-										html.Style("font-size: 4rem; color: #dee2e6;"),
-									),
-									html.H5(
-										html.Class("text-muted mb-2"),
-										gomponents.Text("No Active Queue Items"),
-									),
-									html.P(
-										html.Class("text-muted mb-0"),
-										gomponents.Text(
-											"All background tasks have completed successfully",
-										),
-									),
-								)
-							}
-
+				),
+				html.Div(
+					html.Class("card-body p-0"),
+					func() gomponents.Node {
+						if len(rows) == 0 {
 							return html.Div(
-								html.Class("table-responsive"),
-								html.Table(
-									html.Class("table table-hover mb-0"),
-									html.Style("background: transparent;"),
-									html.THead(
-										html.Class("table-light"),
-										html.Tr(
-											html.Th(
-												html.Style(
-													"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
-												),
-												gomponents.Text("ID"),
-											),
-											html.Th(
-												html.Style(
-													"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
-												),
-												gomponents.Text("Queue"),
-											),
-											html.Th(
-												html.Style(
-													"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
-												),
-												gomponents.Text("Job"),
-											),
-											html.Th(
-												html.Style(
-													"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
-												),
-												gomponents.Text("Added"),
-											),
-											html.Th(
-												html.Style(
-													"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
-												),
-												gomponents.Text("Started"),
-											),
-											html.Th(
-												html.Style(
-													"border-top: none; color: #495057; font-weight: 600; padding: 1rem; text-align: center;",
-												),
-												gomponents.Text("Actions"),
-											),
-										),
-									),
-									html.TBody(
-										rows...,
+								html.Class("text-center p-5"),
+								html.I(
+									html.Class("fas fa-inbox mb-3"),
+									html.Style("font-size: 4rem; color: #dee2e6;"),
+								),
+								html.H5(
+									html.Class("text-muted mb-2"),
+									gomponents.Text("No Active Queue Items"),
+								),
+								html.P(
+									html.Class("text-muted mb-0"),
+									gomponents.Text(
+										"All background tasks have completed successfully",
 									),
 								),
 							)
-						}(),
-					),
+						}
+
+						return html.Div(
+							html.Class("table-responsive"),
+							html.Table(
+								html.Class("table table-hover mb-0"),
+								html.Style("background: transparent;"),
+								html.THead(
+									html.Class("table-light"),
+									html.Tr(
+										html.Th(
+											gomponents.Attr("scope", "col"),
+											html.Style(
+												"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
+											),
+											gomponents.Text("ID"),
+										),
+										html.Th(
+											gomponents.Attr("scope", "col"),
+											html.Style(
+												"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
+											),
+											gomponents.Text("Queue"),
+										),
+										html.Th(
+											gomponents.Attr("scope", "col"),
+											html.Style(
+												"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
+											),
+											gomponents.Text("Job"),
+										),
+										html.Th(
+											gomponents.Attr("scope", "col"),
+											html.Style(
+												"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
+											),
+											gomponents.Text("Added"),
+										),
+										html.Th(
+											gomponents.Attr("scope", "col"),
+											html.Style(
+												"border-top: none; color: #495057; font-weight: 600; padding: 1rem;",
+											),
+											gomponents.Text("Started"),
+										),
+										html.Th(
+											gomponents.Attr("scope", "col"),
+											html.Style(
+												"border-top: none; color: #495057; font-weight: 600; padding: 1rem; text-align: center;",
+											),
+											gomponents.Text("Actions"),
+										),
+									),
+								),
+								html.TBody(
+									rows...,
+								),
+							),
+						)
+					}(),
 				),
 			),
 		),
-		html.Script(
-			gomponents.Raw(`
-				// Auto-refresh every 10 seconds
-				setInterval(function() {
-					window.location.reload();
-				}, 10000);
-				
-				// Handle cancel button clicks
-				document.addEventListener('click', function(e) {
-					if (e.target.classList.contains('cancel-queue-btn')) {
-						const queueId = e.target.getAttribute('data-queue-id');
-						if (confirm('Are you sure you want to cancel this job?')) {
-							fetch('/api/queue/cancel/' + queueId + '?apikey=' + encodeURIComponent('`+config.GetSettingsGeneral().WebAPIKey+`'), {
-								method: 'DELETE',
-								headers: {
-									'Content-Type': 'application/json',
-									'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-								}
-							})
-							.then(response => response.json())
-							.then(data => {
-								if (data.success) {
-									// Refresh the page to show updated queue
-									window.location.reload();
-								} else {
-									alert('Failed to cancel job: ' + (data.error || 'Unknown error'));
-								}
-							})
-							.catch(error => {
-								console.error('Error:', error);
-								alert('Error canceling job: ' + error.message);
-							});
-						}
+	)
+}
+
+// queueScript wires up HTMX-based live refresh (with pause/resume) and the
+// cancel-job action, replacing the previous full-page reload.
+func queueScript() gomponents.Node {
+	return html.Script(gomponents.Raw(`
+		(function() {
+			var REGION = '#queue-refresh-region';
+			var INTERVAL = 10000;
+			var paused = false;
+
+			function poll() {
+				if (paused) return;
+				if (document.querySelector(REGION) && window.htmx) {
+					htmx.ajax('GET', '/api/admin/queue/partial', {target: REGION, swap: 'innerHTML'});
+				}
+			}
+			setInterval(poll, INTERVAL);
+
+			var pauseBtn = document.getElementById('queue-pause-btn');
+			if (pauseBtn) {
+				pauseBtn.addEventListener('click', function() {
+					paused = !paused;
+					var label = document.getElementById('queue-pause-label');
+					var icon = pauseBtn.querySelector('i');
+					if (paused) {
+						if (label) label.textContent = 'Resume';
+						if (icon) icon.className = 'fas fa-play me-1';
+						pauseBtn.setAttribute('aria-label', 'Resume automatic queue refresh');
+					} else {
+						if (label) label.textContent = 'Pause';
+						if (icon) icon.className = 'fas fa-pause me-1';
+						pauseBtn.setAttribute('aria-label', 'Pause automatic queue refresh');
+						poll();
 					}
 				});
-			`),
-		),
-	)
+			}
+
+			// Cancel job (event-delegated so it survives partial swaps).
+			document.addEventListener('click', function(e) {
+				var btn = e.target.closest ? e.target.closest('.cancel-queue-btn') : null;
+				if (!btn) return;
+				var queueId = btn.getAttribute('data-queue-id');
+				confirmAction('Cancel this job?', 'This will remove the job from the active queue.', function() {
+					fetch('/api/queue/cancel/' + queueId + '?apikey=' + encodeURIComponent('` + config.GetSettingsGeneral().WebAPIKey + `'), {
+						method: 'DELETE',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+						}
+					})
+					.then(function(r){ return r.json(); })
+					.then(function(data){
+						if (data.success) {
+							showToaster('success', 'Job cancelled');
+							poll();
+						} else {
+							showToaster('error', 'Failed to cancel job: ' + (data.error || 'Unknown error'));
+						}
+					})
+					.catch(function(err){
+						showToaster('error', 'Error canceling job: ' + err.message);
+					});
+				});
+			});
+		})();
+	`))
 }
 
 // renderSchedulerPage renders the scheduler monitoring page.
@@ -377,7 +446,7 @@ func renderSchedulerPage(ctx *gin.Context) {
 
 // renderSchedulerGrid creates a grid showing scheduler status.
 func renderSchedulerGrid() gomponents.Node {
-	var schedulerData []map[string]any
+	schedulerData := make([]map[string]any, 0, len(worker.GetSchedules()))
 
 	for i, value := range worker.GetSchedules() {
 		schedulerData = append(schedulerData, map[string]any{
@@ -628,8 +697,6 @@ func renderStatsPage(ctx *gin.Context) {
 }
 
 func renderStatsGrid() gomponents.Node {
-	var statsData []map[string]any
-
 	id := 0
 
 	movieLists := database.GetrowsN[string](
@@ -637,6 +704,14 @@ func renderStatsGrid() gomponents.Node {
 		5,
 		"select distinct listname from movies where listname is not null and listname != ''",
 	)
+	seriesLists := database.GetrowsN[string](
+		false,
+		5,
+		"select distinct listname from series where listname is not null and listname != ''",
+	)
+
+	statsData := make([]map[string]any, 0, len(movieLists)+len(seriesLists))
+
 	for idx := range movieLists {
 		all := database.Getdatarow[uint](
 			false,
@@ -671,11 +746,6 @@ func renderStatsGrid() gomponents.Node {
 		id++
 	}
 
-	seriesLists := database.GetrowsN[string](
-		false,
-		5,
-		"select distinct listname from series where listname is not null and listname != ''",
-	)
 	for idx := range seriesLists {
 		all := database.Getdatarow[uint](
 			false,
@@ -1206,18 +1276,18 @@ func renderCustomFilters(tableName string) gomponents.Node {
 	if len(filterFields) == 0 {
 		switch tableName {
 		case "movies":
-			var qualoptions []gomponents.Node
+			qualityConfigs := config.GetSettingsQualityAll()
+			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
 
 			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
 			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
 			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
 
-			qualityConfigs := config.GetSettingsQualityAll()
 			for _, qc := range qualityConfigs {
 				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
 			}
 
-			var listoptions []gomponents.Node
+			listoptions := make([]gomponents.Node, 0, 3+len(config.GetSettingsMediaListAll()))
 
 			listoptions = append(listoptions, html.Class("form-control custom-filter"))
 			listoptions = append(listoptions, html.ID("filter-listname"))
@@ -1277,7 +1347,7 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			}
 
 		case "series":
-			var listoptions []gomponents.Node
+			listoptions := make([]gomponents.Node, 0, 3+len(config.GetSettingsMediaListAll()))
 
 			listoptions = append(listoptions, html.Class("form-control custom-filter"))
 			listoptions = append(listoptions, html.ID("filter-listname"))
@@ -1345,13 +1415,13 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			}
 
 		case "movie_files", "serie_episode_files":
-			var qualoptions []gomponents.Node
+			qualityConfigs := config.GetSettingsQualityAll()
+			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
 
 			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
 			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
 			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
 
-			qualityConfigs := config.GetSettingsQualityAll()
 			for _, qc := range qualityConfigs {
 				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
 			}
@@ -1434,13 +1504,13 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			}
 
 		case "serie_episodes":
-			var qualoptions []gomponents.Node
+			qualityConfigs := config.GetSettingsQualityAll()
+			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
 
 			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
 			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
 			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
 
-			qualityConfigs := config.GetSettingsQualityAll()
 			for _, qc := range qualityConfigs {
 				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
 			}
@@ -1545,13 +1615,13 @@ func renderCustomFilters(tableName string) gomponents.Node {
 			}
 
 		case "movie_histories":
-			var qualoptions []gomponents.Node
+			qualityConfigs := config.GetSettingsQualityAll()
+			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
 
 			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
 			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
 			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
 
-			qualityConfigs := config.GetSettingsQualityAll()
 			for _, qc := range qualityConfigs {
 				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
 			}
@@ -1698,6 +1768,25 @@ func renderCustomFilters(tableName string) gomponents.Node {
 		),
 		html.Script(gomponents.Raw(`
 			$(document).ready(function() {
+				var FILTER_KEY = 'tableFilters_`+tableName+`';
+				function saveFilters() {
+					var data = {};
+					$('.custom-filter').each(function(){ if (this.id) data[this.id] = $(this).val(); });
+					try { localStorage.setItem(FILTER_KEY, JSON.stringify(data)); } catch(e){}
+				}
+				// Restore previously used filter values for this table.
+				try {
+					var savedFilters = JSON.parse(localStorage.getItem(FILTER_KEY) || '{}');
+					var restoredAny = false;
+					$('.custom-filter').each(function(){
+						if (this.id && savedFilters[this.id]) { $(this).val(savedFilters[this.id]); restoredAny = true; }
+					});
+					if (restoredAny) {
+						$('#filters-content').addClass('show');
+						$('[data-bs-target="#filters-content"]').attr('aria-expanded', 'true');
+					}
+				} catch(e){}
+
 				// Restore filter state from localStorage using Bootstrap collapse
 				if (localStorage.getItem('filtersCollapsed') === 'false') {
 					$('#filters-content').addClass('show');
@@ -1735,22 +1824,25 @@ func renderCustomFilters(tableName string) gomponents.Node {
 				
 				// Apply filters button
 				$('#apply-filters').click(function() {
+					saveFilters();
 					if (typeof oTable !== 'undefined') {
 						oTable.ajax.reload();
 					}
 				});
-				
+
 				// Clear filters button
 				$('#clear-filters').click(function() {
 					$('.custom-filter').val('');
+					saveFilters();
 					if (typeof oTable !== 'undefined') {
 						oTable.ajax.reload();
 					}
 				});
-				
+
 				// Apply filters on Enter key
 				$('.custom-filter').keypress(function(e) {
 					if (e.which === 13) {
+						saveFilters();
 						if (typeof oTable !== 'undefined') {
 							oTable.ajax.reload();
 						}
@@ -1907,51 +1999,51 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 										var id = row[0]; // Assuming ID is first column
 										var tableName = '%s';
 										var buttons = '<div class="d-flex gap-1 justify-content-center">' +
-											'<button class="btn-action-edit" data-id="' + id + '" data-bs-toggle="modal" data-bs-target="#editFormModal" title="Edit"><i class="fa fa-edit"></i></button>' +
-											'<button class="btn-action-delete" data-id="' + id + '" title="Delete"><i class="fa fa-trash"></i></button>';
+											'<button class="btn-action-edit" data-id="' + id + '" data-bs-toggle="modal" data-bs-target="#editFormModal" aria-label="Edit" title="Edit"><i aria-hidden="true" class="fa fa-edit"></i></button>' +
+											'<button class="btn-action-delete" data-id="' + id + '" aria-label="Delete" title="Delete"><i aria-hidden="true" class="fa fa-trash"></i></button>';
 
 										// Add table-specific buttons
 										if (tableName === 'movies') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="imdb" title="Search by IMDB"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" title="Search by Title"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search" data-id="' + id + '" data-search-type="imdb" aria-label="Search by IMDB" title="Search by IMDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'serie_episodes') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="tvdb" title="Search by TVDB"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" title="Search by Title"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search" data-id="' + id + '" data-search-type="tvdb" aria-label="Search by TVDB" title="Search by TVDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'dbmovies') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbseries') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbalbums') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbaudiobooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbbooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'albums') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" title="Search List"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'audiobooks') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" title="Search List"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'books') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" title="Search List"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'dbartists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" title="View Albums"><i class="fa fa-list"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>';
 										} else if (tableName === 'artists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" title="View Albums"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" title="Search Missing Albums"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-discover-series" data-id="' + id + '" title="Discover Series Albums"><i class="fa fa-layer-group"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" aria-label="Search Missing Albums" title="Search Missing Albums"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-discover-series" data-id="' + id + '" aria-label="Discover Series Albums" title="Discover Series Albums"><i aria-hidden="true" class="fa fa-layer-group"></i></button>';
 										} else if (tableName === 'dbauthors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" title="View Books"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>';
 										} else if (tableName === 'authors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" title="View Books"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" title="Search Missing Books"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" title="Search Missing Audiobooks"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" aria-label="Search Missing Books" title="Search Missing Books"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" aria-label="Search Missing Audiobooks" title="Search Missing Audiobooks"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										}
 
 										buttons += '</div>';
@@ -2066,51 +2158,51 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 										var id = row[0];
 										var tableName = '%s';
 										var buttons = '<div class="d-flex gap-1 justify-content-center">' +
-											   '<button class="btn-action-edit" data-id="' + id + '" data-bs-toggle="modal" data-bs-target="#editFormModal" title="Edit"><i class="fa fa-edit"></i></button>' +
-											   '<button class="btn-action-delete" data-id="' + id + '" title="Delete"><i class="fa fa-trash"></i></button>';
+											   '<button class="btn-action-edit" data-id="' + id + '" data-bs-toggle="modal" data-bs-target="#editFormModal" aria-label="Edit" title="Edit"><i aria-hidden="true" class="fa fa-edit"></i></button>' +
+											   '<button class="btn-action-delete" data-id="' + id + '" aria-label="Delete" title="Delete"><i aria-hidden="true" class="fa fa-trash"></i></button>';
 
 										// Add table-specific buttons
 										if (tableName === 'movies') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="imdb" title="Search by IMDB"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" title="Search by Title"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search" data-id="' + id + '" data-search-type="imdb" aria-label="Search by IMDB" title="Search by IMDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'serie_episodes') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="tvdb" title="Search by TVDB"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" title="Search by Title"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search" data-id="' + id + '" data-search-type="tvdb" aria-label="Search by TVDB" title="Search by TVDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'dbmovies') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbseries') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbalbums') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbaudiobooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'dbbooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" title="Refresh Metadata"><i class="fa fa-sync"></i></button>';
+											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
 										} else if (tableName === 'albums') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" title="Search List"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'audiobooks') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" title="Search List"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'books') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" title="View Files"><i class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" title="Search List"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
+												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										} else if (tableName === 'dbartists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" title="View Albums"><i class="fa fa-list"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>';
 										} else if (tableName === 'artists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" title="View Albums"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" title="Search Missing Albums"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-discover-series" data-id="' + id + '" title="Discover Series Albums"><i class="fa fa-layer-group"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" aria-label="Search Missing Albums" title="Search Missing Albums"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-discover-series" data-id="' + id + '" aria-label="Discover Series Albums" title="Discover Series Albums"><i aria-hidden="true" class="fa fa-layer-group"></i></button>';
 										} else if (tableName === 'dbauthors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" title="View Books"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>';
 										} else if (tableName === 'authors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" title="View Books"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" title="View Audiobooks"><i class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" title="Search Missing Books"><i class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" title="Search Missing Audiobooks"><i class="fa fa-search-plus"></i></button>';
+											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" aria-label="Search Missing Books" title="Search Missing Books"><i aria-hidden="true" class="fa fa-search"></i></button>' +
+												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" aria-label="Search Missing Audiobooks" title="Search Missing Audiobooks"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
 										}
 
 										buttons += '</div>';
@@ -2318,7 +2410,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 					// Handle Delete button clicks
 					$(document).on('click', '.btn-action-delete', function() {
 						var id = $(this).data('id');
-						if (confirm('⚠️ Are you sure you want to permanently delete this record?\n\nThis action cannot be undone.')) {
+						confirmAction('Please confirm', '⚠️ Are you sure you want to permanently delete this record?\n\nThis action cannot be undone.', function() {
 							$.ajax({
 								url: '/api/admin/table/%s/delete/' + id + '?apikey=%s',
 								type: 'POST',
@@ -2333,7 +2425,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 									alert('Error deleting record');
 								}
 							});
-						}
+						})
 					});
 
 					// Handle Files button clicks
@@ -2358,7 +2450,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						var id = $(this).data('id');
 						var tableName = '%s';
 						if (tableName === 'movies') {
-							if (confirm('Start search for this movie by IMDB ID?')) {
+							confirmAction('Please confirm', 'Start search for this movie by IMDB ID?', function() {
 								$.ajax({
 									url: '/api/movies/search/list/' + id + '?apikey=%s&searchByTitle=false&download=true',
 									type: 'GET',
@@ -2376,9 +2468,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 									}
 								});
-							}
+							})
 						} else if (tableName === 'serie_episodes') {
-							if (confirm('Start search for this episode by TVDB ID?')) {
+							confirmAction('Please confirm', 'Start search for this episode by TVDB ID?', function() {
 								$.ajax({
 									url: '/api/series/episodes/search/list/' + id + '?apikey=%s&searchByTitle=false&download=true',
 									type: 'GET',
@@ -2396,7 +2488,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 									}
 								});
-							}
+							})
 						}
 					});
 
@@ -2405,7 +2497,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						var id = $(this).data('id');
 						var tableName = '%s';
 						if (tableName === 'movies') {
-							if (confirm('Start search for this movie by Title?')) {
+							confirmAction('Please confirm', 'Start search for this movie by Title?', function() {
 								$.ajax({
 									url: '/api/movies/search/list/' + id + '?apikey=%s&searchByTitle=true&download=true',
 									type: 'GET',
@@ -2423,9 +2515,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 									}
 								});
-							}
+							})
 						} else if (tableName === 'serie_episodes') {
-							if (confirm('Start search for this episode by Title?')) {
+							confirmAction('Please confirm', 'Start search for this episode by Title?', function() {
 								$.ajax({
 									url: '/api/series/episodes/search/list/' + id + '?apikey=%s&searchByTitle=true&download=true',
 									type: 'GET',
@@ -2443,7 +2535,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 									}
 								});
-							}
+							})
 						}
 					});
 
@@ -2452,7 +2544,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						var dbId = $(this).data('id');
 						var type = $(this).data('type');
 
-						if (confirm('Refresh metadata for this ' + type + '?')) {
+						confirmAction('Please confirm', 'Refresh metadata for this ' + type + '?', function() {
 							if (type === 'album' || type === 'audiobook' || type === 'book') {
 								// Bulk refresh job (no per-record endpoint for these types)
 								var jobUrl = '';
@@ -2503,7 +2595,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 									}
 								});
 							}
-						}
+						})
 					});
 
 					// Handle Search List button clicks (albums, audiobooks, books)
@@ -2521,7 +2613,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 							return;
 						}
 						var listname = row[listIdx];
-						if (confirm('Start search for ' + media + ' list "' + listname + '"?')) {
+						confirmAction('Please confirm', 'Start search for ' + media + ' list "' + listname + '"?', function() {
 							$.ajax({
 								url: '/api/' + media + '/search/list/' + listname + '?apikey=%s',
 								type: 'GET',
@@ -2534,7 +2626,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 									alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 								}
 							});
-						}
+						})
 					});
 
 					// Handle List Sub button clicks (artists/authors -> albums/books/audiobooks)
@@ -2561,7 +2653,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 							return;
 						}
 						var listname = row[listIdx];
-						if (confirm('Search missing ' + media + ' for ' + endpoint + ' in list "' + listname + '"?')) {
+						confirmAction('Please confirm', 'Search missing ' + media + ' for ' + endpoint + ' in list "' + listname + '"?', function() {
 							$.ajax({
 								url: '/api/' + media + '/search/' + endpoint + '/missing/' + listname + '?apikey=%s',
 								type: 'GET',
@@ -2574,13 +2666,13 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 									alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
 								}
 							});
-						}
+						})
 					});
 
 					// Handle Discover Series Albums button clicks
 					$(document).on('click', '.btn-action-discover-series', function() {
 						var id = $(this).data('id');
-						if (confirm('Discover and import series albums for artist #' + id + '?')) {
+						confirmAction('Please confirm', 'Discover and import series albums for artist #' + id + '?', function() {
 							$.ajax({
 								url: '/api/music/discover/series/artist/' + id + '?apikey=%s',
 								type: 'GET',
@@ -2592,7 +2684,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 									alert('Error: ' + (xhr.responseText || 'Unknown error'));
 								}
 							});
-						}
+						})
 					});
 					`, tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, "", tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey)),
 			),
@@ -2626,7 +2718,7 @@ func generateFormField(col, fieldName, displayName string, fieldData any) gompon
 			"",
 			displayName, fieldName, "text", val, nil)
 
-	case int:
+	case int, int64, uint, uint8, uint16, uint32, uint64:
 		// Check if this should be a checkbox (boolean field stored as int)
 		if isCheckboxFieldRefactored(col) {
 			checked := parseCheckboxValue(fmt.Sprintf("%v", fieldData))
@@ -2638,6 +2730,22 @@ func generateFormField(col, fieldName, displayName string, fieldData any) gompon
 		return RenderFormGroup("",
 			"",
 			displayName, fieldName, "number", fmt.Sprintf("%v", fieldData), nil)
+
+	case float64, float32:
+		return RenderFormGroup("",
+			"",
+			displayName, fieldName, "number", fmt.Sprintf("%v", fieldData), nil)
+
+	case []byte:
+		// modernc/sqlite can return BLOB-affinity columns as raw bytes.
+		return RenderFormGroup("",
+			"",
+			displayName, fieldName, "text", string(val), nil)
+
+	case nil:
+		return RenderFormGroup("",
+			"",
+			displayName, fieldName, "text", "", nil)
 
 	case time.Time:
 		valformat := val.Format("2006-01-02")
@@ -3411,7 +3519,7 @@ func createArrayInput(
 		values = nil
 	}
 
-	var nodes []gomponents.Node
+	nodes := make([]gomponents.Node, 0, len(values)+1)
 
 	for _, v := range values {
 		nodes = append(nodes, createArrayRow(id, classelement, fieldTypeText, v, addDetails))
@@ -3436,7 +3544,7 @@ func createArrayIntInput(
 		values = nil
 	}
 
-	var nodes []gomponents.Node
+	nodes := make([]gomponents.Node, 0, len(values)+1)
 
 	for _, v := range values {
 		nodes = append(
@@ -3523,7 +3631,7 @@ func createArraySelectArrayInput(
 		values = nil
 	}
 
-	var nodes []gomponents.Node
+	nodes := make([]gomponents.Node, 0, len(values)+1)
 
 	for _, v := range values {
 		nodes = append(nodes, createArraySelectRow(id, v, options, addDetails))

@@ -64,18 +64,18 @@ func NewProvider(
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
 	return apiexternal_v2.NotificationSendmail
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "sendmail"
 }
 
 // SendNotification sends an email notification.
 func (p *Provider) SendNotification(
-	ctx context.Context,
+	_ context.Context,
 	request apiexternal_v2.NotificationRequest,
 ) (*apiexternal_v2.NotificationResponse, error) {
 	recipients := p.to
@@ -124,7 +124,7 @@ func (p *Provider) SendNotification(
 }
 
 // TestConnection validates the SMTP server connection.
-func (p *Provider) TestConnection(ctx context.Context) error {
+func (p *Provider) TestConnection(_ context.Context) error {
 	// Try to connect to SMTP server
 	client, err := smtp.Dial(fmt.Sprintf("%s:%d", p.smtpHost, p.smtpPort))
 	if err != nil {

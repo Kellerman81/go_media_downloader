@@ -23,13 +23,29 @@ import (
 func renderNamingTestPage(csrfToken string) gomponents.Node {
 	media := config.GetSettingsMediaAll()
 
-	lists := make([]string, 0, len(media.Movies)+len(media.Series))
+	lists := make(
+		[]string,
+		0,
+		len(media.Movies)+len(media.Series)+len(media.Music)+len(media.Books)+len(media.AudioBooks),
+	)
 	for i := range media.Movies {
 		lists = append(lists, media.Movies[i].NamePrefix)
 	}
 
 	for i := range media.Series {
 		lists = append(lists, media.Series[i].NamePrefix)
+	}
+
+	for i := range media.Music {
+		lists = append(lists, media.Music[i].NamePrefix)
+	}
+
+	for i := range media.Books {
+		lists = append(lists, media.Books[i].NamePrefix)
+	}
+
+	for i := range media.AudioBooks {
+		lists = append(lists, media.AudioBooks[i].NamePrefix)
 	}
 
 	return html.Div(
@@ -71,11 +87,11 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 					),
 
 					renderFormGroup("naming", map[string]string{
-						"MediaType": "Select whether you're testing movie or TV series naming",
+						"MediaType": "Select the media type whose naming you want to test",
 					}, map[string]string{
 						"MediaType": "Media Type",
 					}, "MediaType", "select", "movie", map[string][]string{
-						"options": {"movie", "serie"},
+						"options": {"movie", "serie", "book", "audiobook", "music"},
 					}),
 
 					renderFormGroup("naming", map[string]string{
@@ -124,6 +140,36 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 						}, map[string]string{
 							"SerieID": "Series ID",
 						}, "SerieID", "number", "1", nil),
+					),
+
+					html.Div(
+						html.ID("bookFields"),
+						html.Style("display: none;"),
+						renderFormGroup("naming", map[string]string{
+							"BookID": "Enter the database ID of an existing book (books.id)",
+						}, map[string]string{
+							"BookID": "Book ID",
+						}, "BookID", "number", "1", nil),
+					),
+
+					html.Div(
+						html.ID("audiobookFields"),
+						html.Style("display: none;"),
+						renderFormGroup("naming", map[string]string{
+							"AudiobookID": "Enter the database ID of an existing audiobook (audiobooks.id)",
+						}, map[string]string{
+							"AudiobookID": "Audiobook ID",
+						}, "AudiobookID", "number", "1", nil),
+					),
+
+					html.Div(
+						html.ID("musicFields"),
+						html.Style("display: none;"),
+						renderFormGroup("naming", map[string]string{
+							"AlbumID": "Enter the database ID of an existing album (albums.id)",
+						}, map[string]string{
+							"AlbumID": "Album ID",
+						}, "AlbumID", "number", "1", nil),
 					),
 				),
 			),
@@ -237,12 +283,114 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 			),
 		),
 
-		// JavaScript for toggling fields
-		// Simplified JavaScript for Naming - CSS classes handle field visibility
+		// Toggle which ID field is shown based on the selected media type.
 		html.Script(gomponents.Raw(`
-			// No JavaScript needed - CSS classes handle movie/series field visibility
+			(function(){
+				function show(id,on){var e=document.getElementById(id); if(e) e.style.display = on ? '' : 'none';}
+				function upd(){
+					var sel=document.getElementById('naming_MediaType'); if(!sel) return;
+					var t=sel.value;
+					show('movieFields', t==='movie');
+					show('serieFields', t==='serie');
+					show('bookFields', t==='book');
+					show('audiobookFields', t==='audiobook');
+					show('musicFields', t==='music');
+				}
+				var sel=document.getElementById('naming_MediaType');
+				if(sel){ sel.addEventListener('change', upd); upd(); }
+				else { document.addEventListener('DOMContentLoaded', function(){ var s=document.getElementById('naming_MediaType'); if(s){ s.addEventListener('change', upd); upd(); } }); }
+			})();
 		`)),
 	)
+}
+
+// namingTestByDBID previews the generated folder/filename for a book, audiobook
+// or album. It resolves the per-list row (perListTable.id) to its db id, runs the
+// shared structure naming template against the sample file path, and renders the
+// result. All three types use GenerateNamingTemplate keyed by their db id.
+func namingTestByDBID(c *gin.Context, cfg apiNameInput, idStr, perListTable, fkColumn string) {
+	if idStr == "" {
+		c.String(200, renderAlert("Please enter an ID", "warning"))
+		return
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.String(200, renderAlert("Invalid ID: "+idStr, "danger"))
+		return
+	}
+
+	cfgp := config.GetSettingsMedia(cfg.CfgMedia)
+	if cfgp == nil {
+		c.String(200, renderAlert("Media config not found", "danger"))
+		return
+	}
+
+	if len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
+		c.String(200, renderAlert("Media config has no data/data_import templates", "danger"))
+		return
+	}
+
+	var (
+		dbid     uint
+		rootpath string
+		listname string
+	)
+
+	database.GetdatarowArgs(
+		"SELECT "+fkColumn+", rootpath, listname FROM "+perListTable+" WHERE id = ? LIMIT 1",
+		id, &dbid, &rootpath, &listname,
+	)
+
+	if dbid == 0 {
+		c.String(
+			200,
+			renderAlert(fmt.Sprintf("No %s found with id %d", perListTable, id), "danger"),
+		)
+		return
+	}
+
+	s := structure.NewStructure(
+		cfgp,
+		cfgp.DataImport[0].TemplatePath,
+		cfgp.Data[0].TemplatePath,
+		false, false, 0,
+	)
+	if s == nil {
+		c.String(200, renderAlert("Structure init failed", "danger"))
+		return
+	}
+
+	listid := cfgp.GetMediaListsEntryListID(listname)
+
+	m := parser_v2.ParseFile(cfg.FilePath, true, true, cfgp, listid)
+	if m == nil {
+		c.String(200, renderAlert("Parse failed", "danger"))
+		return
+	}
+
+	// Populate quality fields so naming tokens like {{.Source.Quality}} resolve.
+	if listid >= 0 && listid < len(cfgp.Lists) && cfgp.Lists[listid].CfgQuality != nil {
+		parser.GetPriorityMapQual(m, cfgp, cfgp.Lists[listid].CfgQuality, true, true)
+	}
+
+	if listid < 0 {
+		listid = 0
+	}
+
+	o := structure.Organizerdata{
+		MediaFile: cfg.FilePath,
+		Folder:    filepath.Dir(cfg.FilePath),
+		Rootpath:  rootpath,
+		Listid:    listid,
+	}
+
+	s.GenerateNamingTemplate(&o, m, &dbid)
+
+	c.String(200, renderNamingResults(
+		map[string]any{"foldername": o.Foldername, "filename": o.Filename, "m": m},
+		cfg.GroupType, cfg.CfgMedia, cfg.FilePath, 0, 0,
+	))
 }
 
 // HandleNamingTest handles naming convention test requests.
@@ -258,6 +406,29 @@ func HandleNamingTest(c *gin.Context) {
 
 	if mediaType == "" || configKey == "" || filePath == "" {
 		c.String(200, renderAlert("Please fill in all required fields", "warning"))
+		return
+	}
+
+	// Book, audiobook and music share one by-DB-id naming preview.
+	switch mediaType {
+	case "book", "audiobook", "music":
+		var idStr, table, fk string
+
+		switch mediaType {
+		case "book":
+			idStr, table, fk = c.PostForm("naming_BookID"), "books", "dbbook_id"
+		case "audiobook":
+			idStr, table, fk = c.PostForm("naming_AudiobookID"), "audiobooks", "dbaudiobook_id"
+		case "music":
+			idStr, table, fk = c.PostForm("naming_AlbumID"), "albums", "dbalbum_id"
+		}
+
+		namingTestByDBID(
+			c,
+			apiNameInput{CfgMedia: configKey, GroupType: mediaType, FilePath: filePath},
+			idStr, table, fk,
+		)
+
 		return
 	}
 

@@ -22,7 +22,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/PuerkitoBio/goquery"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
 	"maragu.dev/gomponents"
 )
@@ -47,6 +47,7 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.GET("/scheduler/list", apiSchedulerList)
 		routerapi.GET("/db/close", apiDBClose)
 		routerapi.GET("/db/integrity", apiDBIntegrity)
+		routerapi.GET("/db/cleanuporphans", apiDBCleanupOrphans)
 		routerapi.GET("/db/backup", apiDBBackup)
 		routerapi.DELETE("/db/delete/:name/:id", apiDBDelete)
 		routerapi.DELETE("/db/clear/:name", apiDBClear)
@@ -177,6 +178,9 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/admin/statistics/data", webStatisticsData)
 	routerapi.GET("/admin/statistics/movies", webStatisticsMovies)
 	routerapi.GET("/admin/statistics/series", webStatisticsSeries)
+	routerapi.GET("/admin/statistics/music", webStatisticsMusic)
+	routerapi.GET("/admin/statistics/books", webStatisticsBooks)
+	routerapi.GET("/admin/statistics/audiobooks", webStatisticsAudiobooks)
 	routerapi.GET("/admin/statistics/storage", webStatisticsStorage)
 	routerapi.GET("/admin/statistics/workers", webStatisticsWorkers)
 	routerapi.GET("/admin/statistics/http", webStatisticsHTTP)
@@ -194,6 +198,11 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 	routerapi.GET("/admin/database/:tablename", adminPageDatabase)
 	routerapi.GET("/admin/grid/:grid", adminPageGrid)
+	routerapi.GET("/admin/queue/partial", renderQueuePartial)
+	routerapi.GET("/admin/dashboard/cards", dashboardCardsPartial)
+	routerapi.GET("/admin/wanted", renderWantedPage)
+	routerapi.GET("/admin/wanted/partial", renderWantedPartial)
+	routerapi.GET("/admin/wanted/tab", renderWantedTab)
 
 	// Calendar routes
 	routerapi.GET("/admin/calendar", CalendarPageHandler)
@@ -215,7 +224,8 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/search/audiobooks", SearchAudiobookMetadata)
 	routerapi.POST("/admin/search/music", SearchMusicMetadata)
 	routerapi.POST("/admin/search/music/series", SearchMusicSeriesMetadata)
-	routerapi.POST("/admin/search/music/artist", SearchArtistOnMusicBrainz)
+	routerapi.POST("/admin/search/music/artist", SearchMusicArtists)
+	routerapi.POST("/admin/search/music/artist-releases", ListArtistReleasesForSelection)
 	routerapi.POST("/admin/discover/series-albums", DiscoverSeriesAlbumsByName)
 	routerapi.POST("/admin/add/movie", AddMovieToDatabase)
 	routerapi.POST("/admin/add/series", AddSeriesToDatabase)
@@ -225,8 +235,11 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/add/series/manual", AddSeriesManual)
 	routerapi.POST("/admin/add/book/manual", AddBookManual)
 	routerapi.POST("/admin/add/audiobook/manual", AddAudiobookManual)
+	routerapi.POST("/admin/add/book/author", AddBooksByAuthor)
+	routerapi.POST("/admin/add/audiobook/author", AddAudiobooksByAuthor)
 	routerapi.POST("/admin/add/album", AddAlbumToDatabase)
-	routerapi.POST("/admin/discover/artist-albums", DiscoverArtistAlbums)
+	routerapi.POST("/admin/add/artist-albums", AddArtistAlbumsFiltered)
+	routerapi.POST("/admin/add/albums-selected", AddSelectedAlbums)
 
 	// Handle POST requests to database routes - these should not be used for form submissions
 	// but provide helpful error message to prevent 404s
@@ -443,10 +456,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
 		if err == nil {
 			a.Find("#qualityContainer").Children().Each(
-				func(i int, s *goquery.Selection) {
-					s.Find(".qualityreorder").Each(func(i int, s *goquery.Selection) {
+				func(_ int, s *goquery.Selection) {
+					s.Find(".qualityreorder").Each(func(_ int, s *goquery.Selection) {
 						s.Find("array-item card").Each(
-							func(i int, s *goquery.Selection) {
+							func(_ int, _ *goquery.Selection) {
 								count++
 							},
 						)
@@ -468,10 +481,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
 		if err == nil {
 			a.Find("#qualityContainer").Children().Each(
-				func(i int, s *goquery.Selection) {
-					s.Find(".qualityindexer").Each(func(i int, s *goquery.Selection) {
+				func(_ int, s *goquery.Selection) {
+					s.Find(".qualityindexer").Each(func(_ int, s *goquery.Selection) {
 						s.Find("array-item card").Each(
-							func(i int, s *goquery.Selection) {
+							func(_ int, _ *goquery.Selection) {
 								count++
 							},
 						)
@@ -1051,6 +1064,17 @@ func apiDBBackup(ctx *gin.Context) {
 // @Router       /api/db/integrity [get].
 func apiDBIntegrity(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, database.DBIntegrityCheck())
+}
+
+// @Summary      Cleanup Orphaned Rows
+// @Description  Deletes child rows whose parent rows no longer exist, per the schema's foreign-key relationships. Returns deleted row counts per table.
+// @Tags         database
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  map[string]int64
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/db/cleanuporphans [get].
+func apiDBCleanupOrphans(ctx *gin.Context) {
+	sendJSONResponse(ctx, http.StatusOK, database.CleanupOrphans())
 }
 
 // @Summary      Clear DB Table

@@ -132,23 +132,23 @@ func RegisterDataFull(fn mediatype.DataFullFunc) {
 }
 
 // GetType returns the media type constant for audiobooks.
-func (h *handler) GetType() uint {
+func (*handler) GetType() uint {
 	return config.MediaTypeAudiobook
 }
 
 // GetCategoryName returns the category name for job history.
-func (h *handler) GetCategoryName() string {
+func (*handler) GetCategoryName() string {
 	return "audiobook"
 }
 
 // GetTableName returns the database table name for audiobooks.
-func (h *handler) GetTableName() string {
+func (*handler) GetTableName() string {
 	return "audiobooks"
 }
 
 // GetDBIDs retrieves database IDs for the parsed audiobook info.
 // It attempts ASIN lookup first, then falls back to title-based search.
-func (h *handler) GetDBIDs(info *database.ParseInfo) error {
+func (*handler) GetDBIDs(info *database.ParseInfo) error {
 	// Handle ASIN lookup
 	if info.ASIN != "" {
 		database.Scanrowsdyn(
@@ -223,7 +223,7 @@ func (h *handler) GetDBIDsFull(
 }
 
 // findInLists attempts to locate an audiobook in configured media lists by its database ID.
-func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
+func (*handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
 			false,
@@ -271,37 +271,37 @@ func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfi
 }
 
 // ValidateIDs checks if all required IDs are set for audiobooks.
-func (h *handler) ValidateIDs(info *database.ParseInfo) bool {
+func (*handler) ValidateIDs(info *database.ParseInfo) bool {
 	return info.AudiobookID != 0 && info.DbaudiobookID != 0
 }
 
 // SetTempID sets the temporary ID from AudiobookID.
-func (h *handler) SetTempID(info *database.ParseInfo) {
+func (*handler) SetTempID(info *database.ParseInfo) {
 	info.TempID = info.AudiobookID
 }
 
 // SetDBID sets the DbaudiobookID field.
-func (h *handler) SetDBID(info *database.ParseInfo, dbid uint) {
+func (*handler) SetDBID(info *database.ParseInfo, dbid uint) {
 	info.DbaudiobookID = dbid
 }
 
 // GetDBID returns the DbaudiobookID field.
-func (h *handler) GetDBID(info *database.ParseInfo) uint {
+func (*handler) GetDBID(info *database.ParseInfo) uint {
 	return info.DbaudiobookID
 }
 
 // GetMediaID returns the AudiobookID.
-func (h *handler) GetMediaID(info *database.ParseInfo) uint {
+func (*handler) GetMediaID(info *database.ParseInfo) uint {
 	return info.AudiobookID
 }
 
 // SetMediaID sets the AudiobookID.
-func (h *handler) SetMediaID(info *database.ParseInfo, id uint) {
+func (*handler) SetMediaID(info *database.ParseInfo, id uint) {
 	info.AudiobookID = id
 }
 
 // GetListID retrieves the list ID for the audiobook.
-func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
+func (*handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
 	if info.AudiobookID != 0 {
 		return database.GetMediaListIDGetListname(cfgp, &info.AudiobookID)
 	}
@@ -310,28 +310,28 @@ func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseIn
 }
 
 // ClearUntrustedID clears the ASIN if indexer is not trusted.
-func (h *handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
+func (h *handler) ClearUntrustedID(_ *apiexternal_v2.Nzbwithprio) {
 	// Audiobooks don't have a specific trust flag like IMDB/TVDB
 	// Could be extended if needed
 }
 
 // SetNzbID sets the NzbaudiobookID field.
-func (h *handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
+func (*handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
 	entry.NzbaudiobookID = mediaid
 }
 
 // SetEntryTempID sets the temp ID from NzbaudiobookID.
-func (h *handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Info.TempID = entry.NzbaudiobookID
 }
 
 // PerformIDSearch executes a search - audiobooks use query-based search only.
-func (h *handler) PerformIDSearch(
-	indcfg *config.IndexersConfig,
-	quality *config.QualityConfig,
-	entry *apiexternal_v2.Nzbwithprio,
-	cats int,
-	raw *apiexternal.NzbSlice,
+func (*handler) PerformIDSearch(
+	_ *config.IndexersConfig,
+	_ *config.QualityConfig,
+	_ *apiexternal_v2.Nzbwithprio,
+	_ int,
+	_ *apiexternal.NzbSlice,
 ) error {
 	// Audiobooks don't support ID-based search like IMDB/TVDB
 	// They use query-based search only
@@ -339,30 +339,30 @@ func (h *handler) PerformIDSearch(
 }
 
 // ClearUnmatchedCache removes the file from the audiobook unmatched cache.
-func (h *handler) ClearUnmatchedCache(fpath string) {
+func (*handler) ClearUnmatchedCache(fpath string) {
 	database.SlicesCacheContainsDelete(logger.CacheUnmatchedAudiobook, fpath)
 }
 
 // ShortenYearPattern returns true - audiobooks shorten all patterns including year.
-func (h *handler) ShortenYearPattern() bool {
+func (*handler) ShortenYearPattern() bool {
 	return true
 }
 
 // GenerateIdentifier does nothing for audiobooks - audiobooks don't have episode identifiers.
-func (h *handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool) {
+func (h *handler) GenerateIdentifier(_ *database.ParseInfo, onlyIfEmpty bool) {
 	// Audiobooks don't have identifiers like series do
 }
 
 // GetSchedulerRssSeasons returns empty strings for audiobooks - no RSS seasons jobs.
-func (h *handler) GetSchedulerRssSeasons(
-	scheduler *config.SchedulerConfig,
-	jobType string,
+func (*handler) GetSchedulerRssSeasons(
+	_ *config.SchedulerConfig,
+	_ string,
 ) (string, string) {
 	return "", ""
 }
 
 // GetSchedulerRssArtistsAuthors returns the interval and cron strings for author-based RSS searches.
-func (h *handler) GetSchedulerRssArtistsAuthors(
+func (*handler) GetSchedulerRssArtistsAuthors(
 	scheduler *config.SchedulerConfig,
 	jobType string,
 ) (string, string) {
@@ -394,7 +394,7 @@ func (h *handler) DataFull() {
 
 // SearchConfigByName searches the audiobook config file for matching author name, book series, or alternate names.
 // Returns the matching SerieConfig and true if found, or nil and false if not found.
-func (h *handler) SearchConfigByName(
+func (*handler) SearchConfigByName(
 	searchName string,
 	listCfg *config.MediaListsConfig,
 ) (*config.ManualConfig, bool) {
@@ -458,7 +458,7 @@ func loadAudiobookConfig(file string) ([]config.ManualConfig, error) {
 }
 
 // RecordDownloadHistory records an audiobook download in the audiobook_histories table.
-func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
 	var (
 		audiobookID, dbaudiobookID uint
 		qualityProfile             string
@@ -496,9 +496,9 @@ func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetP
 
 // GetDownloadTargetFolder returns the target folder name for an audiobook download.
 // Returns title with author (e.g., "Audiobook Title - Author Name").
-func (h *handler) GetDownloadTargetFolder(
+func (*handler) GetDownloadTargetFolder(
 	nzb *apiexternal_v2.Nzbwithprio,
-	dbExternalID string,
+	_ string,
 ) string {
 	if nzb.NZB.Title != "" {
 		return nzb.NZB.Title
@@ -513,7 +513,7 @@ func (h *handler) GetDownloadTargetFolder(
 
 // FillSearchVar fills search variables from the database for the given audiobook ID.
 // Sets NzbaudiobookID, loads data from DB, validates required fields.
-func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
+func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
 	entry.NzbaudiobookID = mediaid
 	if mediaid == 0 {
 		return logger.ErrNotFoundDbaudiobook
@@ -569,33 +569,33 @@ func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint)
 }
 
 // GetNzbID returns the NzbaudiobookID field.
-func (h *handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbaudiobookID
 }
 
 // GetNzbIDP returns the NzbaudiobookID field.
-func (h *handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
+func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbaudiobookID
 }
 
 // CheckMediaMatch checks if the entry's AudiobookID matches the source's NzbaudiobookID.
-func (h *handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
 	return source.NzbaudiobookID == entry.Info.AudiobookID
 }
 
 // GetUnwantedReason returns "unwanted Audiobook".
-func (h *handler) GetUnwantedReason() string {
+func (*handler) GetUnwantedReason() string {
 	return "unwanted Audiobook"
 }
 
 // GetFoundID returns entry.Info.AudiobookID for logging.
-func (h *handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.AudiobookID
 }
 
 // ValidateRSSIDs validates DbaudiobookID and AudiobookID for RSS processing.
 // Returns error reason string if invalid, empty string if valid.
-func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
+func (*handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 	if entry.Info.DbaudiobookID == 0 {
 		return "unwanted DBAudiobook"
 	}
@@ -608,20 +608,20 @@ func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 }
 
 // SetRSSIDs sets entry.Dbid = DbaudiobookID, entry.NzbaudiobookID = AudiobookID.
-func (h *handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Dbid = entry.Info.DbaudiobookID
 	entry.NzbaudiobookID = entry.Info.AudiobookID
 }
 
 // GetRSSMediaID returns entry.Info.AudiobookID for getrssdata.
-func (h *handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.AudiobookID
 }
 
 // CheckCorrectID validates that the entry's ASIN matches the source's.
 // Returns true if IDs don't match (should skip), false if they match or can't compare.
-func (h *handler) CheckCorrectID(
-	sourceentry, entry *apiexternal_v2.Nzbwithprio,
+func (*handler) CheckCorrectID(
+	_, entry *apiexternal_v2.Nzbwithprio,
 ) (bool, string, string) {
 	// Audiobooks don't have a standard ID like IMDB/TVDB in NZB results
 	// ASIN matching could be added if indexers support it
@@ -629,12 +629,12 @@ func (h *handler) CheckCorrectID(
 }
 
 // GetRuntimeBonus returns 0 - audiobooks don't have runtime bonus.
-func (h *handler) GetRuntimeBonus(info *database.ParseInfo) int {
+func (h *handler) GetRuntimeBonus(_ *database.ParseInfo) int {
 	return 0
 }
 
 // SkipMultipleFiles returns false - audiobooks can have multiple files (chapters).
-func (h *handler) SkipMultipleFiles() bool {
+func (*handler) SkipMultipleFiles() bool {
 	return false
 }
 
@@ -655,7 +655,7 @@ func (h *handler) FillNotifyData(
 
 // FillNamingData fills NamingData for audiobooks from the database.
 // Returns clearFolder=true for audiobooks (folder name should be cleared when rootpath exists).
-func (h *handler) FillNamingData(
+func (*handler) FillNamingData(
 	dbid *uint,
 	videofile string,
 	m *database.ParseInfo,
@@ -719,26 +719,53 @@ func (h *handler) FillNamingData(
 	return false, true // clearFolder=false for audiobooks (they need their own folder)
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated ASIN IDs).
-func (h *handler) GetRefreshIncData() any {
+// refreshListArgs returns the list-name bind arguments for cfgp, matching the
+// "listname in (?" + cfgp.ListsQu + ")" placeholder count.
+func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
+	args := make([]any, 0, len(cfgp.Lists))
+	for i := range cfgp.Lists {
+		args = append(args, &cfgp.Lists[i].Name)
+	}
+
+	return args
+}
+
+// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// ASIN IDs in the config's lists).
+func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbaudiobooks.asin from dbaudiobooks inner join audiobooks on audiobooks.dbaudiobook_id = dbaudiobooks.id where dbaudiobooks.asin != '' group by dbaudiobooks.asin order by dbaudiobooks.updated_at desc limit 100",
+		"select distinct dbaudiobooks.asin from dbaudiobooks inner join audiobooks on audiobooks.dbaudiobook_id = dbaudiobooks.id where dbaudiobooks.asin != '' and audiobooks.listname in (?"+cfgp.ListsQu+") group by dbaudiobooks.asin order by dbaudiobooks.updated_at desc limit 100",
+		args...,
 	)
 }
 
-// GetRefreshFullData returns data for full refresh (all ASIN IDs).
-func (h *handler) GetRefreshFullData() any {
+// GetRefreshFullData returns data for full refresh (all ASIN IDs in the config's lists).
+func (*handler) GetRefreshFullData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+	join := "from dbaudiobooks inner join audiobooks on audiobooks.dbaudiobook_id = dbaudiobooks.id where dbaudiobooks.asin != '' and audiobooks.listname in (?" + cfgp.ListsQu + ")"
+
 	return database.GetrowsN[string](
 		false,
-		database.Getdatarow[uint](false, "select count() from dbaudiobooks where asin != ''"),
-		"select distinct dbaudiobooks.asin from dbaudiobooks inner join audiobooks on audiobooks.dbaudiobook_id = dbaudiobooks.id where dbaudiobooks.asin != '' group by dbaudiobooks.asin",
+		database.Getdatarow[uint](false, "select count(distinct dbaudiobooks.asin) "+join, args...),
+		"select distinct dbaudiobooks.asin "+join+" group by dbaudiobooks.asin",
+		args...,
 	)
 }
 
 // GetSchedulerJobNames returns the job name pairs for audiobooks scheduler configuration.
-func (h *handler) GetSchedulerJobNames() [][2]string {
+func (*handler) GetSchedulerJobNames() [][2]string {
 	return [][2]string{
 		{logger.StrSearchMissingInc, logger.StrSearchMissingInc},
 		{logger.StrSearchMissingFull, logger.StrSearchMissingFull},
@@ -763,7 +790,7 @@ func (h *handler) GetSchedulerJobNames() [][2]string {
 }
 
 // CleanupAfterRemove handles cleanup after an audiobook file is removed.
-func (h *handler) CleanupAfterRemove(
+func (*handler) CleanupAfterRemove(
 	folder, rootpath, pathCfgName string,
 	walkCleanupFn func(string),
 	_ func(),
@@ -782,7 +809,7 @@ func (h *handler) CleanupAfterRemove(
 }
 
 // MoveOtherFilesAfterOrganize handles moving additional files after main audiobook is organized.
-func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
+func (*handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
 		return logger.ErrPathTemplateNotFound
 	}
@@ -805,25 +832,25 @@ func (h *handler) CheckExtensions(pathcfg *config.PathsConfig, ext string) (bool
 }
 
 // SupportsIDSearch returns false - audiobooks use query-based search only (no IMDB/TVDB).
-func (h *handler) SupportsIDSearch() bool { return false }
+func (*handler) SupportsIDSearch() bool { return false }
 
 // SupportsSeasonSearch returns false - audiobooks don't have season/episode structure.
-func (h *handler) SupportsSeasonSearch() bool { return false }
+func (*handler) SupportsSeasonSearch() bool { return false }
 
 // RequiresYearCheck returns false - audiobooks don't require strict year matching.
-func (h *handler) RequiresYearCheck() bool { return false }
+func (*handler) RequiresYearCheck() bool { return false }
 
 // HasSearchID returns false - audiobooks use query-based search only (no standard ID in NZB results).
-func (h *handler) HasSearchID(_ *apiexternal_v2.Nzbwithprio) bool { return false }
+func (*handler) HasSearchID(_ *apiexternal_v2.Nzbwithprio) bool { return false }
 
 // SupportsAbsoluteEpisode returns false - audiobooks don't have episode structure.
-func (h *handler) SupportsAbsoluteEpisode() bool { return false }
+func (*handler) SupportsAbsoluteEpisode() bool { return false }
 
 // HandleRSSListID does nothing for audiobooks - list ID is determined by audiobook lookup.
-func (h *handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
+func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
 
 // CheckEpisodeMatch returns false - audiobooks don't have episode validation.
-func (h *handler) CheckEpisodeMatch(
+func (*handler) CheckEpisodeMatch(
 	_, _ *apiexternal_v2.Nzbwithprio,
 	_ string,
 	_ func(string, *apiexternal_v2.Nzbwithprio),
@@ -832,35 +859,35 @@ func (h *handler) CheckEpisodeMatch(
 }
 
 // SupportsVideoFile returns false - audiobooks use audio files, not video.
-func (h *handler) SupportsVideoFile() bool { return false }
+func (*handler) SupportsVideoFile() bool { return false }
 
 // GetRuntimeMultiplier returns 1 - audiobooks are single items.
-func (h *handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
+func (*handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
 
 // ShouldCheckOldFilePriority returns false - audiobooks don't check file priority.
-func (h *handler) ShouldCheckOldFilePriority() bool { return false }
+func (*handler) ShouldCheckOldFilePriority() bool { return false }
 
 // HasConfiguredExtensions returns true if audio extensions are configured.
-func (h *handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
+func (*handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
 	return pathcfg.AllowedAudioExtensionsLen > 0 || pathcfg.AllowedAudioExtensionsNoRenameLen > 0
 }
 
 // IsExternalIDImdb returns false - audiobooks don't use IMDB.
-func (h *handler) IsExternalIDImdb() bool { return false }
+func (*handler) IsExternalIDImdb() bool { return false }
 
 // UsesGroupedFileProcessing returns true - audiobooks group audio files by folder.
-func (h *handler) UsesGroupedFileProcessing() bool { return true }
+func (*handler) UsesGroupedFileProcessing() bool { return true }
 
 // GetCacheUnmatchedKey returns the cache key for unmatched audiobooks.
-func (h *handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedAudiobook }
+func (*handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedAudiobook }
 
 // GetCacheFilesKey returns the cache key for audiobook files.
-func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesAudiobook }
+func (*handler) GetCacheFilesKey() string { return logger.CacheFilesAudiobook }
 
 // UsesListNameAsQualityProfile returns false - audiobooks use quality config name.
-func (h *handler) UsesListNameAsQualityProfile() bool { return false }
+func (*handler) UsesListNameAsQualityProfile() bool { return false }
 
 // GetStringsMap returns an audiobook-specific string for the given key.
-func (h *handler) GetStringsMap(key string) string {
+func (*handler) GetStringsMap(key string) string {
 	return StringsMap[key]
 }

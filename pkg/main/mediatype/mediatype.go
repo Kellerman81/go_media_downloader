@@ -271,15 +271,17 @@ type Handler interface {
 		data *NamingData,
 	) (clearFolder bool, ok bool)
 
-	// GetRefreshIncData returns the data needed for incremental refresh.
+	// GetRefreshIncData returns the data needed for incremental refresh, scoped to
+	// the lists configured on cfgp.
 	// For movies: returns []string of IMDB IDs (limit 100, ordered by updated_at desc)
 	// For series: returns []DbstaticTwoStringOneRInt of continuing series (limit 20, ordered by updated_at asc)
-	GetRefreshIncData() any
+	GetRefreshIncData(cfgp *config.MediaTypeConfig) any
 
-	// GetRefreshFullData returns the data needed for full refresh.
+	// GetRefreshFullData returns the data needed for full refresh, scoped to the
+	// lists configured on cfgp.
 	// For movies: returns []string of all IMDB IDs
 	// For series: returns []DbstaticTwoStringOneRInt of all series
-	GetRefreshFullData() any
+	GetRefreshFullData(cfgp *config.MediaTypeConfig) any
 
 	// GetSchedulerJobNames returns a slice of job name pairs for scheduler configuration.
 	// Each pair contains [schedulerJobName, singleJobName] where:

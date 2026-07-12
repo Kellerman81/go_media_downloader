@@ -58,12 +58,12 @@ func NewProvider(baseURL, username, password string) *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.DownloadProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.DownloadProviderType {
 	return apiexternal_v2.DownloadProviderTransmission
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "transmission"
 }
 

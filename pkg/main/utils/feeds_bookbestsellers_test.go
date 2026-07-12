@@ -16,10 +16,10 @@ func TestGetBookBestsellers_SpiegelHardcoverBelletristik(t *testing.T) {
 	}
 
 	cfgList := &config.ListsConfig{
-		Name:    "spiegel-hardcover-belletristik",
+		Name:     "spiegel-hardcover-belletristik",
 		ListType: "bookbestsellers",
-		Enabled: true,
-		URL:     "https://www.bestsellerliste.de/spiegel-bestseller-hardcover-belletristik/",
+		Enabled:  true,
+		URL:      "https://www.bestsellerliste.de/spiegel-bestseller-hardcover-belletristik/",
 
 		ChartEntryNodeXPath: "//ol[contains(@class,'list')]/li",
 		ChartTitleXPath:     ".//span[@class='title']",

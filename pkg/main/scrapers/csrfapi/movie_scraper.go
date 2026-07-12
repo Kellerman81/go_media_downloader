@@ -2,6 +2,7 @@ package csrfapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,31 +70,31 @@ type MovieData struct {
 func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 	// Validate required configuration
 	if cfg.SiteName == "" {
-		return nil, fmt.Errorf("site_name is required")
+		return nil, errors.New("site_name is required")
 	}
 
 	if cfg.StartURL == "" {
-		return nil, fmt.Errorf("start_url is required")
+		return nil, errors.New("start_url is required")
 	}
 
 	if cfg.CSRFCookieName == "" {
-		return nil, fmt.Errorf("csrf_cookie_name is required")
+		return nil, errors.New("csrf_cookie_name is required")
 	}
 
 	if cfg.CSRFHeaderName == "" {
-		return nil, fmt.Errorf("csrf_header_name is required")
+		return nil, errors.New("csrf_header_name is required")
 	}
 
 	if cfg.APIURLPattern == "" {
-		return nil, fmt.Errorf("api_url_pattern is required")
+		return nil, errors.New("api_url_pattern is required")
 	}
 
 	if cfg.ResultsArrayPath == "" {
-		return nil, fmt.Errorf("results_array_path is required")
+		return nil, errors.New("results_array_path is required")
 	}
 
 	if cfg.TitleField == "" {
-		return nil, fmt.Errorf("title_field is required")
+		return nil, errors.New("title_field is required")
 	}
 
 	// Set defaults
@@ -349,7 +350,7 @@ func (s *MovieScraper) extractResultsArray(
 		return results, nil
 	}
 
-	return nil, fmt.Errorf("results path does not point to an array")
+	return nil, errors.New("results path does not point to an array")
 }
 
 // extractMovieData extracts movie data from a single JSON object.
@@ -449,7 +450,7 @@ func (s *MovieScraper) extractMovieData(data map[string]any) MovieData {
 }
 
 // searchIMDBID searches for an IMDB ID using title and year via TMDB.
-func (s *MovieScraper) searchIMDBID(title string, year int) (string, error) {
+func (*MovieScraper) searchIMDBID(title string, year int) (string, error) {
 	logger.Logtype("debug", 1).
 		Str("title", title).
 		Int("year", year).

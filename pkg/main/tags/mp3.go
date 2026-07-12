@@ -10,14 +10,26 @@ import (
 	"github.com/bogem/id3v2/v2"
 )
 
-// mp3ParseFrames lists every ID3v2 frame ID we actually use in ReadTags,
-// intentionally excluding APIC (cover art) which can be several MB per file.
-// The id3v2 library skips the frame body entirely for IDs not in this list,
-// eliminating the dominant allocation source on the matching hot-path.
+// mp3ParseFrames lists the ID3v2 frame IDs parsed when writing tags. It excludes
+// APIC (cover art, several MB per file) but keeps text frames like USLT/COMM/TCOM
+// so WriteTags preserves any existing values the caller does not overwrite.
+// The id3v2 library skips the body entirely for IDs not in this list.
 var mp3ParseFrames = []string{
 	"TIT2", "TPE1", "TALB", "TCON", "TYER", "TDRC",
 	"TPE2", "TCOM", "TPE3", "TRCK", "TPOS",
 	"COMM", "TSRC", "TPUB", "TCOP", "USLT",
+	"TXXX", "UFID", "TLEN",
+}
+
+// mp3ReadFrames is the minimal frame set for the metadata read hot-path
+// (matching / enrichment). It omits frames whose AudioTags fields no ReadTags
+// caller consumes — USLT (lyrics, often several KB), COMM, TCOM, TPE3, TCOP — so
+// the id3v2 parser streams past their bodies without allocating strings. This is
+// the dominant allocation source when scanning large libraries. Full preservation
+// still happens via mp3ParseFrames (WriteTags) and the unfiltered ReadTagsWithCover.
+var mp3ReadFrames = []string{
+	"TIT2", "TPE1", "TALB", "TCON", "TYER", "TDRC",
+	"TPE2", "TRCK", "TPOS", "TSRC", "TPUB",
 	"TXXX", "UFID", "TLEN",
 }
 
@@ -30,7 +42,7 @@ func NewMP3Handler() *MP3Handler {
 }
 
 // SupportedFormats returns the file extensions supported by this handler.
-func (h *MP3Handler) SupportedFormats() []string {
+func (*MP3Handler) SupportedFormats() []string {
 	return []string{".mp3"}
 }
 
@@ -64,7 +76,7 @@ func (h *MP3Handler) ReadTagsWithCover(filepath string) (*AudioTags, error) {
 // and is not needed for the matching / enrichment hot-path.
 // Use ReadTagsWithCover when cover art must be preserved (e.g. CopyTags).
 func (h *MP3Handler) ReadTags(filepath string) (*AudioTags, error) {
-	tag, err := id3v2.Open(filepath, id3v2.Options{Parse: true, ParseFrames: mp3ParseFrames})
+	tag, err := id3v2.Open(filepath, id3v2.Options{Parse: true, ParseFrames: mp3ReadFrames})
 	if err != nil {
 		return nil, &ErrReadFailed{Path: filepath, Reason: err.Error()}
 	}
@@ -87,7 +99,7 @@ func getTextFrame(tag *id3v2.Tag, id string) string {
 
 // extractTags populates an AudioTags from an already-opened id3v2.Tag.
 // It does not touch APIC; callers that need cover art must read it separately.
-func (h *MP3Handler) extractTags(tag *id3v2.Tag) (*AudioTags, error) {
+func (*MP3Handler) extractTags(tag *id3v2.Tag) (*AudioTags, error) {
 	tags := &AudioTags{
 		Title:       tag.Title(),
 		Artist:      tag.Artist(),
@@ -197,7 +209,7 @@ func (h *MP3Handler) extractTags(tag *id3v2.Tag) (*AudioTags, error) {
 // Opening with ParseFrames avoids loading existing APIC into memory —
 // callers that need to preserve cover art should use ReadTagsWithCover
 // to populate tags.CoverData before calling WriteTags.
-func (h *MP3Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
+func (h *MP3Handler) WriteTags(_ context.Context, filepath string, tags *AudioTags) error {
 	tag, err := id3v2.Open(filepath, id3v2.Options{Parse: true, ParseFrames: mp3ParseFrames})
 	if err != nil {
 		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
@@ -260,8 +272,11 @@ func (h *MP3Handler) WriteTags(ctx context.Context, filepath string, tags *Audio
 		})
 	}
 
-	// Comment (COMM)
+	// Comment (COMM). id3v2 AddFrame APPENDS sequence frames (COMM/USLT/TXXX/UFID),
+	// so delete any existing one first — otherwise re-tagging duplicates it and the
+	// tag (and file) grows on every batch write.
 	if tags.Comment != "" {
+		tag.DeleteFrames("COMM")
 		tag.AddFrame("COMM", id3v2.CommentFrame{
 			Encoding:    id3v2.EncodingUTF8,
 			Language:    "eng",
@@ -296,15 +311,22 @@ func (h *MP3Handler) WriteTags(ctx context.Context, filepath string, tags *Audio
 
 	// Lyrics (USLT)
 	if tags.Lyrics != "" {
+		tag.DeleteFrames("USLT")
 		tag.AddFrame("USLT", id3v2.UnsynchronisedLyricsFrame{
 			Encoding:          id3v2.EncodingUTF8,
-			Language:          "eng",
 			ContentDescriptor: "",
 			Lyrics:            tags.Lyrics,
+			Language:          "eng",
 		})
 	}
 
-	// MusicBrainz IDs as TXXX frames
+	// MusicBrainz / ReplayGain / AcoustID / catalog are written as TXXX frames.
+	// Remove all existing TXXX first so repeated tagging replaces them instead of
+	// appending duplicates (the source release's own TXXX would otherwise stack up
+	// on the first authoritative write and again on every re-process).
+	tag.DeleteFrames("TXXX")
+	tag.DeleteFrames("UFID")
+
 	h.writeTXXX(tag, "MusicBrainz Album Id", tags.MBReleaseID)
 	h.writeTXXX(tag, "MusicBrainz Artist Id", tags.MBArtistID)
 	h.writeTXXX(tag, "MusicBrainz Album Artist Id", tags.MBAlbumArtistID)
@@ -353,7 +375,7 @@ func (h *MP3Handler) WriteTags(ctx context.Context, filepath string, tags *Audio
 }
 
 // writeTXXX is a helper to add TXXX frames only if the value is non-empty.
-func (h *MP3Handler) writeTXXX(tag *id3v2.Tag, description, value string) {
+func (*MP3Handler) writeTXXX(tag *id3v2.Tag, description, value string) {
 	if value != "" {
 		tag.AddFrame("TXXX", id3v2.UserDefinedTextFrame{
 			Encoding:    id3v2.EncodingUTF8,
@@ -412,9 +434,8 @@ func formatTrackNum(track, total int) string {
 func parseReplayGain(s string) float64 {
 	s = strings.TrimSpace(s)
 	s = strings.TrimSuffix(s, "dB")
-	s = strings.TrimSuffix(s, " dB")
-
 	s = strings.TrimSpace(s)
+
 	if val, err := strconv.ParseFloat(s, 64); err == nil {
 		return val
 	}

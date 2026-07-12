@@ -34,8 +34,12 @@ func init() {
 // }
 
 func refreshSeriesWrapper(ctx context.Context, cfgp *config.MediaTypeConfig, data any) error {
-	if arr, ok := data.([]database.DbstaticTwoStringOneRInt); ok {
-		return refreshseries(ctx, cfgp, arr)
+	switch v := data.(type) {
+	case series.RefreshData:
+		return refreshseries(ctx, cfgp, v.Rows, v.FirstPageOnly)
+	case []database.DbstaticTwoStringOneRInt:
+		// Backward compatibility: a bare row slice is treated as a full refresh.
+		return refreshseries(ctx, cfgp, v, false)
 	}
 
 	return nil
@@ -56,6 +60,7 @@ func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) error {
 			"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where id = ?",
 			id,
 		),
+		false, // single manual refresh does a full scrape
 	)
 }
 
@@ -67,6 +72,7 @@ func refreshseries(
 	ctx context.Context,
 	cfgp *config.MediaTypeConfig,
 	tbl []database.DbstaticTwoStringOneRInt,
+	firstPageOnly bool,
 ) error {
 	if len(tbl) == 0 {
 		return nil
@@ -86,7 +92,7 @@ func refreshseries(
 			Int("of", of).
 			Msg("Refresh Serie")
 
-		errsub := importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp)
+		errsub := importfeed.JobImportDBSeriesStatic(&tbl[idx], cfgp, firstPageOnly)
 		if errsub != nil {
 			logger.Logtype("error", 1).
 				Int(logger.StrTvdb, tbl[idx].Num).

@@ -2,6 +2,7 @@ package htmlxpath
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -68,19 +69,19 @@ const reMovieIMDbID = `tt\d{7,}`
 func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 	// Validate required configuration
 	if cfg.SiteName == "" {
-		return nil, fmt.Errorf("site_name is required")
+		return nil, errors.New("site_name is required")
 	}
 
 	if cfg.StartURL == "" {
-		return nil, fmt.Errorf("start_url is required")
+		return nil, errors.New("start_url is required")
 	}
 
 	if cfg.SceneNodeXPath == "" {
-		return nil, fmt.Errorf("scene_node_xpath is required")
+		return nil, errors.New("scene_node_xpath is required")
 	}
 
 	if cfg.TitleXPath == "" {
-		return nil, fmt.Errorf("title_xpath is required")
+		return nil, errors.New("title_xpath is required")
 	}
 
 	// Set defaults
@@ -379,7 +380,7 @@ func (s *MovieScraper) getPageNumber(pageIndex int) int {
 }
 
 // searchIMDBID searches for an IMDB ID using title and year via TMDB.
-func (s *MovieScraper) searchIMDBID(title string, year int) (string, error) {
+func (*MovieScraper) searchIMDBID(title string, year int) (string, error) {
 	logger.Logtype("debug", 1).
 		Str("title", title).
 		Int("year", year).

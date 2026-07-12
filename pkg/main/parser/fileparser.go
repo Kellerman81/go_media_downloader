@@ -6,9 +6,11 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -40,14 +42,72 @@ type Prioarr struct {
 	AudioFormatID uint
 }
 
+// priokey identifies one quality-priority combination, used only by the
+// test-override path. group is the lowercased quality profile name.
+type priokey struct {
+	group                      string
+	reso, qual, codec, aud, af uint
+}
+
+// resoQualEntry holds the (possibly reordered) resolution+quality priority and
+// the wanted flag for one (resolution, quality) pair within a profile.
+type resoQualEntry struct {
+	prio   int
+	wanted bool
+}
+
+// dimVal is an (ID, priority) pair for a single-dimension component (codec,
+// audio, audio-format), kept in generation order so the full table can be
+// materialized on demand for the admin API.
+type dimVal struct {
+	id   uint
+	prio int
+}
+
+// profilePrio holds the compact priority tables for one quality profile. The
+// final priority of any combination is additive — resoQual + codec + audio +
+// audioFormat — so storing the per-dimension priorities (a few hundred entries)
+// replaces the full Cartesian product (millions of entries, ~1 GB).
+type profilePrio struct {
+	name string // original-case quality group name (for materialized Prioarr)
+
+	resoQual map[[2]uint]resoQualEntry // (resolutionID, qualityID) -> prio + wanted
+	codec    map[uint]int
+	audio    map[uint]int
+	audioFmt map[uint]int
+
+	// Generation order, retained only to materialize the full table on demand.
+	resoQualOrder [][2]uint
+	codecOrder    []dimVal
+	audioOrder    []dimVal
+	afOrder       []dimVal
+}
+
+// overrideTables holds explicit priority slices installed by setPrioritiesForTest.
+type overrideTables struct {
+	all, wanted       []Prioarr
+	allIdx, wantedIdx map[priokey]int
+}
+
+// prioritySnapshot is an immutable view of the generated priority tables.
+// Readers load it via one atomic pointer read; GenerateAllQualityPriorities
+// builds a fresh snapshot and swaps it in, so hot-path lookups need no locks
+// and stay consistent even when a config reload regenerates the tables.
+//
+// Production lookups compute priorities from the compact per-profile tables.
+// The full []Prioarr list is materialized on demand (rare admin/debug API),
+// never kept resident. Tests install explicit slices via the override field.
+type prioritySnapshot struct {
+	byName   map[string]*profilePrio // lowercased group name -> tables
+	profiles []*profilePrio          // generation order, for materialization
+	override *overrideTables         // non-nil only in tests
+}
+
 var (
-	// errNotFoundDBEpisode        = errors.New("dbepisode not found")
-	// errNotFoundSerie            = errors.New("serie not found").
-	allQualityPrioritiesT       []Prioarr
-	allQualityPrioritiesWantedT []Prioarr
-	mediainfopath               string
-	ffprobepath                 string
-	arrExtended                 = [4]string{
+	prioSnapshot  atomic.Pointer[prioritySnapshot]
+	mediainfopath string
+	ffprobepath   string
+	arrExtended   = [4]string{
 		"extended",
 		"extended cut",
 		"extended.cut",
@@ -55,7 +115,7 @@ var (
 	}
 
 	// Thread safety: Protect mutable global state.
-	prioritiesMu   sync.RWMutex // Protects allQualityPriorities* slices
+	prioritiesMu   sync.Mutex   // Serializes priority table generation
 	scanpatternsMu sync.RWMutex // Protects scanpatterns slice
 
 	scanpatterns       []regexpattern
@@ -135,28 +195,152 @@ func getImdbFilename() string {
 	return "./init_imdb"
 }
 
-// Getallprios returns a copy of all quality priorities in descending order of quality.
-// Thread-safe for concurrent access.
-func Getallprios() []Prioarr {
-	prioritiesMu.RLock()
-	defer prioritiesMu.RUnlock()
-	// Return actual copy to prevent external modification
-	result := make([]Prioarr, len(allQualityPrioritiesWantedT))
-	copy(result, allQualityPrioritiesWantedT)
+// emptyPrioritySnapshot is returned before the first generation so readers
+// never see a nil snapshot.
+var emptyPrioritySnapshot = &prioritySnapshot{}
 
-	return result
+// loadPrioSnapshot returns the current immutable priority snapshot.
+func loadPrioSnapshot() *prioritySnapshot {
+	if s := prioSnapshot.Load(); s != nil {
+		return s
+	}
+
+	return emptyPrioritySnapshot
 }
 
-// Getcompleteallprios returns a copy of all quality priorities in descending order of quality.
-// Thread-safe for concurrent access. Useful for testing.
-func Getcompleteallprios() []Prioarr {
-	prioritiesMu.RLock()
-	defer prioritiesMu.RUnlock()
-	// Return actual copy to prevent external modification
-	result := make([]Prioarr, len(allQualityPrioritiesT))
-	copy(result, allQualityPrioritiesT)
+// makePriokey builds the lookup key for one combination within a quality group.
+func makePriokey(group string, reso, qual, codec, aud, af uint) priokey {
+	return priokey{
+		group: strings.ToLower(group),
+		reso:  reso,
+		qual:  qual,
+		codec: codec,
+		aud:   aud,
+		af:    af,
+	}
+}
 
-	return result
+// setPrioritiesForTest installs the given tables as the active snapshot via the
+// override path. Only used by tests.
+func setPrioritiesForTest(all, wanted []Prioarr) {
+	ov := &overrideTables{
+		all:       all,
+		wanted:    wanted,
+		allIdx:    make(map[priokey]int, len(all)),
+		wantedIdx: make(map[priokey]int, len(wanted)),
+	}
+	for idx := range all {
+		ov.allIdx[makePriokey(all[idx].QualityGroup, all[idx].ResolutionID, all[idx].QualityID, all[idx].CodecID, all[idx].AudioID, all[idx].AudioFormatID)] = idx
+	}
+
+	for idx := range wanted {
+		ov.wantedIdx[makePriokey(wanted[idx].QualityGroup, wanted[idx].ResolutionID, wanted[idx].QualityID, wanted[idx].CodecID, wanted[idx].AudioID, wanted[idx].AudioFormatID)] = idx
+	}
+
+	prioSnapshot.Store(&prioritySnapshot{override: ov})
+}
+
+// lookupPriority returns the additive priority for one combination within a
+// quality group. inAll is true when the combination exists at all; inWanted is
+// true when it also passes the wanted filter. It mirrors the previous
+// map-of-Cartesian-product behaviour without materializing it.
+func (s *prioritySnapshot) lookupPriority(
+	group string,
+	reso, qual, codec, aud, af uint,
+) (prio int, inAll, inWanted bool) {
+	if s.override != nil {
+		k := makePriokey(group, reso, qual, codec, aud, af)
+		if idx, ok := s.override.wantedIdx[k]; ok {
+			return s.override.wanted[idx].Priority, true, true
+		}
+
+		if idx, ok := s.override.allIdx[k]; ok {
+			return s.override.all[idx].Priority, true, false
+		}
+
+		return 0, false, false
+	}
+
+	p := s.byName[strings.ToLower(group)]
+	if p == nil {
+		return 0, false, false
+	}
+
+	rq, ok := p.resoQual[[2]uint{reso, qual}]
+	if !ok {
+		return 0, false, false
+	}
+
+	cp, ok := p.codec[codec]
+	if !ok {
+		return 0, false, false
+	}
+
+	ap, ok := p.audio[aud]
+	if !ok {
+		return 0, false, false
+	}
+
+	fp, ok := p.audioFmt[af]
+	if !ok {
+		return 0, false, false
+	}
+
+	return rq.prio + cp + ap + fp, true, rq.wanted
+}
+
+// materialize builds the full []Prioarr list on demand. wantedOnly restricts it
+// to combinations that pass the wanted filter. Used only by the rare admin/debug
+// API endpoints, so the large slice is allocated transiently, never kept resident.
+func (s *prioritySnapshot) materialize(wantedOnly bool) []Prioarr {
+	if s.override != nil {
+		if wantedOnly {
+			return slices.Clone(s.override.wanted)
+		}
+
+		return slices.Clone(s.override.all)
+	}
+
+	var out []Prioarr
+
+	for _, p := range s.profiles {
+		for _, rqKey := range p.resoQualOrder {
+			rq := p.resoQual[rqKey]
+			if wantedOnly && !rq.wanted {
+				continue
+			}
+
+			for _, c := range p.codecOrder {
+				for _, a := range p.audioOrder {
+					for _, f := range p.afOrder {
+						out = append(out, Prioarr{
+							QualityGroup:  p.name,
+							ResolutionID:  rqKey[0],
+							QualityID:     rqKey[1],
+							CodecID:       c.id,
+							AudioID:       a.id,
+							AudioFormatID: f.id,
+							Priority:      rq.prio + c.prio + a.prio + f.prio,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return out
+}
+
+// Getallprios returns all wanted quality priorities. The list is built on
+// demand; prefer FindPriorityValue for single lookups. Thread-safe.
+func Getallprios() []Prioarr {
+	return loadPrioSnapshot().materialize(true)
+}
+
+// Getcompleteallprios returns all quality priorities (built on demand).
+// Thread-safe. Useful for testing and the admin API.
+func Getcompleteallprios() []Prioarr {
+	return loadPrioSnapshot().materialize(false)
 }
 
 // LoadDBPatterns loads patterns from database if not already loaded.
@@ -526,223 +710,6 @@ func GetDBIDs(
 	return mediatype.Get(cfgp.IsType).GetDBIDsFull(m, cfgp, allowsearchtitle, addFound)
 }
 
-// getMovieDBIDs retrieves database IDs for a movie by attempting multiple lookup strategies.
-// It first tries IMDb ID lookup with padding optimization, then falls back to title-based search.
-// If an IMDb ID is found, it attempts to locate the movie in the database and configured media lists.
-//
-// Parameters:
-//   - m: Pointer to ParseInfo containing movie metadata
-//   - cfgp: Media type configuration
-//   - allowsearchtitle: Flag to enable title-based search
-//
-// Returns an error if no movie database ID can be found.
-// func getMovieDBIDs(
-// 	m *database.ParseInfo,
-// 	cfgp *config.MediaTypeConfig,
-// 	allowsearchtitle bool,
-// ) error {
-// 	// Handle IMDB lookup with padding optimization
-// 	if m.Imdb != "" {
-// 		if !logger.HasPrefixI(m.Imdb, logger.StrTt) {
-// 			sourceimdb := m.Imdb
-// 			// Try different padding levels efficiently
-// 			paddings := []string{"", "0", "00", "000", "0000"}
-// 			for _, padding := range paddings {
-// 				if len(sourceimdb)+len(padding) >= 7 && padding != "" {
-// 					break
-// 				}
-
-// 				m.Imdb = padding + sourceimdb
-// 				m.MovieFindDBIDByImdbParser()
-
-// 				if m.DbmovieID != 0 {
-// 					break
-// 				}
-// 			}
-// 		} else {
-// 			m.MovieFindDBIDByImdbParser()
-// 		}
-// 	}
-
-// 	// Title-based search if IMDB lookup failed
-// 	if m.DbmovieID == 0 && m.Title != "" && allowsearchtitle && cfgp.Name != "" {
-// 		// Strip title prefixes/postfixes
-// 		for _, lst := range cfgp.ListsMap {
-// 			if lst.TemplateQuality != "" {
-// 				m.StripTitlePrefixPostfixGetQual(lst.CfgQuality)
-// 			}
-// 		}
-
-// 		m.Title = logger.TrimSpace(m.Title)
-
-// 		if m.Imdb == "" {
-// 			importfeed.MovieFindImdbIDByTitle(false, m, cfgp)
-// 		}
-
-// 		if m.Imdb != "" && m.DbmovieID == 0 {
-// 			m.MovieFindDBIDByImdbParser()
-// 		}
-// 	}
-
-// 	if m.DbmovieID == 0 {
-// 		return logger.ErrNotFoundDbmovie
-// 	}
-
-// 	// Find movie in lists
-// 	return findMovieInLists(m, cfgp)
-// }
-
-// getSeriesDBIDs retrieves database IDs for a TV series by attempting multiple lookup strategies.
-// It first tries TVDB lookup, then falls back to title-based search (with optional year),
-// and uses regex matching as a final attempt. If a series database ID is found, it sets
-// the corresponding episode ID and attempts to locate the series in configured media lists.
-//
-// Parameters:
-//   - m: Pointer to ParseInfo containing series metadata
-//   - cfgp: Media type configuration
-//   - allowsearchtitle: Flag to enable title-based search
-//
-// Returns an error if no series or episode database ID can be found.
-// func getSeriesDBIDs(
-// 	m *database.ParseInfo,
-// 	cfgp *config.MediaTypeConfig,
-// 	allowsearchtitle bool,
-// ) error {
-// 	// TVDB lookup
-// 	if m.Tvdb != "" {
-// 		database.Scanrowsdyn(false, database.QueryDbseriesGetIDByTvdb, &m.DbserieID, &m.Tvdb)
-// 	}
-
-// 	// Title-based search
-// 	if m.DbserieID == 0 && m.Title != "" && (allowsearchtitle || m.Tvdb == "") {
-// 		if m.Year != 0 {
-// 			titleWithYear := logger.JoinStrings(m.Title, " (", logger.IntToString(m.Year), ")")
-// 			m.FindDbserieByNameWithSlug(titleWithYear)
-// 		}
-
-// 		if m.DbserieID == 0 {
-// 			m.FindDbserieByNameWithSlug(m.Title)
-// 		}
-// 	}
-
-// 	// Regex fallback
-// 	if m.DbserieID == 0 && m.File != "" {
-// 		m.RegexGetMatchesStr1(cfgp)
-// 	}
-
-// 	if m.DbserieID == 0 {
-// 		return logger.ErrNotFoundDbserie
-// 	}
-
-// 	// Set episode ID
-// 	m.SetDBEpisodeIDfromM()
-
-// 	if m.DbserieEpisodeID == 0 {
-// 		return errNotFoundDBEpisode
-// 	}
-
-// 	// Find series in lists
-// 	return findSeriesInLists(m, cfgp)
-// }
-
-// findMovieInLists attempts to locate a movie in configured media lists by its database ID.
-// It first checks if a list ID is already specified, then searches through available lists.
-// If no movie is found, it returns an error. The function updates the ParseInfo
-// with the found movie ID and list index.
-// func findMovieInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
-// 	if m.ListID != -1 {
-// 		database.Scanrowsdyn(
-// 			false,
-// 			database.QueryMoviesGetIDByDBIDListname,
-// 			&m.MovieID,
-// 			&m.DbmovieID,
-// 			&cfgp.Lists[m.ListID].Name,
-// 		)
-// 	}
-
-// 	if m.MovieID == 0 && cfgp.Name != "" && m.ListID == -1 {
-// 		for idx := range cfgp.Lists {
-// 			if config.GetSettingsGeneral().UseMediaCache {
-// 				m.MovieID = database.CacheOneStringTwoIntIndexFuncRet(
-// 					logger.CacheMovie,
-// 					m.DbmovieID,
-// 					cfgp.Lists[idx].Name,
-// 				)
-// 			} else {
-// 				database.Scanrowsdyn(false, "select id from movies where listname = ? COLLATE NOCASE and dbmovie_id = ?", &m.MovieID, &cfgp.Lists[idx].Name, &m.DbmovieID)
-// 			}
-
-// 			if m.MovieID != 0 {
-// 				m.ListID = idx
-// 				break
-// 			}
-// 		}
-// 	}
-
-// 	if m.MovieID == 0 {
-// 		return logger.ErrNotFoundMovie
-// 	}
-
-// 	if m.ListID == -1 {
-// 		m.ListID = database.GetMediaListIDGetListname(cfgp, &m.MovieID)
-// 	}
-
-// 	return nil
-// }
-
-// findSeriesInLists attempts to locate a series in configured media lists by its database ID.
-// It first checks if a list ID is already specified, then searches through available lists.
-// If no series is found, it resets episode-related IDs and returns an error.
-// The function updates the ParseInfo with the found series and episode IDs.
-// func findSeriesInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
-// 	if m.ListID != -1 {
-// 		database.Scanrowsdyn(
-// 			false,
-// 			database.QuerySeriesGetIDByDBIDListname,
-// 			&m.SerieID,
-// 			&m.DbserieID,
-// 			&cfgp.Lists[m.ListID].Name,
-// 		)
-// 	}
-
-// 	if m.SerieID == 0 && cfgp != nil && m.ListID == -1 {
-// 		for idx := range cfgp.Lists {
-// 			if config.GetSettingsGeneral().UseMediaCache {
-// 				m.SerieID = database.CacheOneStringTwoIntIndexFuncRet(
-// 					logger.CacheSeries,
-// 					m.DbserieID,
-// 					cfgp.Lists[idx].Name,
-// 				)
-// 			} else {
-// 				database.Scanrowsdyn(false, database.QuerySeriesGetIDByDBIDListname, &m.SerieID, &m.DbserieID, &cfgp.Lists[idx].Name)
-// 			}
-
-// 			if m.SerieID != 0 {
-// 				m.ListID = idx
-// 				break
-// 			}
-// 		}
-// 	}
-
-// 	if m.SerieID == 0 {
-// 		m.DbserieEpisodeID = 0
-// 		m.SerieEpisodeID = 0
-// 		return errNotFoundSerie
-// 	}
-
-// 	m.SetEpisodeIDfromM()
-
-// 	if m.SerieEpisodeID == 0 {
-// 		return logger.ErrNotFoundEpisode
-// 	}
-
-// 	if m.ListID == -1 {
-// 		m.ListID = database.GetMediaListIDGetListname(cfgp, &m.SerieID)
-// 	}
-
-// 	return nil
-// }
-
 // ParseVideoFile parses metadata for a video file using ffprobe or MediaInfo.
 // It first tries ffprobe, then falls back to MediaInfo if enabled.
 // It takes a FileParser, path to the video file, and quality settings.
@@ -755,6 +722,18 @@ func ParseVideoFile(
 ) error {
 	if m.File == "" {
 		return logger.ErrNotFound
+	}
+
+	// For supported containers (MP4/MOV, Matroska/WebM, AVI), parse the header
+	// natively first to avoid an ffprobe subprocess per file. It only "wins" when
+	// it confidently extracts the video codec and resolution; otherwise (and for
+	// other containers like MPEG-PS) fall back to ffprobe/mediainfo below.
+	if nativeProbeSupportsExt(m.File) {
+		if result, nerr := nativeProbe(m.File); nerr == nil && result != nil {
+			if parseffprobe(m, quality, result) == nil {
+				return nil
+			}
+		}
 	}
 
 	err := parsemedia(ctx, !config.GetSettingsGeneral().UseMediainfo, m, quality)
@@ -817,7 +796,7 @@ func parseffprobe(m *database.ParseInfo, quality *config.QualityConfig, result *
 
 	var n int
 	for i := range result.Streams {
-		if result.Streams[i].Tags["Language"] != "" &&
+		if result.Streams[i].language() != "" &&
 			strings.EqualFold(result.Streams[i].CodecType, "audio") {
 			n++
 		}
@@ -830,8 +809,8 @@ func parseffprobe(m *database.ParseInfo, quality *config.QualityConfig, result *
 	for i := range result.Streams {
 		stream := &result.Streams[i]
 		if isAudioStream(stream) {
-			if stream.Tags["Language"] != "" {
-				m.Languages = append(m.Languages, stream.Tags["Language"])
+			if lang := stream.language(); lang != "" {
+				m.Languages = append(m.Languages, lang)
 			}
 
 			if updateAudio(m, stream) {
@@ -853,43 +832,13 @@ func parseffprobe(m *database.ParseInfo, quality *config.QualityConfig, result *
 
 // isAudioStream checks if the given stream is an audio stream by comparing its codec type.
 // It returns true if the stream's codec type is "audio" (case-insensitive), false otherwise.
-func isAudioStream(stream *struct {
-	// Tags struct {
-	//	Language string `json:"language"`
-	// } `json:"tags"`
-	Tags           map[string]string `json:"tags"`
-	CodecName      string            `json:"codec_name"`
-	CodecTagString string            `json:"codec_tag_string"`
-	CodecType      string            `json:"codec_type"`
-	Height         int               `json:"height,omitempty"`
-	Width          int               `json:"width,omitempty"`
-	SampleRate     string            `json:"sample_rate"`
-	Channels       int               `json:"channels"`
-	BitRate        string            `json:"bit_rate"`
-	Duration       string            `json:"duration"`
-},
-) bool {
+func isAudioStream(stream *ffProbeStream) bool {
 	return strings.EqualFold(stream.CodecType, "audio")
 }
 
 // isVideoStream checks if the given stream is a video stream by comparing its codec type.
 // It returns true if the stream's codec type is "video" (case-insensitive), false otherwise.
-func isVideoStream(stream *struct {
-	// Tags struct {
-	//	Language string `json:"language"`
-	// } `json:"tags"`
-	Tags           map[string]string `json:"tags"`
-	CodecName      string            `json:"codec_name"`
-	CodecTagString string            `json:"codec_tag_string"`
-	CodecType      string            `json:"codec_type"`
-	Height         int               `json:"height,omitempty"`
-	Width          int               `json:"width,omitempty"`
-	SampleRate     string            `json:"sample_rate"`
-	Channels       int               `json:"channels"`
-	BitRate        string            `json:"bit_rate"`
-	Duration       string            `json:"duration"`
-},
-) bool {
+func isVideoStream(stream *ffProbeStream) bool {
 	return strings.EqualFold(stream.CodecType, "video")
 }
 
@@ -904,22 +853,7 @@ func normalizeDimensions(m *database.ParseInfo) {
 // updateAudio updates the audio metadata in the ParseInfo struct based on the provided stream information.
 // It updates the audio codec and sets the corresponding audio ID using the Gettypeids method.
 // Returns true if the audio codec has changed, false otherwise.
-func updateAudio(m *database.ParseInfo, stream *struct {
-	//	Tags struct {
-	//	Language string `json:"language"`
-	// } `json:"tags"`
-	Tags           map[string]string `json:"tags"`
-	CodecName      string            `json:"codec_name"`
-	CodecTagString string            `json:"codec_tag_string"`
-	CodecType      string            `json:"codec_type"`
-	Height         int               `json:"height,omitempty"`
-	Width          int               `json:"width,omitempty"`
-	SampleRate     string            `json:"sample_rate"`
-	Channels       int               `json:"channels"`
-	BitRate        string            `json:"bit_rate"`
-	Duration       string            `json:"duration"`
-},
-) bool {
+func updateAudio(m *database.ParseInfo, stream *ffProbeStream) bool {
 	if m.Audio == "" || (stream.CodecName != "" && !strings.EqualFold(stream.CodecName, m.Audio)) {
 		m.Audio = stream.CodecName
 		m.AudioID = m.Gettypeids(m.Audio, database.DBConnect.GetaudiosIn)
@@ -933,22 +867,7 @@ func updateAudio(m *database.ParseInfo, stream *struct {
 // It updates the video resolution, codec, and dimensions. If the codec or resolution changes,
 // it updates the corresponding IDs using the Gettypeids method. Returns true if either the
 // codec or resolution has changed, false otherwise.
-func updateVideo(m *database.ParseInfo, stream *struct {
-	// Tags struct {
-	//	Language string `json:"language"`
-	// } `json:"tags"`
-	Tags           map[string]string `json:"tags"`
-	CodecName      string            `json:"codec_name"`
-	CodecTagString string            `json:"codec_tag_string"`
-	CodecType      string            `json:"codec_type"`
-	Height         int               `json:"height,omitempty"`
-	Width          int               `json:"width,omitempty"`
-	SampleRate     string            `json:"sample_rate"`
-	Channels       int               `json:"channels"`
-	BitRate        string            `json:"bit_rate"`
-	Duration       string            `json:"duration"`
-},
-) bool {
+func updateVideo(m *database.ParseInfo, stream *ffProbeStream) bool {
 	m.Height = stream.Height
 	m.Width = stream.Width
 
@@ -989,15 +908,17 @@ func updateVideo(m *database.ParseInfo, stream *struct {
 // It uses the provided QualityConfig to find the appropriate priority index and sets the Priority field accordingly.
 // If no matching priority is found, the priority remains unchanged.
 func updatePriority(m *database.ParseInfo, quality *config.QualityConfig) {
-	if intid := Findpriorityidxwanted(
+	s := loadPrioSnapshot()
+
+	if prio, _, inWanted := s.lookupPriority(
+		quality.Name,
 		m.ResolutionID,
 		m.QualityID,
 		m.CodecID,
 		m.AudioID,
 		m.AudioFormatID,
-		quality,
-	); intid != -1 {
-		m.Priority = allQualityPrioritiesWantedT[intid].Priority
+	); inWanted {
+		m.Priority = prio
 	}
 }
 
@@ -1041,7 +962,10 @@ func parsemediainfo(
 				redetermineprio = true
 			}
 
-		case "video":
+		// MediaInfo emits "@type": "Video" capitalized - the previous
+		// lowercase "video" case never matched, so resolution/codec/runtime
+		// were silently skipped whenever MediaInfo was the analyzer.
+		case "Video":
 			if updateVideoFromMediaInfo(m, track) {
 				redetermineprio = true
 			}
@@ -1058,17 +982,10 @@ func parsemediainfo(
 // updateAudioFromMediaInfo updates the ParseInfo with audio track details from MediaInfo.
 // It handles audio codec and sets the corresponding audio ID.
 // Returns true if the audio codec changes, false otherwise.
-func updateAudioFromMediaInfo(m *database.ParseInfo, track *struct {
-	Type     string `json:"@type"`
-	Format   string `json:"Format"`
-	Duration string `json:"Duration"`
-	CodecID  string `json:"CodecID,omitempty"`
-	Width    string `json:"Width,omitempty"`
-	Height   string `json:"Height,omitempty"`
-	Language string `json:"Language,omitempty"`
-},
-) bool {
-	if m.Audio == "" || (track.Format != "" && !strings.EqualFold(track.CodecID, m.Audio)) {
+func updateAudioFromMediaInfo(m *database.ParseInfo, track *mediaInfoTrack) bool {
+	// Compare against Format - that's also what gets assigned (comparing
+	// CodecID against m.Audio mixed two different identifier spaces).
+	if m.Audio == "" || (track.Format != "" && !strings.EqualFold(track.Format, m.Audio)) {
 		m.Audio = track.Format
 		m.AudioID = m.Gettypeids(m.Audio, database.DBConnect.GetaudiosIn)
 		return true
@@ -1080,16 +997,7 @@ func updateAudioFromMediaInfo(m *database.ParseInfo, track *struct {
 // updateVideoFromMediaInfo updates the ParseInfo with video track details from MediaInfo.
 // It handles codec, resolution, height, width, and runtime information.
 // Returns true if codec or resolution changes, false otherwise.
-func updateVideoFromMediaInfo(m *database.ParseInfo, track *struct {
-	Type     string `json:"@type"`
-	Format   string `json:"Format"`
-	Duration string `json:"Duration"`
-	CodecID  string `json:"CodecID,omitempty"`
-	Width    string `json:"Width,omitempty"`
-	Height   string `json:"Height,omitempty"`
-	Language string `json:"Language,omitempty"`
-},
-) bool {
+func updateVideoFromMediaInfo(m *database.ParseInfo, track *mediaInfoTrack) bool {
 	var codecChanged bool
 
 	// Handle special case for MPEG4/XVID
@@ -1205,8 +1113,8 @@ func GetPriorityMapQual(
 		}
 	}
 
-	intid, cwanted := findPriorityIndex(reso, qual, codec, aud, 0, quality, checkwanted)
-	if intid == -1 {
+	prio, found := findPriorityValue(reso, qual, codec, aud, 0, quality, checkwanted)
+	if !found {
 		m.TempTitle = BuildPrioStr(reso, qual, codec, aud, 0)
 		logger.Logtype("debug", 2).
 			Str("in", quality.Name).
@@ -1218,11 +1126,7 @@ func GetPriorityMapQual(
 		return
 	}
 
-	if cwanted {
-		m.Priority = allQualityPrioritiesWantedT[intid].Priority
-	} else {
-		m.Priority = allQualityPrioritiesT[intid].Priority
-	}
+	m.Priority = prio
 
 	if quality.UseForPriorityOther || useall {
 		applyPriorityModifiers(m)
@@ -1267,24 +1171,20 @@ func GetPriorityMapQualAudio(
 	}
 
 	// Use the same priority lookup as movies (resolution/quality/codec/audio all 0 for audio media)
-	intid, cwanted := findPriorityIndex(0, 0, 0, 0, audioformat, quality, false)
-	if intid == -1 {
+	prio, found := findPriorityValue(0, 0, 0, 0, audioformat, quality, false)
+	if !found {
 		logger.Logtype("debug", 0).
 			Uint("audioformat", audioformat).
 			Str("quality_name", quality.Name).
-			Int("allprio_len", len(allQualityPrioritiesT)).
-			Msg("GetPriorityMapQualAudio findPriorityIndex returned -1")
+			Int("profiles", len(loadPrioSnapshot().profiles)).
+			Msg("GetPriorityMapQualAudio priority not found")
 
 		m.Priority = 0
 
 		return
 	}
 
-	if cwanted {
-		m.Priority = allQualityPrioritiesWantedT[intid].Priority
-	} else {
-		m.Priority = allQualityPrioritiesT[intid].Priority
-	}
+	m.Priority = prio
 
 	// Bitrate bonus modifier
 	if quality.UseForPriorityAudioBitrate || useall {
@@ -1349,7 +1249,7 @@ func calculateAudioBitratePriority(bitrate int, format string) int {
 // This provides appropriate priority ranking for ebook content where video attributes don't apply.
 func GetPriorityMapQualBook(
 	m *database.ParseInfo,
-	cfgp *config.MediaTypeConfig,
+	_ *config.MediaTypeConfig,
 	quality *config.QualityConfig,
 	useall bool,
 ) {
@@ -1426,28 +1326,38 @@ func updateNamesFromIDs(m *database.ParseInfo) {
 	}
 }
 
-// findPriorityIndex determines the priority index for a media file by first checking wanted priorities
-// if checkwanted is true, and falling back to the default priority index if no wanted priority is found.
-// It returns the index of the matching priority entry or -1 if no match is found.
-func findPriorityIndex(
+// findPriorityValue returns the priority for the given combination, first
+// checking the wanted table when checkwanted is true and falling back to the
+// full table. Both lookups hit the same immutable snapshot, so the result is
+// consistent even when the tables are regenerated concurrently (config reload).
+func findPriorityValue(
 	reso, qual, codec, aud, audioformat uint,
 	quality *config.QualityConfig,
 	checkwanted bool,
 ) (int, bool) {
-	if checkwanted {
-		if intid := Findpriorityidxwanted(
-			reso,
-			qual,
-			codec,
-			aud,
-			audioformat,
-			quality,
-		); intid != -1 {
-			return intid, true
-		}
+	s := loadPrioSnapshot()
+
+	prio, inAll, inWanted := s.lookupPriority(quality.Name, reso, qual, codec, aud, audioformat)
+	if checkwanted && inWanted {
+		return prio, true
 	}
 
-	return Findpriorityidx(reso, qual, codec, aud, audioformat, quality), false
+	if inAll {
+		return prio, true
+	}
+
+	return 0, false
+}
+
+// FindPriorityValue returns the priority for the given combination, checking
+// the wanted table first and falling back to the full table. Both lookups hit
+// the same immutable snapshot, making this safe against concurrent table
+// regeneration - prefer it over the Findpriorityidx*/Get*ArrPrio pairs.
+func FindPriorityValue(
+	reso, qual, codec, aud, audioformat uint,
+	quality *config.QualityConfig,
+) (int, bool) {
+	return findPriorityValue(reso, qual, codec, aud, audioformat, quality, true)
 }
 
 // applyPriorityModifiers adjusts the priority of a parsed media file based on specific attributes.
@@ -1467,184 +1377,100 @@ func applyPriorityModifiers(m *database.ParseInfo) {
 	}
 }
 
-// GetwantedArrPrio returns the priority value from the allQualityPrioritiesWantedT slice
-// at the given index.
-func GetwantedArrPrio(intid int) int {
-	if intid < 0 || intid >= len(allQualityPrioritiesWantedT) {
-		return 0
-	}
-
-	return allQualityPrioritiesWantedT[intid].Priority
-}
-
-func GetAllArrPrio(intid int) int {
-	if intid < 0 || intid >= len(allQualityPrioritiesT) {
-		return 0
-	}
-
-	return allQualityPrioritiesT[intid].Priority
-}
-
-// Findpriorityidxwanted searches through the allQualityPrioritiesWantedT slice
-// to find the index of the priority entry matching the given resolution,
-// quality, codec, and audio IDs. It is used to look up the priority value
-// for a video file's metadata when checking if it matches a wanted quality.
-func Findpriorityidxwanted(
-	reso, qual, codec, aud, audioformat uint,
-	quality *config.QualityConfig,
-) int {
-	for idx := range allQualityPrioritiesWantedT {
-		entry := &allQualityPrioritiesWantedT[idx]
-		if entry.ResolutionID == reso &&
-			entry.QualityID == qual &&
-			entry.CodecID == codec &&
-			entry.AudioID == aud &&
-			entry.AudioFormatID == audioformat &&
-			strings.EqualFold(entry.QualityGroup, quality.Name) {
-			return idx
-		}
-	}
-
-	return -1
-}
-
-// Findpriorityidx searches through the allQualityPrioritiesT slice
-// to find the index of the priority entry matching the given resolution,
-// quality, codec, and audio IDs. It is used internally to look up the
-// priority value for a video file's metadata.
-func Findpriorityidx(reso, qual, codec, aud, audioformat uint, quality *config.QualityConfig) int {
-	for idx := range allQualityPrioritiesT {
-		entry := &allQualityPrioritiesT[idx]
-		if entry.ResolutionID == reso &&
-			entry.QualityID == qual &&
-			entry.CodecID == codec &&
-			entry.AudioID == aud &&
-			entry.AudioFormatID == audioformat &&
-			strings.EqualFold(entry.QualityGroup, quality.Name) {
-			return idx
-		}
-	}
-
-	return -1
-}
-
 // GenerateAllQualityPriorities generates all possible quality priority combinations
 // by iterating through resolutions, qualities, codecs and audios. It builds up
 // a target Prioarr struct containing the ID and name for each, and calculates
 // the priority value based on the quality group's reorder rules. The results
-// are added to allQualityPrioritiesT and allQualityPrioritiesWantedT slices.
-// Thread-safe for concurrent calls using a write lock.
+// are published as one immutable snapshot, so concurrent readers are never
+// affected by a regeneration (e.g. on config reload).
 func GenerateAllQualityPriorities() {
+	// Serialize concurrent generation; readers are lock-free via the snapshot.
 	prioritiesMu.Lock()
 	defer prioritiesMu.Unlock()
 
 	regex0 := database.Qualities{Name: "", ID: 0, Priority: 0}
-	getresolutions := database.DBConnect.GetresolutionsIn
+	// Clone before appending the zero sentinel - appending to the global
+	// slices directly can write into their shared backing arrays.
+	getresolutions := append(slices.Clone(database.DBConnect.GetresolutionsIn), regex0)
+	getqualities := append(slices.Clone(database.DBConnect.GetqualitiesIn), regex0)
+	getaudios := append(slices.Clone(database.DBConnect.GetaudiosIn), regex0)
+	getcodecs := append(slices.Clone(database.DBConnect.GetcodecsIn), regex0)
+	getaudioformats := append(slices.Clone(database.DBConnect.GetaudioformatsIn), regex0)
 
-	getresolutions = append(getresolutions, regex0)
-
-	getqualities := database.DBConnect.GetqualitiesIn
-
-	getqualities = append(getqualities, regex0)
-
-	getaudios := database.DBConnect.GetaudiosIn
-
-	getaudios = append(getaudios, regex0)
-
-	getcodecs := database.DBConnect.GetcodecsIn
-
-	getcodecs = append(getcodecs, regex0)
-
-	getaudioformats := database.DBConnect.GetaudioformatsIn
-
-	getaudioformats = append(getaudioformats, regex0)
-
-	totalCombinations := config.GetSettingsQualityLen() * len(
-		getresolutions,
-	) * len(
-		getqualities,
-	) * len(
-		getaudios,
-	) * len(
-		getcodecs,
-	) * len(
-		getaudioformats,
-	)
-
-	allQualityPrioritiesT = make(
-		[]Prioarr,
-		0,
-		totalCombinations,
-	)
-	allQualityPrioritiesWantedT = make(
-		[]Prioarr,
-		0,
-		totalCombinations,
-	)
+	snap := &prioritySnapshot{
+		byName:   make(map[string]*profilePrio, config.GetSettingsQualityLen()),
+		profiles: make([]*profilePrio, 0, config.GetSettingsQualityLen()),
+	}
 
 	config.RangeSettingsQuality(func(_ string, qual *config.QualityConfig) {
-		target := Prioarr{QualityGroup: qual.Name}
+		p := &profilePrio{
+			name:     qual.Name,
+			resoQual: make(map[[2]uint]resoQualEntry, len(getresolutions)*len(getqualities)),
+			codec:    make(map[uint]int, len(getcodecs)),
+			audio:    make(map[uint]int, len(getaudios)),
+			audioFmt: make(map[uint]int, len(getaudioformats)),
+		}
 
-		// Optimized: Use value iteration instead of index-based loops
+		// Codec / audio / audio-format priorities depend only on the profile and
+		// the component, so compute them once per dimension (not per combination).
+		for _, codec := range getcodecs {
+			prio := codec.Gettypeidprioritysingle("codec", qual)
+
+			p.codec[codec.ID] = prio
+			p.codecOrder = append(p.codecOrder, dimVal{id: codec.ID, prio: prio})
+		}
+
+		for _, audio := range getaudios {
+			prio := audio.Gettypeidprioritysingle("audio", qual)
+
+			p.audio[audio.ID] = prio
+			p.audioOrder = append(p.audioOrder, dimVal{id: audio.ID, prio: prio})
+		}
+
+		for _, af := range getaudioformats {
+			prio := af.Gettypeidprioritysingle("audio_format", qual)
+
+			p.audioFmt[af.ID] = prio
+			p.afOrder = append(p.afOrder, dimVal{id: af.ID, prio: prio})
+		}
+
+		// Resolution+quality priority (after combined reorder) and wanted-ness
+		// depend on the (resolution, quality) pair.
 		for _, reso := range getresolutions {
-			target.ResolutionID = reso.ID
-
-			prioreso := reso.Gettypeidprioritysingle("resolution", qual)
-			prioresoorg := prioreso
+			prioresoorg := reso.Gettypeidprioritysingle("resolution", qual)
 
 			for _, quality := range getqualities {
-				target.QualityID = quality.ID
+				prioqualorg := quality.Gettypeidprioritysingle("quality", qual)
 
-				prioqual := quality.Gettypeidprioritysingle("quality", qual)
-				prioqualorg := prioqual
+				prioreso, prioqual := handleCombinedReorder(
+					qual,
+					reso.Name,
+					quality.Name,
+					prioresoorg,
+					prioqualorg,
+				)
 
-				for _, codec := range getcodecs {
-					target.CodecID = codec.ID
-
-					priocod := codec.Gettypeidprioritysingle("codec", qual)
-
-					for _, audio := range getaudios {
-						target.AudioID = audio.ID
-
-						prioaud := audio.Gettypeidprioritysingle("audio", qual)
-
-						// Handle combined resolution/quality reordering
-						prioreso, prioqual = handleCombinedReorder(
-							qual,
-							reso.Name,
-							quality.Name,
-							prioresoorg,
-							prioqualorg,
-						)
-
-						for _, af := range getaudioformats {
-							target.AudioFormatID = af.ID
-
-							prioaf := af.Gettypeidprioritysingle("audio_format", qual)
-
-							target.Priority = prioreso + prioqual + priocod + prioaud + prioaf
-
-							allQualityPrioritiesT = append(allQualityPrioritiesT, target)
-
-							// Check if this combination is wanted
-							if isWantedCombination(
-								qual,
-								reso.Name,
-								quality.Name,
-							) {
-								allQualityPrioritiesWantedT = append(
-									allQualityPrioritiesWantedT,
-									target,
-								)
-							}
-						}
-
-						// prioreso/prioqual are re-derived from prioresoorg/prioqualorg each iteration via handleCombinedReorder
-					}
+				pairWanted := isWantedCombination(qual, reso.Name, quality.Name)
+				if !pairWanted && database.DBLogLevel == logger.StrDebug {
+					logger.Logtype("debug", 3).
+						Str("quality_group", qual.Name).
+						Str("resolution", reso.Name).
+						Str("quality", quality.Name).
+						Msg("Combination excluded from wanted priorities")
 				}
+
+				key := [2]uint{reso.ID, quality.ID}
+
+				p.resoQual[key] = resoQualEntry{prio: prioreso + prioqual, wanted: pairWanted}
+				p.resoQualOrder = append(p.resoQualOrder, key)
 			}
 		}
+
+		snap.profiles = append(snap.profiles, p)
+		snap.byName[strings.ToLower(qual.Name)] = p
 	})
+
+	prioSnapshot.Store(snap)
 }
 
 // handleCombinedReorder processes quality reordering for combined resolution and quality configurations.
@@ -1684,19 +1510,24 @@ func handleCombinedReorder(
 	return prioresoorg, prioqualorg
 }
 
-// isWantedCombination checks if a specific resolution and quality combination is desired
-// based on the quality configuration. When debug logging is enabled, it logs details
-// about unwanted resolutions or qualities. Returns true if both resolution and quality
-// are wanted, false otherwise.
+// isWantedCombination checks if a specific resolution and quality combination is
+// desired based on the quality configuration. An empty name (the zero/unknown
+// sentinel) or an empty wanted list passes - filtering only applies to named
+// values against a configured list. Previously this check only ran when debug
+// logging was enabled, which made the wanted table contents depend on the log
+// level; it is now always applied.
 func isWantedCombination(qual *config.QualityConfig, resolutionName, qualityName string) bool {
-	if database.DBLogLevel != logger.StrDebug {
-		return true
+	if resolutionName != "" && len(qual.WantedResolution) > 0 &&
+		!logger.SlicesContainsI(qual.WantedResolution, resolutionName) {
+		return false
 	}
 
-	resWanted := logger.SlicesContainsI(qual.WantedResolution, resolutionName)
-	qualWanted := logger.SlicesContainsI(qual.WantedQuality, qualityName)
+	if qualityName != "" && len(qual.WantedQuality) > 0 &&
+		!logger.SlicesContainsI(qual.WantedQuality, qualityName) {
+		return false
+	}
 
-	return resWanted && qualWanted
+	return true
 }
 
 // BuildPrioStr builds a priority string from the given resolution, quality, codec, and audio values.

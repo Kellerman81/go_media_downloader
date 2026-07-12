@@ -2,6 +2,7 @@ package apiexternal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"slices"
@@ -1112,7 +1113,7 @@ func RefreshTraktToken() (*oauth2.Token, error) {
 	if provider := providers.GetTrakt(); provider != nil {
 		currentToken := GetTraktToken()
 		if currentToken == nil || currentToken.RefreshToken == "" {
-			return nil, fmt.Errorf("no refresh token available")
+			return nil, errors.New("no refresh token available")
 		}
 
 		v2Token, err := provider.RefreshToken(context.Background(), currentToken.RefreshToken)
@@ -1168,7 +1169,7 @@ func IsTokenExpired() bool {
 // Returns ErrNotFound if username, listname or listtype are empty.
 func GetTraktUserListAuth(
 	username, listname, listtype string,
-	limit *string,
+	_ *string,
 ) ([]TraktUserList, error) {
 	if username == "" || listname == "" || listtype == "" {
 		return nil, logger.ErrNotFound
@@ -1256,8 +1257,8 @@ func GetTraktUserListAuth(
 // TestTraktConnectivity tests the connectivity to the Trakt API
 // Returns status code and error if any.
 func TestTraktConnectivity(
-	timeout time.Duration,
-	limit *string,
+	_ time.Duration,
+	_ *string,
 ) (int, []TraktMovieTrending, error) {
 	// Use v2 provider if available
 	if provider := providers.GetTrakt(); provider != nil {

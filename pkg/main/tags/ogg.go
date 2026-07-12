@@ -23,8 +23,43 @@ func NewOGGHandler() *OGGHandler {
 }
 
 // SupportedFormats returns the file extensions supported by this handler.
-func (h *OGGHandler) SupportedFormats() []string {
-	return []string{".ogg", ".oga"}
+// Covers both Ogg Vorbis (.ogg/.oga) and Ogg Opus (.opus), which share the same
+// page framing and Vorbis-comment metadata structure.
+func (*OGGHandler) SupportedFormats() []string {
+	return []string{".ogg", ".oga", ".opus"}
+}
+
+// commentHeaderPayload reports the offset of the Vorbis-comment payload (vendor
+// string onward) within an Ogg comment-header packet, for both Vorbis ("\x03vorbis")
+// and Opus ("OpusTags") streams. ok is false if data is not a comment header.
+func commentHeaderPayload(data []byte) (offset int, ok bool) {
+	if len(data) >= 8 && string(data[0:8]) == "OpusTags" {
+		return 8, true
+	}
+
+	if len(data) > 7 && data[0] == 0x03 && string(data[1:7]) == "vorbis" {
+		return 7, true
+	}
+
+	return 0, false
+}
+
+// parseIDHeader fills audio properties from an Ogg identification header for both
+// Vorbis ("\x01vorbis") and Opus ("OpusHead") streams.
+func parseIDHeader(data []byte, tags *AudioTags) {
+	if len(data) >= 19 && string(data[0:8]) == "OpusHead" {
+		tags.Channels = int(data[9])
+		// Opus stores the original input sample rate; decoding is always 48 kHz.
+		tags.SampleRate = int(binary.LittleEndian.Uint32(data[12:16]))
+
+		return
+	}
+
+	if len(data) > 29 && data[0] == 0x01 && string(data[1:7]) == "vorbis" {
+		tags.Channels = int(data[11])
+		tags.SampleRate = int(binary.LittleEndian.Uint32(data[12:16]))
+		tags.Bitrate = int(binary.LittleEndian.Uint32(data[20:24])) / 1000 // nominal, kbps
+	}
 }
 
 // oggPage represents an OGG page header and data.
@@ -50,7 +85,7 @@ func (h *OGGHandler) ReadTags(filepath string) (*AudioTags, error) {
 
 	tags := &AudioTags{}
 
-	// Read pages until we find the comment header
+	// Read pages until we find the comment header (Vorbis or Opus)
 	pageNum := 0
 	for pageNum < 10 { // Limit search to first 10 pages
 		page, err := h.readPage(file)
@@ -62,37 +97,26 @@ func (h *OGGHandler) ReadTags(filepath string) (*AudioTags, error) {
 			return nil, &ErrReadFailed{Path: filepath, Reason: err.Error()}
 		}
 
-		// Check for Vorbis comment header (packet type 0x03)
-		if len(page.Data) > 7 && page.Data[0] == 0x03 {
-			if string(page.Data[1:7]) == "vorbis" {
-				h.parseVorbisCommentPacket(page.Data[7:], tags)
-				break
-			}
+		if offset, ok := commentHeaderPayload(page.Data); ok {
+			h.parseVorbisCommentPacket(page.Data[offset:], tags)
+			break
 		}
 
 		pageNum++
 	}
 
-	// Try to get audio info from identification header
+	// Try to get audio info from the identification header (first page)
 	file.Seek(0, 0)
 
-	page, err := h.readPage(file)
-	if err == nil && len(page.Data) > 29 && page.Data[0] == 0x01 {
-		if string(page.Data[1:7]) == "vorbis" {
-			// Parse identification header
-			tags.Channels = int(page.Data[11])
-			tags.SampleRate = int(binary.LittleEndian.Uint32(page.Data[12:16]))
-			tags.Bitrate = int(
-				binary.LittleEndian.Uint32(page.Data[20:24]),
-			) / 1000 // Convert to kbps
-		}
+	if page, err := h.readPage(file); err == nil {
+		parseIDHeader(page.Data, tags)
 	}
 
 	return tags, nil
 }
 
 // readPage reads a single OGG page from the file.
-func (h *OGGHandler) readPage(r io.Reader) (*oggPage, error) {
+func (*OGGHandler) readPage(r io.Reader) (*oggPage, error) {
 	// Read capture pattern
 	capture := make([]byte, 4)
 	if _, err := io.ReadFull(r, capture); err != nil {
@@ -100,7 +124,7 @@ func (h *OGGHandler) readPage(r io.Reader) (*oggPage, error) {
 	}
 
 	if string(capture) != "OggS" {
-		return nil, fmt.Errorf("invalid OGG page: bad capture pattern")
+		return nil, errors.New("invalid OGG page: bad capture pattern")
 	}
 
 	page := &oggPage{}
@@ -275,7 +299,7 @@ func (h *OGGHandler) setTagValue(key, value string, tags *AudioTags) {
 }
 
 // parsePictureBlock parses a FLAC-style METADATA_BLOCK_PICTURE.
-func (h *OGGHandler) parsePictureBlock(encoded string, tags *AudioTags) {
+func (*OGGHandler) parsePictureBlock(encoded string, tags *AudioTags) {
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || len(data) < 32 {
 		return
@@ -340,87 +364,131 @@ func detectImageMIME(data []byte) string {
 		return "image/gif"
 	}
 
-	if bytes.HasPrefix(data, []byte("WEBP")) || (len(data) > 12 && string(data[8:12]) == "WEBP") {
+	// WebP is a RIFF container: "RIFF"<4-byte size>"WEBP".
+	if len(data) >= 12 && bytes.HasPrefix(data, []byte("RIFF")) &&
+		string(data[8:12]) == "WEBP" {
 		return "image/webp"
 	}
 
 	return "image/jpeg" // Default
 }
 
-// WriteTags writes Vorbis Comment tags to an OGG Vorbis file.
-// Note: This is a complex operation that requires rewriting the entire file.
-// For production use, consider using a library like github.com/jfreymuth/oggvorbis.
-func (h *OGGHandler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
-	// Read the entire file
-	fileData, err := os.ReadFile(filepath)
+// WriteTags writes Vorbis Comment tags to an OGG Vorbis / Opus file.
+//
+// Only the comment-header page (near the start) changes; the audio pages are
+// unchanged. Rather than loading the whole file into memory (twice), it streams:
+// the few header pages before the comment are copied through verbatim, the
+// comment page is rebuilt, and the remaining audio is io.Copy'd straight to a
+// temp file which then atomically replaces the original. This keeps memory
+// bounded regardless of file size — important for large files in batch tagging.
+func (h *OGGHandler) WriteTags(_ context.Context, filepath string, tags *AudioTags) error {
+	in, err := os.Open(filepath)
+	if err != nil {
+		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
+	}
+	defer in.Close()
+
+	mode := os.FileMode(0o644)
+	if st, serr := in.Stat(); serr == nil {
+		mode = st.Mode()
+	}
+
+	tmpPath := filepath + ".oggtmp"
+
+	out, err := os.OpenFile(tmpPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
 	}
 
-	// Find the comment packet and rebuild it
-	reader := bytes.NewReader(fileData)
+	success := false
+	defer func() {
+		out.Close()
 
-	var (
-		outputPages      [][]byte
-		commentPageIndex = -1
-	)
+		if !success {
+			os.Remove(tmpPath)
+		}
+	}()
 
-	pageNum := 0
-	for {
-		pageStart := int(reader.Size()) - reader.Len()
+	// Copy header pages through until the comment header, which we rebuild.
+	found := false
 
-		page, err := h.readPage(reader)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+	for !found {
+		page, raw, rerr := h.readPageRaw(in)
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
 				break
 			}
 
-			return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
+			return &ErrWriteFailed{Path: filepath, Reason: rerr.Error()}
 		}
 
-		// Check if this is the comment header
-		if len(page.Data) > 7 && page.Data[0] == 0x03 && string(page.Data[1:7]) == "vorbis" {
-			commentPageIndex = pageNum
-			// Build new comment packet
-			newCommentData := h.buildVorbisCommentPacket(tags)
+		if _, isComment := commentHeaderPayload(page.Data); !isComment {
+			if _, werr := out.Write(raw); werr != nil {
+				return &ErrWriteFailed{Path: filepath, Reason: werr.Error()}
+			}
 
-			// Rebuild page with new data
-			page.Data = newCommentData
+			continue
+		}
 
-			newPageData := h.buildPage(page)
-
-			outputPages = append(outputPages, newPageData)
+		// Build the new comment packet in the matching codec framing.
+		if len(page.Data) >= 8 && string(page.Data[0:8]) == "OpusTags" {
+			page.Data = h.buildOpusCommentPacket(tags)
 		} else {
-			// Keep original page data
-			pageEnd := int(reader.Size()) - reader.Len()
-
-			outputPages = append(outputPages, fileData[pageStart:pageEnd])
+			page.Data = h.buildVorbisCommentPacket(tags)
 		}
 
-		pageNum++
+		newPageData, berr := h.buildPage(page)
+		if berr != nil {
+			return &ErrWriteFailed{
+				Path: filepath,
+				Reason: "cannot rewrite OGG comments: " + berr.Error() +
+					" (embedding cover art in OGG is not supported by this writer)",
+			}
+		}
+
+		if _, werr := out.Write(newPageData); werr != nil {
+			return &ErrWriteFailed{Path: filepath, Reason: werr.Error()}
+		}
+
+		found = true
 	}
 
-	if commentPageIndex < 0 {
+	if !found {
 		return &ErrWriteFailed{Path: filepath, Reason: "could not find Vorbis comment header"}
 	}
 
-	// Recalculate page sequence numbers and checksums
-	var output bytes.Buffer
-	for i, pageData := range outputPages {
-		if i == commentPageIndex {
-			// Already rebuilt with correct data
-			output.Write(pageData)
-		} else {
-			output.Write(pageData)
-		}
-	}
-
-	// Write the file
-	if err := os.WriteFile(filepath, output.Bytes(), 0o644); err != nil {
+	// Stream the remaining audio pages unchanged.
+	if _, err := io.Copy(out, in); err != nil {
 		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
 	}
 
+	// Close both files before replacing (required on Windows).
+	if err := out.Close(); err != nil {
+		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
+	}
+
+	in.Close()
+
+	if err := os.Rename(tmpPath, filepath); err != nil {
+		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
+	}
+
+	success = true
+
 	return nil
+}
+
+// readPageRaw reads a single OGG page, returning both the parsed page and the
+// exact raw bytes consumed, so unchanged pages can be copied through verbatim.
+func (h *OGGHandler) readPageRaw(r io.Reader) (*oggPage, []byte, error) {
+	var raw bytes.Buffer
+
+	page, err := h.readPage(io.TeeReader(r, &raw))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return page, raw.Bytes(), nil
 }
 
 // buildVorbisCommentPacket creates a Vorbis comment packet from tags.
@@ -462,6 +530,31 @@ func (h *OGGHandler) buildVorbisCommentPacket(tags *AudioTags) []byte {
 
 	// Framing bit
 	buf.WriteByte(0x01)
+
+	return buf.Bytes()
+}
+
+// buildOpusCommentPacket creates an Opus comment packet ("OpusTags") from tags.
+// It shares the Vorbis-comment body layout (vendor + count + entries) but uses
+// the "OpusTags" magic instead of the "\x03vorbis" prefix and omits the trailing
+// framing bit.
+func (h *OGGHandler) buildOpusCommentPacket(tags *AudioTags) []byte {
+	var buf bytes.Buffer
+
+	buf.WriteString("OpusTags")
+
+	vendor := "go-media-downloader"
+	binary.Write(&buf, binary.LittleEndian, uint32(len(vendor)))
+	buf.WriteString(vendor)
+
+	comments := h.buildCommentList(tags)
+
+	binary.Write(&buf, binary.LittleEndian, uint32(len(comments)))
+
+	for i := range comments {
+		binary.Write(&buf, binary.LittleEndian, uint32(len(comments[i])))
+		buf.WriteString(comments[i])
+	}
 
 	return buf.Bytes()
 }
@@ -551,7 +644,7 @@ func (h *OGGHandler) buildCommentList(tags *AudioTags) []string {
 }
 
 // buildPictureBlock creates a FLAC-style METADATA_BLOCK_PICTURE.
-func (h *OGGHandler) buildPictureBlock(tags *AudioTags) []byte {
+func (*OGGHandler) buildPictureBlock(tags *AudioTags) []byte {
 	var buf bytes.Buffer
 
 	// Picture type (3 = Front Cover)
@@ -596,8 +689,12 @@ func (h *OGGHandler) buildPictureBlock(tags *AudioTags) []byte {
 	return buf.Bytes()
 }
 
-// buildPage rebuilds an OGG page with updated data.
-func (h *OGGHandler) buildPage(page *oggPage) []byte {
+// buildPage rebuilds an OGG page with updated data. It returns an error when the
+// packet does not fit in a single page (>255 lacing segments, i.e. ~65 KB),
+// which this minimal writer cannot split across pages — returning an error here
+// prevents writing a structurally corrupt file (the segment count is a single
+// byte and would otherwise silently overflow).
+func (h *OGGHandler) buildPage(page *oggPage) ([]byte, error) {
 	var buf bytes.Buffer
 
 	// Capture pattern
@@ -642,8 +739,14 @@ func (h *OGGHandler) buildPage(page *oggPage) []byte {
 		segments = append(segments, 0) // Terminate packet
 	}
 
+	// A single page can carry at most 255 lacing segments. Anything larger would
+	// need to be split across continuation pages, which this writer does not do.
+	if len(segments) > 255 {
+		return nil, fmt.Errorf("packet of %d bytes is too large for a single OGG page", dataLen)
+	}
+
 	// Page segments count
-	buf.WriteByte(byte(len(segments))) //nolint:gosec // safe: value within target type range
+	buf.WriteByte(byte(len(segments))) //nolint:gosec // safe: bounded to <=255 above
 
 	// Segment table
 	buf.Write(segments)
@@ -656,11 +759,11 @@ func (h *OGGHandler) buildPage(page *oggPage) []byte {
 	checksum := h.calculateCRC32(pageData)
 	binary.LittleEndian.PutUint32(pageData[checksumPos:checksumPos+4], checksum)
 
-	return pageData
+	return pageData, nil
 }
 
 // calculateCRC32 calculates the OGG CRC32 checksum.
-func (h *OGGHandler) calculateCRC32(data []byte) uint32 {
+func (*OGGHandler) calculateCRC32(data []byte) uint32 {
 	// OGG uses a specific CRC32 polynomial
 	var crc uint32 = 0
 	for i := range data {
@@ -746,51 +849,67 @@ func (h *OGGHandler) GetDuration(filepath string) (time.Duration, error) {
 	}
 	defer file.Close()
 
-	// Get file size for seeking to end
 	stat, err := file.Stat()
 	if err != nil {
 		return 0, err
 	}
 
-	// Seek near the end of the file to find the last page
-	seekPos := max(
-		// Last 64KB should contain the final page
-		stat.Size()-65536, 0)
+	// Sample rate comes from the first page's identification header. Opus always
+	// timestamps granule positions at 48 kHz regardless of the input rate.
+	var sampleRate int
 
-	file.Seek(seekPos, 0)
-
-	var (
-		lastGranulePos int64
-		sampleRate     int
-	)
-
-	// Read pages to find the last granule position
-
-	for {
-		page, err := h.readPage(file)
-		if err != nil {
-			break
-		}
-
-		if page.GranulePos > 0 {
-			lastGranulePos = page.GranulePos
-		}
-	}
-
-	// Get sample rate from the first page
-	file.Seek(0, 0)
-
-	page, err := h.readPage(file)
-	if err == nil && len(page.Data) > 16 && page.Data[0] == 0x01 {
-		if string(page.Data[1:7]) == "vorbis" {
+	if page, perr := h.readPage(file); perr == nil {
+		switch {
+		case len(page.Data) >= 19 && string(page.Data[0:8]) == "OpusHead":
+			sampleRate = 48000
+		case len(page.Data) > 16 && page.Data[0] == 0x01 && string(page.Data[1:7]) == "vorbis":
 			sampleRate = int(binary.LittleEndian.Uint32(page.Data[12:16]))
 		}
 	}
 
-	if sampleRate > 0 && lastGranulePos > 0 {
-		seconds := float64(lastGranulePos) / float64(sampleRate)
+	if sampleRate == 0 {
+		return 0, errors.New("could not determine sample rate")
+	}
+
+	// The final granule position is the total sample count. Scan the tail of the
+	// file for Ogg page captures and take the largest granule (seeking to a fixed
+	// offset would land mid-page and miss the capture pattern).
+	readSize := int64(65536)
+	if stat.Size() < readSize {
+		readSize = stat.Size()
+	}
+
+	if _, err := file.Seek(stat.Size()-readSize, io.SeekStart); err != nil {
+		return 0, err
+	}
+
+	tail := make([]byte, readSize)
+
+	nn, err := io.ReadFull(file, tail)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return 0, err
+	}
+
+	tail = tail[:nn]
+
+	lastGranule := int64(-1)
+
+	for i := 0; i+14 <= len(tail); i++ {
+		// Match "OggS" with stream-structure version 0 to avoid false positives.
+		if tail[i] != 'O' || tail[i+1] != 'g' || tail[i+2] != 'g' || tail[i+3] != 'S' ||
+			tail[i+4] != 0 {
+			continue
+		}
+
+		if gp := int64(binary.LittleEndian.Uint64(tail[i+6 : i+14])); gp > lastGranule {
+			lastGranule = gp
+		}
+	}
+
+	if lastGranule > 0 {
+		seconds := float64(lastGranule) / float64(sampleRate)
 		return time.Duration(seconds * float64(time.Second)), nil
 	}
 
-	return 0, fmt.Errorf("could not determine duration")
+	return 0, errors.New("could not determine duration")
 }

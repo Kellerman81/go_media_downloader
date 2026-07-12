@@ -299,9 +299,18 @@ func TestMusicBrainzArtistQueryVariants(t *testing.T) {
 		query func(album, artist string) string
 	}
 	variants := []variant{
-		{"quoted-phrase", func(album, artist string) string { return buildQueryWithArtist(album, artist) }},
-		{"slop-1", func(album, artist string) string { return buildQueryWithArtistSlop(album, artist, 1) }},
-		{"per-word-AND", func(album, artist string) string { return buildQueryWithArtistPerWord(album, artist) }},
+		{
+			"quoted-phrase",
+			func(album, artist string) string { return buildQueryWithArtist(album, artist) },
+		},
+		{
+			"slop-1",
+			func(album, artist string) string { return buildQueryWithArtistSlop(album, artist, 1) },
+		},
+		{
+			"per-word-AND",
+			func(album, artist string) string { return buildQueryWithArtistPerWord(album, artist) },
+		},
 	}
 
 	for _, tc := range cases {

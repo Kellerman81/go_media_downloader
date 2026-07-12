@@ -202,7 +202,7 @@ func renderConfigSection[T any](
 	options ConfigSectionOptions,
 	renderForm func(*T) gomponents.Node,
 ) gomponents.Node {
-	var elements []gomponents.Node
+	elements := make([]gomponents.Node, 0, len(configList))
 	for _, config := range configList {
 		elements = append(elements, renderForm(&config))
 	}
@@ -284,7 +284,7 @@ func renderArrayItemFormWithIndex(
 	collapseId := group + "_collapse"
 
 	// Create form groups for all fields
-	var formGroups []gomponents.Node
+	formGroups := make([]gomponents.Node, 0, len(fields))
 	for _, field := range fields {
 		formGroups = append(
 			formGroups,
@@ -345,7 +345,7 @@ func renderArrayItemFormWithNameAndIndex(
 	collapseId := group + "_collapse"
 
 	// Create form groups for all fields
-	var formGroups []gomponents.Node
+	formGroups := make([]gomponents.Node, 0, len(fields))
 	for _, field := range fields {
 		formGroups = append(
 			formGroups,
@@ -437,7 +437,7 @@ func convertMapToSelectOptions(optionsMap map[string][]string) []SelectOption {
 }
 
 func convertSelectOptionsToMap(optionsMap []SelectOption) map[string][]string {
-	var selectOptions []string
+	selectOptions := make([]string, 0, len(optionsMap))
 	for _, row := range optionsMap {
 		selectOptions = append(selectOptions, row.Label)
 	}
@@ -647,6 +647,7 @@ func renderGeneralConfigSections(
 				{Name: "DiscogsToken", Type: "text", Value: configv.DiscogsToken},
 				{Name: "AcoustIDAPIKey", Type: "text", Value: configv.AcoustIDAPIKey},
 				{Name: "LastFMAPIKey", Type: "text", Value: configv.LastFMAPIKey},
+				{Name: "TheAudioDBAPIKey", Type: "text", Value: configv.TheAudioDBAPIKey},
 			}, group, comments, displayNames),
 
 		// Book/Audiobook/Music Provider Rate Limits
@@ -706,6 +707,18 @@ func renderGeneralConfigSections(
 				{Name: "LastFMLimiterCalls", Type: "number", Value: configv.LastFMLimiterCalls},
 				{Name: "DeezerLimiterSeconds", Type: "number", Value: configv.DeezerLimiterSeconds},
 				{Name: "DeezerLimiterCalls", Type: "number", Value: configv.DeezerLimiterCalls},
+				{Name: "ITunesLimiterSeconds", Type: "number", Value: configv.ITunesLimiterSeconds},
+				{Name: "ITunesLimiterCalls", Type: "number", Value: configv.ITunesLimiterCalls},
+				{
+					Name:  "TheAudioDBLimiterSeconds",
+					Type:  "number",
+					Value: configv.TheAudioDBLimiterSeconds,
+				},
+				{
+					Name:  "TheAudioDBLimiterCalls",
+					Type:  "number",
+					Value: configv.TheAudioDBLimiterCalls,
+				},
 			}, group, comments, displayNames),
 
 		// Music Metadata Sources
@@ -715,6 +728,11 @@ func renderGeneralConfigSections(
 					Name:  "MusicMetaSourcePriority",
 					Type:  "array",
 					Value: configv.MusicMetaSourcePriority,
+				},
+				{
+					Name:  "MusicMetaSourcePenalties",
+					Type:  "floatmap",
+					Value: configv.MusicMetaSourcePenalties,
 				},
 			}, group, comments, displayNames),
 
@@ -989,6 +1007,7 @@ func renderMediaDataForm(prefix string, i int, configv *config.MediaDataConfig) 
 		{Name: "EnableUnpacking", Type: "checkbox", Value: configv.EnableUnpacking, Options: nil},
 		{Name: "WriteRenameLog", Type: "checkbox", Value: configv.WriteRenameLog, Options: nil},
 		{Name: "EmbedArt", Type: "checkbox", Value: configv.EmbedArt, Options: nil},
+		{Name: "EmbedLyrics", Type: "checkbox", Value: configv.EmbedLyrics, Options: nil},
 		{
 			Name:    "SkipSeriesTrackMatch",
 			Type:    "checkbox",
@@ -1257,12 +1276,12 @@ func renderMediaConfigSections(
 	accordionId := "mediaConfigAccordion-" + typev + "-" + sanitizedName
 
 	// Prepare sub-arrays
-	var datav []gomponents.Node
+	datav := make([]gomponents.Node, 0, len(configv.Data))
 	for i, mediaType := range configv.Data {
 		datav = append(datav, renderMediaDataForm(group+"_data", i, &mediaType))
 	}
 
-	var DataImport []gomponents.Node
+	DataImport := make([]gomponents.Node, 0, len(configv.DataImport))
 	for i, mediaType := range configv.DataImport {
 		DataImport = append(
 			DataImport,
@@ -1270,12 +1289,12 @@ func renderMediaConfigSections(
 		)
 	}
 
-	var Lists []gomponents.Node
+	Lists := make([]gomponents.Node, 0, len(configv.Lists))
 	for i, mediaType := range configv.Lists {
 		Lists = append(Lists, renderMediaListsForm(group+"_lists", i, &mediaType))
 	}
 
-	var Notification []gomponents.Node
+	Notification := make([]gomponents.Node, 0, len(configv.Notification))
 	for i, mediaType := range configv.Notification {
 		Notification = append(
 			Notification,
@@ -1504,27 +1523,27 @@ func renderMediaArraySection(
 
 // renderMediaConfig renders the media configuration section.
 func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents.Node {
-	var Movies []gomponents.Node
+	Movies := make([]gomponents.Node, 0, len(configv.Movies))
 	for _, mediaType := range configv.Movies {
 		Movies = append(Movies, renderMediaForm("movies", &mediaType, csrfToken))
 	}
 
-	var Series []gomponents.Node
+	Series := make([]gomponents.Node, 0, len(configv.Series))
 	for _, mediaType := range configv.Series {
 		Series = append(Series, renderMediaForm("series", &mediaType, csrfToken))
 	}
 
-	var Books []gomponents.Node
+	Books := make([]gomponents.Node, 0, len(configv.Books))
 	for _, mediaType := range configv.Books {
 		Books = append(Books, renderMediaForm("books", &mediaType, csrfToken))
 	}
 
-	var AudioBooks []gomponents.Node
+	AudioBooks := make([]gomponents.Node, 0, len(configv.AudioBooks))
 	for _, mediaType := range configv.AudioBooks {
 		AudioBooks = append(AudioBooks, renderMediaForm("audiobooks", &mediaType, csrfToken))
 	}
 
-	var Music []gomponents.Node
+	Music := make([]gomponents.Node, 0, len(configv.Music))
 	for _, mediaType := range configv.Music {
 		Music = append(Music, renderMediaForm("music", &mediaType, csrfToken))
 	}
@@ -1804,7 +1823,7 @@ func renderDownloaderConfig(configv []config.DownloaderConfig, csrfToken string)
 		configv,
 		csrfToken,
 		options,
-		func(config config.DownloaderConfig, token string) gomponents.Node {
+		func(config config.DownloaderConfig, _ string) gomponents.Node {
 			return renderDownloaderForm(&config)
 		},
 	)
@@ -1872,6 +1891,10 @@ func renderListsConfigSections(
 							"audiobookconfig",
 							"bookconfig",
 							"musicconfig",
+							"musiccharts",
+							"bookbestsellers",
+							"lastfmtopartists",
+							"irc",
 						},
 					}),
 				},
@@ -2321,6 +2344,53 @@ func renderListsConfigSections(
 			displayNames,
 			accordionId,
 		),
+
+		// IRC Announce Settings
+		renderConfigGroupWithParent(
+			"IRC Announce Settings",
+			"irc-"+strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-"),
+			false,
+			[]FormFieldDefinition{
+				{Name: "IRCServer", Type: "text", Value: configv.IRCServer, Options: nil},
+				{Name: "IRCUseTLS", Type: "checkbox", Value: configv.IRCUseTLS, Options: nil},
+				{Name: "IRCNick", Type: "text", Value: configv.IRCNick, Options: nil},
+				{
+					Name:    "IRCNickServPassword",
+					Type:    "text",
+					Value:   configv.IRCNickServPassword,
+					Options: nil,
+				},
+				{
+					Name:    "IRCInviteCommand",
+					Type:    "text",
+					Value:   configv.IRCInviteCommand,
+					Options: nil,
+				},
+				{Name: "IRCChannels", Type: "array", Value: configv.IRCChannels, Options: nil},
+				{
+					Name:    "IRCAnnounceNicks",
+					Type:    "array",
+					Value:   configv.IRCAnnounceNicks,
+					Options: nil,
+				},
+				{
+					Name:    "IRCAnnounceRegex",
+					Type:    "text",
+					Value:   configv.IRCAnnounceRegex,
+					Options: nil,
+				},
+				{
+					Name:    "IRCReadSeconds",
+					Type:    "number",
+					Value:   configv.IRCReadSeconds,
+					Options: nil,
+				},
+			},
+			group,
+			comments,
+			displayNames,
+			accordionId,
+		),
 	)
 }
 
@@ -2340,7 +2410,7 @@ func renderListsConfig(configv []config.ListsConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.ListsConfig, token string) gomponents.Node {
+		func(config config.ListsConfig, _ string) gomponents.Node {
 			return renderListsForm(&config)
 		},
 	)
@@ -2566,7 +2636,7 @@ func renderIndexersConfig(configv []config.IndexersConfig, csrfToken string) gom
 		configv,
 		csrfToken,
 		options,
-		func(config config.IndexersConfig, token string) gomponents.Node {
+		func(config config.IndexersConfig, _ string) gomponents.Node {
 			return renderIndexersForm(&config)
 		},
 	)
@@ -2630,6 +2700,30 @@ func renderPathsConfigSections(
 					Name:    "AllowedOtherExtensionsNoRename",
 					Type:    "array",
 					Value:   configv.AllowedOtherExtensionsNoRename,
+					Options: nil,
+				},
+				{
+					Name:    "AllowedAudioExtensions",
+					Type:    "array",
+					Value:   configv.AllowedAudioExtensions,
+					Options: nil,
+				},
+				{
+					Name:    "AllowedAudioExtensionsNoRename",
+					Type:    "array",
+					Value:   configv.AllowedAudioExtensionsNoRename,
+					Options: nil,
+				},
+				{
+					Name:    "AllowedBookExtensions",
+					Type:    "array",
+					Value:   configv.AllowedBookExtensions,
+					Options: nil,
+				},
+				{
+					Name:    "AllowedBookExtensionsNoRename",
+					Type:    "array",
+					Value:   configv.AllowedBookExtensionsNoRename,
 					Options: nil,
 				},
 				{Name: "Blocked", Type: "array", Value: configv.Blocked, Options: nil},
@@ -2758,7 +2852,7 @@ func renderPathsConfig(configv []config.PathsConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.PathsConfig, token string) gomponents.Node {
+		func(config config.PathsConfig, _ string) gomponents.Node {
 			return renderPathsForm(&config)
 		},
 	)
@@ -2846,7 +2940,7 @@ func renderNotificationConfig(
 		configv,
 		csrfToken,
 		options,
-		func(config config.NotificationConfig, token string) gomponents.Node {
+		func(config config.NotificationConfig, _ string) gomponents.Node {
 			return renderNotificationForm(&config)
 		},
 	)
@@ -2920,7 +3014,7 @@ func renderRegexConfig(configv []config.RegexConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.RegexConfig, token string) gomponents.Node {
+		func(config config.RegexConfig, _ string) gomponents.Node {
 			return renderRegexForm(&config)
 		},
 	)
@@ -3069,7 +3163,7 @@ func renderQualityConfigSections(
 	accordionId := "qualityConfigAccordion-" + sanitizedName
 
 	// Prepare sub-arrays
-	var QualityReorder []gomponents.Node
+	QualityReorder := make([]gomponents.Node, 0, len(configv.QualityReorder))
 	for i, qualityReorder := range configv.QualityReorder {
 		QualityReorder = append(
 			QualityReorder,
@@ -3077,7 +3171,7 @@ func renderQualityConfigSections(
 		)
 	}
 
-	var QualityIndexer []gomponents.Node
+	QualityIndexer := make([]gomponents.Node, 0, len(configv.Indexer))
 	for i, qualityIndexer := range configv.Indexer {
 		QualityIndexer = append(
 			QualityIndexer,
@@ -3131,6 +3225,24 @@ func renderQualityConfigSections(
 					Type:    "arrayselectarray",
 					Value:   configv.WantedCodec,
 					Options: convertMapToSelectOptions(database.GetSettingTemplatesFor("codec")),
+				},
+				{
+					Name:    "WantedAudioFormats",
+					Type:    "array",
+					Value:   configv.WantedAudioFormats,
+					Options: nil,
+				},
+				{
+					Name:    "MinAudioBitrate",
+					Type:    "number",
+					Value:   configv.MinAudioBitrate,
+					Options: nil,
+				},
+				{
+					Name:    "PreferLossless",
+					Type:    "checkbox",
+					Value:   configv.PreferLossless,
+					Options: nil,
 				},
 				{
 					Name:  "CutoffResolution",
@@ -3273,6 +3385,18 @@ func renderQualityConfigSections(
 					Options: nil,
 				},
 				{
+					Name:    "UseForPriorityAudioFormat",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityAudioFormat,
+					Options: nil,
+				},
+				{
+					Name:    "UseForPriorityAudioBitrate",
+					Type:    "checkbox",
+					Value:   configv.UseForPriorityAudioBitrate,
+					Options: nil,
+				},
+				{
 					Name:    "UseForPriorityCodec",
 					Type:    "checkbox",
 					Value:   configv.UseForPriorityCodec,
@@ -3323,7 +3447,7 @@ func renderQualityConfigSections(
 
 // renderQualityConfig renders the quality configuration section.
 func renderQualityConfig(configv []config.QualityConfig, csrfToken string) gomponents.Node {
-	var elements []gomponents.Node
+	elements := make([]gomponents.Node, 0, len(configv))
 	for _, quality := range configv {
 		elements = append(elements, renderQualityForm(&quality, csrfToken))
 	}
@@ -3549,6 +3673,46 @@ func renderSchedulerConfigSections(
 					Type:  "text",
 					Value: configv.CronIndexerRssSeasonsAll,
 				},
+				{
+					Name:  "IntervalIndexerRssArtists",
+					Type:  "text",
+					Value: configv.IntervalIndexerRssArtists,
+				},
+				{
+					Name:  "CronIndexerRssArtists",
+					Type:  "text",
+					Value: configv.CronIndexerRssArtists,
+				},
+				{
+					Name:  "IntervalIndexerRssArtistsUpgrade",
+					Type:  "text",
+					Value: configv.IntervalIndexerRssArtistsUpgrade,
+				},
+				{
+					Name:  "CronIndexerRssArtistsUpgrade",
+					Type:  "text",
+					Value: configv.CronIndexerRssArtistsUpgrade,
+				},
+				{
+					Name:  "IntervalIndexerRssAuthors",
+					Type:  "text",
+					Value: configv.IntervalIndexerRssAuthors,
+				},
+				{
+					Name:  "CronIndexerRssAuthors",
+					Type:  "text",
+					Value: configv.CronIndexerRssAuthors,
+				},
+				{
+					Name:  "IntervalIndexerRssAuthorsUpgrade",
+					Type:  "text",
+					Value: configv.IntervalIndexerRssAuthorsUpgrade,
+				},
+				{
+					Name:  "CronIndexerRssAuthorsUpgrade",
+					Type:  "text",
+					Value: configv.CronIndexerRssAuthorsUpgrade,
+				},
 			},
 			group,
 			comments,
@@ -3649,6 +3813,8 @@ func renderSchedulerConfigSections(
 				{Name: "CronDatabaseBackup", Type: "text", Value: configv.CronDatabaseBackup},
 				{Name: "IntervalDatabaseCheck", Type: "text", Value: configv.IntervalDatabaseCheck},
 				{Name: "CronDatabaseCheck", Type: "text", Value: configv.CronDatabaseCheck},
+				{Name: "IntervalCacheRefresh", Type: "text", Value: configv.IntervalCacheRefresh},
+				{Name: "CronCacheRefresh", Type: "text", Value: configv.CronCacheRefresh},
 			},
 			group,
 			comments,
@@ -3707,6 +3873,8 @@ func renderFormGroup(
 		iconClass = "fa-solid fa-align-left"
 	case "array", "arrayselect", "arrayselectarray", "arrayint":
 		iconClass = "fa-solid fa-layer-group"
+	case "floatmap":
+		iconClass = "fa-solid fa-sliders"
 	default:
 		iconClass = "fa-solid fa-cog"
 	}
@@ -4158,6 +4326,75 @@ func renderFormGroup(
 			),
 		)
 
+	case "floatmap":
+		m, _ := value.(map[string]float64)
+
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		input = html.Div(
+			html.ID(group+"_"+name+"-container"),
+			gomponents.Group(
+				func() []gomponents.Node {
+					var nodes []gomponents.Node
+					for _, k := range keys {
+						nodes = append(nodes, html.Div(
+							html.Class(ClassDFlex+" mb-2"),
+							html.Input(
+								html.Class(ClassFormControl+" me-2"),
+								html.Type("text"),
+								html.Placeholder("source"),
+								html.Name(group+"_"+name+"_key"),
+								html.Value(k),
+							),
+							html.Input(
+								html.Class(ClassFormControl+" me-2"),
+								html.Type("number"),
+								gomponents.Attr("step", "any"),
+								html.Placeholder("penalty"),
+								html.Name(group+"_"+name+"_value"),
+								html.Value(strconv.FormatFloat(m[k], 'f', -1, 64)),
+							),
+							html.Button(
+								html.Class(ClassBtnDanger),
+								html.Type("button"),
+								gomponents.Attr(
+									"onclick",
+									"if(this.parentElement) this.parentElement.remove()",
+								),
+								html.I(html.Class("fa fa-trash")),
+							),
+						))
+					}
+
+					return append(nodes,
+						html.Button(
+							html.Class(ClassBtnPrimary),
+							html.Type("button"),
+							gomponents.Attr(
+								"onclick",
+								fmt.Sprintf("addMap%sItem('%s', '%s')", name, group, name),
+							),
+							gomponents.Text("Add Item"),
+						),
+						html.Script(gomponents.Rawf(`
+							function addMap%sItem(group, name) {
+								const container = document.getElementById(group + '_' + name + '-container');
+								const newRow = document.createElement('div');
+								newRow.className = 'd-flex mb-2';
+								newRow.innerHTML = '<input class="form-control me-2" type="text" placeholder="source" name="%s_key"><input class="form-control me-2" type="number" step="any" placeholder="penalty" name="%s_value"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
+								container.insertBefore(newRow, container.lastElementChild);
+							}
+						`, name, group+"_"+name, group+"_"+name)),
+					)
+				}(),
+			),
+		)
+
 	default:
 		input = createFormField(inputType, group+"_"+name, "", "", nil)
 	}
@@ -4276,7 +4513,7 @@ func renderFormFields(
 	displayNames map[string]string,
 	fields []FormFieldDefinition,
 ) []gomponents.Node {
-	var formGroups []gomponents.Node
+	formGroups := make([]gomponents.Node, 0, len(fields))
 	for _, field := range fields {
 		formGroups = append(
 			formGroups,
@@ -4299,13 +4536,29 @@ func renderFormFields(
 func renderTestParsePage(csrfToken string) gomponents.Node {
 	media := config.GetSettingsMediaAll()
 
-	lists := make([]string, 0, len(media.Movies)+len(media.Series))
+	lists := make(
+		[]string,
+		0,
+		len(media.Movies)+len(media.Series)+len(media.Music)+len(media.Books)+len(media.AudioBooks),
+	)
 	for i := range media.Movies {
 		lists = append(lists, media.Movies[i].NamePrefix)
 	}
 
 	for i := range media.Series {
 		lists = append(lists, media.Series[i].NamePrefix)
+	}
+
+	for i := range media.Music {
+		lists = append(lists, media.Music[i].NamePrefix)
+	}
+
+	for i := range media.Books {
+		lists = append(lists, media.Books[i].NamePrefix)
+	}
+
+	for i := range media.AudioBooks {
+		lists = append(lists, media.AudioBooks[i].NamePrefix)
 	}
 
 	qualitycfg := config.GetSettingsQualityAll()
@@ -4872,9 +5125,8 @@ func renderTraktAuthPage(csrfToken string) gomponents.Node {
 							hx.Post("/api/admin/traktauth"),
 							hx.Headers(createHTMXHeaders(csrfToken)),
 							hx.Vals("{\"action\": \"revoke_token\"}"),
-							gomponents.Attr(
-								"onclick",
-								"return confirm('Are you sure you want to revoke the Trakt authentication? This will disable Trakt API access.')",
+							hx.Confirm(
+								"Revoke the Trakt authentication? This will disable Trakt API access.",
 							),
 						),
 					),

@@ -95,7 +95,7 @@ func (p *HTTPProvider) DownloadFile(ctx context.Context, url, targetPath, filena
 /*
 GetProviderName returns the provider name for HTTP downloads.
 */
-func (p *HTTPProvider) GetProviderName() string {
+func (*HTTPProvider) GetProviderName() string {
 	return "HTTP"
 }
 
@@ -103,6 +103,6 @@ func (p *HTTPProvider) GetProviderName() string {
 TestConnection tests HTTP connectivity.
 Always succeeds as HTTP doesn't require persistent connections.
 */
-func (p *HTTPProvider) TestConnection(ctx context.Context) error {
+func (*HTTPProvider) TestConnection(_ context.Context) error {
 	return nil
 }

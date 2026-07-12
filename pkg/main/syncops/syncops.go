@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/robfig/cron/v3"
 )
 
@@ -63,10 +63,6 @@ type JobSchedule struct {
 	IsRunning      bool
 }
 
-type SyncAny struct {
-	Value any
-}
-
 // OpType defines operation types for the unified single-writer system.
 type OpType string
 
@@ -84,28 +80,15 @@ const (
 	OpWorkerMapDelete      OpType = "workerMapDelete"
 	OpWorkerMapDeleteQueue OpType = "workerMapDeleteQueue"
 
-	// OpCacheAppend and related constants are cache operations (from database package).
-	OpCacheAppend OpType = "cacheAppend"
-	OpCacheRemove OpType = "cacheRemove"
-	OpCacheDelete OpType = "cacheDelete"
-	OpCacheRegex  OpType = "cacheRegex"
-	OpCacheStmt   OpType = "cacheStmt"
-
-	// OpSliceAppend and related constants are atomic slice operations.
+	// OpSliceAppend is an atomic slice operation.
 	OpSliceAppend OpType = "sliceAppend"
-	OpSliceRemove OpType = "sliceRemove"
 
 	// OpSyncMapCheckExpires and related constants are advanced SyncMap operations.
-	OpSyncMapCheckExpires         OpType = "syncMapCheckExpires"
-	OpSyncMapDeleteFunc           OpType = "syncMapDeleteFunc"
-	OpSyncMapDeleteFuncExpires    OpType = "syncMapDeleteFuncExpires"
-	OpSyncMapDeleteFuncExpiresVal OpType = "syncMapDeleteFuncExpiresVal"
-	OpSyncMapDeleteFuncImdbVal    OpType = "syncMapDeleteFuncImdbVal"
-	OpAtomicAppendString          OpType = "atomicAppendString"
-	OpAtomicRemoveString          OpType = "atomicRemoveString"
-
-	// OpFlush is a control operation.
-	OpFlush OpType = "flush"
+	OpSyncMapCheckExpires      OpType = "syncMapCheckExpires"
+	OpSyncMapDeleteFunc        OpType = "syncMapDeleteFunc"
+	OpSyncMapDeleteFuncExpires OpType = "syncMapDeleteFuncExpires"
+	OpAtomicAppendString       OpType = "atomicAppendString"
+	OpAtomicRemoveString       OpType = "atomicRemoveString"
 
 	// OpFunc runs an arbitrary function inside the writer goroutine,
 	// serializing it with all other cache operations.
@@ -122,15 +105,6 @@ const (
 	MapTypeThreeString MapType = "threestring"
 	MapTypeTwoInt      MapType = "twoint"
 	MapTypeStructEmpty MapType = "structempty"
-	// MapTypeAny is a generic interface map type.
-	MapTypeAny MapType = "any"
-
-	// MapTypeNewznab and related constants are API Client SyncMap types.
-	MapTypeNewznab    MapType = "newznab"
-	MapTypeApprise    MapType = "apprise"
-	MapTypeGotify     MapType = "gotify"
-	MapTypePushbullet MapType = "pushbullet"
-	MapTypePushover   MapType = "pushover"
 
 	// MapTypeSchedule and related constants are worker SyncMapUint types.
 	MapTypeSchedule MapType = "schedule"
@@ -148,14 +122,11 @@ type SyncOperation struct {
 	IMDB      bool
 	Lastscan  int64
 	ResultCh  chan bool
-	isType    uint
-	Force     bool
 
 	// Additional fields for advanced operations
 	Extend     bool
 	Duration   int
 	FilterFunc any // Function for DeleteFunc operations
-	ValueFunc  any // Function for DeleteFuncExpiresVal operations
 
 	// Worker-specific fields
 	Queue     string // Queue name for worker operations
@@ -167,8 +138,7 @@ type SyncOperation struct {
 // SyncOpsManager manages all synchronized operations across the application.
 type SyncOpsManager struct {
 	opQueue      chan SyncOperation
-	writerActive bool
-	writerMu     sync.Mutex
+	writerActive atomic.Bool
 	ctx          context.Context
 	cancel       context.CancelFunc
 
@@ -182,52 +152,11 @@ var (
 	manager  *SyncOpsManager
 	initOnce sync.Once
 
-	// Pool for reusing SyncOperation objects.
-	plSyncOp pool.Poolobj[SyncOperation]
+	// resultChPool reuses the per-call result channels. The channels have a
+	// buffer of 1 so the writer's result send can never block, and they are
+	// always drained before being returned to the pool.
+	resultChPool = sync.Pool{New: func() any { return make(chan bool, 1) }}
 )
-
-// init initializes the SyncOperation object pool for efficient memory reuse.
-// Pool is configured to maintain 100 objects with 10 pre-allocated, following
-// the established pooling pattern used throughout the application.
-func init() {
-	plSyncOp.Init(100, 10,
-		func(op *SyncOperation) {
-			// Initialize the operation object
-			if op.ResultCh == nil {
-				op.ResultCh = make(chan bool, 1)
-			}
-
-			// Reset all fields to zero values
-			op.OpType = ""
-			op.MapType = ""
-			op.Key = ""
-			op.KeyUint32 = 0
-			op.Value = nil
-			op.Expires = 0
-			op.IMDB = false
-			op.Lastscan = 0
-			op.isType = 0
-			op.Force = false
-			op.Extend = false
-			op.Duration = 0
-			op.FilterFunc = nil
-			op.ValueFunc = nil
-			op.Queue = ""
-			op.IsStarted = false
-			op.Fn = nil
-		},
-		func(op *SyncOperation) bool {
-			// Cleanup before returning to pool
-			// Ensure channel is drained to prevent blocking
-			select {
-			case <-op.ResultCh:
-			default:
-			}
-
-			// Keep the object in pool (return false to retain)
-			return false
-		})
-}
 
 // InitSyncOps initializes the global synchronized operations manager using a singleton pattern.
 // Creates a single-writer goroutine that processes all synchronization operations to ensure
@@ -240,11 +169,10 @@ func InitSyncOps() {
 		)
 
 		manager = &SyncOpsManager{
-			opQueue:      make(chan SyncOperation, 10000),
-			writerActive: false,
-			ctx:          ctx,
-			cancel:       cancel,
-			syncMaps:     make(map[MapType]any),
+			opQueue:  make(chan SyncOperation, 1024),
+			ctx:      ctx,
+			cancel:   cancel,
+			syncMaps: make(map[MapType]any),
 		}
 		manager.startWriter()
 	})
@@ -254,6 +182,10 @@ func InitSyncOps() {
 // Associates the provided map with a specific MapType identifier, allowing the operations
 // manager to route operations to the correct map. Automatically initializes the manager
 // if not already done. Thread-safe and can be called from multiple goroutines.
+//
+// Re-registering a MapType replaces the previous map: queued operations for that
+// MapType silently stop reaching the old map. That is almost never intended (each
+// MapType should have exactly one owner), so an overwrite is logged as a warning.
 func RegisterSyncMap(mapType MapType, syncMap any) {
 	if manager == nil {
 		InitSyncOps()
@@ -262,45 +194,57 @@ func RegisterSyncMap(mapType MapType, syncMap any) {
 	manager.syncMapsMu.Lock()
 	defer manager.syncMapsMu.Unlock()
 
+	if existing, ok := manager.syncMaps[mapType]; ok && existing != syncMap {
+		logger.Logtype("warn", 0).
+			Str("maptype", string(mapType)).
+			Str("existing", reflect.TypeOf(existing).String()).
+			Str("new", reflect.TypeOf(syncMap).String()).
+			Msg("RegisterSyncMap overwrote an existing registration - queued operations now target the new map")
+	}
+
 	manager.syncMaps[mapType] = syncMap
 }
 
-// QueueOperation submits a synchronization operation to the single-writer goroutine for processing.
-// Blocks until the operation completes, ensuring atomic execution. Uses pooled operation objects
-// for efficient memory reuse. Uses a fallback retry mechanism if the queue is full to guarantee delivery.
-// This is the core function that ensures all map operations are serialized and thread-safe.
-func QueueOperation(op SyncOperation) {
-	if manager == nil || !manager.writerActive {
-		return
+// QueueOperation submits a synchronization operation to the single-writer goroutine and
+// blocks until it completes. Returns true if the operation was processed successfully,
+// false if it failed (map not registered, type mismatch) or the manager is shut down.
+// Failures are also logged by the writer, so callers may ignore the return value.
+func QueueOperation(op SyncOperation) bool {
+	m := manager
+	if m == nil || !m.writerActive.Load() {
+		return false
 	}
 
-	// Get a pooled operation object
-	pooledOp := plSyncOp.Get()
-	defer plSyncOp.Put(pooledOp)
+	ch := resultChPool.Get().(chan bool)
 
-	// Copy operation data to pooled object
-	*pooledOp = op
+	op.ResultCh = ch
 
-	// Ensure result channel is available
-	if pooledOp.ResultCh == nil {
-		pooledOp.ResultCh = make(chan bool, 1)
-	}
-
-	// Send operation and wait for completion
 	select {
-	case manager.opQueue <- *pooledOp:
-		<-pooledOp.ResultCh // Wait for operation to complete
-	default:
-		// Queue is full, keep trying until we can insert the operation
-		for {
-			select {
-			case manager.opQueue <- *pooledOp:
-				<-pooledOp.ResultCh // Wait for operation to complete
-				return
+	case m.opQueue <- op:
+	case <-m.ctx.Done():
+		resultChPool.Put(ch)
+		return false
+	}
 
-			default:
-				time.Sleep(time.Millisecond)
-			}
+	select {
+	case ok := <-ch:
+		resultChPool.Put(ch)
+		return ok
+
+	case <-m.ctx.Done():
+		// Shutdown raced with this submission. The writer drains the queue on
+		// shutdown and signals every queued op, but if this op was enqueued
+		// after the drain finished no signal will ever arrive - give up after
+		// a grace period instead of blocking forever.
+		select {
+		case ok := <-ch:
+			resultChPool.Put(ch)
+			return ok
+
+		case <-time.After(5 * time.Second):
+			// Abandon ch: a late send by the writer goes into its buffer and
+			// cannot block, but the channel must not be reused.
+			return false
 		}
 	}
 }
@@ -433,18 +377,6 @@ func QueueSliceAppend(mapType MapType, key string, value any) {
 	})
 }
 
-// QueueSliceRemove queues an atomic removal operation for slice-based SyncMap values.
-// Safely removes specific elements from slices stored in SyncMaps while maintaining order.
-// Creates new slices without the specified value, optimizing memory allocation for performance.
-func QueueSliceRemove(mapType MapType, key string, value any) {
-	QueueOperation(SyncOperation{
-		OpType:  OpSliceRemove,
-		MapType: mapType,
-		Key:     key,
-		Value:   value,
-	})
-}
-
 // QueueSyncMapCheckExpires queues an expiration check operation for SyncMap entries.
 // Verifies if a key has expired and optionally extends the expiration time by the specified
 // duration in hours. Used for cache management and automatic cleanup of stale entries.
@@ -460,7 +392,8 @@ func QueueSyncMapCheckExpires(mapType MapType, key string, extend bool, duration
 
 // QueueSyncMapDeleteFunc queues a conditional deletion operation using a custom filter function.
 // Removes all entries where the filter function returns true when applied to the value.
-// Provides flexible cleanup capabilities based on complex business logic conditions.
+// The filter function must not call QueueOperation or RegisterSyncMap - it runs inside
+// the single writer goroutine, which would deadlock waiting on itself.
 func QueueSyncMapDeleteFunc(mapType MapType, filterFunc any) {
 	QueueOperation(SyncOperation{
 		OpType:     OpSyncMapDeleteFunc,
@@ -471,7 +404,8 @@ func QueueSyncMapDeleteFunc(mapType MapType, filterFunc any) {
 
 // QueueSyncMapDeleteFuncExpires queues deletion based on expiration time filtering.
 // Removes entries where the filter function returns true when applied to the expiration timestamp.
-// Useful for implementing custom cache eviction policies and time-based cleanup strategies.
+// The filter function must not call QueueOperation or RegisterSyncMap - it runs inside
+// the single writer goroutine, which would deadlock waiting on itself.
 func QueueSyncMapDeleteFuncExpires(mapType MapType, filterFunc any) {
 	QueueOperation(SyncOperation{
 		OpType:     OpSyncMapDeleteFuncExpires,
@@ -479,30 +413,6 @@ func QueueSyncMapDeleteFuncExpires(mapType MapType, filterFunc any) {
 		FilterFunc: filterFunc,
 	})
 }
-
-// QueueSyncMapDeleteFuncExpiresVal queues deletion with expiration filtering and value processing.
-// Combines expiration-based filtering with value callback execution before deletion.
-// The filter function checks expiration times, and the value function processes each deleted entry.
-// func QueueSyncMapDeleteFuncExpiresVal(mapType MapType, filterFunc any, valueFunc any) {
-// 	QueueOperation(SyncOperation{
-// 		OpType:     OpSyncMapDeleteFuncExpiresVal,
-// 		MapType:    mapType,
-// 		FilterFunc: filterFunc,
-// 		ValueFunc:  valueFunc,
-// 	})
-// }
-
-// QueueSyncMapDeleteFuncImdbVal queues deletion based on IMDB flag filtering with value processing.
-// Designed specifically for IMDB data management with boolean condition filtering.
-// The filter function receives IMDB flags and the value function processes deleted entries.
-// func QueueSyncMapDeleteFuncImdbVal(mapType MapType, filterFunc any, valueFunc any) {
-// 	QueueOperation(SyncOperation{
-// 		OpType:     OpSyncMapDeleteFuncImdbVal,
-// 		MapType:    mapType,
-// 		FilterFunc: filterFunc,
-// 		ValueFunc:  valueFunc,
-// 	})
-// }
 
 // QueueAtomicAppendString queues an atomic string append operation for string slice values.
 // Safely appends a string to a string slice stored in a SyncMap while checking for duplicates.
@@ -531,6 +441,8 @@ func QueueAtomicRemoveString(mapType MapType, key string, value string) {
 // QueueFunc runs fn inside the single writer goroutine, serializing it with all
 // other cache operations. This prevents concurrent index rebuilds and races between
 // index builds and concurrent slice appends.
+// fn must not call QueueOperation or RegisterSyncMap - it runs inside the single
+// writer goroutine, which would deadlock waiting on itself.
 func QueueFunc(fn func()) {
 	QueueOperation(SyncOperation{
 		OpType: OpFunc,
@@ -538,114 +450,74 @@ func QueueFunc(fn func()) {
 	})
 }
 
-// Shutdown gracefully terminates the synchronized operations manager and its writer goroutine.
-// Cancels the context to signal shutdown, closes the operation queue channel, and marks
-// the writer as inactive. Should be called during application shutdown to ensure clean exit.
-// Thread-safe and can be called multiple times without adverse effects.
+// Shutdown gracefully terminates the synchronized operations manager.
+// Marks the writer inactive so new operations are rejected, then cancels the
+// context: the writer goroutine drains any still-queued operations (signalling
+// their waiting callers) before exiting. The operation channel is never closed,
+// so concurrent QueueOperation calls cannot panic. Safe to call multiple times.
 func Shutdown() {
-	if manager == nil {
+	m := manager
+	if m == nil {
 		return
 	}
 
-	manager.cancel()
-	manager.writerMu.Lock()
-
-	if manager.writerActive && manager.opQueue != nil {
-		close(manager.opQueue)
-
-		manager.writerActive = false
-	}
-
-	manager.writerMu.Unlock()
+	m.writerActive.Store(false)
+	m.cancel()
 }
 
-// startWriter launches the single writer goroutine that processes all synchronization operations.
-// Ensures only one writer goroutine is active at a time using mutex protection. The goroutine
-// runs until the context is cancelled, processing operations from the queue and sending
-// results back to callers. This is the core of the thread-safety mechanism.
+// startWriter launches the single writer goroutine that processes all synchronization
+// operations. The goroutine runs until the context is cancelled, then drains the queue
+// (rejecting remaining operations) so no caller is left blocked on its result channel.
 func (m *SyncOpsManager) startWriter() {
-	m.writerMu.Lock()
-	defer m.writerMu.Unlock()
-
-	if m.writerActive {
+	if !m.writerActive.CompareAndSwap(false, true) {
 		return
 	}
 
-	m.writerActive = true
-
 	go func() {
-		defer func() {
-			m.writerMu.Lock()
-
-			m.writerActive = false
-			m.writerMu.Unlock()
-		}()
+		defer m.writerActive.Store(false)
 
 		for {
 			select {
 			case <-m.ctx.Done():
-				return
-			case op := <-m.opQueue:
-				success := m.processOperation(op)
-				if op.ResultCh != nil {
+				// Reject still-queued operations so their callers are not
+				// left blocked waiting on ResultCh.
+				for {
 					select {
-					case op.ResultCh <- success:
+					case op := <-m.opQueue:
+						sendResult(op.ResultCh, false)
 					default:
-						// Non-blocking send to avoid deadlocks
+						return
 					}
 				}
+
+			case op := <-m.opQueue:
+				sendResult(op.ResultCh, m.processOperation(op))
 			}
 		}
 	}()
 }
 
-// processOperation dispatches a single synchronization operation to the appropriate handler.
-// Uses the operation type to determine which specific processing function to call.
-// Returns true if the operation was successfully processed, false otherwise.
-// This is the central dispatcher for all operation types in the single-writer system.
-func (m *SyncOpsManager) processOperation(op SyncOperation) bool {
-	m.syncMapsMu.RLock()
-	defer m.syncMapsMu.RUnlock()
+// sendResult delivers an operation result without ever blocking the writer.
+// Result channels are buffered with capacity 1, so the default branch only
+// triggers for an already-signalled (abandoned) channel.
+func sendResult(ch chan bool, success bool) {
+	if ch == nil {
+		return
+	}
 
+	select {
+	case ch <- success:
+	default:
+	}
+}
+
+// processOperation dispatches a single synchronization operation to the appropriate handler.
+// The registered map is resolved under the read lock but the lock is released before the
+// operation executes, so user-supplied callbacks (OpFunc, DeleteFunc filters) cannot
+// deadlock against RegisterSyncMap. Failures (unregistered MapType, mismatched map or
+// value type) are logged here - silent no-ops are how broken registrations stay hidden.
+func (m *SyncOpsManager) processOperation(op SyncOperation) bool {
 	switch op.OpType {
-	case OpSyncMapAdd:
-		return m.processSyncMapAdd(op)
-	case OpSyncMapUpdateVal:
-		return m.processSyncMapUpdateVal(op)
-	case OpSyncMapUpdateExpire:
-		return m.processSyncMapUpdateExpire(op)
-	case OpSyncMapUpdateLscan:
-		return m.processSyncMapUpdateLastscan(op)
-	case OpSyncMapDelete:
-		return m.processSyncMapDelete(op)
-	case OpWorkerMapAdd:
-		return m.processWorkerMapAdd(op)
-	case OpWorkerMapUpdate:
-		return m.processWorkerMapUpdate(op)
-	case OpWorkerMapDelete:
-		return m.processWorkerMapDelete(op)
-	case OpWorkerMapDeleteQueue:
-		return m.processWorkerMapDeleteQueue(op)
-	case OpSliceAppend:
-		return m.processSliceAppend(op)
-	case OpSliceRemove:
-		return m.processSliceRemove(op)
-	case OpSyncMapCheckExpires:
-		return m.processSyncMapCheckExpires(op)
-	case OpSyncMapDeleteFunc:
-		return m.processSyncMapDeleteFunc(op)
-	case OpSyncMapDeleteFuncExpires:
-		return m.processSyncMapDeleteFuncExpires(op)
-	case OpSyncMapDeleteFuncExpiresVal:
-		return m.processSyncMapDeleteFuncExpiresVal(op)
-	case OpSyncMapDeleteFuncImdbVal:
-		return m.processSyncMapDeleteFuncImdbVal(op)
-	case OpAtomicAppendString:
-		return m.processAtomicAppendString(op)
-	case OpAtomicRemoveString:
-		return m.processAtomicRemoveString(op)
-	case OpFlush:
-		return true // Flush operation - just return success
 	case OpFunc:
 		if op.Fn != nil {
 			op.Fn()
@@ -654,501 +526,328 @@ func (m *SyncOpsManager) processOperation(op SyncOperation) bool {
 		return true
 
 	default:
+	}
+
+	m.syncMapsMu.RLock()
+
+	syncMapInterface, exists := m.syncMaps[op.MapType]
+	m.syncMapsMu.RUnlock()
+
+	if !exists {
+		logger.Logtype("error", 0).
+			Str("op", string(op.OpType)).
+			Str("maptype", string(op.MapType)).
+			Str("key", op.Key).
+			Msg("syncops: no map registered for MapType - operation dropped")
+
 		return false
 	}
+
+	if processRegisteredOp(syncMapInterface, op) {
+		return true
+	}
+
+	logger.Logtype("error", 0).
+		Str("op", string(op.OpType)).
+		Str("maptype", string(op.MapType)).
+		Str("key", op.Key).
+		Any("keyuint", op.KeyUint32).
+		Str("mapimpl", reflect.TypeOf(syncMapInterface).String()).
+		Str("valuetype", typeName(op.Value)).
+		Msg("syncops: operation dropped - registered map or value type does not match MapType")
+
+	return false
+}
+
+// typeName returns the concrete type name of v for diagnostics, tolerating nil.
+func typeName(v any) string {
+	if v == nil {
+		return "<nil>"
+	}
+
+	return reflect.TypeOf(v).String()
+}
+
+// processRegisteredOp executes an operation against the resolved map instance.
+// Returns false when the map instance or operation value does not have the
+// concrete type expected for the operation's MapType.
+func processRegisteredOp(syncMapInterface any, op SyncOperation) bool {
+	switch op.OpType {
+	case OpSyncMapAdd:
+		return processSyncMapAdd(syncMapInterface, op)
+	case OpSyncMapUpdateVal:
+		return processSyncMapUpdateVal(syncMapInterface, op)
+	case OpSyncMapUpdateExpire:
+		return processSyncMapUpdateExpire(syncMapInterface, op)
+	case OpSyncMapUpdateLscan:
+		return processSyncMapUpdateLastscan(syncMapInterface, op)
+	case OpSyncMapDelete:
+		return processSyncMapDelete(syncMapInterface, op)
+	case OpWorkerMapAdd:
+		return processWorkerMapAdd(syncMapInterface, op)
+	case OpWorkerMapUpdate:
+		return processWorkerMapUpdate(syncMapInterface, op)
+	case OpWorkerMapDelete:
+		return processWorkerMapDelete(syncMapInterface, op)
+	case OpWorkerMapDeleteQueue:
+		return processWorkerMapDeleteQueue(syncMapInterface, op)
+	case OpSliceAppend:
+		return processSliceAppend(syncMapInterface, op)
+	case OpSyncMapCheckExpires:
+		return processSyncMapCheckExpires(syncMapInterface, op)
+	case OpSyncMapDeleteFunc:
+		return processSyncMapDeleteFunc(syncMapInterface, op)
+	case OpSyncMapDeleteFuncExpires:
+		return processSyncMapDeleteFuncExpires(syncMapInterface, op)
+	case OpAtomicAppendString:
+		return processAtomicAppendString(syncMapInterface, op)
+	case OpAtomicRemoveString:
+		return processAtomicRemoveString(syncMapInterface, op)
+	default:
+		return false
+	}
+}
+
+// syncMapAdd asserts the map and value to the concrete type for T and performs the Add.
+func syncMapAdd[T any](syncMapInterface any, op SyncOperation) bool {
+	syncMap, ok := syncMapInterface.(*SyncMap[T])
+	if !ok {
+		return false
+	}
+
+	v, ok := op.Value.(T)
+	if !ok {
+		return false
+	}
+
+	syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
+
+	return true
 }
 
 // processSyncMapAdd handles Add operations for SyncMap instances.
-// Performs type checking to ensure the operation matches the registered map type,
-// then delegates to the appropriate SyncMap's Add method. Supports all SyncMap types
-// including string slices, database static types, SQL statements, and regex patterns.
-func (m *SyncOpsManager) processSyncMapAdd(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
+func processSyncMapAdd(syncMapInterface any, op SyncOperation) bool {
+	switch op.MapType {
+	case MapTypeString:
+		return syncMapAdd[[]string](syncMapInterface, op)
+	case MapTypeTwoString:
+		return syncMapAdd[[]DbstaticTwoStringOneInt](syncMapInterface, op)
+	case MapTypeThreeString:
+		return syncMapAdd[[]DbstaticThreeStringTwoInt](syncMapInterface, op)
+	case MapTypeTwoInt:
+		return syncMapAdd[[]DbstaticOneStringTwoInt](syncMapInterface, op)
+	case MapTypeStructEmpty:
+		return syncMapAdd[struct{}](syncMapInterface, op)
+	default:
+		return false
+	}
+}
+
+// syncMapUpdateVal asserts the map and value to the concrete type for T and updates the value.
+func syncMapUpdateVal[T any](syncMapInterface any, op SyncOperation) bool {
+	syncMap, ok := syncMapInterface.(*SyncMap[T])
+	if !ok {
 		return false
 	}
 
-	switch op.MapType {
-	case MapTypeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]string)
-		if !ok {
-			break
-		}
-
-		syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
-
-		return true
-
-	case MapTypeTwoString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]DbstaticTwoStringOneInt)
-		if !ok {
-			break
-		}
-
-		syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
-
-		return true
-
-	case MapTypeThreeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]DbstaticThreeStringTwoInt)
-		if !ok {
-			break
-		}
-
-		syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
-
-		return true
-
-	case MapTypeTwoInt:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]DbstaticOneStringTwoInt)
-		if !ok {
-			break
-		}
-
-		syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
-
-		return true
-
-	case MapTypeStructEmpty:
-		syncMap, ok := syncMapInterface.(*SyncMap[struct{}])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.(struct{})
-		if !ok {
-			break
-		}
-
-		syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
-
-		return true
-
-	case MapTypeAny,
-		MapTypeNewznab,
-		MapTypeApprise,
-		MapTypeGotify,
-		MapTypePushbullet,
-		MapTypePushover:
-		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
-			if v, ok := op.Value.(SyncAny); ok {
-				syncMap.Add(op.Key, v, op.Expires, op.IMDB, op.Lastscan)
-				return true
-			} else {
-				logger.Logtype("error", 0).
-					Any("type", reflect.TypeOf(op.Value).String()).
-					Msg("Value is not of Type SyncAny")
-			}
-		} else {
-			t := reflect.TypeOf(syncMapInterface)
-			if t.Kind() == reflect.Ptr {
-				t = t.Elem()
-			}
-
-			logger.Logtype("error", 0).
-				Any("type", t.String()).
-				Any("Kind", t.Kind().String()).
-				Msg("Queue is not of Type SyncMap[SyncAny]")
-		}
+	v, ok := op.Value.(T)
+	if !ok {
+		return false
 	}
 
-	return false
+	syncMap.UpdateVal(op.Key, v)
+
+	return true
 }
 
 // processSyncMapUpdateVal handles value update operations for SyncMap instances.
-// Performs type checking and delegates to the appropriate SyncMap's UpdateVal method.
-// Preserves all metadata (expiration, IMDB flag, last scan) while updating only the value.
-func (m *SyncOpsManager) processSyncMapUpdateVal(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
+func processSyncMapUpdateVal(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]string)
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.Key, v)
-
-		return true
-
+		return syncMapUpdateVal[[]string](syncMapInterface, op)
 	case MapTypeTwoString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]DbstaticTwoStringOneInt)
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.Key, v)
-
-		return true
-
+		return syncMapUpdateVal[[]DbstaticTwoStringOneInt](syncMapInterface, op)
 	case MapTypeThreeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]DbstaticThreeStringTwoInt)
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.Key, v)
-
-		return true
-
+		return syncMapUpdateVal[[]DbstaticThreeStringTwoInt](syncMapInterface, op)
 	case MapTypeTwoInt:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.([]DbstaticOneStringTwoInt)
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.Key, v)
-
-		return true
-
+		return syncMapUpdateVal[[]DbstaticOneStringTwoInt](syncMapInterface, op)
 	case MapTypeStructEmpty:
-		syncMap, ok := syncMapInterface.(*SyncMap[struct{}])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.(struct{})
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.Key, v)
-
-		return true
-
-	case MapTypeAny,
-		MapTypeNewznab,
-		MapTypeApprise,
-		MapTypeGotify,
-		MapTypePushbullet,
-		MapTypePushover:
-		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
-			if v, ok := op.Value.(SyncAny); ok {
-				syncMap.UpdateVal(op.Key, v)
-				return true
-			}
-
-			return true
-		}
+		return syncMapUpdateVal[struct{}](syncMapInterface, op)
+	default:
+		return false
 	}
-
-	return false
 }
 
-// processSyncMapUpdateExpire handles expiration time update operations for SyncMap instances.
-// Updates only the expiration timestamp while preserving values, IMDB flags, and last scan data.
-// Supports all SyncMap types with consistent behavior across different data structures.
-func (m *SyncOpsManager) processSyncMapUpdateExpire(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
+// syncMapMetaOp asserts the map to the concrete type for T and runs fn on it.
+// Shared by the metadata-only operations (expire, lastscan, delete, check-expires)
+// that do not need to assert a value type.
+func syncMapMetaOp[T any](syncMapInterface any, fn func(*SyncMap[T])) bool {
+	syncMap, ok := syncMapInterface.(*SyncMap[T])
+	if !ok {
 		return false
 	}
 
+	fn(syncMap)
+
+	return true
+}
+
+// dispatchSyncMapMetaOp routes a metadata-only operation to the concrete map type
+// registered for op.MapType. The fns parameter bundles one closure per value type
+// because Go generics cannot abstract over the type parameter at runtime.
+func processSyncMapUpdateExpire(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			syncMap.UpdateExpire(op.Key, op.Expires)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]string]) {
+			s.UpdateExpire(op.Key, op.Expires)
+		})
 
 	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			syncMap.UpdateExpire(op.Key, op.Expires)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticTwoStringOneInt]) {
+			s.UpdateExpire(op.Key, op.Expires)
+		})
 
 	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			syncMap.UpdateExpire(op.Key, op.Expires)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticThreeStringTwoInt]) {
+			s.UpdateExpire(op.Key, op.Expires)
+		})
 
 	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			syncMap.UpdateExpire(op.Key, op.Expires)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticOneStringTwoInt]) {
+			s.UpdateExpire(op.Key, op.Expires)
+		})
 
 	case MapTypeStructEmpty:
-		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
-			syncMap.UpdateExpire(op.Key, op.Expires)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[struct{}]) {
+			s.UpdateExpire(op.Key, op.Expires)
+		})
 
-	case MapTypeAny,
-		MapTypeNewznab,
-		MapTypeApprise,
-		MapTypeGotify,
-		MapTypePushbullet,
-		MapTypePushover:
-		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
-			syncMap.UpdateExpire(op.Key, op.Expires)
-			return true
-		}
+	default:
+		return false
 	}
-
-	return false
 }
 
 // processSyncMapUpdateLastscan handles last scan timestamp update operations for SyncMap instances.
-// Updates tracking metadata for maintenance operations while preserving values, expiration, and IMDB flags.
-// Used for recording when entries were last processed or accessed for monitoring purposes.
-func (m *SyncOpsManager) processSyncMapUpdateLastscan(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
+func processSyncMapUpdateLastscan(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			syncMap.UpdateLastscan(op.Key, op.Lastscan)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]string]) {
+			s.UpdateLastscan(op.Key, op.Lastscan)
+		})
 
 	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			syncMap.UpdateLastscan(op.Key, op.Lastscan)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticTwoStringOneInt]) {
+			s.UpdateLastscan(op.Key, op.Lastscan)
+		})
 
 	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			syncMap.UpdateLastscan(op.Key, op.Lastscan)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticThreeStringTwoInt]) {
+			s.UpdateLastscan(op.Key, op.Lastscan)
+		})
 
 	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			syncMap.UpdateLastscan(op.Key, op.Lastscan)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticOneStringTwoInt]) {
+			s.UpdateLastscan(op.Key, op.Lastscan)
+		})
 
 	case MapTypeStructEmpty:
-		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
-			syncMap.UpdateLastscan(op.Key, op.Lastscan)
-			return true
-		}
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[struct{}]) {
+			s.UpdateLastscan(op.Key, op.Lastscan)
+		})
 
-	case MapTypeAny,
-		MapTypeNewznab,
-		MapTypeApprise,
-		MapTypeGotify,
-		MapTypePushbullet,
-		MapTypePushover:
-		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
-			syncMap.UpdateLastscan(op.Key, op.Lastscan)
-			return true
-		}
+	default:
+		return false
 	}
-
-	return false
 }
 
 // processSyncMapDelete handles complete deletion operations for SyncMap instances.
-// Removes keys and all associated metadata including values, expiration, IMDB flags, and last scan data.
-// Supports all SyncMap types with consistent cleanup behavior across different data structures.
-func (m *SyncOpsManager) processSyncMapDelete(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
+func processSyncMapDelete(syncMapInterface any, op SyncOperation) bool {
+	switch op.MapType {
+	case MapTypeString:
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]string]) {
+			s.Delete(op.Key)
+		})
+
+	case MapTypeTwoString:
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticTwoStringOneInt]) {
+			s.Delete(op.Key)
+		})
+
+	case MapTypeThreeString:
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticThreeStringTwoInt]) {
+			s.Delete(op.Key)
+		})
+
+	case MapTypeTwoInt:
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticOneStringTwoInt]) {
+			s.Delete(op.Key)
+		})
+
+	case MapTypeStructEmpty:
+		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[struct{}]) {
+			s.Delete(op.Key)
+		})
+
+	default:
+		return false
+	}
+}
+
+// workerMapOp asserts the map and value for SyncMapUint operations and applies fn.
+func workerMapOp[T any](syncMapInterface any, op SyncOperation, fn func(*SyncMapUint[T], T)) bool {
+	syncMap, ok := syncMapInterface.(*SyncMapUint[T])
+	if !ok {
 		return false
 	}
 
-	switch op.MapType {
-	case MapTypeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]string]); ok {
-			syncMap.Delete(op.Key)
-			return true
-		}
-
-	case MapTypeTwoString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt]); ok {
-			syncMap.Delete(op.Key)
-			return true
-		}
-
-	case MapTypeThreeString:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt]); ok {
-			syncMap.Delete(op.Key)
-			return true
-		}
-
-	case MapTypeTwoInt:
-		if syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt]); ok {
-			syncMap.Delete(op.Key)
-			return true
-		}
-
-	case MapTypeStructEmpty:
-		if syncMap, ok := syncMapInterface.(*SyncMap[struct{}]); ok {
-			syncMap.Delete(op.Key)
-			return true
-		}
-
-	case MapTypeAny,
-		MapTypeNewznab,
-		MapTypeApprise,
-		MapTypeGotify,
-		MapTypePushbullet,
-		MapTypePushover:
-		if syncMap, ok := syncMapInterface.(*SyncMap[SyncAny]); ok {
-			syncMap.Delete(op.Key)
-			return true
-		}
+	v, ok := op.Value.(T)
+	if !ok {
+		return false
 	}
 
-	return false
+	fn(syncMap, v)
+
+	return true
 }
 
 // processWorkerMapAdd handles Add operations for SyncMapUint instances used by worker pools.
-// Supports job queue and schedule management with uint32 keys. Performs type validation
-// to ensure Job and JobSchedule types are correctly stored in their respective maps.
-func (m *SyncOpsManager) processWorkerMapAdd(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
+func processWorkerMapAdd(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeSchedule:
-		syncMap, ok := syncMapInterface.(*SyncMapUint[JobSchedule])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.(JobSchedule)
-		if !ok {
-			break
-		}
-
-		syncMap.Add(op.KeyUint32, v)
-
-		return true
+		return workerMapOp(syncMapInterface, op, func(s *SyncMapUint[JobSchedule], v JobSchedule) {
+			s.Add(op.KeyUint32, v)
+		})
 
 	case MapTypeQueue:
-		t := reflect.TypeOf(syncMapInterface)
-		// If it's a pointer, get the underlying type
-		if t.Kind() == reflect.Ptr {
-			t = t.Elem()
-		}
+		return workerMapOp(syncMapInterface, op, func(s *SyncMapUint[Job], v Job) {
+			s.Add(op.KeyUint32, v)
+		})
 
-		if syncMap, ok := syncMapInterface.(*SyncMapUint[Job]); ok {
-			if v, ok := op.Value.(Job); ok {
-				syncMap.Add(op.KeyUint32, v)
-				return true
-			} else {
-				logger.Logtype("error", 0).
-					Any("type", reflect.TypeOf(op.Value)).
-					Msg("Value is not of Type Job")
-			}
-		} else {
-			logger.Logtype("error", 0).
-				Any("type", t.String()).
-				Any("Kind", t.Kind().String()).
-				Msg("Queue is not of Type SyncMapUint[Job]")
-		}
+	default:
+		return false
 	}
-
-	return false
 }
 
 // processWorkerMapUpdate handles value update operations for SyncMapUint instances used by worker pools.
-// Updates existing job or schedule entries with new values while maintaining uint32 key associations.
-// Supports JobSchedule and Job types with type validation for worker pool data integrity.
-func (m *SyncOpsManager) processWorkerMapUpdate(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
+func processWorkerMapUpdate(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeSchedule:
-		syncMap, ok := syncMapInterface.(*SyncMapUint[JobSchedule])
-		if !ok {
-			break
-		}
-
-		v, ok := op.Value.(JobSchedule)
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.KeyUint32, v)
-
-		return true
+		return workerMapOp(syncMapInterface, op, func(s *SyncMapUint[JobSchedule], v JobSchedule) {
+			s.UpdateVal(op.KeyUint32, v)
+		})
 
 	case MapTypeQueue:
-		syncMap, ok := syncMapInterface.(*SyncMapUint[Job])
-		if !ok {
-			break
-		}
+		return workerMapOp(syncMapInterface, op, func(s *SyncMapUint[Job], v Job) {
+			s.UpdateVal(op.KeyUint32, v)
+		})
 
-		v, ok := op.Value.(Job)
-		if !ok {
-			break
-		}
-
-		syncMap.UpdateVal(op.KeyUint32, v)
-
-		return true
+	default:
+		return false
 	}
-
-	return false
 }
 
 // processWorkerMapDelete handles deletion operations for SyncMapUint instances used by worker pools.
-// Removes jobs or schedules identified by uint32 keys from worker pool management maps.
-// Used for cleanup operations when jobs complete or schedules are cancelled.
-func (m *SyncOpsManager) processWorkerMapDelete(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
+func processWorkerMapDelete(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeSchedule:
 		if syncMap, ok := syncMapInterface.(*SyncMapUint[JobSchedule]); ok {
@@ -1161,155 +860,8 @@ func (m *SyncOpsManager) processWorkerMapDelete(op SyncOperation) bool {
 			syncMap.Delete(op.KeyUint32)
 			return true
 		}
-	}
 
-	return false
-}
-
-// processSliceAppend handles atomic append operations for slice-based SyncMap values.
-// Checks for duplicates before appending to prevent redundant entries. Reuses existing
-// slice capacity when available, allocating only when needed. Supports string slices and
-// various database static type slices with type-safe operations.
-func (m *SyncOpsManager) processSliceAppend(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
-	switch op.MapType {
-	case MapTypeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
-		if !ok {
-			break
-		}
-
-		value, ok := op.Value.(string)
-		if !ok {
-			break
-		}
-
-		// Atomic append operation
-		if syncMap.Check(op.Key) {
-			current := syncMap.GetVal(op.Key)
-			if slices.Contains(current, value) {
-				return true // Already exists
-			}
-
-			syncMap.UpdateVal(op.Key, append(current, value))
-		}
-
-		return true
-
-	case MapTypeThreeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticThreeStringTwoInt])
-		if !ok {
-			break
-		}
-
-		value, ok := op.Value.(DbstaticThreeStringTwoInt)
-		if !ok {
-			break
-		}
-
-		if syncMap.Check(op.Key) {
-			current := syncMap.GetVal(op.Key)
-			if slices.Contains(current, value) {
-				return true // Already exists
-			}
-
-			syncMap.UpdateVal(op.Key, append(current, value))
-		}
-
-		return true
-
-	case MapTypeTwoString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticTwoStringOneInt])
-		if !ok {
-			break
-		}
-
-		value, ok := op.Value.(DbstaticTwoStringOneInt)
-		if !ok {
-			break
-		}
-
-		if syncMap.Check(op.Key) {
-			current := syncMap.GetVal(op.Key)
-			if slices.Contains(current, value) {
-				return true // Already exists
-			}
-
-			syncMap.UpdateVal(op.Key, append(current, value))
-		}
-
-		return true
-
-	case MapTypeTwoInt:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]DbstaticOneStringTwoInt])
-		if !ok {
-			break
-		}
-
-		value, ok := op.Value.(DbstaticOneStringTwoInt)
-		if !ok {
-			break
-		}
-
-		if syncMap.Check(op.Key) {
-			current := syncMap.GetVal(op.Key)
-			if slices.Contains(current, value) {
-				return true // Already exists
-			}
-
-			syncMap.UpdateVal(op.Key, append(current, value))
-		}
-
-		return true
-	}
-
-	return false
-}
-
-// processSliceRemove handles atomic removal operations for slice-based SyncMap values.
-// Searches for the specified value in the slice and creates a new slice without it.
-// Maintains order of remaining elements and optimizes memory allocation. Currently
-// supports string slices with potential for extension to other slice types.
-func (m *SyncOpsManager) processSliceRemove(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
-		return false
-	}
-
-	switch op.MapType {
-	case MapTypeString:
-		syncMap, ok := syncMapInterface.(*SyncMap[[]string])
-		if !ok {
-			break
-		}
-
-		value, ok := op.Value.(string)
-		if !ok {
-			break
-		}
-
-		if syncMap.Check(op.Key) {
-			current := syncMap.GetVal(op.Key)
-
-			found := slices.Contains(current, value)
-
-			if found {
-				newSlice := make([]string, 0, len(current))
-				for i := range current {
-					if current[i] != value {
-						newSlice = append(newSlice, current[i])
-					}
-				}
-
-				syncMap.UpdateVal(op.Key, newSlice)
-			}
-		}
-
-		return true
+	default:
 	}
 
 	return false
@@ -1317,32 +869,71 @@ func (m *SyncOpsManager) processSliceRemove(op SyncOperation) bool {
 
 // processWorkerMapDeleteQueue handles conditional deletion of jobs from worker queues.
 // Removes jobs based on queue name and optionally filters by started status.
-// Uses the SyncMapUint's DeleteIf method to efficiently remove matching entries.
-// Specifically designed for worker pool management and job cleanup operations.
-func (m *SyncOpsManager) processWorkerMapDeleteQueue(op SyncOperation) bool {
-	syncMapInterface, exists := m.syncMaps[op.MapType]
-	if !exists {
+func processWorkerMapDeleteQueue(syncMapInterface any, op SyncOperation) bool {
+	// Only queue operations support queue-based deletion
+	if op.MapType != MapTypeQueue {
 		return false
 	}
 
-	// Only queue operations support queue-based deletion
-	if op.MapType == MapTypeQueue {
-		if syncMap, ok := syncMapInterface.(*SyncMapUint[Job]); ok {
-			syncMap.DeleteIf(func(key uint32, job Job) bool {
-				if job.Queue == op.Queue {
-					if op.IsStarted {
-						return !job.Started.IsZero()
-					}
+	syncMap, ok := syncMapInterface.(*SyncMapUint[Job])
+	if !ok {
+		return false
+	}
 
-					return true
-				}
-
-				return false
-			})
+	syncMap.DeleteIf(func(_ uint32, job Job) bool {
+		if job.Queue == op.Queue {
+			if op.IsStarted {
+				return !job.Started.IsZero()
+			}
 
 			return true
 		}
+
+		return false
+	})
+
+	return true
+}
+
+// sliceAppend asserts the map to SyncMap[[]T] and the value to element type T,
+// then appends the value to the slice for op.Key unless it is already present.
+// Keys without an existing entry are left untouched (matching historical behavior:
+// appends only extend slices that a full Add created first).
+func sliceAppend[T comparable](syncMapInterface any, op SyncOperation) bool {
+	syncMap, ok := syncMapInterface.(*SyncMap[[]T])
+	if !ok {
+		return false
 	}
 
-	return false
+	value, ok := op.Value.(T)
+	if !ok {
+		return false
+	}
+
+	if syncMap.Check(op.Key) {
+		current := syncMap.GetVal(op.Key)
+		if slices.Contains(current, value) {
+			return true // Already exists
+		}
+
+		syncMap.UpdateVal(op.Key, append(current, value))
+	}
+
+	return true
+}
+
+// processSliceAppend handles atomic append operations for slice-based SyncMap values.
+func processSliceAppend(syncMapInterface any, op SyncOperation) bool {
+	switch op.MapType {
+	case MapTypeString:
+		return sliceAppend[string](syncMapInterface, op)
+	case MapTypeTwoString:
+		return sliceAppend[DbstaticTwoStringOneInt](syncMapInterface, op)
+	case MapTypeThreeString:
+		return sliceAppend[DbstaticThreeStringTwoInt](syncMapInterface, op)
+	case MapTypeTwoInt:
+		return sliceAppend[DbstaticOneStringTwoInt](syncMapInterface, op)
+	default:
+		return false
+	}
 }

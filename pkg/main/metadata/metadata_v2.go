@@ -3,8 +3,9 @@ package metadata
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
@@ -212,35 +214,41 @@ type TitleConfig struct {
 	CacheKey       string // Cache key for this title type
 }
 
+// titleConfigs holds the title configuration per media type. Built once -
+// GetTitleConfigs used to allocate this map on every call, and it is called
+// once per alternate title in import loops.
+var titleConfigs = map[uint]TitleConfig{
+	config.MediaTypeMovie: {
+		TableName:      "dbmovie_titles",
+		ParentIDColumn: "dbmovie_id",
+		CacheKey:       logger.CacheTitlesMovie,
+	},
+	config.MediaTypeSeries: {
+		TableName:      "dbserie_alternates",
+		ParentIDColumn: "dbserie_id",
+		CacheKey:       logger.CacheDBSeriesAlt,
+	},
+	config.MediaTypeBook: {
+		TableName:      "dbbook_titles",
+		ParentIDColumn: "dbbook_id",
+		CacheKey:       "CacheTitlesBook",
+	},
+	config.MediaTypeAudiobook: {
+		TableName:      "dbaudiobook_titles",
+		ParentIDColumn: "dbaudiobook_id",
+		CacheKey:       "CacheTitlesAudiobook",
+	},
+	config.MediaTypeMusic: {
+		TableName:      "dbalbum_titles",
+		ParentIDColumn: "dbalbum_id",
+		CacheKey:       "CacheTitlesAlbum",
+	},
+}
+
 // GetTitleConfigs returns the title configuration for each media type.
+// Callers must treat the returned map as read-only.
 func GetTitleConfigs() map[uint]TitleConfig {
-	return map[uint]TitleConfig{
-		config.MediaTypeMovie: {
-			TableName:      "dbmovie_titles",
-			ParentIDColumn: "dbmovie_id",
-			CacheKey:       logger.CacheTitlesMovie,
-		},
-		config.MediaTypeSeries: {
-			TableName:      "dbserie_alternates",
-			ParentIDColumn: "dbserie_id",
-			CacheKey:       logger.CacheDBSeriesAlt,
-		},
-		config.MediaTypeBook: {
-			TableName:      "dbbook_titles",
-			ParentIDColumn: "dbbook_id",
-			CacheKey:       "CacheTitlesBook",
-		},
-		config.MediaTypeAudiobook: {
-			TableName:      "dbaudiobook_titles",
-			ParentIDColumn: "dbaudiobook_id",
-			CacheKey:       "CacheTitlesAudiobook",
-		},
-		config.MediaTypeMusic: {
-			TableName:      "dbalbum_titles",
-			ParentIDColumn: "dbalbum_id",
-			CacheKey:       "CacheTitlesAlbum",
-		},
-	}
+	return titleConfigs
 }
 
 // AddAlternateTitle adds an alternate title to the database if it doesn't exist.
@@ -350,7 +358,6 @@ var metaUnicodeReplacer = strings.NewReplacer(
 
 var (
 	openLibraryProvider *openlibrary.Provider
-	audibleProvider     *audible.Provider
 	audnexProvider      *audnex.Provider
 	musicbrainzProvider *musicbrainz.Provider
 	goodreadsProvider   *goodreads.Provider
@@ -359,7 +366,6 @@ var (
 
 	// sync.Once instances for thread-safe initialization.
 	openLibraryOnce sync.Once
-	audibleOnce     sync.Once
 	audnexOnce      sync.Once
 	musicbrainzOnce sync.Once
 	goodreadsOnce   sync.Once
@@ -377,10 +383,6 @@ var (
 			}
 		},
 	}
-
-	// Common invalid runtime values (placeholders that should be skipped).
-	// Sorted for binary search.
-	invalidRuntimesV2 = []int{1, 2, 3, 4, 60, 90, 120}
 )
 
 func getOpenLibraryProvider() *openlibrary.Provider {
@@ -390,16 +392,23 @@ func getOpenLibraryProvider() *openlibrary.Provider {
 	return openLibraryProvider
 }
 
+// getAudibleProvider returns the Audible provider for the given region from
+// the shared providers registry, creating and registering it when missing.
+// The previous sync.Once implementation locked in whichever region asked
+// first, so configs with a different AudibleRegion queried the wrong store.
 func getAudibleProvider(region audible.Region) *audible.Provider {
-	audibleOnce.Do(func() {
-		if region == "" {
-			region = audible.RegionUS
-		}
+	if region == "" {
+		region = audible.RegionUS
+	}
 
-		audibleProvider = audible.NewProviderWithRegion(region)
-	})
+	if p := providers.GetAudible(string(region)); p != nil {
+		return p
+	}
 
-	return audibleProvider
+	p := audible.NewProviderWithRegion(region)
+	providers.SetAudible(string(region), p)
+
+	return p
 }
 
 func getAudnexProvider() *audnex.Provider {
@@ -416,10 +425,13 @@ func getMusicBrainzProvider() *musicbrainz.Provider {
 	return musicbrainzProvider
 }
 
-func getGoodreadsProvider(apiKey string) *goodreads.Provider {
+// getGoodreadsProvider reads the API key from config inside the Once so the
+// initialization cannot be skewed by whatever key the first caller passed.
+func getGoodreadsProvider() *goodreads.Provider {
 	goodreadsOnce.Do(func() {
-		goodreadsProvider = goodreads.NewProvider(apiKey)
+		goodreadsProvider = goodreads.NewProvider(config.GetSettingsGeneral().GoodreadsAPIKey)
 	})
+
 	return goodreadsProvider
 }
 
@@ -714,12 +726,11 @@ func audiobookUpdateFromAudible(
 // This function searches for book metadata by title and author to find ISBN and Goodreads ID.
 // It uses Levenshtein distance to find the best match, similar to beets-audible plugin.
 func audiobookSupplementFromGoodreads(ctx context.Context, audiobook *database.Dbaudiobook) error {
-	apiKey := config.GetSettingsGeneral().GoodreadsAPIKey
-	if apiKey == "" {
-		return fmt.Errorf("Goodreads API key not configured")
+	if config.GetSettingsGeneral().GoodreadsAPIKey == "" {
+		return errors.New("Goodreads API key not configured")
 	}
 
-	provider := getGoodreadsProvider(apiKey)
+	provider := getGoodreadsProvider()
 
 	// Get the primary author name for the search query
 	var authorName string
@@ -748,13 +759,13 @@ func audiobookSupplementFromGoodreads(ctx context.Context, audiobook *database.D
 	}
 
 	if len(results) == 0 {
-		return fmt.Errorf("no Goodreads results found")
+		return errors.New("no Goodreads results found")
 	}
 
 	// Find the best match using Levenshtein distance (like beets-audible)
 	bestMatch := goodreadsFindBestMatch(results, audiobook.Title, authorName)
 	if bestMatch == nil {
-		return fmt.Errorf("no suitable Goodreads match found")
+		return errors.New("no suitable Goodreads match found")
 	}
 
 	logger.Logtype("debug", 2).
@@ -931,6 +942,80 @@ func levenshteinDistance(s1, s2 string) int {
 	return prev[len2]
 }
 
+// batchedInsert is one pending INSERT collected for a transactional batch.
+type batchedInsert struct {
+	query string
+	args  []any
+}
+
+// runBatchedInserts executes the collected inserts in a single transaction.
+// One commit/fsync for the whole batch instead of one per statement.
+func runBatchedInserts(batch []batchedInsert) {
+	if len(batch) == 0 {
+		return
+	}
+
+	_ = database.ExecNTx(func(exec func(querystring string, args ...any) error) error {
+		for i := range batch {
+			_ = exec(batch[i].query, batch[i].args...)
+		}
+
+		return nil
+	})
+}
+
+// getOrCreateAuthorID looks up an author by name or slug, creating the row
+// when missing. Returns 0 on failure.
+func getOrCreateAuthorID(authorName string) uint {
+	var dbauthorID uint
+
+	authorSlug := logger.StringToSlugCached(authorName)
+	database.Scanrowsdyn(
+		false,
+		"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ?",
+		&dbauthorID,
+		&authorName,
+		&authorSlug,
+	)
+
+	if dbauthorID == 0 {
+		result, err := database.ExecNid(
+			"INSERT INTO dbauthors (name, slug) VALUES (?, ?)",
+			&authorName,
+			&authorSlug,
+		)
+		if err == nil {
+			dbauthorID = logger.Int64ToUint(result)
+		}
+	}
+
+	return dbauthorID
+}
+
+// getOrCreateNarratorID looks up a narrator by name, creating the row when
+// missing. Returns 0 on failure.
+func getOrCreateNarratorID(narratorName string) uint {
+	var dbnarratorID uint
+	database.Scanrowsdyn(
+		false,
+		"SELECT id FROM dbnarrators WHERE name = ?",
+		&dbnarratorID,
+		&narratorName,
+	)
+
+	if dbnarratorID == 0 {
+		result, err := database.ExecNid(
+			"INSERT INTO dbnarrators (name) VALUES (?)",
+			&narratorName,
+		)
+		if err == nil {
+			dbnarratorID = logger.Int64ToUint(result)
+		}
+	}
+
+	return dbnarratorID
+}
+
 // applyAudiobookDetails applies API audiobook details to a database audiobook record.
 func applyAudiobookDetails(
 	audiobook *database.Dbaudiobook,
@@ -961,143 +1046,110 @@ func applyAudiobookDetails(
 		}
 	}
 
+	// Collect author/narrator link and chapter inserts and run them in one
+	// transaction at the end - the previous per-item select-then-insert paid
+	// one query plus one fsynced implicit transaction per row (audiobooks can
+	// have hundreds of chapters).
+	var batch []batchedInsert
+
 	// Populate dbauthors and dbaudiobook_authors tables
 	if len(details.Authors) > 0 && audiobook.ID > 0 {
+		// Existing author links in one query instead of one per author.
+		linked := make(map[uint]struct{})
+		for _, id := range database.GetrowsN[uint](false, 0,
+			"SELECT dbauthor_id FROM dbaudiobook_authors WHERE dbaudiobook_id = ?",
+			&audiobook.ID) {
+			linked[id] = struct{}{}
+		}
+
 		for idx, authorName := range details.Authors {
 			if authorName == "" {
 				continue
 			}
 
-			// Get or create author in dbauthors
-			var dbauthorID uint
-
-			authorSlug := logger.StringToSlugCached(authorName)
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ?",
-				&dbauthorID,
-				&authorName,
-				&authorSlug,
-			)
-
-			if dbauthorID == 0 {
-				// Create new author
-				result, err := database.ExecNid(
-					"INSERT INTO dbauthors (name, slug) VALUES (?, ?)",
-					&authorName,
-					&authorSlug,
-				)
-				if err == nil {
-					dbauthorID = logger.Int64ToUint(result)
-				}
-			}
-
+			dbauthorID := getOrCreateAuthorID(authorName)
 			if dbauthorID == 0 {
 				continue
 			}
 
-			// Link author to audiobook in dbaudiobook_authors
-			var existingRelation uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbaudiobook_authors WHERE dbaudiobook_id = ? AND dbauthor_id = ?",
-				&existingRelation,
-				&audiobook.ID,
-				&dbauthorID,
-			)
-
-			if existingRelation == 0 {
-				_, _ = database.ExecNid(
-					"INSERT INTO dbaudiobook_authors (dbaudiobook_id, dbauthor_id, position) VALUES (?, ?, ?)",
-					&audiobook.ID,
-					&dbauthorID,
-					&idx,
-				)
+			if _, ok := linked[dbauthorID]; ok {
+				continue
 			}
+
+			linked[dbauthorID] = struct{}{}
+
+			batch = append(batch, batchedInsert{
+				query: "INSERT INTO dbaudiobook_authors (dbaudiobook_id, dbauthor_id, position) VALUES (?, ?, ?)",
+				args:  []any{audiobook.ID, dbauthorID, idx},
+			})
 		}
 	}
 
 	// Populate dbnarrators and dbaudiobook_narrators tables
 	if len(details.Narrators) > 0 && audiobook.ID > 0 {
+		linked := make(map[uint]struct{})
+		for _, id := range database.GetrowsN[uint](false, 0,
+			"SELECT dbnarrator_id FROM dbaudiobook_narrators WHERE dbaudiobook_id = ?",
+			&audiobook.ID) {
+			linked[id] = struct{}{}
+		}
+
 		for idx, narratorName := range details.Narrators {
 			if narratorName == "" {
 				continue
 			}
 
-			// Get or create narrator in dbnarrators
-			var dbnarratorID uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbnarrators WHERE name = ?",
-				&dbnarratorID,
-				&narratorName,
-			)
-
-			if dbnarratorID == 0 {
-				// Create new narrator
-				result, err := database.ExecNid(
-					"INSERT INTO dbnarrators (name) VALUES (?)",
-					&narratorName,
-				)
-				if err == nil {
-					dbnarratorID = logger.Int64ToUint(result)
-				}
-			}
-
+			dbnarratorID := getOrCreateNarratorID(narratorName)
 			if dbnarratorID == 0 {
 				continue
 			}
 
-			// Link narrator to audiobook in dbaudiobook_narrators
-			var existingRelation uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbaudiobook_narrators WHERE dbaudiobook_id = ? AND dbnarrator_id = ?",
-				&existingRelation,
-				&audiobook.ID,
-				&dbnarratorID,
-			)
-
-			if existingRelation == 0 {
-				_, _ = database.ExecNid(
-					"INSERT INTO dbaudiobook_narrators (dbaudiobook_id, dbnarrator_id, position) VALUES (?, ?, ?)",
-					&audiobook.ID,
-					&dbnarratorID,
-					&idx,
-				)
+			if _, ok := linked[dbnarratorID]; ok {
+				continue
 			}
+
+			linked[dbnarratorID] = struct{}{}
+
+			batch = append(batch, batchedInsert{
+				query: "INSERT INTO dbaudiobook_narrators (dbaudiobook_id, dbnarrator_id, position) VALUES (?, ?, ?)",
+				args:  []any{audiobook.ID, dbnarratorID, idx},
+			})
 		}
 	}
 
 	// Populate dbaudiobook_chapters table
 	if len(details.Chapters) > 0 && audiobook.ID > 0 {
+		// Existing chapter numbers in one query instead of one per chapter.
+		existing := make(map[int]struct{})
+		for _, num := range database.GetrowsN[int](false, 0,
+			"SELECT chapter_number FROM dbaudiobook_chapters WHERE dbaudiobook_id = ?",
+			&audiobook.ID) {
+			existing[num] = struct{}{}
+		}
+
 		for i := range details.Chapters {
-			// Check if chapter already exists
-			var existingChapter uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbaudiobook_chapters WHERE dbaudiobook_id = ? AND chapter_number = ?",
-				&existingChapter,
-				&audiobook.ID,
-				&details.Chapters[i].ChapterNumber,
-			)
-
-			if existingChapter == 0 {
-				endTimeMs := details.Chapters[i].StartOffsetMs + details.Chapters[i].LengthMs
-
-				_, _ = database.ExecNid(
-					"INSERT INTO dbaudiobook_chapters (dbaudiobook_id, title, chapter_number, position, start_time_ms, end_time_ms, runtime_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
-					&audiobook.ID,
-					&details.Chapters[i].Title,
-					&details.Chapters[i].ChapterNumber,
-					&details.Chapters[i].Number,
-					&details.Chapters[i].StartOffsetMs,
-					&endTimeMs,
-					&details.Chapters[i].LengthMs,
-				)
+			if _, ok := existing[details.Chapters[i].ChapterNumber]; ok {
+				continue
 			}
+
+			existing[details.Chapters[i].ChapterNumber] = struct{}{}
+
+			batch = append(batch, batchedInsert{
+				query: "INSERT INTO dbaudiobook_chapters (dbaudiobook_id, title, chapter_number, position, start_time_ms, end_time_ms, runtime_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				args: []any{
+					audiobook.ID,
+					details.Chapters[i].Title,
+					details.Chapters[i].ChapterNumber,
+					details.Chapters[i].Number,
+					details.Chapters[i].StartOffsetMs,
+					details.Chapters[i].StartOffsetMs + details.Chapters[i].LengthMs,
+					details.Chapters[i].LengthMs,
+				},
+			})
 		}
 	}
+
+	runBatchedInserts(batch)
 
 	// Populate dbbooks and link audiobook if we have book metadata
 	if audiobook.ID == 0 ||
@@ -1219,7 +1271,7 @@ func AudiobookSearchByAuthor(
 }
 
 // NarratorGetMetadata retrieves metadata for a narrator from configured sources.
-func NarratorGetMetadata(ctx context.Context, narrator *database.Dbnarrator, overwrite bool) error {
+func NarratorGetMetadata(_ context.Context, _ *database.Dbnarrator, overwrite bool) error {
 	// Audible doesn't provide a separate narrator API - narrator info comes with audiobook details
 	return nil
 }
@@ -1287,7 +1339,7 @@ func albumUpdateFromMusicBrainz(
 		return err
 	}
 
-	applyAlbumDetails(album, details, overwrite)
+	applyAlbumDetails(ctx, album, details, overwrite)
 
 	return nil
 }
@@ -1305,7 +1357,7 @@ func albumUpdateFromMusicBrainzByBarcode(
 		return err
 	}
 
-	applyAlbumDetails(album, details, overwrite)
+	applyAlbumDetails(ctx, album, details, overwrite)
 
 	return nil
 }
@@ -1315,8 +1367,8 @@ func albumUpdateFromDiscogs(ctx context.Context, album *database.Dbalbum, overwr
 	provider := getDiscogsProvider()
 
 	// Parse Discogs release ID as integer
-	var releaseID int
-	if _, err := fmt.Sscanf(album.DiscogsReleaseID, "%d", &releaseID); err != nil {
+	releaseID, err := strconv.Atoi(album.DiscogsReleaseID)
+	if err != nil {
 		return fmt.Errorf("invalid Discogs release ID: %w", err)
 	}
 
@@ -1325,7 +1377,7 @@ func albumUpdateFromDiscogs(ctx context.Context, album *database.Dbalbum, overwr
 		return err
 	}
 
-	applyAlbumDetails(album, details, overwrite)
+	applyAlbumDetails(ctx, album, details, overwrite)
 
 	return nil
 }
@@ -1343,13 +1395,15 @@ func albumUpdateFromDiscogsByBarcode(
 		return err
 	}
 
-	applyAlbumDetails(album, details, overwrite)
+	applyAlbumDetails(ctx, album, details, overwrite)
 
 	return nil
 }
 
 // applyAlbumDetails applies API release details to a database album record.
+// ctx is used when enriching newly created artists via the MusicBrainz API.
 func applyAlbumDetails(
+	ctx context.Context,
 	album *database.Dbalbum,
 	details *apiexternal_v2.ReleaseDetails,
 	overwrite bool,
@@ -1365,8 +1419,7 @@ func applyAlbumDetails(
 	UpdateString(&album.SpotifyID, details.SpotifyID, overwrite, nil)
 
 	if details.MasterID > 0 {
-		masterIDStr := fmt.Sprintf("%d", details.MasterID)
-		UpdateString(&album.DiscogsMasterID, masterIDStr, overwrite, nil)
+		UpdateString(&album.DiscogsMasterID, strconv.Itoa(details.MasterID), overwrite, nil)
 	}
 
 	UpdateString(&album.Label, details.Label, overwrite, nil)
@@ -1394,204 +1447,222 @@ func applyAlbumDetails(
 		}
 	}
 
-	// Populate dbartists and dbalbum_artists tables
+	// Populate dbartists and dbalbum_artists tables. Artist lookups are cached
+	// per name for this run (most albums credit the same artist on every
+	// track), link inserts are collected and committed in one transaction.
+	artistCache := make(map[string]uint)
+
+	var batch []batchedInsert
+
 	if len(details.Artists) > 0 && album.ID > 0 {
+		// Existing album-artist links in one query instead of one per artist.
+		linked := make(map[uint]struct{})
+		for _, id := range database.GetrowsN[uint](false, 0,
+			"SELECT dbartist_id FROM dbalbum_artists WHERE dbalbum_id = ?",
+			&album.ID) {
+			linked[id] = struct{}{}
+		}
+
 		for idx, artistRef := range details.Artists {
 			if artistRef.Name == "" {
 				continue
 			}
 
-			// Get or create artist in dbartists
-			var dbartistID uint
-
-			artistSlug := logger.StringToSlugCached(artistRef.Name)
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
-				&dbartistID,
-				&artistRef.Name,
-				&artistSlug,
-			)
-
-			// Get MusicBrainz ID if artist exists
-			var artistMBID string
-			if dbartistID > 0 {
-				database.Scanrowsdyn(
-					false,
-					"SELECT musicbrainz_id FROM dbartists WHERE id = ?",
-					&artistMBID,
-					&dbartistID,
-				)
-			}
-
-			artistWasCreated := false
-			if dbartistID == 0 {
-				// Create new artist
-				artistMBID = artistRef.ID
-
-				result, err := database.ExecNid(
-					"INSERT INTO dbartists (name, slug, musicbrainz_id) VALUES (?, ?, ?)",
-					&artistRef.Name, &artistSlug, &artistMBID,
-				)
-				if err == nil {
-					dbartistID = logger.Int64ToUint(result)
-					artistWasCreated = true
-				}
-			}
-
-			// If artist was just created and has MusicBrainz ID, fetch full metadata including aliases
-			if artistWasCreated && artistMBID != "" && dbartistID > 0 {
-				var dbartist database.Dbartist
-				if err := dbartist.GetDbartistByIDP(&dbartistID); err == nil {
-					// Fetch and apply artist metadata (including aliases)
-					_ = ArtistGetMetadata(context.TODO(), &dbartist, false)
-					// Update the artist record with fetched metadata
-					_, _ = database.ExecNid(
-						`UPDATE dbartists SET sort_name = ?, discogs_id = ?, artist_type = ?, country = ?,
-						 disambiguation = ?, bio = ?, image_url = ?, genres = ?, begin_date = ?, end_date = ?,
-						 updated_at = current_timestamp WHERE id = ?`,
-						&dbartist.SortName,
-						&dbartist.DiscogsID,
-						&dbartist.ArtistType,
-						&dbartist.Country,
-						&dbartist.Disambiguation,
-						&dbartist.Bio,
-						&dbartist.ImageURL,
-						&dbartist.Genres,
-						&dbartist.BeginDate,
-						&dbartist.EndDate,
-						&dbartistID,
-					)
-				}
-			}
-
+			dbartistID, created := getOrCreateArtistID(artistRef.Name, artistRef.ID, artistCache)
 			if dbartistID == 0 {
 				continue
 			}
 
-			// Link artist to album in dbalbum_artists
-			var existingRelation uint
-			database.Scanrowsdyn(false,
-				"SELECT id FROM dbalbum_artists WHERE dbalbum_id = ? AND dbartist_id = ?",
-				&existingRelation, &album.ID, &dbartistID)
-
-			if existingRelation == 0 {
-				_, _ = database.ExecNid(
-					"INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)",
-					&album.ID,
-					&dbartistID,
-					&idx,
-				)
+			// Newly created artist with a MusicBrainz id: fetch full metadata
+			// (including aliases) and persist it.
+			if created && artistRef.ID != "" {
+				enrichNewArtist(ctx, dbartistID)
 			}
+
+			if _, ok := linked[dbartistID]; ok {
+				continue
+			}
+
+			linked[dbartistID] = struct{}{}
+
+			batch = append(batch, batchedInsert{
+				query: "INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)",
+				args:  []any{album.ID, dbartistID, idx},
+			})
 		}
 	}
 
 	// Populate dbtracks and dbtrack_artists tables
 	if len(details.Tracks) == 0 || album.ID == 0 {
+		runBatchedInserts(batch)
 		return
 	}
 
-	var existingTrack, dbtrackID uint
+	// Existing tracks for the album in one query instead of one per track.
+	type trackRow struct {
+		ID          uint `db:"id"`
+		DiscNumber  int  `db:"disc_number"`
+		TrackNumber int  `db:"track_number"`
+	}
+
+	existingTracks := make(map[[2]int]uint)
+	for _, tr := range database.StructscanT[trackRow](false, 0,
+		"SELECT id, disc_number, track_number FROM dbtracks WHERE dbalbum_id = ?",
+		&album.ID) {
+		existingTracks[[2]int{tr.DiscNumber, tr.TrackNumber}] = tr.ID
+	}
+
+	// Existing track-artist relations for the album in one query.
+	linkedTrackArtists := make(map[[2]uint]struct{})
+	for _, rel := range database.GetrowsN[database.DbstaticTwoUint](false, 0,
+		"SELECT ta.dbtrack_id, ta.dbartist_id FROM dbtrack_artists ta INNER JOIN dbtracks t ON t.id = ta.dbtrack_id WHERE t.dbalbum_id = ?",
+		&album.ID) {
+		linkedTrackArtists[[2]uint{rel.Num1, rel.Num2}] = struct{}{}
+	}
+
+	// Resolve all referenced track artists up front - no database reads may
+	// happen inside the transaction below.
 	for i := range details.Tracks {
-		existingTrack = 0
-		dbtrackID = 0
-		// Check if track already exists
-		database.Scanrowsdyn(
-			false,
-			"SELECT id FROM dbtracks WHERE dbalbum_id = ? AND disc_number = ? AND track_number = ?",
-			&existingTrack,
-			&album.ID,
-			&details.Tracks[i].DiscNumber,
-			&details.Tracks[i].Position,
-		)
-
-		if existingTrack == 0 {
-			// Create new track
-			runtimeMs := details.Tracks[i].Duration.Milliseconds()
-
-			result, err := database.ExecNid(
-				"INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid, musicbrainz_recording_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-				&album.ID,
-				&details.Tracks[i].Title,
-				&details.Tracks[i].Position,
-				&details.Tracks[i].DiscNumber,
-				&runtimeMs,
-				&details.Tracks[i].AcoustID,
-				&details.Tracks[i].MusicBrainzID,
-			)
-			if err == nil {
-				dbtrackID = logger.Int64ToUint(result)
-			}
-		} else {
-			dbtrackID = existingTrack
-		}
-
-		// Add track artists
-		if dbtrackID == 0 || len(details.Tracks[i].Artists) == 0 {
-			continue
-		}
-
-		var (
-			existingRelation uint
-			artistID         uint
-			artistSlug       string
-		)
-
-		for idx, artistRef := range details.Tracks[i].Artists {
-			if artistRef.Name == "" {
-				continue
-			}
-
-			artistID = 0
-			existingRelation = 0
-
-			artistSlug = logger.StringToSlugCached(artistRef.Name)
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
-				&artistID,
-				&artistRef.Name,
-				&artistSlug,
-			)
-
-			if artistID == 0 {
-				result, err := database.ExecNid(
-					"INSERT INTO dbartists (name, slug, musicbrainz_id) VALUES (?, ?, ?)",
-					&artistRef.Name, &artistSlug, &artistRef.ID,
-				)
-				if err == nil {
-					artistID = logger.Int64ToUint(result)
-				}
-			} else if artistRef.ID != "" {
-				_, _ = database.ExecNid(
-					`UPDATE dbartists SET musicbrainz_id = ? WHERE id = ? AND (musicbrainz_id IS NULL OR musicbrainz_id = "")`,
-					&artistRef.ID,
-					&artistID,
-				)
-			}
-
-			if artistID == 0 {
-				continue
-			}
-
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbtrack_artists WHERE dbtrack_id = ? AND dbartist_id = ?",
-				&existingRelation,
-				&dbtrackID,
-				&artistID,
-			)
-
-			if existingRelation == 0 {
-				_, _ = database.ExecNid(
-					"INSERT INTO dbtrack_artists (dbtrack_id, dbartist_id, position) VALUES (?, ?, ?)",
-					&dbtrackID,
-					&artistID,
-					&idx,
-				)
+		for _, artistRef := range details.Tracks[i].Artists {
+			if artistRef.Name != "" {
+				_, _ = getOrCreateArtistID(artistRef.Name, artistRef.ID, artistCache)
 			}
 		}
 	}
+
+	// Insert new tracks and their artist links (plus the collected album-artist
+	// links) in one transaction; ids for fresh tracks come from the insert.
+	_ = database.ExecNTxNid(func(exec func(querystring string, args ...any) (int64, error)) error {
+		for i := range batch {
+			_, _ = exec(batch[i].query, batch[i].args...)
+		}
+
+		for i := range details.Tracks {
+			key := [2]int{details.Tracks[i].DiscNumber, details.Tracks[i].Position}
+
+			dbtrackID, ok := existingTracks[key]
+			if !ok {
+				newid, err := exec(
+					"INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid, musicbrainz_recording_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+					album.ID,
+					details.Tracks[i].Title,
+					details.Tracks[i].Position,
+					details.Tracks[i].DiscNumber,
+					details.Tracks[i].Duration.Milliseconds(),
+					details.Tracks[i].AcoustID,
+					details.Tracks[i].MusicBrainzID,
+				)
+				if err != nil || newid == 0 {
+					continue
+				}
+
+				dbtrackID = logger.Int64ToUint(newid)
+				existingTracks[key] = dbtrackID
+			}
+
+			for idx, artistRef := range details.Tracks[i].Artists {
+				if artistRef.Name == "" {
+					continue
+				}
+
+				artistID := artistCache[strings.ToLower(artistRef.Name)]
+				if artistID == 0 {
+					continue
+				}
+
+				relKey := [2]uint{dbtrackID, artistID}
+				if _, okrel := linkedTrackArtists[relKey]; okrel {
+					continue
+				}
+
+				linkedTrackArtists[relKey] = struct{}{}
+
+				_, _ = exec(
+					"INSERT INTO dbtrack_artists (dbtrack_id, dbartist_id, position) VALUES (?, ?, ?)",
+					dbtrackID,
+					artistID,
+					idx,
+				)
+			}
+		}
+
+		return nil
+	})
+}
+
+// getOrCreateArtistID looks up an artist by name or slug, creating the row
+// when missing and backfilling a missing MusicBrainz id on existing rows.
+// The cache avoids repeated lookups for the same name within one apply run.
+// Returns the id (0 on failure) and whether the row was just created.
+func getOrCreateArtistID(name, mbid string, cache map[string]uint) (uint, bool) {
+	key := strings.ToLower(name)
+	if id, ok := cache[key]; ok {
+		return id, false
+	}
+
+	var artistID uint
+
+	artistSlug := logger.StringToSlugCached(name)
+	database.Scanrowsdyn(
+		false,
+		"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
+		&artistID,
+		&name,
+		&artistSlug,
+	)
+
+	created := false
+
+	if artistID == 0 {
+		result, err := database.ExecNid(
+			"INSERT INTO dbartists (name, slug, musicbrainz_id) VALUES (?, ?, ?)",
+			&name, &artistSlug, &mbid,
+		)
+		if err == nil {
+			artistID = logger.Int64ToUint(result)
+			created = true
+		}
+	} else if mbid != "" {
+		_, _ = database.ExecNid(
+			`UPDATE dbartists SET musicbrainz_id = ? WHERE id = ? AND (musicbrainz_id IS NULL OR musicbrainz_id = "")`,
+			&mbid,
+			&artistID,
+		)
+	}
+
+	if artistID != 0 {
+		cache[key] = artistID
+	}
+
+	return artistID, created
+}
+
+// enrichNewArtist fetches full metadata (including aliases) for a just-created
+// artist and persists it.
+func enrichNewArtist(ctx context.Context, dbartistID uint) {
+	var dbartist database.Dbartist
+	if err := dbartist.GetDbartistByIDP(&dbartistID); err != nil {
+		return
+	}
+
+	_ = ArtistGetMetadata(ctx, &dbartist, false)
+
+	_, _ = database.ExecNid(
+		`UPDATE dbartists SET sort_name = ?, discogs_id = ?, artist_type = ?, country = ?,
+		 disambiguation = ?, bio = ?, image_url = ?, genres = ?, begin_date = ?, end_date = ?,
+		 updated_at = current_timestamp WHERE id = ?`,
+		&dbartist.SortName,
+		&dbartist.DiscogsID,
+		&dbartist.ArtistType,
+		&dbartist.Country,
+		&dbartist.Disambiguation,
+		&dbartist.Bio,
+		&dbartist.ImageURL,
+		&dbartist.Genres,
+		&dbartist.BeginDate,
+		&dbartist.EndDate,
+		&dbartistID,
+	)
 }
 
 // AlbumSearchByTitle searches for albums by title.
@@ -1799,113 +1870,4 @@ func GetMetadataForType(
 	}
 
 	return nil
-}
-
-// -----------------------------------------------------------------------------
-// Runtime Validation (shared across video and audio media)
-// -----------------------------------------------------------------------------
-
-// IsValidRuntimeV2 checks if a runtime value is valid.
-// Uses binary search on sorted slice for O(log n) performance.
-func IsValidRuntimeV2(runtime int) bool {
-	if runtime <= 0 {
-		return false
-	}
-
-	_, found := slices.BinarySearch(invalidRuntimesV2, runtime)
-
-	return !found
-}
-
-// ShouldUpdateRuntimeV2 determines if runtime should be updated.
-func ShouldUpdateRuntimeV2(currentRuntime, newRuntime int, overwrite bool) bool {
-	if newRuntime == 0 {
-		return false
-	}
-
-	if overwrite && IsValidRuntimeV2(newRuntime) {
-		return true
-	}
-
-	if !IsValidRuntimeV2(currentRuntime) && IsValidRuntimeV2(newRuntime) {
-		return true
-	}
-
-	return currentRuntime == 0
-}
-
-// -----------------------------------------------------------------------------
-// Cache Update Functions
-// -----------------------------------------------------------------------------
-
-// UpdateMediaCache updates the cache entry for a media item.
-func UpdateMediaCache(mediaType uint, id uint, title, slug, identifier string, year int) {
-	if !config.GetSettingsGeneral().UseMediaCache {
-		return
-	}
-
-	switch mediaType {
-	case config.MediaTypeMovie:
-		database.AppendCacheThreeString(
-			logger.CacheDBMovie,
-			syncops.DbstaticThreeStringTwoInt{
-				Str1: title,
-				Str2: slug,
-				Str3: identifier, // IMDB ID for movies
-				Num1: year,
-				Num2: id,
-			},
-		)
-
-	case config.MediaTypeSeries:
-		database.AppendCacheThreeString(
-			logger.CacheDBSeries,
-			syncops.DbstaticThreeStringTwoInt{
-				Str1: title,
-				Str2: slug,
-				Str3: identifier, // IMDB ID for series
-				Num1: year,
-				Num2: id,
-			},
-		)
-
-	case config.MediaTypeBook:
-		// Cache for books using ISBN as identifier
-		database.AppendCacheThreeString(
-			"CacheDBBook",
-			syncops.DbstaticThreeStringTwoInt{
-				Str1: title,
-				Str2: slug,
-				Str3: identifier, // ISBN for books
-				Num1: year,
-				Num2: id,
-			},
-		)
-
-	case config.MediaTypeAudiobook:
-		// Cache for audiobooks using ASIN as identifier
-		database.AppendCacheThreeString(
-			"CacheDBAudiobook",
-			syncops.DbstaticThreeStringTwoInt{
-				Str1: title,
-				Str2: slug,
-				Str3: identifier, // ASIN for audiobooks
-				Num1: year,
-				Num2: id,
-			},
-		)
-
-	case config.MediaTypeMusic:
-		// Cache for albums using MusicBrainz ID as identifier
-		database.AppendCacheThreeString(
-			"CacheDBAlbum",
-			syncops.DbstaticThreeStringTwoInt{
-				Str1: title,
-				Str2: slug,
-				Str3: identifier, // MusicBrainz ID for albums
-				Num1: year,
-				Num2: id,
-			},
-		)
-	}
 }

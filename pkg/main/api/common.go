@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -220,7 +221,7 @@ func handleDBInsertOrUpdate(ctx *gin.Context, result sql.Result, err error, isIn
 // Returns an error when ChartDateURLPattern is empty or the date cannot be parsed.
 func buildChartDateURL(cfg *config.ListsConfig, dateStr string) (string, error) {
 	if cfg.ChartDateURLPattern == "" {
-		return "", fmt.Errorf("chart_date_url_pattern is not configured for this list")
+		return "", errors.New("chart_date_url_pattern is not configured for this list")
 	}
 
 	t, err := time.Parse("2006-01-02", dateStr)

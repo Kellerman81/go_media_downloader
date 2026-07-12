@@ -64,12 +64,12 @@ func NewProviderWithConfig(
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return apiexternal_v2.ProviderTrakt
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "trakt"
 }
 
@@ -608,28 +608,28 @@ func (p *Provider) GetSeriesCredits(ctx context.Context, id int) (*apiexternal_v
 //
 
 // GetMovieImages - Trakt doesn't provide images.
-func (p *Provider) GetMovieImages(
-	ctx context.Context,
-	id int,
+func (*Provider) GetMovieImages(
+	_ context.Context,
+	_ int,
 ) (*apiexternal_v2.ImageCollection, error) {
 	return nil, errors.New("trakt does not provide image listings")
 }
 
 // GetSeriesImages - Trakt doesn't provide images.
-func (p *Provider) GetSeriesImages(
-	ctx context.Context,
-	id int,
+func (*Provider) GetSeriesImages(
+	_ context.Context,
+	_ int,
 ) (*apiexternal_v2.ImageCollection, error) {
 	return nil, errors.New("trakt does not provide image listings")
 }
 
 // GetMovieVideos - Trakt doesn't provide videos.
-func (p *Provider) GetMovieVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
+func (p *Provider) GetMovieVideos(_ context.Context, _ int) ([]apiexternal_v2.Video, error) {
 	return nil, errors.New("trakt does not provide video listings")
 }
 
 // GetSeriesVideos - Trakt doesn't provide videos.
-func (p *Provider) GetSeriesVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
+func (p *Provider) GetSeriesVideos(_ context.Context, _ int) ([]apiexternal_v2.Video, error) {
 	return nil, errors.New("trakt does not provide video listings")
 }
 
@@ -909,7 +909,7 @@ func (p *Provider) RemoveSerieFromTraktUserList(
 //
 
 // getTokenFilePath returns the full path to the token file.
-func (p *Provider) getTokenFilePath() string {
+func (*Provider) getTokenFilePath() string {
 	// Store token file in the config directory (same directory as config.toml)
 	configDir := filepath.Dir(config.Configfile)
 	return filepath.Join(configDir, tokenFileName)
@@ -1245,7 +1245,7 @@ func (p *Provider) RefreshToken(
 }
 
 // RevokeToken revokes an access token.
-func (p *Provider) RevokeToken(ctx context.Context, token string) error {
+func (p *Provider) RevokeToken(_ context.Context, _ string) error {
 	// Trakt doesn't have a dedicated revoke endpoint in their public API
 	// Clear the token locally
 	p.tokenMutex.Lock()

@@ -327,7 +327,7 @@ func (ap *AudiobookParser) parseFileInfo(filename string) AudiobookFileInfo {
 }
 
 // analyzeParts determines total parts and identifies missing parts.
-func (ap *AudiobookParser) analyzeParts(result *AudiobookParseResult) {
+func (*AudiobookParser) analyzeParts(result *AudiobookParseResult) {
 	if len(result.Files) == 0 {
 		return
 	}
@@ -448,7 +448,7 @@ func (ap *AudiobookParser) extractAuthorTitle(name string, result *AudiobookPars
 }
 
 // extractASIN extracts the ASIN from a match.
-func (ap *AudiobookParser) extractASIN(match string) string {
+func (*AudiobookParser) extractASIN(match string) string {
 	return strings.ToUpper(
 		strings.TrimSpace(
 			database.GetCachedRegexp(reAudioStripASIN).ReplaceAllLiteralString(match, ""),
@@ -457,7 +457,7 @@ func (ap *AudiobookParser) extractASIN(match string) string {
 }
 
 // calculateConfidence calculates the confidence score.
-func (ap *AudiobookParser) calculateConfidence(result *AudiobookParseResult) float64 {
+func (*AudiobookParser) calculateConfidence(result *AudiobookParseResult) float64 {
 	var conf float64
 
 	// Title is essential
@@ -512,7 +512,7 @@ func (ap *AudiobookParser) MatchByRuntime(
 }
 
 // UpdateFileRuntimes updates the runtime information for audiobook files.
-func (ap *AudiobookParser) UpdateFileRuntimes(
+func (*AudiobookParser) UpdateFileRuntimes(
 	result *AudiobookParseResult,
 	runtimes map[string]int64,
 ) {

@@ -497,7 +497,7 @@ func (mp *MusicParser) extractArtistAlbum(name string, result *MusicParseResult)
 }
 
 // setArtistAlbumFromMatches sets artist and album from matched strings.
-func (mp *MusicParser) setArtistAlbumFromMatches(artist, album string, result *MusicParseResult) {
+func (*MusicParser) setArtistAlbumFromMatches(artist, album string, result *MusicParseResult) {
 	result.Artist = normalizeArtistName(artist)
 	result.Album = cleanAlbumTitle(strings.TrimSpace(album))
 	result.Title = result.Album
@@ -718,7 +718,7 @@ func StripReleaseType(album *string) string {
 }
 
 // checkCompleteness determines if an album has all expected tracks.
-func (mp *MusicParser) checkCompleteness(result *MusicParseResult) {
+func (*MusicParser) checkCompleteness(result *MusicParseResult) {
 	if len(result.Tracks) == 0 {
 		return
 	}
@@ -774,7 +774,7 @@ func (mp *MusicParser) checkCompleteness(result *MusicParseResult) {
 }
 
 // calculateTrackConfidence calculates confidence for a single track parse.
-func (mp *MusicParser) calculateTrackConfidence(track TrackInfo) float64 {
+func (*MusicParser) calculateTrackConfidence(track TrackInfo) float64 {
 	var conf float64
 
 	if track.Title != "" {
@@ -801,7 +801,7 @@ func (mp *MusicParser) calculateTrackConfidence(track TrackInfo) float64 {
 }
 
 // calculateAlbumConfidence calculates confidence for an album parse.
-func (mp *MusicParser) calculateAlbumConfidence(result *MusicParseResult) float64 {
+func (*MusicParser) calculateAlbumConfidence(result *MusicParseResult) float64 {
 	var conf float64
 
 	// Album title
@@ -864,7 +864,7 @@ func (mp *MusicParser) MatchByRuntime(expectedRuntimeMS int64, tracks []TrackInf
 }
 
 // UpdateTrackRuntimes updates the runtime information for tracks.
-func (mp *MusicParser) UpdateTrackRuntimes(result *MusicParseResult, runtimes map[string]int64) {
+func (*MusicParser) UpdateTrackRuntimes(result *MusicParseResult, runtimes map[string]int64) {
 	var totalRuntime int64
 	for i := range result.Tracks {
 		if runtime, ok := runtimes[result.Tracks[i].Filename]; ok {

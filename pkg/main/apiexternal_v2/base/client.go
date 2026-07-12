@@ -2096,7 +2096,7 @@ func (bc *BaseClient) countRequestsSince(since time.Time) int64 {
 }
 
 // saveStatsToDatabase persists statistics to the database.
-func (bc *BaseClient) saveStatsToDatabase() {
+func (*BaseClient) saveStatsToDatabase() {
 	// bc.stats.mu.RLock()
 	// defer bc.stats.mu.RUnlock()
 
@@ -2191,6 +2191,11 @@ func (bc *BaseClient) getUserAgent() string {
 // GetName returns the client name.
 func (bc *BaseClient) GetName() string {
 	return bc.config.Name
+}
+
+// GetBaseURL returns the configured base URL.
+func (bc *BaseClient) GetBaseURL() string {
+	return bc.config.BaseURL
 }
 
 // Close cleans up resources.

@@ -44,8 +44,8 @@ func normalizeKeyOriginal(s string) string {
 func BenchmarkNormalizeKey_Original(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = normalizeKeyOriginal("series-title-1234")        // already lower
-		_ = normalizeKeyOriginal("Game of Thrones")          // needs lower
+		_ = normalizeKeyOriginal("series-title-1234")         // already lower
+		_ = normalizeKeyOriginal("Game of Thrones")           // needs lower
 		_ = normalizeKeyOriginal("Séries Très Intéressantes") // non-ASCII
 	}
 }

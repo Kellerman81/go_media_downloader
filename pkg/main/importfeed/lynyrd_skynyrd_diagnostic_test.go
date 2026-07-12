@@ -157,9 +157,15 @@ func TestLynyrdSkynyrdDiagnostic(t *testing.T) {
 	queries := []searchQ{
 		{"album+artist", fmt.Sprintf(`release:"%s" AND artist:"%s"`, albumTitle, artist)},
 		{"album only", fmt.Sprintf(`release:"%s"`, albumTitle)},
-		{"folderAlbum+folderArtist", fmt.Sprintf(`release:"%s" AND artist:"%s"`, folderAlbum, folderArtist)},
+		{
+			"folderAlbum+folderArtist",
+			fmt.Sprintf(`release:"%s" AND artist:"%s"`, folderAlbum, folderArtist),
+		},
 		{"tagAlbum+tagArtist", fmt.Sprintf(`release:"%s" AND artist:"%s"`, tagAlbum, tagArtist)},
-		{"tagAlbum+tagAlbumArtist", fmt.Sprintf(`release:"%s" AND artist:"%s"`, tagAlbum, tagAlbumArtist)},
+		{
+			"tagAlbum+tagAlbumArtist",
+			fmt.Sprintf(`release:"%s" AND artist:"%s"`, tagAlbum, tagAlbumArtist),
+		},
 	}
 	for _, q := range queries {
 		if q.query == ` AND artist:""` || strings.TrimSpace(q.query) == "" {
@@ -205,7 +211,17 @@ func TestLynyrdSkynyrdDiagnostic(t *testing.T) {
 		}
 
 		data := &config.MediaDataConfig{} // default (no AllowMissingTracks etc.)
-		dist := albumMatchDistance(candidate, artist, albumTitle, tagMBID, "", "", year, fileCount, data)
+		dist := albumMatchDistance(
+			candidate,
+			artist,
+			albumTitle,
+			tagMBID,
+			"",
+			"",
+			year,
+			fileCount,
+			data,
+		)
 		t.Logf("  albumMatchDistance: %.4f  (threshold strongRec=%.2f mediumRec=%.2f)",
 			dist, strongRecThresh, mediumRecThresh)
 

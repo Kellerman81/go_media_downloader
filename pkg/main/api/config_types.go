@@ -1,7 +1,7 @@
 package api
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"sync"
 
@@ -119,6 +119,10 @@ var listsValidator = &ConfigValidator[config.ListsConfig]{
 				"audiobookconfig",
 				"bookconfig",
 				"musicconfig",
+				"musiccharts",
+				"bookbestsellers",
+				"lastfmtopartists",
+				"irc",
 			},
 			func(c config.ListsConfig) string { return c.ListType },
 		),
@@ -131,7 +135,7 @@ var listsValidator = &ConfigValidator[config.ListsConfig]{
 		validateNoForbiddenValues(
 			"example_tags",
 			[]string{"deprecated", "forbidden"},
-			func(c config.ListsConfig) []string {
+			func(_ config.ListsConfig) []string {
 				// This demonstrates the validation pattern - in real usage this would access actual array fields
 				// For now, return empty slice to show the validation pattern works without errors
 				return []string{}
@@ -157,7 +161,7 @@ var regexValidator = &ConfigValidator[config.RegexConfig]{
 		requireNonEmptyString("name", func(c config.RegexConfig) string { return c.Name }),
 		func(c config.RegexConfig) error {
 			if len(c.Required) == 0 && len(c.Rejected) == 0 {
-				return fmt.Errorf("regex must have at least one required or rejected pattern")
+				return errors.New("regex must have at least one required or rejected pattern")
 			}
 
 			return nil
@@ -179,7 +183,7 @@ var pathsValidator = &ConfigValidator[config.PathsConfig]{
 		),
 		func(c config.PathsConfig) error {
 			if c.MinSize > 0 && c.MaxSize > 0 && c.MinSize > c.MaxSize {
-				return fmt.Errorf("minimum size cannot be greater than maximum size")
+				return errors.New("minimum size cannot be greater than maximum size")
 			}
 
 			return nil

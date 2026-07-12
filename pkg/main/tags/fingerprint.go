@@ -2,6 +2,7 @@ package tags
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"time"
@@ -72,7 +73,7 @@ func IdentifyTrack(
 ) (*IdentificationResult, error) {
 	provider := providers.GetAcoustID()
 	if provider == nil {
-		return nil, fmt.Errorf("AcoustID provider not initialized")
+		return nil, errors.New("AcoustID provider not initialized")
 	}
 
 	matches, err := provider.LookupByFingerprint(ctx, fingerprint, duration)
@@ -81,7 +82,7 @@ func IdentifyTrack(
 	}
 
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("no matches found")
+		return nil, errors.New("no matches found")
 	}
 
 	// Get the best match (highest score)
@@ -107,7 +108,7 @@ func IdentifyTrack(
 func FingerprintReleaseIDs(ctx context.Context, audioPath string) ([]string, error) {
 	provider := providers.GetAcoustID()
 	if provider == nil {
-		return nil, fmt.Errorf("AcoustID provider not initialized")
+		return nil, errors.New("AcoustID provider not initialized")
 	}
 
 	fp, err := GenerateFingerprint(ctx, audioPath)
@@ -138,11 +139,11 @@ func FingerprintReleaseIDs(ctx context.Context, audioPath string) ([]string, err
 // FingerprintAndIdentify generates a fingerprint and identifies the track in one operation.
 func FingerprintAndIdentify(ctx context.Context, audioPath string) (*IdentificationResult, error) {
 	if providers.GetAcoustID() == nil {
-		return nil, fmt.Errorf("AcoustID provider not initialized")
+		return nil, errors.New("AcoustID provider not initialized")
 	}
 
 	if config.GetSettingsGeneral().FpcalcPath == "" && !commandExists("fpcalc") {
-		return nil, fmt.Errorf("fpcalc not found in PATH and FpcalcPath not configured")
+		return nil, errors.New("fpcalc not found in PATH and FpcalcPath not configured")
 	}
 
 	// Generate fingerprint

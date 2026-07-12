@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 // ConfigParser is a generic config parsing pattern to reduce code duplication.
@@ -501,6 +501,10 @@ func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.Med
 
 		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedArt", prefix, subIndex)); val != "" {
 			cfg.EmbedArt, _ = strconv.ParseBool(val)
+		}
+
+		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedLyrics", prefix, subIndex)); val != "" {
+			cfg.EmbedLyrics, _ = strconv.ParseBool(val)
 		}
 
 		if val := c.PostForm(
@@ -1010,6 +1014,10 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetInt(&updatedConfig.LastFMLimiterCalls, "LastFMLimiterCalls").
 		SetUint8(&updatedConfig.DeezerLimiterSeconds, "DeezerLimiterSeconds").
 		SetInt(&updatedConfig.DeezerLimiterCalls, "DeezerLimiterCalls").
+		SetUint8(&updatedConfig.ITunesLimiterSeconds, "ITunesLimiterSeconds").
+		SetInt(&updatedConfig.ITunesLimiterCalls, "ITunesLimiterCalls").
+		SetUint8(&updatedConfig.TheAudioDBLimiterSeconds, "TheAudioDBLimiterSeconds").
+		SetInt(&updatedConfig.TheAudioDBLimiterCalls, "TheAudioDBLimiterCalls").
 		// Cache
 		SetBool(&updatedConfig.UseIndexedCache, "UseIndexedCache").
 		// TVmaze
@@ -1023,8 +1031,12 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetString(&updatedConfig.SpotifyRegion, "SpotifyRegion").
 		// Last.fm
 		SetString(&updatedConfig.LastFMAPIKey, "LastFMAPIKey").
+		// TheAudioDB
+		SetString(&updatedConfig.TheAudioDBAPIKey, "TheAudioDBAPIKey").
 		// Music metadata source priority
-		SetStringArray(&updatedConfig.MusicMetaSourcePriority, "MusicMetaSourcePriority")
+		SetStringArray(&updatedConfig.MusicMetaSourcePriority, "MusicMetaSourcePriority").
+		// Music metadata source penalties (provider -> penalty weight)
+		SetStringFloatMap(&updatedConfig.MusicMetaSourcePenalties, "MusicMetaSourcePenalties")
 
 	return updatedConfig
 }

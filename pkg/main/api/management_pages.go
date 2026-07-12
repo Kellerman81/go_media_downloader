@@ -17,6 +17,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,7 @@ func renderJobManagementPage(csrfToken string) gomponents.Node {
 	// Get available media configurations
 	media := config.GetSettingsMediaAll()
 
-	var mediaConfigs []string
+	mediaConfigs := make([]string, 0, len(media.Movies)+len(media.Series))
 	for i := range media.Movies {
 		mediaConfigs = append(mediaConfigs, media.Movies[i].NamePrefix)
 	}
@@ -875,284 +876,13 @@ func HandleDebugStats(c *gin.Context) {
 							),
 						),
 						html.TBody(
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("Parse"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.SubmittedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.CompletedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.SuccessfulTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerParse.RunningWorkers),
-									),
-								),
-							),
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("Search"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.SubmittedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.CompletedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.SuccessfulTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerSearch.RunningWorkers),
-									),
-								),
-							),
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("RSS"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.SubmittedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.CompletedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.SuccessfulTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerRSS.RunningWorkers),
-									),
-								),
-							),
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("Files"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.SubmittedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.CompletedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.SuccessfulTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerFiles.RunningWorkers),
-									),
-								),
-							),
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("Meta"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.SubmittedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.CompletedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.SuccessfulTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerMeta.RunningWorkers),
-									),
-								),
-							),
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("Index"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.SubmittedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.CompletedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.SuccessfulTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndex.RunningWorkers),
-									),
-								),
-							),
-							html.Tr(
-								html.Td(html.Strong(gomponents.Text("Index RSS"))),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf(
-											"%d",
-											workerStats.WorkerIndexRSS.SubmittedTasks,
-										),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf(
-											"%d",
-											workerStats.WorkerIndexRSS.CompletedTasks,
-										),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf(
-											"%d",
-											workerStats.WorkerIndexRSS.SuccessfulTasks,
-										),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndexRSS.FailedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndexRSS.DroppedTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf("%d", workerStats.WorkerIndexRSS.WaitingTasks),
-									),
-								),
-								html.Td(
-									gomponents.Text(
-										fmt.Sprintf(
-											"%d",
-											workerStats.WorkerIndexRSS.RunningWorkers,
-										),
-									),
-								),
-							),
+							workerStatsRow("Parse", workerStats.WorkerParse),
+							workerStatsRow("Search", workerStats.WorkerSearch),
+							workerStatsRow("RSS", workerStats.WorkerRSS),
+							workerStatsRow("Files", workerStats.WorkerFiles),
+							workerStatsRow("Meta", workerStats.WorkerMeta),
+							workerStatsRow("Index", workerStats.WorkerIndex),
+							workerStatsRow("Index RSS", workerStats.WorkerIndexRSS),
 						),
 					),
 				),
@@ -1369,7 +1099,7 @@ func renderDatabaseMaintenancePage(csrfToken string) gomponents.Node {
 								html.Class("form-control"),
 								html.Name("tableName"),
 								gomponents.Group(func() []gomponents.Node {
-									var options []gomponents.Node
+									options := make([]gomponents.Node, 0, len(tableNames))
 									for _, table := range tableNames {
 										options = append(
 											options,
@@ -1391,9 +1121,8 @@ func renderDatabaseMaintenancePage(csrfToken string) gomponents.Node {
 							hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 							hx.Include("#clearTableForm"),
 							hx.Vals("{\"action\": \"clear\"}"),
-							gomponents.Attr(
-								"onclick",
-								"return confirm('Are you sure? This will delete all data from the selected table!')",
+							hx.Confirm(
+								"This will delete ALL data from the selected table. This cannot be undone.",
 							),
 						),
 					),
@@ -1411,7 +1140,7 @@ func renderDatabaseMaintenancePage(csrfToken string) gomponents.Node {
 								html.Class("form-control"),
 								html.Name("tableName"),
 								gomponents.Group(func() []gomponents.Node {
-									var options []gomponents.Node
+									options := make([]gomponents.Node, 0, len(tableNames))
 									for _, table := range tableNames {
 										options = append(
 											options,
@@ -1444,9 +1173,8 @@ func renderDatabaseMaintenancePage(csrfToken string) gomponents.Node {
 							hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 							hx.Include("#deleteRecordForm"),
 							hx.Vals("{\"action\": \"delete\"}"),
-							gomponents.Attr(
-								"onclick",
-								"return confirm('Are you sure? This will permanently delete the selected record!')",
+							hx.Confirm(
+								"This will permanently delete the selected record. This cannot be undone.",
 							),
 						),
 					),
@@ -1571,6 +1299,8 @@ func HandleDatabaseMaintenance(c *gin.Context) {
 	switch action {
 	case "integrity":
 		message, alertClass = performIntegrityCheck(c)
+	case "cleanuporphans":
+		message, alertClass = performCleanupOrphans(c)
 	case "backup":
 		message, alertClass = performBackup(c)
 	case "vacuum":
@@ -1614,6 +1344,27 @@ func HandleDatabaseMaintenance(c *gin.Context) {
 	)
 
 	c.String(http.StatusOK, renderComponentToString(result))
+}
+
+// performCleanupOrphans removes child rows whose parent rows no longer exist
+// (the schema's ON DELETE CASCADE relationships, applied manually since FK
+// enforcement is disabled).
+func performCleanupOrphans(_ *gin.Context) (string, string) {
+	deleted := database.CleanupOrphans()
+	if len(deleted) == 0 {
+		return "✅ Orphan cleanup completed. No orphaned rows found.", "success"
+	}
+
+	var total int64
+	for _, n := range deleted {
+		total += n
+	}
+
+	return fmt.Sprintf(
+		"✅ Orphan cleanup completed. Removed %d orphaned rows across %d tables.",
+		total,
+		len(deleted),
+	), "success"
 }
 
 // Database maintenance helper functions that call actual API functions.
@@ -1754,14 +1505,12 @@ func performDeleteRecord(c *gin.Context) (string, string) {
 
 // renderPushoverTestPage renders a page for testing Pushover notifications.
 func renderPushoverTestPage(csrfToken string) gomponents.Node {
-	// Get available notification configurations
+	// Get available notification configurations (any type, not just Pushover).
 	notifications := config.GetSettingsNotificationAll()
 
-	var notificationConfigs []string
+	notificationConfigs := make([]string, 0, len(notifications))
 	for i := range notifications {
-		if notifications[i].NotificationType == "pushover" {
-			notificationConfigs = append(notificationConfigs, notifications[i].Name)
-		}
+		notificationConfigs = append(notificationConfigs, notifications[i].Name)
 	}
 
 	return html.Div(
@@ -1778,11 +1527,11 @@ func renderPushoverTestPage(csrfToken string) gomponents.Node {
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Pushover Test Message")),
+					html.H2(html.Class("header-title"), gomponents.Text("Notification Test Message")),
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Send a test message through Pushover to verify your notification configuration is working correctly.",
+							"Send a test message through any configured notification (Pushover, Gotify, Pushbullet, Apprise, CSV) to verify it is working correctly.",
 						),
 					),
 				),
@@ -1803,7 +1552,7 @@ func renderPushoverTestPage(csrfToken string) gomponents.Node {
 					),
 
 					renderFormGroup("pushover", map[string]string{
-						"NotificationConfig": "Select the Pushover notification configuration to use",
+						"NotificationConfig": "Select the notification configuration to test (its type determines how the message is sent)",
 					}, map[string]string{
 						"NotificationConfig": "Notification Config",
 					}, "NotificationConfig", "select", "", map[string][]string{
@@ -1820,31 +1569,32 @@ func renderPushoverTestPage(csrfToken string) gomponents.Node {
 						"MessageText": "Content of the test message",
 					}, map[string]string{
 						"MessageText": "Message Text",
-					}, "MessageText", "textarea", "This is a test message to verify Pushover notification configuration is working correctly.", nil),
+					}, "MessageText", "textarea", "This is a test message to verify the notification configuration is working correctly.", nil),
 				),
 
 				html.Div(
 					html.Class("col-md-6"),
 					html.H5(
 						html.Class("form-section-title"),
-						gomponents.Text("Pushover Information"),
+						gomponents.Text("Supported Notification Types"),
 					),
 					html.P(
 						gomponents.Text(
-							"Pushover is a service that sends real-time notifications to your devices. To use this feature:",
+							"The message is sent using the selected configuration's type:",
 						),
 					),
-					html.Ol(
-						html.Li(gomponents.Text("Create a Pushover account at pushover.net")),
-						html.Li(gomponents.Text("Get your User Key from your dashboard")),
-						html.Li(gomponents.Text("Create an application to get an API Token")),
-						html.Li(gomponents.Text("Configure these in your notification settings")),
+					html.Ul(
+						html.Li(gomponents.Text("Pushover - uses the API token and recipient (user key)")),
+						html.Li(gomponents.Text("Gotify - uses the server URL and API token")),
+						html.Li(gomponents.Text("Pushbullet - uses the API token")),
+						html.Li(gomponents.Text("Apprise - uses the server URL and Apprise URLs")),
+						html.Li(gomponents.Text("CSV - appends the message to the configured output file")),
 					),
 					html.P(
 						html.Class("mt-3"),
 						html.Strong(gomponents.Text("Note: ")),
 						gomponents.Text(
-							"Make sure you have at least one Pushover notification configuration set up before testing.",
+							"Make sure you have at least one notification configuration set up before testing.",
 						),
 					),
 				),
@@ -1902,30 +1652,56 @@ func HandlePushoverTest(c *gin.Context) {
 		return
 	}
 
-	if messageTitle == "" || messageText == "" {
-		c.String(
-			http.StatusOK,
-			renderAlert("Please provide both message title and text", "warning"),
-		)
-
-		return
-	}
-
-	// Get the notification configuration
+	// Get the notification configuration (resolved first so validation can depend
+	// on its type - e.g. CSV has no message title).
 	notifCfg := config.GetSettingsNotification(notificationConfig)
 	if notifCfg == nil {
 		c.String(http.StatusOK, renderAlert("Notification configuration not found", "danger"))
 		return
 	}
 
-	// Send the test message
-	err := apiexternal.SendPushoverMessage(
-		notifCfg.Name,
-		notifCfg.Apikey,
-		messageText,
-		messageTitle,
-		notifCfg.Recipient,
-	)
+	isCSV := strings.EqualFold(notifCfg.NotificationType, "csv")
+
+	if messageText == "" {
+		c.String(http.StatusOK, renderAlert("Please provide message text", "warning"))
+		return
+	}
+
+	if messageTitle == "" && !isCSV {
+		c.String(http.StatusOK, renderAlert("Please provide a message title", "warning"))
+		return
+	}
+
+	// Send the test message using the configuration's notification type.
+	var err error
+
+	switch strings.ToLower(notifCfg.NotificationType) {
+	case "pushover":
+		err = apiexternal.SendPushoverMessage(
+			notifCfg.Name, notifCfg.Apikey, messageText, messageTitle, notifCfg.Recipient,
+		)
+	case "gotify":
+		err = apiexternal.SendGotifyMessage(
+			notifCfg.Name, notifCfg.ServerURL, notifCfg.Apikey, messageText, messageTitle,
+		)
+	case "pushbullet":
+		err = apiexternal.SendPushbulletMessage(
+			notifCfg.Name, notifCfg.Apikey, messageText, messageTitle,
+		)
+	case "apprise":
+		err = apiexternal.SendAppriseMessage(
+			notifCfg.Name, notifCfg.ServerURL, messageText, messageTitle, notifCfg.AppriseURLs,
+		)
+	case "csv":
+		scanner.AppendCsv(notifCfg.Outputto, messageText)
+	default:
+		c.String(
+			http.StatusOK,
+			renderAlert("Unsupported notification type: "+notifCfg.NotificationType, "warning"),
+		)
+
+		return
+	}
 
 	var result gomponents.Node
 	if err != nil {
@@ -1962,7 +1738,7 @@ func HandlePushoverTest(c *gin.Context) {
 					html.P(
 						html.Class("mb-2"),
 						html.Style("color: #495057;"),
-						gomponents.Text("Failed to send Pushover message:"),
+						gomponents.Text("Failed to send "+notifCfg.NotificationType+" message:"),
 					),
 					html.P(
 						html.Class("mb-2"),
@@ -2012,7 +1788,7 @@ func HandlePushoverTest(c *gin.Context) {
 						html.Class("mb-3 text-center"),
 						html.Style("color: #495057;"),
 						gomponents.Text(
-							"Test message sent via Pushover with the following details:",
+							"Test message sent via "+notifCfg.NotificationType+" with the following details:",
 						),
 					),
 					html.Div(
@@ -3150,7 +2926,7 @@ func renderQualityReorderPage(csrfToken string) gomponents.Node {
 	// Get all available quality profiles
 	qualityConfigs := config.GetSettingsQualityAll()
 
-	var qualityOptions []gomponents.Node
+	qualityOptions := make([]gomponents.Node, 0, 1+len(qualityConfigs))
 
 	qualityOptions = append(
 		qualityOptions,
@@ -3611,5 +3387,23 @@ func renderQualityReorderPage(csrfToken string) gomponents.Node {
 				});
 			});
 		`)),
+	)
+}
+
+// workerStatsRow renders one table row of worker-pool statistics.
+func workerStatsRow(label string, w worker.StatsDetail) gomponents.Node {
+	cell := func(v uint64) gomponents.Node {
+		return html.Td(gomponents.Text(fmt.Sprintf("%d", v)))
+	}
+
+	return html.Tr(
+		html.Td(html.Strong(gomponents.Text(label))),
+		cell(w.SubmittedTasks),
+		cell(w.CompletedTasks),
+		cell(w.SuccessfulTasks),
+		cell(w.FailedTasks),
+		cell(w.DroppedTasks),
+		cell(w.WaitingTasks),
+		cell(w.RunningWorkers),
 	)
 }

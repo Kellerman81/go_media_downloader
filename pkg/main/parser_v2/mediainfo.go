@@ -530,7 +530,7 @@ func (ma *MediaAnalyzer) parseFFprobeResult(ffprobe *ffProbeJSON) *MediaInfo {
 }
 
 // parseMediainfoResult converts mediainfo output to MediaInfo.
-func (ma *MediaAnalyzer) parseMediainfoResult(mediainfo *mediaInfoJSON) *MediaInfo {
+func (*MediaAnalyzer) parseMediainfoResult(mediainfo *mediaInfoJSON) *MediaInfo {
 	info := &MediaInfo{}
 
 	for i := range mediainfo.Media.Track {
@@ -632,7 +632,7 @@ func (ma *MediaAnalyzer) parseMediainfoResult(mediainfo *mediaInfoJSON) *MediaIn
 }
 
 // detectHDR determines the HDR type from ffprobe stream info.
-func (ma *MediaAnalyzer) detectHDR(stream *ffProbeStream) string {
+func (*MediaAnalyzer) detectHDR(stream *ffProbeStream) string {
 	// Check color transfer characteristics
 	switch {
 	case strings.EqualFold(stream.ColorTransfer, "smpte2084"):
@@ -650,7 +650,7 @@ func (ma *MediaAnalyzer) detectHDR(stream *ffProbeStream) string {
 }
 
 // heightToResolution converts video height to resolution string.
-func (ma *MediaAnalyzer) heightToResolution(height int) string {
+func (*MediaAnalyzer) heightToResolution(height int) string {
 	switch {
 	case height >= 2160:
 		return "2160p"

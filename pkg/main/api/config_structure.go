@@ -11,7 +11,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
@@ -67,7 +67,7 @@ func renderFolderStructurePage(csrfToken string) gomponents.Node {
 	// Get available media configurations
 	media := config.GetSettingsMediaAll()
 
-	var mediaConfigs []string
+	mediaConfigs := make([]string, 0, len(media.Movies)+len(media.Series))
 	for i := range media.Movies {
 		mediaConfigs = append(mediaConfigs, media.Movies[i].NamePrefix)
 	}
@@ -78,7 +78,7 @@ func renderFolderStructurePage(csrfToken string) gomponents.Node {
 
 	cfgdata := config.GetSettingsPathAll()
 
-	var pathConfigs []string
+	pathConfigs := make([]string, 0, len(cfgdata))
 	for i := range cfgdata {
 		pathConfigs = append(pathConfigs, cfgdata[i].Name)
 	}
@@ -483,7 +483,7 @@ func organizeFolderWithResults(
 	}
 
 	// Count total files in folder
-	filepath.WalkDir(folderPath, func(fpath string, info os.DirEntry, errw error) error {
+	filepath.WalkDir(folderPath, func(_ string, info os.DirEntry, errw error) error {
 		if errw != nil || info.IsDir() {
 			return nil
 		}
@@ -808,7 +808,7 @@ func renderFolderStructureResults(result map[string]any) string {
 
 	// Display file operations if any
 	if len(organizationResults.FileOperations) > 0 {
-		var operationNodes []gomponents.Node
+		operationNodes := make([]gomponents.Node, 0, 2)
 
 		operationNodes = append(
 			operationNodes,
@@ -890,7 +890,7 @@ func renderFolderStructureResults(result map[string]any) string {
 
 	// Display errors if any
 	if len(organizationResults.Errors) > 0 {
-		var errorNodes []gomponents.Node
+		errorNodes := make([]gomponents.Node, 0, 2)
 
 		errorNodes = append(
 			errorNodes,

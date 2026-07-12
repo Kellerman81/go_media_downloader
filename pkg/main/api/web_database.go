@@ -1,13 +1,14 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 )
 
 // Database operations and metadata functions
@@ -84,7 +85,7 @@ func getAdminFormColumns(tableName string) []ColumnInfo {
 		structType = reflect.TypeOf(tableDefault.Object)
 	}
 
-	var columns []ColumnInfo
+	columns := make([]ColumnInfo, 0, len(columnNames))
 	for _, colInfo := range columnNames {
 		name := colInfo.Str1
 		columnType := colInfo.Str2
@@ -535,7 +536,18 @@ func isIntegerType(sqliteType string) bool {
 	return strings.Contains(upper, "INT") || upper == "BOOLEAN"
 }
 
+// isRealType checks if a SQLite type should be treated as a floating-point number.
+func isRealType(sqliteType string) bool {
+	upper := strings.ToUpper(sqliteType)
+	return strings.Contains(upper, "REAL") || strings.Contains(upper, "FLOA") ||
+		strings.Contains(upper, "DOUBT") || strings.Contains(upper, "NUMERIC") ||
+		strings.Contains(upper, "DECIMAL")
+}
+
 // convertValueForColumn converts a string value to the appropriate type based on column type.
+// For numeric columns an empty or non-numeric input is coerced to 0 (never written
+// back as a string), so the form/API cannot store "" in an integer/real column —
+// which the strict sqlite driver would later refuse to scan.
 func convertValueForColumn(val any, colName string, columnTypes map[string]string) any {
 	strVal, ok := val.(string)
 	if !ok {
@@ -551,12 +563,27 @@ func convertValueForColumn(val any, colName string, columnTypes map[string]strin
 		return 0
 	}
 
-	// Check if column type is integer
 	colType, exists := columnTypes[strings.ToLower(colName)]
-	if exists && isIntegerType(colType) {
-		if intVal, err := strconv.Atoi(strVal); err == nil {
+	if !exists {
+		return val
+	}
+
+	// Integer column: always return an int (0 for empty/non-numeric).
+	if isIntegerType(colType) {
+		if intVal, err := strconv.Atoi(strings.TrimSpace(strVal)); err == nil {
 			return intVal
 		}
+
+		return 0
+	}
+
+	// Real column: always return a float (0 for empty/non-numeric).
+	if isRealType(colType) {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(strVal), 64); err == nil {
+			return f
+		}
+
+		return float64(0)
 	}
 
 	return val
@@ -564,7 +591,7 @@ func convertValueForColumn(val any, colName string, columnTypes map[string]strin
 
 func insertAdminRecord(tableName string, data map[string]any) error {
 	if tableName == "" || len(data) == 0 {
-		return fmt.Errorf("table name and data are required")
+		return errors.New("table name and data are required")
 	}
 
 	// Get column types for the table
@@ -588,7 +615,7 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 	}
 
 	if len(columns) == 0 {
-		return fmt.Errorf("no data to insert")
+		return errors.New("no data to insert")
 	}
 
 	// Use project's database insert method
@@ -599,7 +626,7 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 
 func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	if tableName == "" || len(data) == 0 {
-		return fmt.Errorf("table name and data are required")
+		return errors.New("table name and data are required")
 	}
 
 	// Check if record exists by ID
@@ -607,7 +634,7 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	count := database.Getdatarow[int](false, query, id)
 
 	if count == 0 {
-		return fmt.Errorf("record not found")
+		return errors.New("record not found")
 	}
 
 	// Get column types for the table
@@ -628,7 +655,7 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	}
 
 	if len(columns) == 0 {
-		return fmt.Errorf("no data to update")
+		return errors.New("no data to update")
 	}
 
 	// Add id as the where condition
@@ -644,7 +671,7 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 
 func deleteAdminRecord(tableName string, id int) error {
 	if tableName == "" {
-		return fmt.Errorf("table name is required")
+		return errors.New("table name is required")
 	}
 
 	// Check if record exists by ID
@@ -652,7 +679,7 @@ func deleteAdminRecord(tableName string, id int) error {
 	count := database.Getdatarow[int](false, query, id)
 
 	if count == 0 {
-		return fmt.Errorf("record not found")
+		return errors.New("record not found")
 	}
 
 	// Use project's database delete method
@@ -1216,7 +1243,12 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 
 	case "serie_episodes":
 		if tvdbID := getParamValue(ctx, "filter-tvdb_id"); tvdbID != "" {
-			conditions = append(conditions, "dbserie_episodes.thetvdb_id LIKE ?")
+			// thetvdb_id lives on dbseries, not dbserie_episodes; match through the
+			// series relation instead of referencing a non-existent column.
+			conditions = append(
+				conditions,
+				"serie_episodes.dbserie_id IN (SELECT id FROM dbseries WHERE thetvdb_id LIKE ?)",
+			)
 			args = append(args, "%"+tvdbID+"%")
 		}
 

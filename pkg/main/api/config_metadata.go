@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"net/http"
@@ -8,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
@@ -62,14 +64,17 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 					}, map[string]string{
 						"MediaType": "Media Type",
 					}, "MediaType", "select", "movie", map[string][]string{
-						"options": {"movie", "series", "episode"},
+						"options": {"movie", "series", "episode", "book", "audiobook", "music"},
 					}),
 
-					renderFormGroup("metadata", map[string]string{
-						"ImdbID": "Enter an IMDB ID (e.g., 'tt0133093' for The Matrix)",
-					}, map[string]string{
-						"ImdbID": "IMDB ID",
-					}, "ImdbID", "text", "", nil),
+					html.Div(
+						html.ID("imdbField"),
+						renderFormGroup("metadata", map[string]string{
+							"ImdbID": "Enter an IMDB ID (e.g., 'tt0133093' for The Matrix)",
+						}, map[string]string{
+							"ImdbID": "IMDB ID",
+						}, "ImdbID", "text", "", nil),
+					),
 
 					html.Div(
 						html.ID("tvdbFields"),
@@ -79,6 +84,36 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 						}, map[string]string{
 							"TvdbID": "TVDB ID",
 						}, "TvdbID", "text", "", nil),
+					),
+
+					html.Div(
+						html.ID("bookFields"),
+						html.Style("display: none;"),
+						renderFormGroup("metadata", map[string]string{
+							"ISBN": "Enter an ISBN-13 or ISBN-10 for book lookup (OpenLibrary)",
+						}, map[string]string{
+							"ISBN": "ISBN",
+						}, "ISBN", "text", "", nil),
+					),
+
+					html.Div(
+						html.ID("audiobookFields"),
+						html.Style("display: none;"),
+						renderFormGroup("metadata", map[string]string{
+							"ASIN": "Enter an Amazon ASIN for audiobook lookup (Audible/Audnex)",
+						}, map[string]string{
+							"ASIN": "ASIN",
+						}, "ASIN", "text", "", nil),
+					),
+
+					html.Div(
+						html.ID("musicFields"),
+						html.Style("display: none;"),
+						renderFormGroup("metadata", map[string]string{
+							"MBReleaseID": "Enter a MusicBrainz release ID for album lookup",
+						}, map[string]string{
+							"MBReleaseID": "MusicBrainz Release ID",
+						}, "MBReleaseID", "text", "", nil),
 					),
 				),
 
@@ -245,10 +280,24 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 			),
 		),
 
-		// JavaScript for dynamic field visibility
-		// Simplified JavaScript for Metadata - CSS classes handle field visibility via HTMX
+		// Toggle which identifier fields are shown based on the selected media type.
 		html.Script(gomponents.Raw(`
-			// No JavaScript needed - HTMX and CSS handle field visibility
+			(function(){
+				function show(id,on){var e=document.getElementById(id); if(e) e.style.display = on ? '' : 'none';}
+				function upd(){
+					var sel=document.getElementById('metadata_MediaType'); if(!sel) return;
+					var t=sel.value;
+					show('imdbField', t==='movie'||t==='series'||t==='episode');
+					show('tvdbFields', t==='series'||t==='episode');
+					show('episodeFields', t==='episode');
+					show('bookFields', t==='book');
+					show('audiobookFields', t==='audiobook');
+					show('musicFields', t==='music');
+				}
+				var sel=document.getElementById('metadata_MediaType');
+				if(sel){ sel.addEventListener('change', upd); upd(); }
+				else { document.addEventListener('DOMContentLoaded', function(){ var s=document.getElementById('metadata_MediaType'); if(s){ s.addEventListener('change', upd); upd(); } }); }
+			})();
 		`)),
 	)
 }
@@ -265,6 +314,10 @@ func HandleMovieMetadata(c *gin.Context) {
 	tvdbID := c.PostForm("metadata_TvdbID")
 	provider := c.PostForm("metadata_Provider")
 	updateDB, _ := strconv.ParseBool(c.PostForm("metadata_UpdateDB"))
+
+	isbn := strings.TrimSpace(c.PostForm("metadata_ISBN"))
+	asin := strings.TrimSpace(c.PostForm("metadata_ASIN"))
+	mbReleaseID := strings.TrimSpace(c.PostForm("metadata_MBReleaseID"))
 
 	// Validate required fields based on media type
 	switch mediaType {
@@ -328,6 +381,31 @@ func HandleMovieMetadata(c *gin.Context) {
 			return
 		}
 
+	case "book":
+		if isbn == "" {
+			c.String(http.StatusOK, renderAlert("Please enter an ISBN for book lookup", "warning"))
+			return
+		}
+
+	case "audiobook":
+		if asin == "" {
+			c.String(
+				http.StatusOK,
+				renderAlert("Please enter an ASIN for audiobook lookup", "warning"),
+			)
+			return
+		}
+
+	case "music":
+		if mbReleaseID == "" {
+			c.String(
+				http.StatusOK,
+				renderAlert("Please enter a MusicBrainz release ID for music lookup", "warning"),
+			)
+
+			return
+		}
+
 	default:
 		c.String(http.StatusOK, renderAlert("Invalid media type", "danger"))
 		return
@@ -360,6 +438,13 @@ func HandleMovieMetadata(c *gin.Context) {
 			http.StatusOK,
 			handleEpisodeMetadataLookup(imdbID, tvdbID, seasonNum, episodeNum, provider, updateDB),
 		)
+
+	case "book":
+		c.String(http.StatusOK, handleBookMetadataLookup(isbn, updateDB))
+	case "audiobook":
+		c.String(http.StatusOK, handleAudiobookMetadataLookup(asin, updateDB))
+	case "music":
+		c.String(http.StatusOK, handleAlbumMetadataLookup(mbReleaseID, updateDB))
 	}
 }
 
@@ -744,6 +829,328 @@ func renderMetadataResults(result map[string]any) string {
 			),
 		)
 	}
+}
+
+// mdNum formats a numeric field for display, returning "" for zero so the
+// renderer can skip empty rows.
+func mdNum[T int | int32 | int64 | uint | uint16](n T) string {
+	if n == 0 {
+		return ""
+	}
+
+	return fmt.Sprint(n)
+}
+
+// renderMediaMetadataResult renders a simple key/value card for book, audiobook
+// and music metadata lookups. Empty values are skipped.
+func renderMediaMetadataResult(heading string, rows [][2]string) string {
+	trs := make([]gomponents.Node, 0, len(rows))
+
+	for _, r := range rows {
+		if r[1] == "" {
+			continue
+		}
+
+		trs = append(trs, html.Tr(
+			html.Th(
+				gomponents.Attr("scope", "row"),
+				html.Style("width: 12rem;"),
+				gomponents.Text(r[0]),
+			),
+			html.Td(gomponents.Text(r[1])),
+		))
+	}
+
+	node := html.Div(
+		html.Class("card border-0 shadow-sm mt-3"),
+		html.Div(
+			html.Class("card-header bg-success text-white"),
+			html.H5(
+				html.Class("mb-0"),
+				html.I(html.Class("fas fa-circle-check me-2")),
+				gomponents.Text(heading),
+			),
+		),
+		html.Div(
+			html.Class("card-body p-0"),
+			html.Div(
+				html.Class("table-responsive"),
+				html.Table(
+					html.Class("table table-sm table-striped mb-0 align-middle"),
+					html.TBody(trs...),
+				),
+			),
+		),
+	)
+
+	var buf strings.Builder
+	node.Render(&buf)
+
+	return buf.String()
+}
+
+// audiobookMetadataConfig returns an audiobook media config (for the Audible
+// region) - the first configured one, or a default if none exist.
+func audiobookMetadataConfig() *config.MediaTypeConfig {
+	if all := config.GetSettingsMediaAll(); len(all.AudioBooks) > 0 {
+		return &all.AudioBooks[0]
+	}
+
+	return &config.MediaTypeConfig{AudibleRegion: "us"}
+}
+
+// handleBookMetadataLookup fetches book metadata by ISBN and optionally updates
+// (or inserts) the matching dbbooks row.
+func handleBookMetadataLookup(isbn string, updateDB bool) string {
+	var book database.Dbbook
+
+	var isbn13, isbn10 string
+	if len(isbn) == 10 {
+		isbn10 = isbn
+	} else {
+		isbn13 = isbn
+	}
+
+	book.ISBN13 = isbn13
+	book.ISBN10 = isbn10
+
+	if err := metadata.BookGetMetadata(context.Background(), &book, true); err != nil {
+		return renderAlert("Book metadata lookup failed: "+err.Error(), "danger")
+	}
+
+	if book.Title == "" {
+		return renderAlert("No book metadata found for ISBN "+isbn, "warning")
+	}
+
+	heading := "Book"
+	if updateDB {
+		var id uint
+		if isbn13 != "" {
+			id = database.Getdatarow[uint](
+				false,
+				"SELECT id FROM dbbooks WHERE isbn_13 = ? LIMIT 1",
+				&isbn13,
+			)
+		} else {
+			id = database.Getdatarow[uint](
+				false,
+				"SELECT id FROM dbbooks WHERE isbn_10 = ? LIMIT 1",
+				&isbn10,
+			)
+		}
+
+		if id == 0 {
+			if newid, err := database.ExecNid(
+				"INSERT INTO dbbooks (isbn_13, isbn_10) VALUES (?, ?)", &isbn13, &isbn10,
+			); err == nil {
+				id = uint(newid) //nolint:gosec // safe: value within target type range
+			}
+		}
+
+		if id != 0 {
+			book.ID = id
+			database.ExecN(
+				"update dbbooks SET title = ?, original_title = ?, isbn_13 = ?, isbn_10 = ?, asin = ?, openlibrary_id = ?, goodreads_id = ?, description = ?, publisher = ?, publish_date = ?, page_count = ?, language = ?, genres = ?, cover_url = ?, dbauthor_id = ?, dbbook_series_id = ?, series_position = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ? where id = ?",
+				&book.Title,
+				&book.OriginalTitle,
+				&book.ISBN13,
+				&book.ISBN10,
+				&book.ASIN,
+				&book.OpenlibraryID,
+				&book.GoodreadsID,
+				&book.Description,
+				&book.Publisher,
+				&book.PublishDate,
+				&book.PageCount,
+				&book.Language,
+				&book.Genres,
+				&book.CoverURL,
+				&book.DbauthorID,
+				&book.DbbookSeriesID,
+				&book.SeriesPosition,
+				&book.AverageRating,
+				&book.RatingsCount,
+				&book.Year,
+				&book.Slug,
+				&book.ID,
+			)
+
+			heading = fmt.Sprintf("Book (saved to database, id %d)", id)
+		} else {
+			heading = "Book (database update failed)"
+		}
+	}
+
+	return renderMediaMetadataResult(heading, [][2]string{
+		{"Title", book.Title},
+		{"Original Title", book.OriginalTitle},
+		{"ISBN-13", book.ISBN13},
+		{"ISBN-10", book.ISBN10},
+		{"OpenLibrary ID", book.OpenlibraryID},
+		{"Goodreads ID", book.GoodreadsID},
+		{"Publisher", book.Publisher},
+		{"Language", book.Language},
+		{"Year", mdNum(book.Year)},
+		{"Pages", mdNum(book.PageCount)},
+		{"Genres", book.Genres},
+		{"Description", book.Description},
+		{"Cover URL", book.CoverURL},
+	})
+}
+
+// handleAudiobookMetadataLookup fetches audiobook metadata by ASIN and optionally
+// updates (or inserts) the matching dbaudiobooks row.
+func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
+	var ab database.Dbaudiobook
+
+	ab.ASIN = asin
+
+	if err := metadata.AudiobookGetMetadata(
+		context.Background(), audiobookMetadataConfig(), &ab, true,
+	); err != nil {
+		return renderAlert("Audiobook metadata lookup failed: "+err.Error(), "danger")
+	}
+
+	if ab.Title == "" {
+		return renderAlert("No audiobook metadata found for ASIN "+asin, "warning")
+	}
+
+	heading := "Audiobook"
+	if updateDB {
+		id := database.Getdatarow[uint](
+			false,
+			"SELECT id FROM dbaudiobooks WHERE asin = ? LIMIT 1",
+			&asin,
+		)
+		if id == 0 {
+			if newid, err := database.ExecNid(
+				"INSERT INTO dbaudiobooks (asin) VALUES (?)",
+				&asin,
+			); err == nil {
+				id = uint(newid) //nolint:gosec // safe: value within target type range
+			}
+		}
+
+		if id != 0 {
+			ab.ID = id
+			database.ExecN(
+				"update dbaudiobooks SET title = ?, asin = ?, audible_id = ?, runtime_minutes = ?, chapter_count = ?, release_date = ?, publisher = ?, language = ?, abridged = ?, cover_url = ?, sample_url = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ?, dbbook_id = ?, description = ? where id = ?",
+				&ab.Title,
+				&ab.ASIN,
+				&ab.AudibleID,
+				&ab.RuntimeMinutes,
+				&ab.ChapterCount,
+				&ab.ReleaseDate,
+				&ab.Publisher,
+				&ab.Language,
+				&ab.Abridged,
+				&ab.CoverURL,
+				&ab.SampleURL,
+				&ab.AverageRating,
+				&ab.RatingsCount,
+				&ab.Year,
+				&ab.Slug,
+				&ab.DbbookID,
+				&ab.Description,
+				&ab.ID,
+			)
+
+			heading = fmt.Sprintf("Audiobook (saved to database, id %d)", id)
+		} else {
+			heading = "Audiobook (database update failed)"
+		}
+	}
+
+	return renderMediaMetadataResult(heading, [][2]string{
+		{"Title", ab.Title},
+		{"ASIN", ab.ASIN},
+		{"Audible ID", ab.AudibleID},
+		{"Publisher", ab.Publisher},
+		{"Language", ab.Language},
+		{"Year", mdNum(ab.Year)},
+		{"Runtime (min)", mdNum(ab.RuntimeMinutes)},
+		{"Chapters", mdNum(ab.ChapterCount)},
+		{"Description", ab.Description},
+		{"Cover URL", ab.CoverURL},
+	})
+}
+
+// handleAlbumMetadataLookup fetches music album metadata by MusicBrainz release
+// ID and optionally updates (or inserts) the matching dbalbums row.
+func handleAlbumMetadataLookup(mbReleaseID string, updateDB bool) string {
+	var album database.Dbalbum
+
+	album.MusicbrainzReleaseID = mbReleaseID
+
+	if err := metadata.AlbumGetMetadata(context.Background(), &album, true); err != nil {
+		return renderAlert("Album metadata lookup failed: "+err.Error(), "danger")
+	}
+
+	if album.Title == "" {
+		return renderAlert(
+			"No album metadata found for MusicBrainz release "+mbReleaseID,
+			"warning",
+		)
+	}
+
+	heading := "Album"
+	if updateDB {
+		id := database.Getdatarow[uint](
+			false, "SELECT id FROM dbalbums WHERE musicbrainz_release_id = ? LIMIT 1", &mbReleaseID,
+		)
+		if id == 0 {
+			if newid, err := database.ExecNid(
+				"INSERT INTO dbalbums (musicbrainz_release_id) VALUES (?)", &mbReleaseID,
+			); err == nil {
+				id = uint(newid) //nolint:gosec // safe: value within target type range
+			}
+		}
+
+		if id != 0 {
+			album.ID = id
+			database.ExecN(
+				"update dbalbums SET title = ?, musicbrainz_release_group_id = ?, musicbrainz_release_id = ?, discogs_master_id = ?, discogs_release_id = ?, spotify_id = ?, upc = ?, release_date = ?, release_type = ?, format = ?, label = ?, country = ?, total_tracks = ?, total_runtime_ms = ?, genres = ?, styles = ?, cover_url = ?, year = ?, slug = ? where id = ?",
+				&album.Title,
+				&album.MusicbrainzReleaseGroupID,
+				&album.MusicbrainzReleaseID,
+				&album.DiscogsMasterID,
+				&album.DiscogsReleaseID,
+				&album.SpotifyID,
+				&album.UPC,
+				&album.ReleaseDate,
+				&album.ReleaseType,
+				&album.Format,
+				&album.Label,
+				&album.Country,
+				&album.TotalTracks,
+				&album.TotalRuntimeMs,
+				&album.Genres,
+				&album.Styles,
+				&album.CoverURL,
+				&album.Year,
+				&album.Slug,
+				&album.ID,
+			)
+
+			heading = fmt.Sprintf("Album (saved to database, id %d)", id)
+		} else {
+			heading = "Album (database update failed)"
+		}
+	}
+
+	return renderMediaMetadataResult(heading, [][2]string{
+		{"Title", album.Title},
+		{"MusicBrainz Release", album.MusicbrainzReleaseID},
+		{"Release Group", album.MusicbrainzReleaseGroupID},
+		{"Label", album.Label},
+		{"Country", album.Country},
+		{"Format", album.Format},
+		{"Release Type", album.ReleaseType},
+		{"Year", mdNum(album.Year)},
+		{"Tracks", mdNum(album.TotalTracks)},
+		{"Genres", album.Genres},
+		{"Cover URL", album.CoverURL},
+	})
 }
 
 // renderMovieMetadataDisplay renders movie metadata in a formatted table.

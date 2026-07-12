@@ -274,17 +274,16 @@ func matchReportDuration(ms int64) string {
 	return fmt.Sprintf("%d:%02d", m, sec)
 }
 
-// organizeAlbumFolderViaAPI processes multi-file media (music, audiobooks) using API matching.
-// It uses importfeed.MatchAudioFolderAsAlbum to match the album, then organizes the matched files.
-// Workflow: Match via API → Check for old files → Remove old files → Tag and rename → Move → Add to DB.
-// Returns the rejection reason from matching (empty on success) and any error.
-func (s *Organizer) organizeAlbumFolderViaAPI(
-	ctx context.Context,
-	folder string,
-	cfgp *config.MediaTypeConfig,
+// buildAlbumDataConfig converts a MediaDataImportConfig into the MediaDataConfig
+// expected by importfeed, then merges any unset matching parameters from the media
+// type's data configs (cfgp.Data). Settings from data_import take precedence; the
+// per-data merge fills gaps for track weights, tolerances, release types, and the
+// add_found / alternative-release behaviour. Centralising this prevents the match
+// configuration from drifting between the normal organize path and force-match.
+func buildAlbumDataConfig(
 	data *config.MediaDataImportConfig,
-) (string, *importfeed.MatchReport, error) {
-	// Convert MediaDataImportConfig to MediaDataConfig for importfeed
+	cfgp *config.MediaTypeConfig,
+) *config.MediaDataConfig {
 	dataCfg := &config.MediaDataConfig{}
 	if data != nil {
 		dataCfg.EnableUnpacking = data.EnableUnpacking
@@ -391,6 +390,22 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 			dataCfg.AddFoundList = cfgp.Data[idx].AddFoundList
 		}
 	}
+
+	return dataCfg
+}
+
+// organizeAlbumFolderViaAPI processes multi-file media (music, audiobooks) using API matching.
+// It uses importfeed.MatchAudioFolderAsAlbum to match the album, then organizes the matched files.
+// Workflow: Match via API → Check for old files → Remove old files → Tag and rename → Move → Add to DB.
+// Returns the rejection reason from matching (empty on success) and any error.
+func (s *Organizer) organizeAlbumFolderViaAPI(
+	ctx context.Context,
+	folder string,
+	cfgp *config.MediaTypeConfig,
+	data *config.MediaDataImportConfig,
+) (string, *importfeed.MatchReport, error) {
+	// Convert MediaDataImportConfig to MediaDataConfig for importfeed.
+	dataCfg := buildAlbumDataConfig(data, cfgp)
 
 	// Check for multi-episode audiobook folder (each file is a separate episode)
 	if cfgp.IsType == config.MediaTypeAudiobook {
@@ -835,7 +850,7 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 
 // writeRenameLog writes a small text file into the target folder documenting
 // the original filenames and what they were renamed to during organization.
-func (s *Organizer) writeRenameLog(
+func (*Organizer) writeRenameLog(
 	ctx context.Context,
 	targetPath, sourceFolder string,
 	album *parser_v2.AlbumInfo,
@@ -1006,7 +1021,7 @@ func (s *Organizer) writeRenameLog(
 // writeRenameLogSingle writes a rename log for single-file media (movies, series).
 // It uses the collected RenamedFiles entries from Organizerdata to document
 // all old->new filename mappings including additional files (subtitles, NFOs, etc.).
-func (s *Organizer) writeRenameLogSingle(
+func (*Organizer) writeRenameLogSingle(
 	targetPath, sourceFolder string,
 	o *Organizerdata,
 	m *database.ParseInfo,
@@ -1098,18 +1113,17 @@ func (s *Organizer) removeOldAlbumFiles(ctx context.Context, albumID uint, media
 			continue // Skip target path itself
 		}
 
-		// Delete from filesystem
-		if scanner.CheckFileExist(files[i]) {
-			if err := os.Remove(files[i]); err != nil {
-				logger.Logtype("error", 1).
-					Str("file", files[i]).
-					Err(err).
-					Msg("Failed to remove old file")
-			} else {
-				logger.Logtype("info", 1).
-					Str("file", files[i]).
-					Msg("Removed old file")
-			}
+		// Delete from filesystem via the scanner so permission fallback and
+		// existence checks are applied consistently with the rest of organize.
+		if removed, err := scanner.RemoveFile(files[i]); err != nil {
+			logger.Logtype("error", 1).
+				Str("file", files[i]).
+				Err(err).
+				Msg("Failed to remove old file")
+		} else if removed {
+			logger.Logtype("info", 1).
+				Str("file", files[i]).
+				Msg("Removed old file")
 		}
 
 		// Delete from database
@@ -1152,12 +1166,12 @@ func (s *Organizer) removePreexistingFilesAtTarget(o *Organizerdata, _ *parser_v
 
 		// Check if this is an audio file
 		if parser_v2.HasExtension(path, parser_v2.AudioExtensions) {
-			if err := os.Remove(path); err != nil {
+			if removed, err := scanner.RemoveFile(path); err != nil {
 				logger.Logtype("error", 1).
 					Str("file", path).
 					Err(err).
 					Msg("Failed to remove pre-existing audio file at target")
-			} else {
+			} else if removed {
 				logger.Logtype("info", 1).
 					Str("file", path).
 					Msg("Removed pre-existing audio file at target location")
@@ -1519,7 +1533,7 @@ func addAlbumFilesToDatabase(
 
 	albumListID := database.GetAlbumListEntryID(album.DatabaseID, listname)
 	if albumListID == 0 {
-		logger.Logtype("error", 1).
+		logger.Logtype("warn", 1).
 			Str("folder", folder).
 			Uint("dbalbumID", album.DatabaseID).
 			Str("listname", listname).
@@ -1903,61 +1917,9 @@ func (s *Organizer) ForceMatchAlbumFolder(
 	forcedID *string,
 	preview bool,
 ) (*AlbumForceMatchPreview, error) {
-	// Build the MediaDataConfig the same way organizeAlbumFolderViaAPI does.
-	dataCfg := &config.MediaDataConfig{}
-	if data != nil {
-		dataCfg.EnableUnpacking = data.EnableUnpacking
-		dataCfg.CfgPath = data.CfgPath
-		dataCfg.PerTrackToleranceSeconds = data.PerTrackToleranceSeconds
-		dataCfg.MaxTotalDifferenceSeconds = data.MaxTotalDifferenceSeconds
-		dataCfg.AllowMissingTracks = data.AllowMissingTracks
-		dataCfg.AllowAllFormatsWhenStructuring = data.AllowAllFormatsWhenStructuring
-		dataCfg.AllowAlternativeReleases = data.AllowAlternativeReleases
-		dataCfg.TrackArtistWeight = data.TrackArtistWeight
-		dataCfg.TrackTitleWeight = data.TrackTitleWeight
-		dataCfg.TrackLengthWeight = data.TrackLengthWeight
-		dataCfg.TrackIdWeight = data.TrackIdWeight
-		dataCfg.TrackIndexWeight = data.TrackIndexWeight
-		dataCfg.PerTrackToleranceSecondsMax = data.PerTrackToleranceSecondsMax
-		dataCfg.MBMediaFormats = data.MBMediaFormats
-		dataCfg.AllowedReleaseTypes = data.AllowedReleaseTypes
-		dataCfg.EmbedArt = data.EmbedArt
-		dataCfg.ExceedToleranceIfTotalMatch = data.ExceedToleranceIfTotalMatch
-
-		dataCfg.DiscoverSeriesAlbums = data.DiscoverSeriesAlbums
-		if data.AddFound {
-			dataCfg.AddFound = true
-			dataCfg.AddFoundList = data.AddFoundList
-		}
-	}
-
-	for idx := range cfgp.Data {
-		if cfgp.Data[idx].AddFound && !dataCfg.AddFound {
-			dataCfg.AddFound = true
-			dataCfg.AddFoundList = cfgp.Data[idx].AddFoundList
-		}
-
-		if !dataCfg.WriteRenameLog && cfgp.Data[idx].WriteRenameLog {
-			dataCfg.WriteRenameLog = true
-		}
-
-		if !dataCfg.EmbedArt && cfgp.Data[idx].EmbedArt {
-			dataCfg.EmbedArt = true
-		}
-
-		if !dataCfg.AllowAllFormatsWhenStructuring &&
-			cfgp.Data[idx].AllowAllFormatsWhenStructuring {
-			dataCfg.AllowAllFormatsWhenStructuring = true
-		}
-
-		if !dataCfg.AllowMissingTracks && cfgp.Data[idx].AllowMissingTracks {
-			dataCfg.AllowMissingTracks = true
-		}
-
-		if len(dataCfg.MBMediaFormats) == 0 && len(cfgp.Data[idx].MBMediaFormats) > 0 {
-			dataCfg.MBMediaFormats = cfgp.Data[idx].MBMediaFormats
-		}
-	}
+	// Build the MediaDataConfig the same way organizeAlbumFolderViaAPI does so that
+	// force-match uses identical weights, tolerances, and release-type filters.
+	dataCfg := buildAlbumDataConfig(data, cfgp)
 
 	// Match — always skip adding to DB at this stage so preview can inspect first.
 	album, reason, _ := importfeed.MatchAudioFolderAsAlbumForced(
@@ -2015,7 +1977,7 @@ func (s *Organizer) ForceMatchAlbumFolder(
 	s.GenerateNamingTemplate(o, &m, &album.DatabaseID)
 
 	if o.Foldername == "" {
-		return nil, fmt.Errorf("failed to generate folder name")
+		return nil, errors.New("failed to generate folder name")
 	}
 
 	o.Filenames = s.generateTrackFilenames(o, &m, album, cfgp)

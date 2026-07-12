@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -558,9 +558,9 @@ func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
 
 				// Clear template
 				$('#clearTemplate').on('click', function() {
-					if (confirm('Are you sure you want to clear the template?')) {
+					confirmAction('Please confirm', 'Are you sure you want to clear the template?', function() {
 						$('#templateEditor').val('').focus();
-					}
+					})
 				});
 
 				// Copy template
@@ -1576,6 +1576,310 @@ func getParserFields() []TemplateField {
 			Example:     "1, 2, 3",
 			Category:    "Parser Information",
 		},
+		{
+			Name:        "Title",
+			Type:        "string",
+			Template:    "{{.Title}}",
+			Description: "Resolved media title",
+			Example:     "The Fellowship of the Ring",
+			Category:    "Parser Information",
+		},
+		{
+			Name:        "Track",
+			Type:        "int",
+			Template:    "{{.Track}}",
+			Description: "Track number (music)",
+			Example:     "1",
+			Category:    "Parser Information",
+		},
+		{
+			Name:        "Disc",
+			Type:        "int",
+			Template:    "{{.Disc}}",
+			Description: "Disc number (music)",
+			Example:     "1",
+			Category:    "Parser Information",
+		},
+		{
+			Name:        "TotalDiscs",
+			Type:        "int",
+			Template:    "{{.TotalDiscs}}",
+			Description: "Total number of discs (music)",
+			Example:     "2",
+			Category:    "Parser Information",
+		},
+
+		// ---- Music: Album (Dbalbum) ----
+		{
+			Name:        "Dbalbum.Title",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Title}}",
+			Description: "Album title",
+			Example:     "Dark Side of the Moon",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Year",
+			Type:        "uint16",
+			Template:    "{{.Dbalbum.Year}}",
+			Description: "Album release year",
+			Example:     "1973",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.ReleaseType",
+			Type:        "string",
+			Template:    "{{.Dbalbum.ReleaseType}}",
+			Description: "Release type (album, ep, single)",
+			Example:     "album",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Format",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Format}}",
+			Description: "Release format (cd, vinyl, digital)",
+			Example:     "vinyl",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Label",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Label}}",
+			Description: "Record label",
+			Example:     "Harvest",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Genres",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Genres}}",
+			Description: "Album genres",
+			Example:     "Progressive Rock",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.TotalTracks",
+			Type:        "int",
+			Template:    "{{.Dbalbum.TotalTracks}}",
+			Description: "Number of tracks",
+			Example:     "10",
+			Category:    "Music - Album",
+		},
+
+		// ---- Music: Artist (Artist / AlbumArtist = database.Dbartist) ----
+		{
+			Name:        "Artist.Name",
+			Type:        "string",
+			Template:    "{{.Artist.Name}}",
+			Description: "Primary artist name",
+			Example:     "Pink Floyd",
+			Category:    "Music - Artist",
+		},
+		{
+			Name:        "Artist.SortName",
+			Type:        "string",
+			Template:    "{{.Artist.SortName}}",
+			Description: "Artist sort name",
+			Example:     "Pink Floyd",
+			Category:    "Music - Artist",
+		},
+		{
+			Name:        "AlbumArtist.Name",
+			Type:        "string",
+			Template:    "{{.AlbumArtist.Name}}",
+			Description: "Album artist name",
+			Example:     "Pink Floyd",
+			Category:    "Music - Artist",
+		},
+
+		// ---- Music: Track (Dbtrack) ----
+		{
+			Name:        "Dbtrack.Title",
+			Type:        "string",
+			Template:    "{{.Dbtrack.Title}}",
+			Description: "Track title",
+			Example:     "Time",
+			Category:    "Music - Track",
+		},
+		{
+			Name:        "Dbtrack.TrackNumber",
+			Type:        "uint16",
+			Template:    "{{.Dbtrack.TrackNumber}}",
+			Description: "Track number on disc",
+			Example:     "4",
+			Category:    "Music - Track",
+		},
+		{
+			Name:        "Dbtrack.DiscNumber",
+			Type:        "uint16",
+			Template:    "{{.Dbtrack.DiscNumber}}",
+			Description: "Disc number",
+			Example:     "1",
+			Category:    "Music - Track",
+		},
+
+		// ---- Book (Dbbook) ----
+		{
+			Name:        "Dbbook.Title",
+			Type:        "string",
+			Template:    "{{.Dbbook.Title}}",
+			Description: "Book title",
+			Example:     "The Hobbit",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.OriginalTitle",
+			Type:        "string",
+			Template:    "{{.Dbbook.OriginalTitle}}",
+			Description: "Original book title",
+			Example:     "The Hobbit",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.Year",
+			Type:        "uint16",
+			Template:    "{{.Dbbook.Year}}",
+			Description: "Publication year",
+			Example:     "1937",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.ISBN13",
+			Type:        "string",
+			Template:    "{{.Dbbook.ISBN13}}",
+			Description: "ISBN-13 identifier",
+			Example:     "9780261103344",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.Publisher",
+			Type:        "string",
+			Template:    "{{.Dbbook.Publisher}}",
+			Description: "Publisher",
+			Example:     "George Allen & Unwin",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.Language",
+			Type:        "string",
+			Template:    "{{.Dbbook.Language}}",
+			Description: "Book language",
+			Example:     "English",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.SeriesPosition",
+			Type:        "string",
+			Template:    "{{.Dbbook.SeriesPosition}}",
+			Description: "Position in series",
+			Example:     "1",
+			Category:    "Book",
+		},
+
+		// ---- Book: Author (Author = database.Dbauthor) ----
+		{
+			Name:        "Author.Name",
+			Type:        "string",
+			Template:    "{{.Author.Name}}",
+			Description: "Author name",
+			Example:     "J.R.R. Tolkien",
+			Category:    "Book - Author",
+		},
+
+		// ---- Book: Series (BookSeries = database.DbbookSeries) ----
+		{
+			Name:        "BookSeries.Name",
+			Type:        "string",
+			Template:    "{{.BookSeries.Name}}",
+			Description: "Book series name",
+			Example:     "Middle-earth",
+			Category:    "Book - Series",
+		},
+
+		// ---- Audiobook (Dbaudiobook) ----
+		{
+			Name:        "Dbaudiobook.Title",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.Title}}",
+			Description: "Audiobook title",
+			Example:     "The Hobbit",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.Year",
+			Type:        "uint16",
+			Template:    "{{.Dbaudiobook.Year}}",
+			Description: "Audiobook release year",
+			Example:     "2012",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.ASIN",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.ASIN}}",
+			Description: "Amazon/Audible ASIN",
+			Example:     "B007978PI2",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.Publisher",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.Publisher}}",
+			Description: "Publisher",
+			Example:     "Recorded Books",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.Language",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.Language}}",
+			Description: "Audiobook language",
+			Example:     "English",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.SeriesName",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.SeriesName}}",
+			Description: "Audiobook series name",
+			Example:     "The Lord of the Rings",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.SeriesPosition",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.SeriesPosition}}",
+			Description: "Position in series",
+			Example:     "1",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.RuntimeMinutes",
+			Type:        "int",
+			Template:    "{{.Dbaudiobook.RuntimeMinutes}}",
+			Description: "Total runtime in minutes",
+			Example:     "660",
+			Category:    "Audiobook",
+		},
+
+		// ---- Audiobook: Chapter (DbaudiobookChapter) ----
+		{
+			Name:        "DbaudiobookChapter.Title",
+			Type:        "string",
+			Template:    "{{.DbaudiobookChapter.Title}}",
+			Description: "Chapter title",
+			Example:     "An Unexpected Party",
+			Category:    "Audiobook - Chapter",
+		},
+		{
+			Name:        "DbaudiobookChapter.ChapterNumber",
+			Type:        "uint16",
+			Template:    "{{.DbaudiobookChapter.ChapterNumber}}",
+			Description: "Chapter sequence number",
+			Example:     "1",
+			Category:    "Audiobook - Chapter",
+		},
 	}
 }
 
@@ -2359,6 +2663,170 @@ func getNotificationFields() []TemplateField {
 			Description: "Available languages",
 			Example:     "English, Spanish",
 			Category:    "Source Information",
+		},
+
+		// ---- Music: Album (Dbalbum) ----
+		{
+			Name:        "Dbalbum.Title",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Title}}",
+			Description: "Album title",
+			Example:     "Dark Side of the Moon",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Year",
+			Type:        "uint16",
+			Template:    "{{.Dbalbum.Year}}",
+			Description: "Album release year",
+			Example:     "1973",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Label",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Label}}",
+			Description: "Record label",
+			Example:     "Harvest",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Genres",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Genres}}",
+			Description: "Album genres",
+			Example:     "Progressive Rock",
+			Category:    "Music - Album",
+		},
+
+		// ---- Music: Artist (Artist / AlbumArtist) ----
+		{
+			Name:        "Artist.Name",
+			Type:        "string",
+			Template:    "{{.Artist.Name}}",
+			Description: "Primary artist name",
+			Example:     "Pink Floyd",
+			Category:    "Music - Artist",
+		},
+		{
+			Name:        "AlbumArtist.Name",
+			Type:        "string",
+			Template:    "{{.AlbumArtist.Name}}",
+			Description: "Album artist name",
+			Example:     "Pink Floyd",
+			Category:    "Music - Artist",
+		},
+
+		// ---- Music: Track (Dbtrack) ----
+		{
+			Name:        "Dbtrack.Title",
+			Type:        "string",
+			Template:    "{{.Dbtrack.Title}}",
+			Description: "Track title",
+			Example:     "Time",
+			Category:    "Music - Track",
+		},
+		{
+			Name:        "Dbtrack.TrackNumber",
+			Type:        "uint16",
+			Template:    "{{.Dbtrack.TrackNumber}}",
+			Description: "Track number on disc",
+			Example:     "4",
+			Category:    "Music - Track",
+		},
+
+		// ---- Book (Dbbook) ----
+		{
+			Name:        "Dbbook.Title",
+			Type:        "string",
+			Template:    "{{.Dbbook.Title}}",
+			Description: "Book title",
+			Example:     "The Hobbit",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.Year",
+			Type:        "uint16",
+			Template:    "{{.Dbbook.Year}}",
+			Description: "Publication year",
+			Example:     "1937",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.Publisher",
+			Type:        "string",
+			Template:    "{{.Dbbook.Publisher}}",
+			Description: "Publisher",
+			Example:     "George Allen & Unwin",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.SeriesPosition",
+			Type:        "string",
+			Template:    "{{.Dbbook.SeriesPosition}}",
+			Description: "Position in series",
+			Example:     "1",
+			Category:    "Book",
+		},
+
+		// ---- Book: Author / Series ----
+		{
+			Name:        "Author.Name",
+			Type:        "string",
+			Template:    "{{.Author.Name}}",
+			Description: "Author name",
+			Example:     "J.R.R. Tolkien",
+			Category:    "Book - Author",
+		},
+		{
+			Name:        "BookSeries.Name",
+			Type:        "string",
+			Template:    "{{.BookSeries.Name}}",
+			Description: "Book series name",
+			Example:     "Middle-earth",
+			Category:    "Book - Series",
+		},
+
+		// ---- Audiobook (Dbaudiobook) ----
+		{
+			Name:        "Dbaudiobook.Title",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.Title}}",
+			Description: "Audiobook title",
+			Example:     "The Hobbit",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.Year",
+			Type:        "uint16",
+			Template:    "{{.Dbaudiobook.Year}}",
+			Description: "Audiobook release year",
+			Example:     "2012",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.SeriesName",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.SeriesName}}",
+			Description: "Audiobook series name",
+			Example:     "The Lord of the Rings",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.SeriesPosition",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.SeriesPosition}}",
+			Description: "Position in series",
+			Example:     "1",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "DbaudiobookChapter.Title",
+			Type:        "string",
+			Template:    "{{.DbaudiobookChapter.Title}}",
+			Description: "Chapter title",
+			Example:     "An Unexpected Party",
+			Category:    "Audiobook - Chapter",
 		},
 	}
 }

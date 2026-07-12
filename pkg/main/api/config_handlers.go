@@ -12,7 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"

@@ -115,7 +115,7 @@ func retryOnRateLimit[T any](ctx context.Context, fn func() (T, error)) (T, erro
 			return result, err
 		}
 
-		if !strings.Contains(err.Error(), "rate limit") {
+		if !logger.IsRateLimitError(err) {
 			return result, err
 		}
 
@@ -657,7 +657,7 @@ func addAlbumFilesToDatabase(
 
 	albumListID := database.GetAlbumListEntryID(album.DatabaseID, listname)
 	if albumListID == 0 {
-		logger.Logtype("error", 1).
+		logger.Logtype("warn", 1).
 			Str("folder", folder).
 			Uint("dbalbumID", album.DatabaseID).
 			Str("listname", listname).

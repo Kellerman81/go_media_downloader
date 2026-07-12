@@ -84,7 +84,12 @@ func TestVDGGDiagnostic(t *testing.T) {
 	for _, tr := range tracks {
 		localTotalMs += tr.RuntimeMS
 	}
-	t.Logf("\n=== Local: %d tracks, %dms (%.1fs) ===", fileCount, localTotalMs, float64(localTotalMs)/1000)
+	t.Logf(
+		"\n=== Local: %d tracks, %dms (%.1fs) ===",
+		fileCount,
+		localTotalMs,
+		float64(localTotalMs)/1000,
+	)
 
 	// ── 4. Resolve artist/album as matchMusicFolder would ────────────────────
 	artist := coalesceStr(tagAlbumArtist, tagArtist, folderArtist)
@@ -119,7 +124,10 @@ func TestVDGGDiagnostic(t *testing.T) {
 
 	type searchQ struct{ label, query string }
 	queries := []searchQ{
-		{"production query (BuildArtistAlbumSearch)", string(BuildArtistAlbumSearch(albumTitle, artist))},
+		{
+			"production query (BuildArtistAlbumSearch)",
+			string(BuildArtistAlbumSearch(albumTitle, artist)),
+		},
 		// fuzzy fallback (new code, only fires when primary returns 0):
 		{"fuzzy fallback", func() string {
 			buf := logger.PlAddBuffer.Get()
@@ -193,11 +201,24 @@ func TestVDGGDiagnostic(t *testing.T) {
 				diff = -diff
 			}
 			if relRuntimeMs == 0 {
-				t.Logf("       → MB has no durations: FAIL-OPEN → WOULD IMPORT (id=%s)", r.MusicBrainzID)
+				t.Logf(
+					"       → MB has no durations: FAIL-OPEN → WOULD IMPORT (id=%s)",
+					r.MusicBrainzID,
+				)
 			} else if diff <= toleranceMs {
-				t.Logf("       → runtime OK (diff=%dms <= tol=%dms) → WOULD IMPORT (id=%s)", diff, toleranceMs, r.MusicBrainzID)
+				t.Logf(
+					"       → runtime OK (diff=%dms <= tol=%dms) → WOULD IMPORT (id=%s)",
+					diff,
+					toleranceMs,
+					r.MusicBrainzID,
+				)
 			} else {
-				t.Logf("       → SKIP: runtime diff %dms > tol %dms (mbRuntime=%dms)", diff, toleranceMs, relRuntimeMs)
+				t.Logf(
+					"       → SKIP: runtime diff %dms > tol %dms (mbRuntime=%dms)",
+					diff,
+					toleranceMs,
+					relRuntimeMs,
+				)
 			}
 		}
 	}

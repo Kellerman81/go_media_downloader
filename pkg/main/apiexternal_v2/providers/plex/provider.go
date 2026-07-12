@@ -68,12 +68,12 @@ func NewProvider(serverURL, token string, insecureSkipVerify bool) *Provider {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return "plex"
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "plex"
 }
 
@@ -105,7 +105,7 @@ type PlexGuid struct {
 // GetWatchlist retrieves the watchlist for a Plex user.
 func (p *Provider) GetWatchlist(
 	ctx context.Context,
-	username string,
+	_ string,
 ) ([]apiexternal_v2.WatchlistItem, error) {
 	// Build the watchlist URL with query parameters
 	params := url.Values{}
@@ -201,21 +201,21 @@ func extractTVDbIDFromGuids(guids []PlexGuid) int {
 }
 
 // AddToWatchlist adds an item to the Plex watchlist.
-func (p *Provider) AddToWatchlist(
-	ctx context.Context,
+func (*Provider) AddToWatchlist(
+	_ context.Context,
 	username string,
-	itemType string,
-	id int,
+	_ string,
+	_ int,
 ) error {
 	return errors.New("add to watchlist not implemented for Plex")
 }
 
 // RemoveFromWatchlist removes an item from the Plex watchlist.
-func (p *Provider) RemoveFromWatchlist(
-	ctx context.Context,
+func (*Provider) RemoveFromWatchlist(
+	_ context.Context,
 	username string,
-	itemType string,
-	id int,
+	_ string,
+	_ int,
 ) error {
 	return errors.New("remove from watchlist not implemented for Plex")
 }

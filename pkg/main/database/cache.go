@@ -32,8 +32,6 @@ type tcache struct {
 	itemstwoint      *syncops.SyncMap[[]syncops.DbstaticOneStringTwoInt]
 	itemsthreestring *syncops.SyncMap[[]syncops.DbstaticThreeStringTwoInt]
 	itemstwostring   *syncops.SyncMap[[]syncops.DbstaticTwoStringOneInt]
-	// itemsxstmt       *syncops.SyncMap[*sqlx.Stmt]     // DEPRECATED: Use ristrettoStmt
-	// itemsregex       *syncops.SyncMap[*regexp.Regexp] // DEPRECATED: Use ristrettoRegex
 
 	// NEW: Ristretto caches for high-performance lookups
 	ristrettoStmt  *ristretto.Cache[string, *sqlx.Stmt]
@@ -60,9 +58,7 @@ var (
 		itemstwoint:      syncops.NewSyncMap[[]syncops.DbstaticOneStringTwoInt](20),
 		itemsthreestring: syncops.NewSyncMap[[]syncops.DbstaticThreeStringTwoInt](20),
 		itemstwostring:   syncops.NewSyncMap[[]syncops.DbstaticTwoStringOneInt](20),
-		// itemsxstmt:       syncops.NewSyncMap[*sqlx.Stmt](1000),
-		// itemsregex:       syncops.NewSyncMap[*regexp.Regexp](1000),
-		interval: 10 * time.Minute, // Set default interval to 10 minutes
+		interval:         10 * time.Minute, // Set default interval to 10 minutes
 	}
 	globalCache      *globalcache
 	initOnce         sync.Once // To make sure that the cache is only initialized once
@@ -469,7 +465,7 @@ func (c *globalcache) getexpiressql(static bool) int64 {
 // addStaticXStmt adds a prepared SQL statement to the Ristretto cache with the given key.
 // If the statement already exists in the cache, it returns without doing anything.
 // Static statements are cached permanently. Falls back to old implementation if Ristretto not initialized.
-func (c *globalcache) addStaticXStmt(key string, imdb bool) {
+func (*globalcache) addStaticXStmt(key string, imdb bool) {
 	// Check if already in Ristretto cache
 	if _, found := cache.ristrettoStmt.Get(key); found {
 		return
@@ -484,13 +480,7 @@ func (c *globalcache) addStaticXStmt(key string, imdb bool) {
 
 // getXStmt retrieves a cached SQL statement using Ristretto cache.
 // If the statement is not found, it prepares the statement and caches it.
-// Falls back to old implementation if Ristretto not initialized.
-func (c *globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
-	// if cache.ristrettoStmt == nil {
-	// 	// Fallback to old implementation
-	// 	return c.getXStmtOld(key, imdb)
-	// }
-
+func (*globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
 	// Try Ristretto cache first
 	if stmt, found := cache.ristrettoStmt.Get(key); found {
 		return stmt
@@ -527,7 +517,7 @@ func preparestmt(imdb bool, key string) *sqlx.Stmt {
 // setStaticRegexp sets a cached regular expression with the given key. If the cached regular expression
 // does not exist, it compiles and caches it using Ristretto. This function is used to cache regular
 // expressions that are used statically throughout the application.
-func (c *globalcache) setStaticRegexp(key string) {
+func (*globalcache) setStaticRegexp(key string) {
 	// Check if already cached in Ristretto
 	if _, found := cache.ristrettoRegex.Get(key); found {
 		return
@@ -542,7 +532,7 @@ func (c *globalcache) setStaticRegexp(key string) {
 // If the cached regular expression does not exist, it creates a new one and adds it to the cache.
 // The function takes a key string and a duration time.Duration for TTL.
 // If duration is 0, patterns are cached permanently. Returns the compiled regexp.
-func (c *globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
+func (*globalcache) setRegexp(key string, duration time.Duration) *regexp.Regexp {
 	// Try Ristretto cache first
 	if rgx, found := cache.ristrettoRegex.Get(key); found {
 		return rgx
@@ -1736,13 +1726,14 @@ func NewCache(cleaningInterval, extension time.Duration) {
 		// Initialize Ristretto caches for regex and SQL statements
 		var err error
 
-		// Regex cache: ~1000 patterns, 10MB max
+		// Regex cache. Entries are stored with cost 1, so MaxCost is an entry
+		// count (~10M) - effectively unbounded; eviction never triggers in practice.
 		cache.ristrettoRegex, err = ristretto.NewCache(&ristretto.Config[string, *regexp.Regexp]{
 			NumCounters: 100_000,  // 10x expected items
 			MaxCost:     10 << 20, // 10MB
 			BufferItems: 64,
 			Metrics:     false,
-			OnEvict: func(item *ristretto.Item[*regexp.Regexp]) {
+			OnEvict: func(_ *ristretto.Item[*regexp.Regexp]) {
 				// Regex patterns don't need cleanup
 			},
 		})
@@ -1750,7 +1741,9 @@ func NewCache(cleaningInterval, extension time.Duration) {
 			logger.Logtype("error", 1).Err(err).Msg("Failed to initialize Ristretto regex cache")
 		}
 
-		// SQL statement cache: ~1000 statements, 10MB max
+		// SQL statement cache. Entries are stored with cost 1, so MaxCost is an
+		// entry count (~10M) - effectively unbounded; eviction never triggers in
+		// practice (which also avoids closing a statement while it is in use).
 		cache.ristrettoStmt, err = ristretto.NewCache(&ristretto.Config[string, *sqlx.Stmt]{
 			NumCounters: 100_000,
 			MaxCost:     10 << 20,
@@ -1864,7 +1857,7 @@ func ClearCacheType(cacheType string) {
 	switch cacheType {
 	case logger.CacheMovie, logger.CacheSeries:
 		// Clear media list caches
-		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(value []string) bool {
+		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(_ []string) bool {
 			return true // Clear all entries
 		})
 		cache.indexStringSet.DeleteFunc(func(_ map[string]struct{}) bool { return true })
@@ -1873,7 +1866,7 @@ func ClearCacheType(cacheType string) {
 		// Clear database caches
 		syncops.QueueSyncMapDeleteFunc(
 			syncops.MapTypeThreeString,
-			func(value []syncops.DbstaticThreeStringTwoInt) bool {
+			func(_ []syncops.DbstaticThreeStringTwoInt) bool {
 				return true // Clear all entries
 			},
 		)
@@ -1888,7 +1881,7 @@ func ClearCacheType(cacheType string) {
 		// Clear title caches
 		syncops.QueueSyncMapDeleteFunc(
 			syncops.MapTypeTwoString,
-			func(value []syncops.DbstaticTwoStringOneInt) bool {
+			func(_ []syncops.DbstaticTwoStringOneInt) bool {
 				return true // Clear all entries
 			},
 		)
@@ -1901,7 +1894,7 @@ func ClearCacheType(cacheType string) {
 		logger.CacheHistoryURLMovie, logger.CacheHistoryTitleMovie,
 		logger.CacheHistoryURLSeries, logger.CacheHistoryTitleSeries:
 		// Clear string-based caches
-		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(value []string) bool {
+		syncops.QueueSyncMapDeleteFunc(syncops.MapTypeString, func(_ []string) bool {
 			return true // Clear all entries
 		})
 		cache.indexStringSet.DeleteFunc(func(_ map[string]struct{}) bool { return true })

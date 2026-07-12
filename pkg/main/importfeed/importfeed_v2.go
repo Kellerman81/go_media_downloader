@@ -3,6 +3,7 @@ package importfeed
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -39,34 +40,14 @@ var (
 	errUseJobImportDBSeries     = errors.New("use JobImportDBSeries for series")
 	errUnsupportedMediaType     = errors.New("unsupported media type")
 
-	openLibraryProvider *openlibrary.Provider
-	audibleProvider     *audible.Provider
-	musicbrainzProvider *musicbrainz.Provider
+	// Provider singletons. sync.OnceValue makes the lazy initialization safe for
+	// concurrent imports - the previous nil-check-then-assign pattern was a data
+	// race and could construct duplicate providers, each with its own rate
+	// limiter (defeating e.g. MusicBrainz's 1 request/second limit).
+	getOpenLibraryProvider = sync.OnceValue(openlibrary.NewProvider)
+	getAudibleProvider     = sync.OnceValue(audible.NewProvider)
+	getMusicBrainzProvider = sync.OnceValue(musicbrainz.NewProvider)
 )
-
-func getOpenLibraryProvider() *openlibrary.Provider {
-	if openLibraryProvider == nil {
-		openLibraryProvider = openlibrary.NewProvider()
-	}
-
-	return openLibraryProvider
-}
-
-func getAudibleProvider() *audible.Provider {
-	if audibleProvider == nil {
-		audibleProvider = audible.NewProvider()
-	}
-
-	return audibleProvider
-}
-
-func getMusicBrainzProvider() *musicbrainz.Provider {
-	if musicbrainzProvider == nil {
-		musicbrainzProvider = musicbrainz.NewProvider()
-	}
-
-	return musicbrainzProvider
-}
 
 // -----------------------------------------------------------------------------
 // Generic Import Helper Functions
@@ -117,6 +98,8 @@ func jobImportEntryByList(
 		Msg(importMsg)
 
 	_, err := importFn()
+	recordImportResult(ctx, err, ignoredErr, errJobRunning)
+
 	if err != nil && !errors.Is(err, ignoredErr) {
 		logger.Logtype("error", 1).
 			Str(idFieldName, entry).
@@ -134,6 +117,7 @@ func jobImportEntryByList(
 // row (e.g. "authors" / "dbauthor_id").
 func checkaddTrackerEntry(
 	dbid *uint,
+	cfgp *config.MediaTypeConfig,
 	cfgplist *config.MediaListsConfig,
 	table, idCol string,
 	trackMode string,
@@ -143,30 +127,23 @@ func checkaddTrackerEntry(
 		return logger.ErrListnameEmpty
 	}
 
-	var getcount uint
-	database.Scanrowsdyn(
-		false,
-		"select count() from "+table+" where "+idCol+" = ? and listname = ?",
-		&getcount,
-		dbid,
+	// Deny a second tracker row from a sibling list of the same media group config.
+	if existsInConfigList(table, idCol, dbid, cfgp) {
+		return nil
+	}
+
+	if trackMode == "" {
+		trackMode = "all"
+	}
+
+	if _, err := database.ExecNid(
+		"Insert into "+table+" (listname, "+idCol+", track_mode, dont_search) values (?, ?, ?, ?)",
 		&cfgplist.Name,
-	)
-
-	if getcount == 0 {
-		if trackMode == "" {
-			trackMode = "all"
-		}
-
-		_, err := database.ExecNid(
-			"Insert into "+table+" (listname, "+idCol+", track_mode, dont_search) values (?, ?, ?, ?)",
-			&cfgplist.Name,
-			dbid,
-			&trackMode,
-			&dontSearch,
-		)
-		if err != nil {
-			return err
-		}
+		dbid,
+		&trackMode,
+		&dontSearch,
+	); err != nil {
+		return err
 	}
 
 	return nil
@@ -195,6 +172,7 @@ type mediaListEntrySpec struct {
 // CheckaddAlbumEntry.
 func checkaddMediaEntry(
 	dbid *uint,
+	cfgp *config.MediaTypeConfig,
 	cfgplist *config.MediaListsConfig,
 	idValue string,
 	s mediaListEntrySpec,
@@ -229,13 +207,11 @@ func checkaddMediaEntry(
 		}
 	}
 
-	database.Scanrowsdyn(
-		false,
-		"select count() from "+s.table+" where "+s.idCol+" = ? and listname = ?",
-		&getcount,
-		dbid,
-		&cfgplist.Name,
-	)
+	// Deny a second insert from a sibling list of the same media group config.
+	getcount = 0
+	if existsInConfigList(s.table, s.idCol, dbid, cfgp) {
+		getcount = 1
+	}
 
 	if getcount == 0 {
 		logger.Logtype("debug", 1).
@@ -315,19 +291,29 @@ func checkaddMediaEntry(
 	return nil
 }
 
-// checkJobRunning checks if an import job is already running for the given identifier.
-func checkJobRunning(identifier string) bool {
-	return importJobRunning.Check(identifier)
+// importJobTTL bounds how long an import-job key stays claimed. A crashed or
+// hung import would otherwise block re-imports of that identifier until restart.
+const importJobTTL = 30 * time.Minute
+
+// startJobIfAbsent atomically claims the import-job key and returns true.
+// Returns false when an import for the same identifier is already running.
+// This replaces the racy Check-then-Add pattern: with concurrent imports of
+// the same identifier, exactly one caller wins.
+func startJobIfAbsent(identifier string) bool {
+	return importJobRunning.AddIfAbsent(
+		identifier,
+		struct{}{},
+		time.Now().Add(importJobTTL).UnixNano(),
+	)
 }
 
-// startJob marks a job as running.
-func startJob(identifier string) {
-	syncops.QueueSyncMapAdd(syncops.MapTypeStructEmpty, identifier, struct{}{}, 0, false, 0)
-}
-
-// endJob marks a job as completed.
+// endJob marks a job as completed. The delete operates directly on the map
+// (its methods are mutex-protected) - a queued MapTypeStructEmpty delete is
+// routed to whichever map is registered under that type and historically
+// never reached importJobRunning, leaving entries to linger until their TTL
+// and wrongly blocking re-imports.
 func endJob(identifier string) {
-	syncops.QueueSyncMapDelete(syncops.MapTypeStructEmpty, identifier)
+	importJobRunning.Delete(identifier)
 }
 
 // shouldUpdateMetadata checks if metadata should be updated based on last update time.
@@ -385,11 +371,10 @@ func JobImportBooks(
 		return 0, errIsbnEmpty
 	}
 
-	if checkJobRunning(isbn) {
+	if !startJobIfAbsent(isbn) {
 		return 0, errJobRunning
 	}
 
-	startJob(isbn)
 	defer endJob(isbn)
 
 	var (
@@ -489,7 +474,7 @@ func JobImportBooks(
 		return 0, logger.ErrListnameEmpty
 	}
 
-	err := CheckaddBookEntry(&dbbook.ID, &cfgp.Lists[listid], isbn)
+	err := CheckaddBookEntry(&dbbook.ID, cfgp, &cfgp.Lists[listid], isbn)
 	if err != nil {
 		return 0, err
 	}
@@ -507,7 +492,14 @@ func BookFindDBIDByISBN(isbn *string) uint {
 }
 
 // CheckaddBookEntry checks if a book should be added to the given list.
-func CheckaddBookEntry(dbid *uint, cfgplist *config.MediaListsConfig, isbn string) error {
+// Insertion is denied when the book already exists under any sibling list of
+// cfgp (one entry per media group config).
+func CheckaddBookEntry(
+	dbid *uint,
+	cfgp *config.MediaTypeConfig,
+	cfgplist *config.MediaListsConfig,
+	isbn string,
+) error {
 	if cfgplist == nil || cfgplist.Name == "" {
 		return logger.ErrListnameEmpty
 	}
@@ -539,14 +531,11 @@ func CheckaddBookEntry(dbid *uint, cfgplist *config.MediaListsConfig, isbn strin
 		}
 	}
 
-	// Check if already in list
-	database.Scanrowsdyn(
-		false,
-		"select count() from books where dbbook_id = ? and listname = ?",
-		&getcount,
-		dbid,
-		&cfgplist.Name,
-	)
+	// Check if already present under any sibling list of this media group config
+	getcount = 0
+	if existsInConfigList("books", "dbbook_id", dbid, cfgp) {
+		getcount = 1
+	}
 
 	if getcount == 0 {
 		logger.Logtype("debug", 1).
@@ -653,11 +642,10 @@ func JobImportAuthor(
 		jobName = authorConfig.OpenlibraryID
 	}
 
-	if checkJobRunning(jobName) {
+	if !startJobIfAbsent(jobName) {
 		return 0, errJobRunning
 	}
 
-	startJob(jobName)
 	defer endJob(jobName)
 
 	var (
@@ -738,7 +726,7 @@ func JobImportAuthor(
 
 	// Add to tracking list if needed
 	if addnew && listid >= 0 {
-		err := CheckaddAuthorEntry(&dbauthor.ID, &cfgp.Lists[listid], authorConfig)
+		err := CheckaddAuthorEntry(&dbauthor.ID, cfgp, &cfgp.Lists[listid], authorConfig)
 		if err != nil {
 			return 0, err
 		}
@@ -750,10 +738,11 @@ func JobImportAuthor(
 // CheckaddAuthorEntry checks if an author should be added to tracking.
 func CheckaddAuthorEntry(
 	dbid *uint,
+	cfgp *config.MediaTypeConfig,
 	cfgplist *config.MediaListsConfig,
 	authorConfig *AuthorConfig,
 ) error {
-	return checkaddTrackerEntry(dbid, cfgplist, "authors", "dbauthor_id",
+	return checkaddTrackerEntry(dbid, cfgp, cfgplist, "authors", "dbauthor_id",
 		authorConfig.TrackMode, authorConfig.DontSearch)
 }
 
@@ -822,11 +811,10 @@ func JobImportAudiobooks(
 		return 0, errAsinEmpty
 	}
 
-	if checkJobRunning(asin) {
+	if !startJobIfAbsent(asin) {
 		return 0, errJobRunning
 	}
 
-	startJob(asin)
 	defer endJob(asin)
 
 	var (
@@ -924,7 +912,7 @@ func JobImportAudiobooks(
 		return 0, logger.ErrListnameEmpty
 	}
 
-	err := CheckaddAudiobookEntry(&dbaudiobook.ID, &cfgp.Lists[listid], asin)
+	err := CheckaddAudiobookEntry(&dbaudiobook.ID, cfgp, &cfgp.Lists[listid], asin)
 	if err != nil {
 		return 0, err
 	}
@@ -942,8 +930,13 @@ func AudiobookFindDBIDByASIN(asin *string) uint {
 }
 
 // CheckaddAudiobookEntry checks if an audiobook should be added to the given list.
-func CheckaddAudiobookEntry(dbid *uint, cfgplist *config.MediaListsConfig, asin string) error {
-	return checkaddMediaEntry(dbid, cfgplist, asin, mediaListEntrySpec{
+func CheckaddAudiobookEntry(
+	dbid *uint,
+	cfgp *config.MediaTypeConfig,
+	cfgplist *config.MediaListsConfig,
+	asin string,
+) error {
+	return checkaddMediaEntry(dbid, cfgp, cfgplist, asin, mediaListEntrySpec{
 		table:           "audiobooks",
 		idCol:           "dbaudiobook_id",
 		ignoredErr:      errAudiobookIgnored,
@@ -1044,11 +1037,10 @@ func JobImportAlbums(
 		return 0, errAlbumIdentifierEmpty
 	}
 
-	if checkJobRunning(identifier) {
+	if !startJobIfAbsent(identifier) {
 		return 0, errJobRunning
 	}
 
-	startJob(identifier)
 	defer endJob(identifier)
 
 	var (
@@ -1165,7 +1157,7 @@ func JobImportAlbums(
 		return 0, logger.ErrListnameEmpty
 	}
 
-	err := CheckaddAlbumEntry(&dbalbum.ID, &cfgp.Lists[listid], identifier)
+	err := CheckaddAlbumEntry(&dbalbum.ID, cfgp, &cfgp.Lists[listid], identifier)
 	if err != nil {
 		return 0, err
 	}
@@ -1198,8 +1190,13 @@ func isUPC(s string) bool {
 }
 
 // CheckaddAlbumEntry checks if an album should be added to the given list.
-func CheckaddAlbumEntry(dbid *uint, cfgplist *config.MediaListsConfig, identifier string) error {
-	return checkaddMediaEntry(dbid, cfgplist, identifier, mediaListEntrySpec{
+func CheckaddAlbumEntry(
+	dbid *uint,
+	cfgp *config.MediaTypeConfig,
+	cfgplist *config.MediaListsConfig,
+	identifier string,
+) error {
+	return checkaddMediaEntry(dbid, cfgp, cfgplist, identifier, mediaListEntrySpec{
 		table:           "albums",
 		idCol:           "dbalbum_id",
 		ignoredErr:      errAlbumIgnored,
@@ -1290,11 +1287,10 @@ func JobImportArtist(
 		jobName = artistConfig.MusicBrainzID
 	}
 
-	if checkJobRunning(jobName) {
+	if !startJobIfAbsent(jobName) {
 		return 0, errJobRunning
 	}
 
-	startJob(jobName)
 	defer endJob(jobName)
 
 	var (
@@ -1402,7 +1398,7 @@ func JobImportArtist(
 
 	// Add to tracking list if needed
 	if addnew && listid >= 0 {
-		err := CheckaddArtistEntry(&dbartist.ID, &cfgp.Lists[listid], artistConfig)
+		err := CheckaddArtistEntry(&dbartist.ID, cfgp, &cfgp.Lists[listid], artistConfig)
 		if err != nil {
 			return 0, err
 		}
@@ -1414,10 +1410,11 @@ func JobImportArtist(
 // CheckaddArtistEntry checks if an artist should be added to tracking.
 func CheckaddArtistEntry(
 	dbid *uint,
+	cfgp *config.MediaTypeConfig,
 	cfgplist *config.MediaListsConfig,
 	artistConfig *ArtistConfig,
 ) error {
-	return checkaddTrackerEntry(dbid, cfgplist, "artists", "dbartist_id",
+	return checkaddTrackerEntry(dbid, cfgp, cfgplist, "artists", "dbartist_id",
 		artistConfig.TrackMode, artistConfig.DontSearch)
 }
 
@@ -1467,7 +1464,7 @@ func JobImportByType(
 ) (uint, error) {
 	switch mediaType {
 	case config.MediaTypeMovie:
-		return JobImportMovies(identifier, cfgp, listid, addnew)
+		return JobImportMovies(identifier, cfgp, listid, addnew, false)
 
 	case config.MediaTypeSeries:
 		// Series uses different config structure - call jobImportDBSeries directly

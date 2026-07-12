@@ -99,12 +99,12 @@ func (p *Provider) SetTiebreak(tiebreak string) {
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.ProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 	return apiexternal_v2.ProviderSpotify
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "spotify"
 }
 
@@ -307,7 +307,7 @@ func (p *Provider) SearchTracks(
 
 // constructSearchQuery builds a search query string from components.
 // Mimics beets plugin's _construct_search_query method.
-func (p *Provider) constructSearchQuery(artist, album, track string) string {
+func (*Provider) constructSearchQuery(artist, album, track string) string {
 	var parts []string
 
 	if artist != "" {

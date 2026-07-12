@@ -3,10 +3,12 @@ package algolia
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,19 +99,19 @@ type Scraper struct {
 //   - error: Any initialization errors
 func NewScraper(cfg *Config) (*Scraper, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config cannot be nil")
+		return nil, errors.New("config cannot be nil")
 	}
 
 	if cfg.StartURL == "" {
-		return nil, fmt.Errorf("start URL is required")
+		return nil, errors.New("start URL is required")
 	}
 
 	if cfg.SiteURL == "" {
-		return nil, fmt.Errorf("site URL is required")
+		return nil, errors.New("site URL is required")
 	}
 
 	if cfg.SerieName == "" {
-		return nil, fmt.Errorf("series name is required")
+		return nil, errors.New("series name is required")
 	}
 
 	return &Scraper{
@@ -127,7 +129,7 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 //
 // Returns:
 //   - error: Any errors during series lookup or creation
-func (s *Scraper) getOrCreateSerie(ctx context.Context) error {
+func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	// First, try to find existing series by name
 	existingID := database.Getdatarow[uint](
 		false,
@@ -402,9 +404,9 @@ func joinCategoryNames(categories []CategoryInfo) string {
 //
 // Returns:
 //   - error: Any errors during episode creation
-func (s *Scraper) createEpisode(ctx context.Context, hit *AlgoliaHit) error {
+func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 	if hit.ClipID == 0 {
-		return fmt.Errorf("clip_id is zero")
+		return errors.New("clip_id is zero")
 	}
 
 	if hit.ReleaseDate == "" {
@@ -425,6 +427,11 @@ func (s *Scraper) createEpisode(ctx context.Context, hit *AlgoliaHit) error {
 	// Create episode identifier from date (remove first 2 characters like PowerShell script)
 	identifier := hit.ReleaseDate[2:] // Remove "20" prefix
 
+	// Scraper provenance for later re-scraping: the source clip id and the item
+	// page URL (built the same way as the original scraping script).
+	scraperID := strconv.Itoa(hit.ClipID)
+	scraperURL := s.config.SiteURL + "/en/video/" + hit.Sitename + "/" + hit.URL + "/" + scraperID
+
 	episode := database.DbserieEpisode{
 		Identifier: identifier,
 		Title:      hit.Title,
@@ -432,8 +439,10 @@ func (s *Scraper) createEpisode(ctx context.Context, hit *AlgoliaHit) error {
 			Time:  releaseDate,
 			Valid: true,
 		},
-		DbserieID: s.dbserieID,
-		Overview:  hit.Description,
+		DbserieID:  s.dbserieID,
+		Overview:   hit.Description,
+		ScraperID:  scraperID,
+		ScraperURL: scraperURL,
 	}
 
 	// Check if episode already exists
@@ -446,12 +455,17 @@ func (s *Scraper) createEpisode(ctx context.Context, hit *AlgoliaHit) error {
 	)
 
 	if existingID > 0 {
-		// Episode exists, update it
+		// Episode exists, update it. Backfill scraper fields only when empty.
 		err = database.ExecNErr(`
 			UPDATE dbserie_episodes SET
-				overview = ?, updated_at = CURRENT_TIMESTAMP
+				overview = ?,
+				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
+				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL THEN ? ELSE scraper_url END,
+				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
 			episode.Overview,
+			episode.ScraperID,
+			episode.ScraperURL,
 			existingID,
 		)
 		if err != nil {
@@ -466,13 +480,15 @@ func (s *Scraper) createEpisode(ctx context.Context, hit *AlgoliaHit) error {
 		// Episode doesn't exist, insert new
 		err = database.ExecNErr(`
 			INSERT INTO dbserie_episodes (
-				identifier, title, first_aired, dbserie_id, overview, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+				identifier, title, first_aired, dbserie_id, overview, scraper_id, scraper_url, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 			episode.Identifier,
 			episode.Title,
 			episode.FirstAired,
 			episode.DbserieID,
 			episode.Overview,
+			episode.ScraperID,
+			episode.ScraperURL,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert episode '%s': %w", hit.Title, err)

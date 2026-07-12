@@ -522,6 +522,7 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 	return html.Nav(
 		html.ID("sidebar"),
 		html.Class("sidebar js-sidebar"),
+		gomponents.Attr("aria-label", "Main navigation"),
 		html.Div(
 			html.Class("sidebar-content js-simplebar"),
 			html.A(
@@ -529,7 +530,12 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 				html.Href("/api/admin"),
 				html.Div(
 					html.Class("d-flex align-items-center"),
-					html.I(html.Class("fa-solid fa-download me-3 fs-4")),
+					html.Img(
+						html.Class("me-3"),
+						html.Src("/static/img/icons/icon-48x48.png"),
+						html.Alt("Go Media Downloader"),
+						html.Style("width:32px;height:32px;border-radius:6px;"),
+					),
 					html.Div(
 						html.Span(
 							html.Class("sidebar-brand-text align-middle d-block"),
@@ -721,6 +727,22 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Span(
 									html.Class("align-middle"),
 									gomponents.Text("Statistics Dashboard"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/wanted"),
+								html.I(html.Class("align-middle fa-solid fa-bullseye")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Wanted"),
+								),
+								html.Span(
+									html.Class("badge bg-success ms-1"),
+									html.Style("font-size: 0.6rem;"),
+									gomponents.Text("NEW"),
 								),
 							),
 						),
@@ -1408,6 +1430,74 @@ func adminJavaScript() gomponents.Node {
 					
 					// Global error handler for AJAX requests
 					window.showToaster = showToaster;
+
+					// Route legacy alert() calls through the toast system for a consistent UI.
+					// Type is inferred from the message so existing call sites need no changes.
+					if (!window.__alertPatched) {
+						window.__alertPatched = true;
+						window.alert = function(message) {
+							var msg = String(message == null ? '' : message);
+							var type = 'info';
+							if (/^\s*(error|failed|invalid|please|warning|unable|could not|cannot)\b/i.test(msg) || /\berror\b/i.test(msg)) {
+								type = 'error';
+							} else if (/^\s*success\b/i.test(msg) || /\b(success|saved|added|updated|deleted|copied|started)\b/i.test(msg)) {
+								type = 'success';
+							}
+							showToaster(type, msg);
+						};
+					}
+
+					// confirmAction shows a Bootstrap modal confirm and invokes onConfirm when accepted.
+					// Replaces native confirm() so destructive actions match the app theme.
+					window.confirmAction = function(title, message, onConfirm, opts) {
+						opts = opts || {};
+						if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+							// Fallback to native confirm if Bootstrap is unavailable.
+							if (window.confirm((title ? title + '\n\n' : '') + (message || ''))) { onConfirm && onConfirm(); }
+							return;
+						}
+						var existing = document.getElementById('globalConfirmModal');
+						if (existing) { existing.remove(); }
+						var confirmClass = opts.danger === false ? 'btn-primary' : 'btn-danger';
+						var confirmLabel = opts.confirmLabel || 'Confirm';
+						var html = '' +
+							'<div class="modal fade" id="globalConfirmModal" tabindex="-1" aria-hidden="true">' +
+							'  <div class="modal-dialog modal-dialog-centered">' +
+							'    <div class="modal-content">' +
+							'      <div class="modal-header">' +
+							'        <h5 class="modal-title"><i class="fas fa-question-circle me-2 text-warning"></i>' + (title || 'Please confirm') + '</h5>' +
+							'        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>' +
+							'      </div>' +
+							'      <div class="modal-body">' + (message || '') + '</div>' +
+							'      <div class="modal-footer">' +
+							'        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>' +
+							'        <button type="button" class="btn ' + confirmClass + '" id="globalConfirmOk">' + confirmLabel + '</button>' +
+							'      </div>' +
+							'    </div>' +
+							'  </div>' +
+							'</div>';
+						document.body.insertAdjacentHTML('beforeend', html);
+						var modalEl = document.getElementById('globalConfirmModal');
+						var modal = new bootstrap.Modal(modalEl);
+						modalEl.querySelector('#globalConfirmOk').addEventListener('click', function() {
+							modal.hide();
+							onConfirm && onConfirm();
+						});
+						modalEl.addEventListener('hidden.bs.modal', function() { modalEl.remove(); });
+						modal.show();
+					};
+
+					// Route HTMX hx-confirm prompts through the styled modal instead of native confirm().
+					if (!window.__htmxConfirmPatched) {
+						window.__htmxConfirmPatched = true;
+						document.addEventListener('htmx:confirm', function(e) {
+							if (!e.detail || !e.detail.question) { return; }
+							e.preventDefault();
+							window.confirmAction('Please confirm', e.detail.question, function() {
+								e.detail.issueRequest(true);
+							});
+						});
+					}
 			// Add CSS for Choices.js z-index fix
 			if (!document.querySelector('#choices-css-fix')) {
 				var style = document.createElement('style');
@@ -1513,13 +1603,23 @@ func adminJavaScript() gomponents.Node {
 					
 					// Function to load choices from server
 					function loadChoices(searchTerm) {
+						// Optional: scope results to a media configuration whose value is
+						// read from another element (e.g. the search page's MediaConfig).
+						var extraParams = '';
+						var configSource = element.dataset.configSource;
+						if (configSource) {
+							var configEl = document.getElementById(configSource);
+							if (configEl && configEl.value) {
+								extraParams = '&media_config=' + encodeURIComponent(configEl.value);
+							}
+						}
 						fetch(ajaxUrl, {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/x-www-form-urlencoded',
 								'X-CSRF-Token': csrfToken
 							},
-							body: 'search=' + encodeURIComponent(searchTerm || '') + '&page=1'
+							body: 'search=' + encodeURIComponent(searchTerm || '') + '&page=1' + extraParams
 						})
 						.then(response => response.json())
 						.then(data => {
@@ -1545,6 +1645,13 @@ func adminJavaScript() gomponents.Node {
 							console.error('Error loading choices:', error);
 						});
 					}
+
+					// Expose the loader so external code (e.g. a media-config change
+					// handler) can refresh this dropdown's options.
+					element.choicesReload = function() {
+						choices.clearStore();
+						loadChoices('');
+					};
 
 					// Set up search event listener
 					element.addEventListener('search', function(event) {
@@ -1821,7 +1928,7 @@ func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any 
 		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
 			false,
 			1,
-			"SELECT dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id WHERE books.id = ?",
+			"SELECT COALESCE((SELECT au.name FROM dbauthors au WHERE au.id = dbbooks.dbauthor_id) || ' - ', '') || dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id WHERE books.id = ?",
 			id,
 		)
 		if len(result) > 0 {
@@ -1851,7 +1958,7 @@ func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any 
 		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
 			false,
 			1,
-			"SELECT dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id WHERE audiobooks.id = ?",
+			"SELECT COALESCE((SELECT au.name FROM dbaudiobook_authors aba JOIN dbauthors au ON au.id = aba.dbauthor_id WHERE aba.dbaudiobook_id = dbaudiobooks.id LIMIT 1) || ' - ', '') || dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id WHERE audiobooks.id = ?",
 			id,
 		)
 		if len(result) > 0 {
@@ -1881,7 +1988,7 @@ func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any 
 		result := database.GetrowsN[database.DbstaticOneStringOneUInt](
 			false,
 			1,
-			"SELECT dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id WHERE albums.id = ?",
+			"SELECT COALESCE((SELECT ar.name FROM dbalbum_artists aa JOIN dbartists ar ON ar.id = aa.dbartist_id WHERE aa.dbalbum_id = dbalbums.id LIMIT 1) || ' - ', '') || dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id WHERE albums.id = ?",
 			id,
 		)
 		if len(result) > 0 {

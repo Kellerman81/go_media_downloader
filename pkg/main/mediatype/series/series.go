@@ -155,23 +155,23 @@ func RegisterDataFull(fn mediatype.DataFullFunc) {
 }
 
 // GetType returns the media type constant for series.
-func (h *handler) GetType() uint {
+func (*handler) GetType() uint {
 	return config.MediaTypeSeries
 }
 
 // GetCategoryName returns the category name for job history.
-func (h *handler) GetCategoryName() string {
+func (*handler) GetCategoryName() string {
 	return logger.StrSeries
 }
 
 // GetTableName returns the database table name for series.
-func (h *handler) GetTableName() string {
+func (*handler) GetTableName() string {
 	return "series"
 }
 
 // GetDBIDs retrieves database IDs for the parsed series info.
 // It attempts TVDB lookup first, then falls back to title-based search.
-func (h *handler) GetDBIDs(info *database.ParseInfo) error {
+func (*handler) GetDBIDs(info *database.ParseInfo) error {
 	// TVDB lookup
 	if info.Tvdb != "" {
 		database.Scanrowsdyn(false, database.QueryDbseriesGetIDByTvdb, &info.DbserieID, &info.Tvdb)
@@ -231,7 +231,7 @@ func (h *handler) GetDBIDsFull(
 }
 
 // findInLists attempts to locate a series in configured media lists by its database ID.
-func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
+func (*handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
 			false,
@@ -287,7 +287,7 @@ func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfi
 }
 
 // ValidateIDs checks if all required IDs are set for series.
-func (h *handler) ValidateIDs(info *database.ParseInfo) bool {
+func (*handler) ValidateIDs(info *database.ParseInfo) bool {
 	return info.DbserieEpisodeID != 0 &&
 		info.DbserieID != 0 &&
 		info.SerieEpisodeID != 0 &&
@@ -295,32 +295,32 @@ func (h *handler) ValidateIDs(info *database.ParseInfo) bool {
 }
 
 // SetTempID sets the temporary ID from SerieID.
-func (h *handler) SetTempID(info *database.ParseInfo) {
+func (*handler) SetTempID(info *database.ParseInfo) {
 	info.TempID = info.SerieID
 }
 
 // SetDBID sets the DbserieID field.
-func (h *handler) SetDBID(info *database.ParseInfo, dbid uint) {
+func (*handler) SetDBID(info *database.ParseInfo, dbid uint) {
 	info.DbserieID = dbid
 }
 
 // GetDBID returns the DbserieID field.
-func (h *handler) GetDBID(info *database.ParseInfo) uint {
+func (*handler) GetDBID(info *database.ParseInfo) uint {
 	return info.DbserieID
 }
 
 // GetMediaID returns the SerieID.
-func (h *handler) GetMediaID(info *database.ParseInfo) uint {
+func (*handler) GetMediaID(info *database.ParseInfo) uint {
 	return info.SerieID
 }
 
 // SetMediaID sets the SerieID.
-func (h *handler) SetMediaID(info *database.ParseInfo, id uint) {
+func (*handler) SetMediaID(info *database.ParseInfo, id uint) {
 	info.SerieID = id
 }
 
 // GetListID retrieves the list ID for the series.
-func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
+func (*handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
 	if info.SerieID != 0 {
 		return database.GetMediaListIDGetListname(cfgp, &info.SerieID)
 	}
@@ -329,24 +329,24 @@ func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseIn
 }
 
 // ClearUntrustedID clears the TVDB ID if indexer is not trusted.
-func (h *handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
 	if !entry.NZB.Indexer.TrustWithTVDBIDs {
 		entry.Info.Tvdb = ""
 	}
 }
 
 // SetNzbID sets the NzbepisodeID field.
-func (h *handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
+func (*handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
 	entry.NzbepisodeID = mediaid
 }
 
 // SetEntryTempID sets the temp ID from NzbepisodeID.
-func (h *handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Info.TempID = entry.NzbepisodeID
 }
 
 // PerformIDSearch executes a search by TVDB ID.
-func (h *handler) PerformIDSearch(
+func (*handler) PerformIDSearch(
 	indcfg *config.IndexersConfig,
 	quality *config.QualityConfig,
 	entry *apiexternal_v2.Nzbwithprio,
@@ -366,17 +366,17 @@ func (h *handler) PerformIDSearch(
 }
 
 // ClearUnmatchedCache removes the file from the series unmatched cache.
-func (h *handler) ClearUnmatchedCache(fpath string) {
+func (*handler) ClearUnmatchedCache(fpath string) {
 	database.SlicesCacheContainsDelete(logger.CacheUnmatchedSeries, fpath)
 }
 
 // ShortenYearPattern returns false - series does not shorten year pattern.
-func (h *handler) ShortenYearPattern() bool {
+func (*handler) ShortenYearPattern() bool {
 	return false
 }
 
 // GenerateIdentifier generates the episode identifier for series.
-func (h *handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool) {
+func (*handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool) {
 	if onlyIfEmpty && info.Identifier != "" {
 		return
 	}
@@ -393,7 +393,7 @@ func (h *handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool)
 }
 
 // GetSchedulerRssSeasons returns the interval and cron strings for RSS seasons jobs.
-func (h *handler) GetSchedulerRssSeasons(
+func (*handler) GetSchedulerRssSeasons(
 	scheduler *config.SchedulerConfig,
 	jobType string,
 ) (string, string) {
@@ -408,9 +408,9 @@ func (h *handler) GetSchedulerRssSeasons(
 }
 
 // GetSchedulerRssArtistsAuthors returns empty strings for series - no artist/author jobs.
-func (h *handler) GetSchedulerRssArtistsAuthors(
-	scheduler *config.SchedulerConfig,
-	jobType string,
+func (*handler) GetSchedulerRssArtistsAuthors(
+	_ *config.SchedulerConfig,
+	_ string,
 ) (string, string) {
 	return "", ""
 }
@@ -464,7 +464,7 @@ func (h *handler) DataFull() {
 
 // SearchConfigByName searches the series config file for matching name or alternate names.
 // Returns the matching SerieConfig and true if found, or nil and false if not found.
-func (h *handler) SearchConfigByName(
+func (*handler) SearchConfigByName(
 	searchName string,
 	listCfg *config.MediaListsConfig,
 ) (*config.ManualConfig, bool) {
@@ -518,7 +518,7 @@ func loadSeriesConfig(file string) ([]config.ManualConfig, error) {
 }
 
 // RecordDownloadHistory records a series episode download in the serie_episode_histories table.
-func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
 	var (
 		serieID, dbserieID, dbserieEpisodeID uint
 		qualityProfile                       string
@@ -575,7 +575,7 @@ const strTvdbid = " (tvdb"
 
 // GetDownloadTargetFolder returns the target folder name for a series download.
 // Returns title with TVDB ID (e.g., "Series Title (tvdb12345)").
-func (h *handler) GetDownloadTargetFolder(nzb *apiexternal_v2.Nzbwithprio, dbTvdbID string) string {
+func (*handler) GetDownloadTargetFolder(nzb *apiexternal_v2.Nzbwithprio, dbTvdbID string) string {
 	if dbTvdbID != "" {
 		if nzb.NZB.Title == "" {
 			return logger.JoinStrings(
@@ -618,7 +618,7 @@ func (h *handler) GetDownloadTargetFolder(nzb *apiexternal_v2.Nzbwithprio, dbTvd
 
 // GetExternalIDFromDB returns the TVDB ID from the database entity.
 // Expects *database.Dbserie, returns ThetvdbID as string if non-zero.
-func (h *handler) GetExternalIDFromDB(dbEntity any) string {
+func (*handler) GetExternalIDFromDB(dbEntity any) string {
 	if dbserie, ok := dbEntity.(*database.Dbserie); ok && dbserie.ThetvdbID != 0 {
 		return strconv.Itoa(dbserie.ThetvdbID)
 	}
@@ -628,7 +628,7 @@ func (h *handler) GetExternalIDFromDB(dbEntity any) string {
 
 // FillSearchVar fills search variables from the database for the given episode ID.
 // Sets NzbepisodeID, loads data from DB, validates required fields.
-func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
+func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
 	entry.NzbepisodeID = mediaid
 	if mediaid == 0 {
 		return logger.ErrNotFoundEpisode
@@ -666,33 +666,33 @@ func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint)
 }
 
 // GetNzbID returns the NzbepisodeID field.
-func (h *handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbepisodeID
 }
 
 // GetNzbIDP returns the NzbaudiobookID field.
-func (h *handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
+func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbepisodeID
 }
 
 // CheckMediaMatch checks if the entry's SerieEpisodeID matches the source's NzbepisodeID.
-func (h *handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
 	return entry.Info.SerieEpisodeID == source.NzbepisodeID
 }
 
 // GetUnwantedReason returns "unwanted Episode".
-func (h *handler) GetUnwantedReason() string {
+func (*handler) GetUnwantedReason() string {
 	return "unwanted Episode"
 }
 
 // GetFoundID returns entry.Info.SerieEpisodeID for logging.
-func (h *handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.SerieEpisodeID
 }
 
 // ValidateRSSIDs validates all required IDs for RSS processing.
 // Returns error reason string if invalid, empty string if valid.
-func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
+func (*handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 	if entry.Info.SerieID == 0 {
 		return "unwanted Serie"
 	}
@@ -713,20 +713,20 @@ func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 }
 
 // SetRSSIDs sets entry.Dbid = DbserieID, entry.NzbepisodeID = SerieEpisodeID.
-func (h *handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
 	entry.NzbepisodeID = entry.Info.SerieEpisodeID
 	entry.Dbid = entry.Info.DbserieID
 }
 
 // GetRSSMediaID returns entry.Info.SerieEpisodeID for getrssdata.
-func (h *handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.SerieEpisodeID
 }
 
 // CheckCorrectID validates that the entry's TVDB ID matches the source's.
 // Returns true if IDs don't match (should skip), false if they match or can't compare.
 // Also returns found and wanted ID strings for logging.
-func (h *handler) CheckCorrectID(
+func (*handler) CheckCorrectID(
 	sourceentry, entry *apiexternal_v2.Nzbwithprio,
 ) (bool, string, string) {
 	if sourceentry.NZB.TVDBID == 0 || entry.NZB.TVDBID == 0 {
@@ -743,12 +743,12 @@ func (h *handler) CheckCorrectID(
 }
 
 // GetRuntimeBonus returns 0 - series don't have extended edition bonus.
-func (h *handler) GetRuntimeBonus(info *database.ParseInfo) int {
+func (h *handler) GetRuntimeBonus(_ *database.ParseInfo) int {
 	return 0
 }
 
 // SkipMultipleFiles returns false - series can have multiple episode files.
-func (h *handler) SkipMultipleFiles() bool {
+func (*handler) SkipMultipleFiles() bool {
 	return false
 }
 
@@ -780,7 +780,7 @@ func (h *handler) FillNotifyData(
 // FillNamingData fills NamingData for series from the database.
 // Handles Dbserie, DbserieEpisode lookups, TitleSource, EpisodeTitleSource, Episodes, and TVDB.
 // Returns clearFolder=false for series (folder name handling is more complex).
-func (h *handler) FillNamingData(
+func (*handler) FillNamingData(
 	dbid *uint,
 	videofile string,
 	m *database.ParseInfo,
@@ -905,27 +905,70 @@ func (h *handler) FillNamingData(
 	return false, true // clearFolder=false for series (more complex handling needed)
 }
 
-// GetRefreshIncData returns data for incremental refresh (20 continuing series, oldest updated first).
-func (h *handler) GetRefreshIncData() any {
-	return database.GetrowsN[database.DbstaticTwoStringOneRInt](
-		false,
-		20,
-		"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' order by updated_at asc limit 20",
-	)
+// RefreshData carries the series rows to refresh plus whether scraper-backed
+// series should only scrape their first pages (incremental, to pick up new
+// episodes) instead of re-scraping the entire catalogue.
+type RefreshData struct {
+	Rows          []database.DbstaticTwoStringOneRInt
+	FirstPageOnly bool
 }
 
-// GetRefreshFullData returns data for full refresh (all series).
-func (h *handler) GetRefreshFullData() any {
-	return database.GetrowsN[database.DbstaticTwoStringOneRInt](
-		false,
-		database.Getdatarow[uint](false, "select count() from dbseries"),
-		"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries",
-	)
+// listArgs returns the list-name bind arguments for cfgp, matching the
+// "listname in (?" + cfgp.ListsQu + ")" placeholder count.
+func listArgs(cfgp *config.MediaTypeConfig) []any {
+	args := make([]any, 0, len(cfgp.Lists))
+	for i := range cfgp.Lists {
+		args = append(args, &cfgp.Lists[i].Name)
+	}
+
+	return args
+}
+
+// GetRefreshIncData returns data for incremental refresh (20 continuing series in
+// the config's lists, oldest updated first).
+func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
+	// Incremental refresh: scraper-backed series only scrape their first pages.
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return RefreshData{FirstPageOnly: true}
+	}
+
+	args := listArgs(cfgp)
+
+	return RefreshData{
+		FirstPageOnly: true,
+		Rows: database.GetrowsN[database.DbstaticTwoStringOneRInt](
+			false,
+			20,
+			"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where status = 'Continuing' and id in (select dbserie_id from series where listname in (?"+cfgp.ListsQu+")) order by updated_at asc limit 20",
+			args...,
+		),
+	}
+}
+
+// GetRefreshFullData returns data for full refresh (all series in the config's lists).
+func (*handler) GetRefreshFullData(cfgp *config.MediaTypeConfig) any {
+	// Full refresh: scraper-backed series re-scrape their entire catalogue.
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return RefreshData{}
+	}
+
+	args := listArgs(cfgp)
+	filter := "id in (select dbserie_id from series where listname in (?" + cfgp.ListsQu + "))"
+
+	return RefreshData{
+		FirstPageOnly: false,
+		Rows: database.GetrowsN[database.DbstaticTwoStringOneRInt](
+			false,
+			database.Getdatarow[uint](false, "select count() from dbseries where "+filter, args...),
+			"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where "+filter,
+			args...,
+		),
+	}
 }
 
 // GetSchedulerJobNames returns the job name pairs for series scheduler configuration.
 // Each pair is [schedulerJobName, singleJobName].
-func (h *handler) GetSchedulerJobNames() [][2]string {
+func (*handler) GetSchedulerJobNames() [][2]string {
 	return [][2]string{
 		{logger.StrSearchMissingInc, logger.StrSearchMissingInc},
 		{logger.StrSearchMissingFull, logger.StrSearchMissingFull},
@@ -951,7 +994,7 @@ func (h *handler) GetSchedulerJobNames() [][2]string {
 
 // CleanupAfterRemove handles cleanup after a series episode file is removed.
 // For series: removes files with other allowed extensions (uses removeOtherFilesFn callback).
-func (h *handler) CleanupAfterRemove(
+func (*handler) CleanupAfterRemove(
 	_, _, _ string,
 	_ func(string),
 	removeOtherFilesFn func(),
@@ -962,7 +1005,7 @@ func (h *handler) CleanupAfterRemove(
 
 // MoveOtherFilesAfterOrganize handles moving additional files after main series episode is organized.
 // For series: moves files with other allowed extensions, then calls notify and cleanup.
-func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
+func (*handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	fileext := filepath.Ext(params.MediaFile)
 
 	for idx := range params.AllowedOtherExtensions {
@@ -994,29 +1037,29 @@ func (h *handler) CheckExtensions(pathcfg *config.PathsConfig, ext string) (bool
 }
 
 // SupportsIDSearch returns true - series support TVDB ID-based search.
-func (h *handler) SupportsIDSearch() bool { return true }
+func (*handler) SupportsIDSearch() bool { return true }
 
 // SupportsSeasonSearch returns true - series have season/episode structure.
-func (h *handler) SupportsSeasonSearch() bool { return true }
+func (*handler) SupportsSeasonSearch() bool { return true }
 
 // RequiresYearCheck returns false - series don't require strict year matching.
-func (h *handler) RequiresYearCheck() bool { return false }
+func (*handler) RequiresYearCheck() bool { return false }
 
 // HasSearchID returns true if the series entry has a valid TVDB ID.
-func (h *handler) HasSearchID(entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) HasSearchID(entry *apiexternal_v2.Nzbwithprio) bool {
 	return entry.NZB.TVDBID != 0
 }
 
 // SupportsAbsoluteEpisode returns true - series support absolute episode numbering (e.g., anime).
-func (h *handler) SupportsAbsoluteEpisode() bool { return true }
+func (*handler) SupportsAbsoluteEpisode() bool { return true }
 
 // HandleRSSListID does nothing for series - list ID is determined by episode lookup.
-func (h *handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
+func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
 
 // CheckEpisodeMatch validates if the entry matches the expected episode.
 // For series: validates season/episode identifiers against the source entry.
 // Returns true if entry should be skipped (doesn't match).
-func (h *handler) CheckEpisodeMatch(
+func (*handler) CheckEpisodeMatch(
 	sourceentry, entry *apiexternal_v2.Nzbwithprio,
 	searchActionType string,
 	logdenied func(string, *apiexternal_v2.Nzbwithprio),
@@ -1058,10 +1101,10 @@ func (h *handler) CheckEpisodeMatch(
 }
 
 // SupportsVideoFile returns true - series use video files.
-func (h *handler) SupportsVideoFile() bool { return true }
+func (*handler) SupportsVideoFile() bool { return true }
 
 // GetRuntimeMultiplier returns the number of episodes in the file.
-func (h *handler) GetRuntimeMultiplier(m *database.ParseInfo) int {
+func (*handler) GetRuntimeMultiplier(m *database.ParseInfo) int {
 	if len(m.Episodes) > 0 {
 		return len(m.Episodes)
 	}
@@ -1070,30 +1113,34 @@ func (h *handler) GetRuntimeMultiplier(m *database.ParseInfo) int {
 }
 
 // ShouldCheckOldFilePriority returns false - series handle priority differently per episode.
-func (h *handler) ShouldCheckOldFilePriority() bool { return false }
+func (*handler) ShouldCheckOldFilePriority() bool { return false }
 
 // HasConfiguredExtensions returns true if video extensions are configured.
-func (h *handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
+func (*handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
 	return pathcfg.AllowedVideoExtensionsLen > 0 || pathcfg.AllowedVideoExtensionsNoRenameLen > 0
 }
 
 // IsExternalIDImdb returns false - series use TVDB for external IDs.
-func (h *handler) IsExternalIDImdb() bool { return false }
+func (*handler) IsExternalIDImdb() bool { return false }
 
 // UsesGroupedFileProcessing returns false - series are processed individually per episode.
-func (h *handler) UsesGroupedFileProcessing() bool { return false }
+func (*handler) UsesGroupedFileProcessing() bool { return false }
 
 // GetCacheUnmatchedKey returns the cache key for unmatched series.
-func (h *handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedSeries }
+func (*handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedSeries }
 
 // GetCacheFilesKey returns the cache key for series files.
-func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesSeries }
+func (*handler) GetCacheFilesKey() string { return logger.CacheFilesSeries }
 
-// UsesListNameAsQualityProfile returns true - series uses list name for episode quality tracking.
-func (h *handler) UsesListNameAsQualityProfile() bool { return true }
+// UsesListNameAsQualityProfile returns false - series store the quality config
+// name in quality_profile, like every other media type. The resolver
+// (GetMediaQualityConfigStr -> GetSettingsQuality) looks the value up as a
+// quality config name, so storing the list name here would leave episodes with
+// an unresolvable quality and fall back to the default ("search quality empty").
+func (*handler) UsesListNameAsQualityProfile() bool { return false }
 
 // GetStringsMap returns a series-specific string for the given key.
-func (h *handler) GetStringsMap(key string) string {
+func (*handler) GetStringsMap(key string) string {
 	return StringsMap[key]
 }
 

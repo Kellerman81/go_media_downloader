@@ -70,12 +70,12 @@ func NewProvider(host string, port int, token string, urls []string, useSSL bool
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
 	return apiexternal_v2.NotificationApprise
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "apprise"
 }
 

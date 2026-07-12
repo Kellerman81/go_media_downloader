@@ -15,26 +15,34 @@ import (
 
 // Original Source: https://github.com/stashapp/stash/blob/develop/pkg/ffmpeg/ffprobe.go
 
-type ffProbeJSON struct {
-	Streams []struct {
-		// Tags struct {
-		//	Language string `json:"language"`
-		// } `json:"tags"`
-		Tags           map[string]string `json:"tags"`
-		CodecName      string            `json:"codec_name"`
-		CodecTagString string            `json:"codec_tag_string"`
-		CodecType      string            `json:"codec_type"`
-		Height         int               `json:"height,omitempty"`
-		Width          int               `json:"width,omitempty"`
-		SampleRate     string            `json:"sample_rate"`
-		Channels       int               `json:"channels"`
-		BitRate        string            `json:"bit_rate"`
-		Duration       string            `json:"duration"`
-	} `json:"streams"`
-	Format struct {
-		// BitRate is a string containing the bit rate of the media
-		// BitRate        string `json:"bit_rate"`
+// ffProbeStream is one stream entry from ffprobe JSON output.
+type ffProbeStream struct {
+	Tags           map[string]string `json:"tags"`
+	CodecName      string            `json:"codec_name"`
+	CodecTagString string            `json:"codec_tag_string"`
+	CodecType      string            `json:"codec_type"`
+	Height         int               `json:"height,omitempty"`
+	Width          int               `json:"width,omitempty"`
+	SampleRate     string            `json:"sample_rate"`
+	Channels       int               `json:"channels"`
+	BitRate        string            `json:"bit_rate"`
+	Duration       string            `json:"duration"`
+}
 
+// language returns the stream's language tag. ffprobe normally emits the
+// lowercase "language" key; check the capitalized variant as well for
+// containers/tools that preserve original casing.
+func (s *ffProbeStream) language() string {
+	if lang := s.Tags["language"]; lang != "" {
+		return lang
+	}
+
+	return s.Tags["Language"]
+}
+
+type ffProbeJSON struct {
+	Streams []ffProbeStream `json:"streams"`
+	Format  struct {
 		// Duration is a string containing the duration of the media
 		Duration string            `json:"duration"`
 		Filename string            `json:"filename"`
@@ -47,82 +55,28 @@ type ffProbeJSON struct {
 	} `json:"error"`
 }
 
-//	type ffProbeJSONFormat struct {
-//		//BitRate        string `json:"bit_rate"`
-//		Duration string `json:"duration"`
-//		//Filename       string `json:"filename"`
-//		//FormatLongName string `json:"format_long_name"`
-//		//FormatName     string `json:"format_name"`
-//		//NbPrograms     int    `json:"nb_programs"`
-//		//NbStreams      int    `json:"nb_streams"`
-//		//ProbeScore     int    `json:"probe_score"`
-//		//Size           string `json:"size"`
-//		//StartTime      string `json:"start_time"`
-//		//Tags struct {
-//		//CompatibleBrands string   `json:"compatible_brands"`
-//		//CreationTime     JSONTime `json:"creation_time"`
-//		//Encoder      string `json:"encoder"`
-//		//MajorBrand   string `json:"major_brand"`
-//		//MinorVersion string `json:"minor_version"`
-//		//Title string `json:"title"`
-//		//Comment string `json:"comment"`
-//		//} `json:"tags"`
-//	}
+// CheckAnalyzerPaths verifies at startup that the configured media analyzer
+// executables (ffprobe, and mediainfo when enabled) can be resolved, logging
+// one clear warning per missing tool instead of letting a misconfigured path
+// surface as cryptic per-file errors during scans.
+func CheckAnalyzerPaths() {
+	if _, err := exec.LookPath(getFFProbeFilename()); err != nil {
+		logger.Logtype("warn", 2).
+			Str(logger.StrPath, getFFProbeFilename()).
+			Err(err).
+			Msg("ffprobe executable not found - check FfprobePath; media analysis will fail")
+	}
 
-//		type ffProbeStream struct {
-//		//AvgFrameRate string `json:"avg_frame_rate"`
-//		//BitRate string `json:"bit_rate"`
-//		//BitsPerRawSample   string `json:"bits_per_raw_sample,omitempty"`
-//		//ChromaLocation     string `json:"chroma_location,omitempty"`
-//		//CodecLongName      string `json:"codec_long_name"`
-//		CodecName string `json:"codec_name"`
-//		//CodecTag           string `json:"codec_tag"`
-//		CodecTagString string `json:"codec_tag_string"`
-//		//CodecTimeBase      string `json:"codec_time_base"`
-//		CodecType string `json:"codec_type"`
-//		//CodedHeight        int    `json:"coded_height,omitempty"`
-//		//CodedWidth         int    `json:"coded_width,omitempty"`
-//		//DisplayAspectRatio string `json:"display_aspect_ratio,omitempty"`
-//		// Disposition        struct {
-//		// 	AttachedPic     int `json:"attached_pic"`
-//		// 	CleanEffects    int `json:"clean_effects"`
-//		// 	Comment         int `json:"comment"`
-//		// 	Default         int `json:"default"`
-//		// 	Dub             int `json:"dub"`
-//		// 	Forced          int `json:"forced"`
-//		// 	HearingImpaired int `json:"hearing_impaired"`
-//		// 	Karaoke         int `json:"karaoke"`
-//		// 	Lyrics          int `json:"lyrics"`
-//		// 	Original        int `json:"original"`
-//		// 	TimedThumbnails int `json:"timed_thumbnails"`
-//		// 	VisualImpaired  int `json:"visual_impaired"`
-//		// } `json:"disposition"`
-//		//Duration   string `json:"duration"`
-//		//DurationTs int    `json:"duration_ts"`
-//		//HasBFrames        int    `json:"has_b_frames,omitempty"`
-//		Height int `json:"height,omitempty"`
-//		//Index  int `json:"index"`
-//		//IsAvc             string `json:"is_avc,omitempty"`
-//		//Level             int    `json:"level,omitempty"`
-//		//NalLengthSize     string `json:"nal_length_size,omitempty"`
-//		//NbFrames          string `json:"nb_frames"`
-//		//PixFmt            string `json:"pix_fmt,omitempty"`
-//		//Profile    string `json:"profile"`
-//		//RFrameRate string `json:"r_frame_rate"`
-//		//Refs              int    `json:"refs,omitempty"`
-//		//SampleAspectRatio string `json:"sample_aspect_ratio,omitempty"`
-//		//StartPts          int    `json:"start_pts"`
-//		//StartTime         string `json:"start_time"`
-//		Tags ffProbeStreamTags `json:"tags"`
-//		//TimeBase      string `json:"time_base"`
-//		Width int `json:"width,omitempty"`
-//		//BitsPerSample int    `json:"bits_per_sample,omitempty"`
-//		//ChannelLayout string `json:"channel_layout,omitempty"`
-//		//Channels      int    `json:"channels,omitempty"`
-//		//MaxBitRate    string `json:"max_bit_rate,omitempty"`
-//		//SampleFmt     string `json:"sample_fmt,omitempty"`
-//		//SampleRate    string `json:"sample_rate,omitempty"`
-//	}
+	if config.GetSettingsGeneral().UseMediainfo ||
+		config.GetSettingsGeneral().UseMediaFallback {
+		if _, err := exec.LookPath(getmediainfoFilename()); err != nil {
+			logger.Logtype("warn", 2).
+				Str(logger.StrPath, getmediainfoFilename()).
+				Err(err).
+				Msg("mediainfo executable not found - check MediainfoPath; media analysis will fail")
+		}
+	}
+}
 
 // getFFProbeFilename returns the path to the ffprobe executable.
 // It checks if the path has already been set, otherwise determines the path based on OS.

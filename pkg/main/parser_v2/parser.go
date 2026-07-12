@@ -244,14 +244,18 @@ func (p *Parser) ParseAsType(filename string, mediaType MediaType) *UnifiedParse
 
 	switch mediaType {
 	case MediaTypeMovie:
-		p.videoParser.SetMovieMode()
+		// Use a per-call parser - mutating the shared videoParser's mode would
+		// leak into later Parse calls and race when the Parser is shared.
+		vp := NewVideoParser()
+		vp.SetMovieMode()
 
-		result.Video = p.videoParser.Parse(cleanFilename)
+		result.Video = vp.Parse(cleanFilename)
 
 	case MediaTypeSeries:
-		p.videoParser.SetSeriesMode()
+		vp := NewVideoParser()
+		vp.SetSeriesMode()
 
-		result.Video = p.videoParser.Parse(cleanFilename)
+		result.Video = vp.Parse(cleanFilename)
 
 	case MediaTypeBook:
 		result.Book = p.bookParser.Parse(cleanFilename)
@@ -284,26 +288,29 @@ func (p *Parser) ParseVideoPath(fullpath string) *VideoParseResult {
 
 // ParseMovie parses a file as a movie.
 func (p *Parser) ParseMovie(filename string) *VideoParseResult {
-	p.videoParser.SetMovieMode()
+	// Per-call parser - see ParseAsType for why the shared one isn't mutated.
+	vp := NewVideoParser()
+	vp.SetMovieMode()
 
 	cleanFilename := filename
 	if p.nzbPreprocessor.IsNZBFormat(filename) {
 		cleanFilename = p.nzbPreprocessor.Clean(filename)
 	}
 
-	return p.videoParser.Parse(cleanFilename)
+	return vp.Parse(cleanFilename)
 }
 
 // ParseSeries parses a file as a TV series episode.
 func (p *Parser) ParseSeries(filename string) *VideoParseResult {
-	p.videoParser.SetSeriesMode()
+	vp := NewVideoParser()
+	vp.SetSeriesMode()
 
 	cleanFilename := filename
 	if p.nzbPreprocessor.IsNZBFormat(filename) {
 		cleanFilename = p.nzbPreprocessor.Clean(filename)
 	}
 
-	return p.videoParser.Parse(cleanFilename)
+	return vp.Parse(cleanFilename)
 }
 
 // ParseBook parses a file as an ebook.
@@ -366,19 +373,19 @@ func (p *Parser) ParseMusicAlbum(dirPath string) (*MusicParseResult, error) {
 	return p.musicParser.ParseAlbum(dirPath, files), nil
 }
 
+// audiobookIndicators are filename substrings that suggest audiobook content.
+var audiobookIndicators = []string{
+	"audiobook", "audio book",
+	"read by", "narrated by", "narrator",
+	"unabridged", "abridged",
+	"chapter", "ch.", "part",
+}
+
 // isAudiobookFile determines if an audio file is likely an audiobook.
-func (p *Parser) isAudiobookFile(filename, ext string) bool {
+func (*Parser) isAudiobookFile(filename, ext string) bool {
 	// M4B is definitively audiobook
 	if ext == ".m4b" || ext == ".aax" {
 		return true
-	}
-
-	// Check filename patterns that suggest audiobook
-	audiobookIndicators := []string{
-		"audiobook", "audio book", "audiobook",
-		"read by", "narrated by", "narrator",
-		"unabridged", "abridged",
-		"chapter", "ch.", "part",
 	}
 
 	for i := range audiobookIndicators {
@@ -391,7 +398,7 @@ func (p *Parser) isAudiobookFile(filename, ext string) bool {
 }
 
 // collectAudioFiles collects audio files from a directory.
-func (p *Parser) collectAudioFiles(dirPath string) ([]string, error) {
+func (*Parser) collectAudioFiles(dirPath string) ([]string, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return nil, err
@@ -512,12 +519,6 @@ func (p *Parser) MatchMusicAlbumByRuntime(
 	return p.musicParser.MatchByRuntime(expectedRuntimeMS, tracks)
 }
 
-// SetQualityDatabase sets the quality database for video parsing.
-// func (p *Parser) SetQualityDatabase(db QualityDatabase) {
-// 	p.qualityDB = db
-// 	p.videoParser = NewVideoParserWithDB(db)
-// }
-
 // SetRuntimeMatcher sets a custom runtime matcher for audio parsing.
 func (p *Parser) SetRuntimeMatcher(rm *RuntimeMatcher) {
 	p.audiobookParser = NewAudiobookParserWithMatcher(rm)
@@ -591,7 +592,7 @@ func (p *Parser) ParseAudiobookDirectoryWithAnalysis(
 }
 
 // AnalyzeVideoFile analyzes a video file and updates the parse result with technical info.
-func (p *Parser) AnalyzeVideoFile(
+func (*Parser) AnalyzeVideoFile(
 	ctx context.Context,
 	filePath string,
 	result *VideoParseResult,
@@ -605,6 +606,6 @@ func (p *Parser) AnalyzeVideoFile(
 }
 
 // NewMediaAnalyzerFromConfig creates a MediaAnalyzer from parser config.
-func NewMediaAnalyzerFromConfig(cfg ParserConfig) *MediaAnalyzer {
+func NewMediaAnalyzerFromConfig(_ ParserConfig) *MediaAnalyzer {
 	return NewMediaAnalyzer()
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ func getLogFilePath() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no log file found in standard locations")
+	return "", errors.New("no log file found in standard locations")
 }
 
 // performLogAnalysis analyzes the log file and returns results.

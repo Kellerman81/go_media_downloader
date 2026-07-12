@@ -16,10 +16,10 @@ func TestGetMusicCharts_OffizielleChartsCompilations(t *testing.T) {
 	}
 
 	cfgList := &config.ListsConfig{
-		Name:    "offiziellecharts-compilations",
+		Name:     "offiziellecharts-compilations",
 		ListType: "musiccharts",
-		Enabled: true,
-		URL:     "https://www.offiziellecharts.de/charts/compilation/",
+		Enabled:  true,
+		URL:      "https://www.offiziellecharts.de/charts/compilation/",
 
 		ChartEntryNodeXPath: "//tr[contains(@class,'drill-down-link')]",
 		ChartTitleXPath:     ".//span[@class='info-artist']",

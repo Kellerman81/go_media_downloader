@@ -132,23 +132,23 @@ func RegisterDataFull(fn mediatype.DataFullFunc) {
 }
 
 // GetType returns the media type constant for music.
-func (h *handler) GetType() uint {
+func (*handler) GetType() uint {
 	return config.MediaTypeMusic
 }
 
 // GetCategoryName returns the category name for job history.
-func (h *handler) GetCategoryName() string {
+func (*handler) GetCategoryName() string {
 	return "music"
 }
 
 // GetTableName returns the database table name for albums.
-func (h *handler) GetTableName() string {
+func (*handler) GetTableName() string {
 	return "albums"
 }
 
 // GetDBIDs retrieves database IDs for the parsed album info.
 // It attempts MusicBrainz ID or UPC lookup first, then falls back to title-based search.
-func (h *handler) GetDBIDs(info *database.ParseInfo) error {
+func (*handler) GetDBIDs(info *database.ParseInfo) error {
 	// Handle MusicBrainz ID or UPC lookup
 	if info.MusicBrainzID != "" {
 		database.Scanrowsdyn(
@@ -245,7 +245,7 @@ func (h *handler) GetDBIDsFull(
 }
 
 // findInLists attempts to locate an album in configured media lists by its database ID.
-func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
+func (*handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
 			false,
@@ -293,37 +293,37 @@ func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfi
 }
 
 // ValidateIDs checks if all required IDs are set for albums.
-func (h *handler) ValidateIDs(info *database.ParseInfo) bool {
+func (*handler) ValidateIDs(info *database.ParseInfo) bool {
 	return info.AlbumID != 0 && info.DbalbumID != 0
 }
 
 // SetTempID sets the temporary ID from AlbumID.
-func (h *handler) SetTempID(info *database.ParseInfo) {
+func (*handler) SetTempID(info *database.ParseInfo) {
 	info.TempID = info.AlbumID
 }
 
 // SetDBID sets the DbalbumID field.
-func (h *handler) SetDBID(info *database.ParseInfo, dbid uint) {
+func (*handler) SetDBID(info *database.ParseInfo, dbid uint) {
 	info.DbalbumID = dbid
 }
 
 // GetDBID returns the DbalbumID field.
-func (h *handler) GetDBID(info *database.ParseInfo) uint {
+func (*handler) GetDBID(info *database.ParseInfo) uint {
 	return info.DbalbumID
 }
 
 // GetMediaID returns the AlbumID.
-func (h *handler) GetMediaID(info *database.ParseInfo) uint {
+func (*handler) GetMediaID(info *database.ParseInfo) uint {
 	return info.AlbumID
 }
 
 // SetMediaID sets the AlbumID.
-func (h *handler) SetMediaID(info *database.ParseInfo, id uint) {
+func (*handler) SetMediaID(info *database.ParseInfo, id uint) {
 	info.AlbumID = id
 }
 
 // GetListID retrieves the list ID for the album.
-func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
+func (*handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
 	if info.AlbumID != 0 {
 		return database.GetMediaListIDGetListname(cfgp, &info.AlbumID)
 	}
@@ -332,28 +332,28 @@ func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseIn
 }
 
 // ClearUntrustedID clears the MusicBrainz ID if indexer is not trusted.
-func (h *handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
+func (h *handler) ClearUntrustedID(_ *apiexternal_v2.Nzbwithprio) {
 	// Music doesn't have a specific trust flag like IMDB/TVDB
 	// Could be extended if needed
 }
 
 // SetNzbID sets the NzbalbumID field.
-func (h *handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
+func (*handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
 	entry.NzbalbumID = mediaid
 }
 
 // SetEntryTempID sets the temp ID from NzbalbumID.
-func (h *handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Info.TempID = entry.NzbalbumID
 }
 
 // PerformIDSearch executes a search - music uses query-based search only.
-func (h *handler) PerformIDSearch(
-	indcfg *config.IndexersConfig,
-	quality *config.QualityConfig,
-	entry *apiexternal_v2.Nzbwithprio,
-	cats int,
-	raw *apiexternal.NzbSlice,
+func (*handler) PerformIDSearch(
+	_ *config.IndexersConfig,
+	_ *config.QualityConfig,
+	_ *apiexternal_v2.Nzbwithprio,
+	_ int,
+	_ *apiexternal.NzbSlice,
 ) error {
 	// Music doesn't support ID-based search like IMDB/TVDB
 	// They use query-based search only
@@ -361,30 +361,30 @@ func (h *handler) PerformIDSearch(
 }
 
 // ClearUnmatchedCache removes the file from the album unmatched cache.
-func (h *handler) ClearUnmatchedCache(fpath string) {
+func (*handler) ClearUnmatchedCache(fpath string) {
 	database.SlicesCacheContainsDelete(logger.CacheUnmatchedAlbum, fpath)
 }
 
 // ShortenYearPattern returns true - music shortens all patterns including year.
-func (h *handler) ShortenYearPattern() bool {
+func (*handler) ShortenYearPattern() bool {
 	return true
 }
 
 // GenerateIdentifier does nothing for music - albums don't have episode identifiers.
-func (h *handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool) {
+func (h *handler) GenerateIdentifier(_ *database.ParseInfo, onlyIfEmpty bool) {
 	// Albums don't have identifiers like series do
 }
 
 // GetSchedulerRssSeasons returns empty strings for music - no RSS seasons jobs.
-func (h *handler) GetSchedulerRssSeasons(
-	scheduler *config.SchedulerConfig,
-	jobType string,
+func (*handler) GetSchedulerRssSeasons(
+	_ *config.SchedulerConfig,
+	_ string,
 ) (string, string) {
 	return "", ""
 }
 
 // GetSchedulerRssArtistsAuthors returns the interval and cron strings for artist-based RSS searches.
-func (h *handler) GetSchedulerRssArtistsAuthors(
+func (*handler) GetSchedulerRssArtistsAuthors(
 	scheduler *config.SchedulerConfig,
 	jobType string,
 ) (string, string) {
@@ -416,7 +416,7 @@ func (h *handler) DataFull() {
 
 // SearchConfigByName searches the music config file for matching artist name, album series, or alternate names.
 // Returns the matching SerieConfig and true if found, or nil and false if not found.
-func (h *handler) SearchConfigByName(
+func (*handler) SearchConfigByName(
 	searchName string,
 	listCfg *config.MediaListsConfig,
 ) (*config.ManualConfig, bool) {
@@ -480,7 +480,7 @@ func loadMusicConfig(file string) ([]config.ManualConfig, error) {
 }
 
 // RecordDownloadHistory records an album download in the album_histories table.
-func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
 	var (
 		albumID, dbalbumID uint
 		qualityProfile     string
@@ -518,9 +518,9 @@ func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetP
 
 // GetDownloadTargetFolder returns the target folder name for an album download.
 // Returns artist - album title format.
-func (h *handler) GetDownloadTargetFolder(
+func (*handler) GetDownloadTargetFolder(
 	nzb *apiexternal_v2.Nzbwithprio,
-	dbExternalID string,
+	_ string,
 ) string {
 	if nzb.NZB.Title != "" {
 		return nzb.NZB.Title
@@ -535,7 +535,7 @@ func (h *handler) GetDownloadTargetFolder(
 
 // FillSearchVar fills search variables from the database for the given album ID.
 // Sets NzbalbumID, loads data from DB, validates required fields.
-func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
+func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
 	entry.NzbalbumID = mediaid
 	if mediaid == 0 {
 		return logger.ErrNotFoundDbalbum
@@ -582,33 +582,33 @@ func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint)
 }
 
 // GetNzbID returns the NzbalbumID field.
-func (h *handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbalbumID
 }
 
 // GetNzbIDP returns the NzbaudiobookID field.
-func (h *handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
+func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbalbumID
 }
 
 // CheckMediaMatch checks if the entry's AlbumID matches the source's NzbalbumID.
-func (h *handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
 	return source.NzbalbumID == entry.Info.AlbumID
 }
 
 // GetUnwantedReason returns "unwanted Album".
-func (h *handler) GetUnwantedReason() string {
+func (*handler) GetUnwantedReason() string {
 	return "unwanted Album"
 }
 
 // GetFoundID returns entry.Info.AlbumID for logging.
-func (h *handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.AlbumID
 }
 
 // ValidateRSSIDs validates DbalbumID and AlbumID for RSS processing.
 // Returns error reason string if invalid, empty string if valid.
-func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
+func (*handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 	if entry.Info.DbalbumID == 0 {
 		return "unwanted DBAlbum"
 	}
@@ -621,20 +621,20 @@ func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 }
 
 // SetRSSIDs sets entry.Dbid = DbalbumID, entry.NzbalbumID = AlbumID.
-func (h *handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Dbid = entry.Info.DbalbumID
 	entry.NzbalbumID = entry.Info.AlbumID
 }
 
 // GetRSSMediaID returns entry.Info.AlbumID for getrssdata.
-func (h *handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.AlbumID
 }
 
 // CheckCorrectID validates that the entry's MusicBrainz ID matches the source's.
 // Returns true if IDs don't match (should skip), false if they match or can't compare.
-func (h *handler) CheckCorrectID(
-	sourceentry, entry *apiexternal_v2.Nzbwithprio,
+func (*handler) CheckCorrectID(
+	_, entry *apiexternal_v2.Nzbwithprio,
 ) (bool, string, string) {
 	// Music doesn't have a standard ID like IMDB/TVDB in NZB results
 	// MusicBrainz ID matching could be added if indexers support it
@@ -642,12 +642,12 @@ func (h *handler) CheckCorrectID(
 }
 
 // GetRuntimeBonus returns 0 - albums don't have runtime bonus.
-func (h *handler) GetRuntimeBonus(info *database.ParseInfo) int {
+func (h *handler) GetRuntimeBonus(_ *database.ParseInfo) int {
 	return 0
 }
 
 // SkipMultipleFiles returns false - albums can have multiple track files.
-func (h *handler) SkipMultipleFiles() bool {
+func (*handler) SkipMultipleFiles() bool {
 	return false
 }
 
@@ -668,7 +668,7 @@ func (h *handler) FillNotifyData(
 
 // FillNamingData fills NamingData for albums from the database.
 // Returns clearFolder=true for albums (folder name should be cleared when rootpath exists).
-func (h *handler) FillNamingData(
+func (*handler) FillNamingData(
 	dbid *uint,
 	videofile string,
 	m *database.ParseInfo,
@@ -735,29 +735,57 @@ func (h *handler) FillNamingData(
 	return false, true // clearFolder=false for albums (they need their own folder)
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated MusicBrainz IDs).
-func (h *handler) GetRefreshIncData() any {
+// refreshListArgs returns the list-name bind arguments for cfgp, matching the
+// "listname in (?" + cfgp.ListsQu + ")" placeholder count.
+func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
+	args := make([]any, 0, len(cfgp.Lists))
+	for i := range cfgp.Lists {
+		args = append(args, &cfgp.Lists[i].Name)
+	}
+
+	return args
+}
+
+// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// MusicBrainz IDs in the config's lists).
+func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.musicbrainz_release_id != '' group by dbalbums.musicbrainz_release_id order by dbalbums.updated_at desc limit 100",
+		"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.musicbrainz_release_id != '' and albums.listname in (?"+cfgp.ListsQu+") group by dbalbums.musicbrainz_release_id order by dbalbums.updated_at desc limit 100",
+		args...,
 	)
 }
 
-// GetRefreshFullData returns data for full refresh (all MusicBrainz IDs).
-func (h *handler) GetRefreshFullData() any {
+// GetRefreshFullData returns data for full refresh (all MusicBrainz IDs in the config's lists).
+func (*handler) GetRefreshFullData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+	join := "from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.musicbrainz_release_id != '' and albums.listname in (?" + cfgp.ListsQu + ")"
+
 	return database.GetrowsN[string](
 		false,
 		database.Getdatarow[uint](
 			false,
-			"select count() from dbalbums where musicbrainz_release_id != ''",
+			"select count(distinct dbalbums.musicbrainz_release_id) "+join,
+			args...,
 		),
-		"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.musicbrainz_release_id != '' group by dbalbums.musicbrainz_release_id",
+		"select distinct dbalbums.musicbrainz_release_id "+join+" group by dbalbums.musicbrainz_release_id",
+		args...,
 	)
 }
 
 // GetSchedulerJobNames returns the job name pairs for music scheduler configuration.
-func (h *handler) GetSchedulerJobNames() [][2]string {
+func (*handler) GetSchedulerJobNames() [][2]string {
 	return [][2]string{
 		{logger.StrSearchMissingInc, logger.StrSearchMissingInc},
 		{logger.StrSearchMissingFull, logger.StrSearchMissingFull},
@@ -782,7 +810,7 @@ func (h *handler) GetSchedulerJobNames() [][2]string {
 }
 
 // CleanupAfterRemove handles cleanup after an album file is removed.
-func (h *handler) CleanupAfterRemove(
+func (*handler) CleanupAfterRemove(
 	folder, rootpath, pathCfgName string,
 	walkCleanupFn func(string),
 	_ func(),
@@ -801,7 +829,7 @@ func (h *handler) CleanupAfterRemove(
 }
 
 // MoveOtherFilesAfterOrganize handles moving additional files after main album is organized.
-func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
+func (*handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
 		return logger.ErrPathTemplateNotFound
 	}
@@ -824,25 +852,25 @@ func (h *handler) CheckExtensions(pathcfg *config.PathsConfig, ext string) (bool
 }
 
 // SupportsIDSearch returns false - music uses query-based search only (no IMDB/TVDB).
-func (h *handler) SupportsIDSearch() bool { return false }
+func (*handler) SupportsIDSearch() bool { return false }
 
 // SupportsSeasonSearch returns false - music doesn't have season/episode structure.
-func (h *handler) SupportsSeasonSearch() bool { return false }
+func (*handler) SupportsSeasonSearch() bool { return false }
 
 // RequiresYearCheck returns false - music doesn't require strict year matching.
-func (h *handler) RequiresYearCheck() bool { return false }
+func (*handler) RequiresYearCheck() bool { return false }
 
 // HasSearchID returns false - music uses query-based search only (no standard ID in NZB results).
-func (h *handler) HasSearchID(_ *apiexternal_v2.Nzbwithprio) bool { return false }
+func (*handler) HasSearchID(_ *apiexternal_v2.Nzbwithprio) bool { return false }
 
 // SupportsAbsoluteEpisode returns false - music doesn't have episode structure.
-func (h *handler) SupportsAbsoluteEpisode() bool { return false }
+func (*handler) SupportsAbsoluteEpisode() bool { return false }
 
 // HandleRSSListID does nothing for music - list ID is determined by album lookup.
-func (h *handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
+func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
 
 // CheckEpisodeMatch returns false - music doesn't have episode validation.
-func (h *handler) CheckEpisodeMatch(
+func (*handler) CheckEpisodeMatch(
 	_, _ *apiexternal_v2.Nzbwithprio,
 	_ string,
 	_ func(string, *apiexternal_v2.Nzbwithprio),
@@ -851,35 +879,35 @@ func (h *handler) CheckEpisodeMatch(
 }
 
 // SupportsVideoFile returns false - music uses audio files, not video.
-func (h *handler) SupportsVideoFile() bool { return false }
+func (*handler) SupportsVideoFile() bool { return false }
 
 // GetRuntimeMultiplier returns 1 - albums are single items.
-func (h *handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
+func (*handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
 
 // ShouldCheckOldFilePriority returns false - music doesn't check file priority.
-func (h *handler) ShouldCheckOldFilePriority() bool { return false }
+func (*handler) ShouldCheckOldFilePriority() bool { return false }
 
 // HasConfiguredExtensions returns true if audio extensions are configured.
-func (h *handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
+func (*handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
 	return pathcfg.AllowedAudioExtensionsLen > 0 || pathcfg.AllowedAudioExtensionsNoRenameLen > 0
 }
 
 // IsExternalIDImdb returns false - music doesn't use IMDB.
-func (h *handler) IsExternalIDImdb() bool { return false }
+func (*handler) IsExternalIDImdb() bool { return false }
 
 // UsesGroupedFileProcessing returns true - music albums group tracks by folder.
-func (h *handler) UsesGroupedFileProcessing() bool { return true }
+func (*handler) UsesGroupedFileProcessing() bool { return true }
 
 // GetCacheUnmatchedKey returns the cache key for unmatched albums.
-func (h *handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedAlbum }
+func (*handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedAlbum }
 
 // GetCacheFilesKey returns the cache key for album files.
-func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesAlbum }
+func (*handler) GetCacheFilesKey() string { return logger.CacheFilesAlbum }
 
 // UsesListNameAsQualityProfile returns false - music uses quality config name.
-func (h *handler) UsesListNameAsQualityProfile() bool { return false }
+func (*handler) UsesListNameAsQualityProfile() bool { return false }
 
 // GetStringsMap returns a music-specific string for the given key.
-func (h *handler) GetStringsMap(key string) string {
+func (*handler) GetStringsMap(key string) string {
 	return StringsMap[key]
 }

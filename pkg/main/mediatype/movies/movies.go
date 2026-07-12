@@ -148,23 +148,23 @@ func RegisterDataFull(fn mediatype.DataFullFunc) {
 }
 
 // GetType returns the media type constant for movies.
-func (h *handler) GetType() uint {
+func (*handler) GetType() uint {
 	return config.MediaTypeMovie
 }
 
 // GetCategoryName returns the category name for job history.
-func (h *handler) GetCategoryName() string {
+func (*handler) GetCategoryName() string {
 	return logger.StrMovie
 }
 
 // GetTableName returns the database table name for movies.
-func (h *handler) GetTableName() string {
+func (*handler) GetTableName() string {
 	return "movies"
 }
 
 // GetDBIDs retrieves database IDs for the parsed movie info.
 // It attempts IMDB lookup first, then falls back to title-based search.
-func (h *handler) GetDBIDs(info *database.ParseInfo) error {
+func (*handler) GetDBIDs(info *database.ParseInfo) error {
 	// Handle IMDB lookup with padding optimization
 	if info.Imdb != "" {
 		if !logger.HasPrefixI(info.Imdb, logger.StrTt) {
@@ -256,7 +256,7 @@ func (h *handler) GetDBIDsFull(
 }
 
 // findInLists attempts to locate a movie in configured media lists by its database ID.
-func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
+func (*handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfig) error {
 	if m.ListID != -1 {
 		database.Scanrowsdyn(
 			false,
@@ -304,37 +304,37 @@ func (h *handler) findInLists(m *database.ParseInfo, cfgp *config.MediaTypeConfi
 }
 
 // ValidateIDs checks if all required IDs are set for movies.
-func (h *handler) ValidateIDs(info *database.ParseInfo) bool {
+func (*handler) ValidateIDs(info *database.ParseInfo) bool {
 	return info.MovieID != 0 && info.DbmovieID != 0
 }
 
 // SetTempID sets the temporary ID from MovieID.
-func (h *handler) SetTempID(info *database.ParseInfo) {
+func (*handler) SetTempID(info *database.ParseInfo) {
 	info.TempID = info.MovieID
 }
 
 // SetDBID sets the DbmovieID field.
-func (h *handler) SetDBID(info *database.ParseInfo, dbid uint) {
+func (*handler) SetDBID(info *database.ParseInfo, dbid uint) {
 	info.DbmovieID = dbid
 }
 
 // GetDBID returns the DbmovieID field.
-func (h *handler) GetDBID(info *database.ParseInfo) uint {
+func (*handler) GetDBID(info *database.ParseInfo) uint {
 	return info.DbmovieID
 }
 
 // GetMediaID returns the MovieID.
-func (h *handler) GetMediaID(info *database.ParseInfo) uint {
+func (*handler) GetMediaID(info *database.ParseInfo) uint {
 	return info.MovieID
 }
 
 // SetMediaID sets the MovieID.
-func (h *handler) SetMediaID(info *database.ParseInfo, id uint) {
+func (*handler) SetMediaID(info *database.ParseInfo, id uint) {
 	info.MovieID = id
 }
 
 // GetListID retrieves the list ID for the movie.
-func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
+func (*handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseInfo) int {
 	if info.MovieID != 0 {
 		return database.GetMediaListIDGetListname(cfgp, &info.MovieID)
 	}
@@ -343,24 +343,24 @@ func (h *handler) GetListID(cfgp *config.MediaTypeConfig, info *database.ParseIn
 }
 
 // ClearUntrustedID clears the IMDB ID if indexer is not trusted.
-func (h *handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) ClearUntrustedID(entry *apiexternal_v2.Nzbwithprio) {
 	if !entry.NZB.Indexer.TrustWithIMDBIDs {
 		entry.Info.Imdb = ""
 	}
 }
 
 // SetNzbID sets the NzbmovieID field.
-func (h *handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
+func (*handler) SetNzbID(entry *apiexternal_v2.Nzbwithprio, mediaid uint) {
 	entry.NzbmovieID = mediaid
 }
 
 // SetEntryTempID sets the temp ID from NzbmovieID.
-func (h *handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Info.TempID = entry.NzbmovieID
 }
 
 // PerformIDSearch executes a search by IMDB ID.
-func (h *handler) PerformIDSearch(
+func (*handler) PerformIDSearch(
 	indcfg *config.IndexersConfig,
 	quality *config.QualityConfig,
 	entry *apiexternal_v2.Nzbwithprio,
@@ -379,32 +379,32 @@ func (h *handler) PerformIDSearch(
 }
 
 // ClearUnmatchedCache removes the file from the movie unmatched cache.
-func (h *handler) ClearUnmatchedCache(fpath string) {
+func (*handler) ClearUnmatchedCache(fpath string) {
 	database.SlicesCacheContainsDelete(logger.CacheUnmatchedMovie, fpath)
 }
 
 // ShortenYearPattern returns true - movies shorten all patterns including year.
-func (h *handler) ShortenYearPattern() bool {
+func (*handler) ShortenYearPattern() bool {
 	return true
 }
 
 // GenerateIdentifier does nothing for movies - movies don't have episode identifiers.
-func (h *handler) GenerateIdentifier(info *database.ParseInfo, onlyIfEmpty bool) {
+func (h *handler) GenerateIdentifier(_ *database.ParseInfo, onlyIfEmpty bool) {
 	// Movies don't have identifiers like series do
 }
 
 // GetSchedulerRssSeasons returns empty strings for movies - no RSS seasons jobs.
-func (h *handler) GetSchedulerRssSeasons(
-	scheduler *config.SchedulerConfig,
-	jobType string,
+func (*handler) GetSchedulerRssSeasons(
+	_ *config.SchedulerConfig,
+	_ string,
 ) (string, string) {
 	return "", ""
 }
 
 // GetSchedulerRssArtistsAuthors returns empty strings for movies - no artist/author jobs.
-func (h *handler) GetSchedulerRssArtistsAuthors(
-	scheduler *config.SchedulerConfig,
-	jobType string,
+func (*handler) GetSchedulerRssArtistsAuthors(
+	_ *config.SchedulerConfig,
+	_ string,
 ) (string, string) {
 	return "", ""
 }
@@ -457,15 +457,15 @@ func (h *handler) DataFull() {
 }
 
 // SearchConfigByName returns nil, false for movies - config file search is not supported.
-func (h *handler) SearchConfigByName(
-	searchName string,
-	listCfg *config.MediaListsConfig,
+func (*handler) SearchConfigByName(
+	_ string,
+	_ *config.MediaListsConfig,
 ) (*config.ManualConfig, bool) {
 	return nil, false
 }
 
 // RecordDownloadHistory records a movie download in the movie_histories table.
-func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
 	var (
 		movieID, dbmovieID uint
 		qualityProfile     string
@@ -507,7 +507,7 @@ func (h *handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetP
 
 // GetDownloadTargetFolder returns the target folder name for a movie download.
 // Returns title with IMDB ID (e.g., "Movie Title (tt1234567)").
-func (h *handler) GetDownloadTargetFolder(nzb *apiexternal_v2.Nzbwithprio, dbImdbID string) string {
+func (*handler) GetDownloadTargetFolder(nzb *apiexternal_v2.Nzbwithprio, dbImdbID string) string {
 	if dbImdbID != "" {
 		return logger.JoinStrings(nzb.NZB.Title, " (", dbImdbID, ")")
 	}
@@ -535,7 +535,7 @@ func (h *handler) GetDownloadTargetFolder(nzb *apiexternal_v2.Nzbwithprio, dbImd
 
 // GetExternalIDFromDB returns the IMDB ID from the database entity.
 // Expects *database.Dbmovie, returns ImdbID.
-func (h *handler) GetExternalIDFromDB(dbEntity any) string {
+func (*handler) GetExternalIDFromDB(dbEntity any) string {
 	if dbmovie, ok := dbEntity.(*database.Dbmovie); ok {
 		return dbmovie.ImdbID
 	}
@@ -545,7 +545,7 @@ func (h *handler) GetExternalIDFromDB(dbEntity any) string {
 
 // FillSearchVar fills search variables from the database for the given movie ID.
 // Sets NzbmovieID, loads data from DB, validates required fields.
-func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
+func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) error {
 	entry.NzbmovieID = mediaid
 	if mediaid == 0 {
 		return logger.ErrNotFoundDbmovie
@@ -580,33 +580,33 @@ func (h *handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint)
 }
 
 // GetNzbID returns the NzbmovieID field.
-func (h *handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbmovieID
 }
 
 // GetNzbIDP returns the NzbaudiobookID field.
-func (h *handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
+func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbmovieID
 }
 
 // CheckMediaMatch checks if the entry's MovieID matches the source's NzbmovieID.
-func (h *handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) CheckMediaMatch(source, entry *apiexternal_v2.Nzbwithprio) bool {
 	return source.NzbmovieID == entry.Info.MovieID
 }
 
 // GetUnwantedReason returns "unwanted Movie".
-func (h *handler) GetUnwantedReason() string {
+func (*handler) GetUnwantedReason() string {
 	return "unwanted Movie"
 }
 
 // GetFoundID returns entry.Info.MovieID for logging.
-func (h *handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetFoundID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.MovieID
 }
 
 // ValidateRSSIDs validates DbmovieID and MovieID for RSS processing.
 // Returns error reason string if invalid, empty string if valid.
-func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
+func (*handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 	if entry.Info.DbmovieID == 0 {
 		return "unwanted DBMovie"
 	}
@@ -619,20 +619,20 @@ func (h *handler) ValidateRSSIDs(entry *apiexternal_v2.Nzbwithprio) string {
 }
 
 // SetRSSIDs sets entry.Dbid = DbmovieID, entry.NzbmovieID = MovieID.
-func (h *handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
+func (*handler) SetRSSIDs(entry *apiexternal_v2.Nzbwithprio) {
 	entry.Dbid = entry.Info.DbmovieID
 	entry.NzbmovieID = entry.Info.MovieID
 }
 
 // GetRSSMediaID returns entry.Info.MovieID for getrssdata.
-func (h *handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
+func (*handler) GetRSSMediaID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.Info.MovieID
 }
 
 // CheckCorrectID validates that the entry's IMDB ID matches the source's.
 // Returns true if IDs don't match (should skip), false if they match or can't compare.
 // Also returns found and wanted ID strings for logging.
-func (h *handler) CheckCorrectID(
+func (*handler) CheckCorrectID(
 	sourceentry, entry *apiexternal_v2.Nzbwithprio,
 ) (bool, string, string) {
 	if entry.NZB.IMDBID == "" || entry.NZB.IMDBID == "tt0000000" ||
@@ -656,7 +656,7 @@ func (h *handler) CheckCorrectID(
 }
 
 // GetRuntimeBonus returns 10 for extended editions, 0 otherwise.
-func (h *handler) GetRuntimeBonus(info *database.ParseInfo) int {
+func (*handler) GetRuntimeBonus(info *database.ParseInfo) int {
 	if info.Extended {
 		return 10
 	}
@@ -665,7 +665,7 @@ func (h *handler) GetRuntimeBonus(info *database.ParseInfo) int {
 }
 
 // SkipMultipleFiles returns true - movies should be single files.
-func (h *handler) SkipMultipleFiles() bool {
+func (*handler) SkipMultipleFiles() bool {
 	return true
 }
 
@@ -685,7 +685,7 @@ func (h *handler) FillNotifyData(
 // FillNamingData fills NamingData for movies from the database.
 // Handles Dbmovie lookup, TitleSource extraction, IMDB prefix, and source field updates.
 // Returns clearFolder=true for movies (folder name should be cleared when rootpath exists).
-func (h *handler) FillNamingData(
+func (*handler) FillNamingData(
 	dbid *uint,
 	videofile string,
 	m *database.ParseInfo,
@@ -746,27 +746,54 @@ func (h *handler) FillNamingData(
 	return true, true // clearFolder=true for movies
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated IMDB IDs).
-func (h *handler) GetRefreshIncData() any {
+// refreshListArgs returns the list-name bind arguments for cfgp, matching the
+// "listname in (?" + cfgp.ListsQu + ")" placeholder count.
+func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
+	args := make([]any, 0, len(cfgp.Lists))
+	for i := range cfgp.Lists {
+		args = append(args, &cfgp.Lists[i].Name)
+	}
+
+	return args
+}
+
+// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// IMDB IDs in the config's lists).
+func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id order by dbmovies.updated_at desc limit 100",
+		"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id where movies.listname in (?"+cfgp.ListsQu+") group by dbmovies.imdb_id order by dbmovies.updated_at desc limit 100",
+		args...,
 	)
 }
 
-// GetRefreshFullData returns data for full refresh (all IMDB IDs).
-func (h *handler) GetRefreshFullData() any {
+// GetRefreshFullData returns data for full refresh (all IMDB IDs in the config's lists).
+func (*handler) GetRefreshFullData(cfgp *config.MediaTypeConfig) any {
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return []string(nil)
+	}
+
+	args := refreshListArgs(cfgp)
+	join := "from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id where movies.listname in (?" + cfgp.ListsQu + ")"
+
 	return database.GetrowsN[string](
 		false,
-		database.Getdatarow[uint](false, "select count() from dbmovies"),
-		"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id group by dbmovies.imdb_id",
+		database.Getdatarow[uint](false, "select count(distinct dbmovies.imdb_id) "+join, args...),
+		"select distinct dbmovies.imdb_id "+join+" group by dbmovies.imdb_id",
+		args...,
 	)
 }
 
 // GetSchedulerJobNames returns the job name pairs for movies scheduler configuration.
 // Each pair is [schedulerJobName, singleJobName].
-func (h *handler) GetSchedulerJobNames() [][2]string {
+func (*handler) GetSchedulerJobNames() [][2]string {
 	return [][2]string{
 		{logger.StrSearchMissingInc, logger.StrSearchMissingInc},
 		{logger.StrSearchMissingFull, logger.StrSearchMissingFull},
@@ -790,7 +817,7 @@ func (h *handler) GetSchedulerJobNames() [][2]string {
 
 // CleanupAfterRemove handles cleanup after a movie file is removed.
 // For movies: validates path config and folder, then calls walkcleanup on the rootpath.
-func (h *handler) CleanupAfterRemove(
+func (*handler) CleanupAfterRemove(
 	folder, rootpath, pathCfgName string,
 	walkCleanupFn func(string),
 	_ func(),
@@ -810,7 +837,7 @@ func (h *handler) CleanupAfterRemove(
 
 // MoveOtherFilesAfterOrganize handles moving additional files after main movie is organized.
 // For movies: validates path config and folder, calls walkcleanup, then notify and cleanup.
-func (h *handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
+func (*handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
 	if params.PathCfgName == "" {
 		return logger.ErrPathTemplateNotFound
 	}
@@ -833,31 +860,31 @@ func (h *handler) CheckExtensions(pathcfg *config.PathsConfig, ext string) (bool
 }
 
 // SupportsIDSearch returns true - movies support IMDB ID-based search.
-func (h *handler) SupportsIDSearch() bool { return true }
+func (*handler) SupportsIDSearch() bool { return true }
 
 // SupportsSeasonSearch returns false - movies don't have season/episode structure.
-func (h *handler) SupportsSeasonSearch() bool { return false }
+func (*handler) SupportsSeasonSearch() bool { return false }
 
 // RequiresYearCheck returns true - movies require strict year matching in searches.
-func (h *handler) RequiresYearCheck() bool { return true }
+func (*handler) RequiresYearCheck() bool { return true }
 
 // HasSearchID returns true if the movie entry has a valid IMDB ID.
-func (h *handler) HasSearchID(entry *apiexternal_v2.Nzbwithprio) bool {
+func (*handler) HasSearchID(entry *apiexternal_v2.Nzbwithprio) bool {
 	return entry.Info.Imdb != ""
 }
 
 // SupportsAbsoluteEpisode returns false - movies don't have episode structure.
-func (h *handler) SupportsAbsoluteEpisode() bool { return false }
+func (*handler) SupportsAbsoluteEpisode() bool { return false }
 
 // HandleRSSListID sets the ListID for movie RSS entries.
-func (h *handler) HandleRSSListID(entry *apiexternal_v2.Nzbwithprio, addinlistid int) {
+func (*handler) HandleRSSListID(entry *apiexternal_v2.Nzbwithprio, addinlistid int) {
 	if addinlistid != -1 {
 		entry.Info.ListID = addinlistid
 	}
 }
 
 // CheckEpisodeMatch returns false - movies don't have episode validation.
-func (h *handler) CheckEpisodeMatch(
+func (*handler) CheckEpisodeMatch(
 	_, _ *apiexternal_v2.Nzbwithprio,
 	_ string,
 	_ func(string, *apiexternal_v2.Nzbwithprio),
@@ -866,36 +893,36 @@ func (h *handler) CheckEpisodeMatch(
 }
 
 // SupportsVideoFile returns true - movies use video files.
-func (h *handler) SupportsVideoFile() bool { return true }
+func (*handler) SupportsVideoFile() bool { return true }
 
 // GetRuntimeMultiplier returns 1 - movies are single files.
-func (h *handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
+func (*handler) GetRuntimeMultiplier(_ *database.ParseInfo) int { return 1 }
 
 // ShouldCheckOldFilePriority returns true - movies check existing file quality before organizing.
-func (h *handler) ShouldCheckOldFilePriority() bool { return true }
+func (*handler) ShouldCheckOldFilePriority() bool { return true }
 
 // HasConfiguredExtensions returns true if video extensions are configured.
-func (h *handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
+func (*handler) HasConfiguredExtensions(pathcfg *config.PathsConfig) bool {
 	return pathcfg.AllowedVideoExtensionsLen > 0 || pathcfg.AllowedVideoExtensionsNoRenameLen > 0
 }
 
 // IsExternalIDImdb returns true - movies use IMDB for external IDs.
-func (h *handler) IsExternalIDImdb() bool { return true }
+func (*handler) IsExternalIDImdb() bool { return true }
 
 // UsesGroupedFileProcessing returns false - movies are processed individually.
-func (h *handler) UsesGroupedFileProcessing() bool { return false }
+func (*handler) UsesGroupedFileProcessing() bool { return false }
 
 // GetCacheUnmatchedKey returns the cache key for unmatched movies.
-func (h *handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedMovie }
+func (*handler) GetCacheUnmatchedKey() string { return logger.CacheUnmatchedMovie }
 
 // GetCacheFilesKey returns the cache key for movie files.
-func (h *handler) GetCacheFilesKey() string { return logger.CacheFilesMovie }
+func (*handler) GetCacheFilesKey() string { return logger.CacheFilesMovie }
 
 // UsesListNameAsQualityProfile returns false - movies use quality config name.
-func (h *handler) UsesListNameAsQualityProfile() bool { return false }
+func (*handler) UsesListNameAsQualityProfile() bool { return false }
 
 // GetStringsMap returns a movie-specific string for the given key.
-func (h *handler) GetStringsMap(key string) string {
+func (*handler) GetStringsMap(key string) string {
 	return StringsMap[key]
 }
 

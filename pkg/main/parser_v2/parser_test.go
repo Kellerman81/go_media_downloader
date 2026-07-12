@@ -462,6 +462,50 @@ func TestVideoParser_Parse_Movies(t *testing.T) {
 			},
 		},
 		{
+			// Regression: a source word ("Amazon") that is part of the title must
+			// not truncate the title. The year is the correct boundary here.
+			name:     "Source word in title",
+			filename: "Love on the Amazon 2026 1080p WEB-DL HEVC x265 BONE",
+			want: struct {
+				title      string
+				year       int
+				resolution string
+				quality    string
+				codec      string
+				audio      string
+				imdb       string
+				extended   bool
+			}{
+				title:      "Love on the Amazon",
+				year:       2026,
+				resolution: "1080p",
+				quality:    "AMZN",
+				codec:      "x265",
+			},
+		},
+		{
+			// Regression: a short source tag ("nf") inside a title word must not
+			// match as a quality token ("U[nf]orgettable") and truncate the title.
+			name:     "Source tag inside title word",
+			filename: "Unforgettable Christmas 2024 1080p WEB-DL AAC2.0 x264",
+			want: struct {
+				title      string
+				year       int
+				resolution string
+				quality    string
+				codec      string
+				audio      string
+				imdb       string
+				extended   bool
+			}{
+				title:      "Unforgettable Christmas",
+				year:       2024,
+				resolution: "1080p",
+				quality:    "WEB-DL",
+				codec:      "x264",
+			},
+		},
+		{
 			name:     "No Valid Extension",
 			filename: "The.Christmas.Spark.[2025].1080p.WEBRip-LAMA",
 			want: struct {

@@ -375,6 +375,173 @@ func insertSyntheticTracks(dbalbumID *uint, tracks []apiexternal_v2.Track) {
 	}
 }
 
+// insertSequentialTracks inserts tracks using their slice index as the track
+// number on disc 1. Used for providers (Last.fm) that sometimes number tracks
+// per-disc without returning disc info.
+func insertSequentialTracks(dbalbumID *uint, tracks []apiexternal_v2.Track) {
+	var (
+		runtimeMs int64
+		trackNum  int
+	)
+
+	for i := range tracks {
+		runtimeMs = tracks[i].Duration.Milliseconds()
+		trackNum = i + 1
+
+		_, _ = database.ExecNid(
+			`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
+			 VALUES (?, ?, ?, 1, ?, '')`,
+			dbalbumID,
+			&tracks[i].Title,
+			&trackNum,
+			&runtimeMs,
+		)
+	}
+}
+
+// fallbackRuntimeWithinTolerance returns true when the provider's total runtime
+// is within the per-track tolerance of the local files' total runtime, or when
+// the provider returned no durations at all (providerTotalMs <= 0). Shared by
+// all music fallback providers; logs the mismatch under the provider label.
+func fallbackRuntimeWithinTolerance(
+	providerTotalMs, localTotalMs int64,
+	fileCount int,
+	data *config.MediaDataConfig,
+	folder, provider string,
+) bool {
+	if providerTotalMs <= 0 {
+		return true
+	}
+
+	toleranceSec := 10
+	if data != nil && data.PerTrackToleranceSecondsMax > 0 {
+		toleranceSec = data.PerTrackToleranceSecondsMax
+	} else if data != nil && data.PerTrackToleranceSeconds > 0 {
+		toleranceSec = data.PerTrackToleranceSeconds
+	}
+
+	toleranceMs := int64(toleranceSec) * int64(fileCount) * 1000
+
+	diff := providerTotalMs - localTotalMs
+	if diff < 0 {
+		diff = -diff
+	}
+
+	if diff > toleranceMs {
+		logger.Logtype("debug", 1).
+			Str("folder", folder).
+			Str("provider", provider).
+			Int64("providerTotalMs", providerTotalMs).
+			Int64("localTotalMs", localTotalMs).
+			Int64("toleranceMs", toleranceMs).
+			Msg("Music fallback: runtime mismatch")
+
+		return false
+	}
+
+	return true
+}
+
+// syntheticAlbum describes a provider release to insert as a synthetic
+// dbalbums row (one without a MusicBrainz release ID). Unused identifier
+// fields stay empty/zero and are stored as such.
+type syntheticAlbum struct {
+	title            string
+	mbReleaseGroupID string
+	discogsReleaseID string
+	discogsMasterID  string
+	upc              string
+	year             int
+	format           string
+	label            string
+	country          string
+	totalRuntimeMs   int64
+	coverURL         string
+	deezerID         string
+	theaudiodbID     string
+	itunesID         string
+}
+
+// insertSyntheticAlbum inserts a synthetic dbalbums row, links the best artist
+// (API-provided name preferred over the locally parsed one), and inserts the
+// provider's tracks. sequentialTrackNumbers selects index-based numbering
+// (insertSequentialTracks) over the collision-resolving insertSyntheticTracks.
+// Returns the new dbalbum ID, or 0 on failure (already logged).
+func insertSyntheticAlbum(
+	sa *syntheticAlbum,
+	apiArtists []apiexternal_v2.ArtistRef,
+	localArtist *string,
+	tracks []apiexternal_v2.Track,
+	sequentialTrackNumbers bool,
+	fileCount *int,
+	folder, provider string,
+) uint {
+	slug := logger.StringToSlugCached(sa.title)
+
+	result, insertErr := database.ExecNid(
+		`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
+		  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
+		  label, country, total_tracks, total_runtime_ms, genres, cover_url, deezer_id,
+		  theaudiodb_id, itunes_id)
+		 VALUES (?, ?, '', ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, '', ?, ?, ?, ?)`,
+		&sa.title,
+		&sa.mbReleaseGroupID,
+		&sa.discogsReleaseID,
+		&sa.discogsMasterID,
+		&sa.upc,
+		&slug,
+		&sa.year,
+		&sa.format,
+		&sa.label,
+		&sa.country,
+		fileCount,
+		&sa.totalRuntimeMs,
+		&sa.coverURL,
+		&sa.deezerID,
+		&sa.theaudiodbID,
+		&sa.itunesID,
+	)
+	if insertErr != nil {
+		logger.Logtype("debug", 1).
+			Str("folder", folder).
+			Str("provider", provider).
+			Err(insertErr).
+			Msg("Music fallback: failed to insert synthetic dbalbum")
+
+		return 0
+	}
+
+	albumID := logger.Int64ToUint(result)
+
+	artistName, artistMBID := releaseArtistName(apiArtists, localArtist)
+	if artistID := addOrGetArtist(&artistName, &artistMBID); artistID > 0 {
+		position := 0
+
+		_, _ = database.ExecNid(
+			`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
+			&albumID,
+			&artistID,
+			&position,
+		)
+	}
+
+	if sequentialTrackNumbers {
+		insertSequentialTracks(&albumID, tracks)
+	} else {
+		insertSyntheticTracks(&albumID, tracks)
+	}
+
+	logger.Logtype("info", 1).
+		Str("folder", folder).
+		Str("provider", provider).
+		Str("artist", artistName).
+		Str("album", sa.title).
+		Uint("dbalbumID", albumID).
+		Msg("Music fallback: inserted synthetic album into database")
+
+	return albumID
+}
+
 // countUnmatched returns the number of unmatched DB entries and unused local
 // tracks from the boolean slices produced by matchTracksByDistance.
 func countUnmatched(matched, used []bool) (unmatchedDB, unusedLocal int) {
@@ -1768,7 +1935,7 @@ func discoverAddFoundArtistAlbums(
 	cfgp *config.MediaTypeConfig,
 	listid int,
 	data *config.MediaDataConfig,
-	folder string,
+	_ string,
 ) {
 	isVariousArtists := IsVariousArtists(*artist)
 
@@ -2030,31 +2197,15 @@ func tryMusicLastFMFallback(
 	}
 
 	// Runtime check when Last.fm returned durations.
-	if lfmTotalMs > 0 {
-		toleranceSec := 10
-		if data != nil && data.PerTrackToleranceSecondsMax > 0 {
-			toleranceSec = data.PerTrackToleranceSecondsMax
-		} else if data != nil && data.PerTrackToleranceSeconds > 0 {
-			toleranceSec = data.PerTrackToleranceSeconds
-		}
-
-		toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
-
-		diff := lfmTotalMs - localTotalMs
-		if diff < 0 {
-			diff = -diff
-		}
-
-		if diff > toleranceMs {
-			logger.Logtype("debug", 1).
-				Str("folder", folder).
-				Int64("lfmTotalMs", lfmTotalMs).
-				Int64("localTotalMs", localTotalMs).
-				Int64("toleranceMs", toleranceMs).
-				Msg("Last.fm fallback: runtime mismatch")
-
-			return nil
-		}
+	if !fallbackRuntimeWithinTolerance(
+		lfmTotalMs,
+		localTotalMs,
+		*fileCount,
+		data,
+		folder,
+		"lastfm",
+	) {
+		return nil
 	}
 
 	// Prefer the MusicBrainz ID returned by Last.fm for DB lookups.
@@ -2088,71 +2239,18 @@ func tryMusicLastFMFallback(
 			return nil
 		}
 
-		lfmTitle := releaseTitleName(release.Title, albumTitle)
-		lfmSlug := logger.StringToSlugCached(lfmTitle)
-
-		result, insertErr := database.ExecNid(
-			`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
-			  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
-			  label, country, total_tracks, total_runtime_ms, genres, cover_url)
-			 VALUES (?, ?, '', '', '', '', ?, 0, '', '', '', '', ?, ?, '', '')`,
-			&lfmTitle,
-			&lfmMBID,
-			&lfmSlug,
-			fileCount,
-			&lfmTotalMs,
+		// Sequential track numbering — Last.fm sometimes numbers per-disc.
+		existingID = insertSyntheticAlbum(
+			&syntheticAlbum{
+				title:            releaseTitleName(release.Title, albumTitle),
+				mbReleaseGroupID: lfmMBID,
+				totalRuntimeMs:   lfmTotalMs,
+			},
+			release.Artists, artist, release.Tracks, true, fileCount, folder, "lastfm",
 		)
-		if insertErr != nil {
-			logger.Logtype("debug", 1).
-				Str("folder", folder).
-				Err(insertErr).
-				Msg("Last.fm fallback: failed to insert synthetic dbalbum")
-
+		if existingID == 0 {
 			return nil
 		}
-
-		existingID = logger.Int64ToUint(result)
-
-		lfmArtistName, lfmArtistMBID := releaseArtistName(release.Artists, artist)
-
-		lfmArtistNamePtr := &lfmArtistName
-		if artistID := addOrGetArtist(lfmArtistNamePtr, &lfmArtistMBID); artistID > 0 {
-			position := 0
-
-			_, _ = database.ExecNid(
-				`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
-				&existingID,
-				&artistID,
-				&position,
-			)
-		}
-
-		// Use sequential index as track_number — Last.fm sometimes numbers per-disc.
-		var (
-			runtimeMs int64
-			trackNum  int
-		)
-
-		for i := range release.Tracks {
-			runtimeMs = release.Tracks[i].Duration.Milliseconds()
-			trackNum = i + 1
-
-			_, _ = database.ExecNid(
-				`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
-				 VALUES (?, ?, ?, 1, ?, '')`,
-				&existingID,
-				&release.Tracks[i].Title,
-				&trackNum,
-				&runtimeMs,
-			)
-		}
-
-		logger.Logtype("info", 1).
-			Str("folder", folder).
-			Str("artist", *artist).
-			Str("album", *albumTitle).
-			Uint("dbalbumID", existingID).
-			Msg("Last.fm fallback: inserted synthetic album into database")
 	}
 
 	return []uint{existingID}
@@ -2182,13 +2280,13 @@ func tryMusicDiscogsFallback(
 	}
 
 	var (
-		ids                          []uint
-		dgTitle, slug, masterIDStr   string
-		dgTotalMs, toleranceMs, diff int64
-		existingID                   uint
+		ids         []uint
+		masterIDStr string
+		dgTotalMs   int64
+		existingID  uint
 	)
 
-	// Try each candidate until one passes validation.
+	// Validate every candidate and collect all that pass.
 
 	for i := range results {
 		release, fetchErr := dg.GetReleaseByID(ctx, results[i].DiscogsID)
@@ -2213,31 +2311,15 @@ func tryMusicDiscogsFallback(
 			dgTotalMs += release.Tracks[j].Duration.Milliseconds()
 		}
 
-		if dgTotalMs > 0 {
-			toleranceSec := 10
-			if data != nil && data.PerTrackToleranceSecondsMax > 0 {
-				toleranceSec = data.PerTrackToleranceSecondsMax
-			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
-				toleranceSec = data.PerTrackToleranceSeconds
-			}
-
-			toleranceMs = int64(toleranceSec) * int64(*fileCount) * 1000
-
-			diff = dgTotalMs - localTotalMs
-			if diff < 0 {
-				diff = -diff
-			}
-
-			if diff > toleranceMs {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Int64("dgTotalMs", dgTotalMs).
-					Int64("localTotalMs", localTotalMs).
-					Int64("toleranceMs", toleranceMs).
-					Msg("Discogs fallback: runtime mismatch")
-
-				continue
-			}
+		if !fallbackRuntimeWithinTolerance(
+			dgTotalMs,
+			localTotalMs,
+			*fileCount,
+			data,
+			folder,
+			"discogs",
+		) {
+			continue
 		}
 
 		// Check if a DB entry already exists for this Discogs release / master.
@@ -2267,65 +2349,28 @@ func tryMusicDiscogsFallback(
 				continue
 			}
 
-			dgTitle = releaseTitleName(release.Title, albumTitle)
-			slug = logger.StringToSlugCached(dgTitle)
-
 			masterIDStr = ""
 			if release.MasterID > 0 {
 				masterIDStr = strconv.Itoa(release.MasterID)
 			}
 
-			result, insertErr := database.ExecNid(
-				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
-				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
-				  label, country, total_tracks, total_runtime_ms, genres, cover_url)
-				 VALUES (?, '', '', ?, ?, '', ?, ?, '', ?, ?, ?, ?, ?, '', ?)`,
-				&dgTitle,
-				&release.DiscogsID,
-				&masterIDStr,
-				&slug,
-				&release.ReleaseYear,
-				&release.Format,
-				&release.Label,
-				&release.Country,
-				fileCount,
-				&dgTotalMs,
-				&release.CoverURL,
+			existingID = insertSyntheticAlbum(
+				&syntheticAlbum{
+					title:            releaseTitleName(release.Title, albumTitle),
+					discogsReleaseID: release.DiscogsID,
+					discogsMasterID:  masterIDStr,
+					year:             release.ReleaseYear,
+					format:           release.Format,
+					label:            release.Label,
+					country:          release.Country,
+					totalRuntimeMs:   dgTotalMs,
+					coverURL:         release.CoverURL,
+				},
+				release.Artists, artist, release.Tracks, false, fileCount, folder, "discogs",
 			)
-			if insertErr != nil {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Err(insertErr).
-					Msg("Discogs fallback: failed to insert synthetic dbalbum")
-
+			if existingID == 0 {
 				continue
 			}
-
-			existingID = logger.Int64ToUint(result)
-
-			// Link artist — prefer name from Discogs response.
-			dgArtistName, dgArtistMBID := releaseArtistName(release.Artists, artist)
-
-			dgArtistNamePtr := &dgArtistName
-			if artistID := addOrGetArtist(dgArtistNamePtr, &dgArtistMBID); artistID > 0 {
-				position := 0
-
-				_, _ = database.ExecNid(
-					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
-					&existingID,
-					&artistID,
-					&position,
-				)
-			}
-
-			insertSyntheticTracks(&existingID, release.Tracks)
-
-			logger.Logtype("info", 1).
-				Str("folder", folder).
-				Str("artist", dgArtistName).
-				Str("album", *albumTitle).
-				Uint("dbalbumID", existingID).
-				Msg("Discogs fallback: inserted synthetic album into database")
 		}
 
 		ids = append(ids, existingID)
@@ -2384,31 +2429,15 @@ func tryMusicDeezerFallback(
 			dzTotalMs += release.Tracks[j].Duration.Milliseconds()
 		}
 
-		if dzTotalMs > 0 {
-			toleranceSec := 10
-			if data != nil && data.PerTrackToleranceSecondsMax > 0 {
-				toleranceSec = data.PerTrackToleranceSecondsMax
-			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
-				toleranceSec = data.PerTrackToleranceSeconds
-			}
-
-			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
-
-			diff := dzTotalMs - localTotalMs
-			if diff < 0 {
-				diff = -diff
-			}
-
-			if diff > toleranceMs {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Int64("dzTotalMs", dzTotalMs).
-					Int64("localTotalMs", localTotalMs).
-					Int64("toleranceMs", toleranceMs).
-					Msg("Deezer fallback: runtime mismatch")
-
-				continue
-			}
+		if !fallbackRuntimeWithinTolerance(
+			dzTotalMs,
+			localTotalMs,
+			*fileCount,
+			data,
+			folder,
+			"deezer",
+		) {
+			continue
 		}
 
 		// Check for existing DB entry by Deezer ID.
@@ -2427,57 +2456,21 @@ func tryMusicDeezerFallback(
 				continue
 			}
 
-			dzTitle := releaseTitleName(release.Title, albumTitle)
-			slug := logger.StringToSlugCached(dzTitle)
-
-			result, insertErr := database.ExecNid(
-				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
-				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
-				  label, country, total_tracks, total_runtime_ms, genres, cover_url, deezer_id)
-				 VALUES (?, '', '', '', '', ?, ?, ?, '', '', ?, '', ?, ?, '', ?, ?)`,
-				&dzTitle,
-				&release.Barcode,
-				&slug,
-				&release.ReleaseYear,
-				&release.Label,
-				fileCount,
-				&dzTotalMs,
-				&release.CoverURL,
-				&deezerIDStr,
+			existingID = insertSyntheticAlbum(
+				&syntheticAlbum{
+					title:          releaseTitleName(release.Title, albumTitle),
+					upc:            release.Barcode,
+					year:           release.ReleaseYear,
+					label:          release.Label,
+					totalRuntimeMs: dzTotalMs,
+					coverURL:       release.CoverURL,
+					deezerID:       deezerIDStr,
+				},
+				release.Artists, artist, release.Tracks, false, fileCount, folder, "deezer",
 			)
-			if insertErr != nil {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Err(insertErr).
-					Msg("Deezer fallback: failed to insert synthetic dbalbum")
-
+			if existingID == 0 {
 				continue
 			}
-
-			existingID = logger.Int64ToUint(result)
-
-			dzArtistName, dzArtistMBID := releaseArtistName(release.Artists, artist)
-
-			dzArtistNamePtr := &dzArtistName
-			if aid := addOrGetArtist(dzArtistNamePtr, &dzArtistMBID); aid > 0 {
-				pos := 0
-
-				_, _ = database.ExecNid(
-					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
-					&existingID,
-					&aid,
-					&pos,
-				)
-			}
-
-			insertSyntheticTracks(&existingID, release.Tracks)
-
-			logger.Logtype("info", 1).
-				Str("folder", folder).
-				Str("artist", dzArtistName).
-				Str("album", *albumTitle).
-				Uint("dbalbumID", existingID).
-				Msg("Deezer fallback: inserted synthetic album into database")
 		}
 
 		ids = append(ids, existingID)
@@ -2535,31 +2528,15 @@ func tryMusicTheAudioDBFallback(
 			tadbTotalMs += release.Tracks[j].Duration.Milliseconds()
 		}
 
-		if tadbTotalMs > 0 {
-			toleranceSec := 10
-			if data != nil && data.PerTrackToleranceSecondsMax > 0 {
-				toleranceSec = data.PerTrackToleranceSecondsMax
-			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
-				toleranceSec = data.PerTrackToleranceSeconds
-			}
-
-			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
-
-			diff := tadbTotalMs - localTotalMs
-			if diff < 0 {
-				diff = -diff
-			}
-
-			if diff > toleranceMs {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Int64("tadbTotalMs", tadbTotalMs).
-					Int64("localTotalMs", localTotalMs).
-					Int64("toleranceMs", toleranceMs).
-					Msg("TheAudioDB fallback: runtime mismatch")
-
-				continue
-			}
+		if !fallbackRuntimeWithinTolerance(
+			tadbTotalMs,
+			localTotalMs,
+			*fileCount,
+			data,
+			folder,
+			"theaudiodb",
+		) {
+			continue
 		}
 
 		// Check for existing DB entry by TheAudioDB ID.
@@ -2574,56 +2551,20 @@ func tryMusicTheAudioDBFallback(
 				continue
 			}
 
-			tadbTitle := releaseTitleName(results[i].Title, albumTitle)
-			slug := logger.StringToSlugCached(tadbTitle)
-
-			result, insertErr := database.ExecNid(
-				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
-				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
-				  label, country, total_tracks, total_runtime_ms, genres, cover_url, theaudiodb_id)
-				 VALUES (?, '', '', '', '', '', ?, ?, '', '', ?, '', ?, ?, '', ?, ?)`,
-				&tadbTitle,
-				&slug,
-				&results[i].ReleaseYear,
-				&results[i].Label,
-				fileCount,
-				&tadbTotalMs,
-				&results[i].CoverURL,
-				&tadID,
+			existingID = insertSyntheticAlbum(
+				&syntheticAlbum{
+					title:          releaseTitleName(results[i].Title, albumTitle),
+					year:           results[i].ReleaseYear,
+					label:          results[i].Label,
+					totalRuntimeMs: tadbTotalMs,
+					coverURL:       results[i].CoverURL,
+					theaudiodbID:   tadID,
+				},
+				release.Artists, artist, release.Tracks, false, fileCount, folder, "theaudiodb",
 			)
-			if insertErr != nil {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Err(insertErr).
-					Msg("TheAudioDB fallback: failed to insert synthetic dbalbum")
-
+			if existingID == 0 {
 				continue
 			}
-
-			existingID = logger.Int64ToUint(result)
-
-			tadbArtistName, tadbArtistMBID := releaseArtistName(release.Artists, artist)
-
-			tadbArtistNamePtr := &tadbArtistName
-			if aid := addOrGetArtist(tadbArtistNamePtr, &tadbArtistMBID); aid > 0 {
-				pos := 0
-
-				_, _ = database.ExecNid(
-					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
-					&existingID,
-					&aid,
-					&pos,
-				)
-			}
-
-			insertSyntheticTracks(&existingID, release.Tracks)
-
-			logger.Logtype("info", 1).
-				Str("folder", folder).
-				Str("artist", tadbArtistName).
-				Str("album", *albumTitle).
-				Uint("dbalbumID", existingID).
-				Msg("TheAudioDB fallback: inserted synthetic album into database")
 		}
 
 		ids = append(ids, existingID)
@@ -2684,31 +2625,15 @@ func tryMusicItunesFallback(
 			itunessTotalMs += release.Tracks[j].Duration.Milliseconds()
 		}
 
-		if itunessTotalMs > 0 {
-			toleranceSec := 10
-			if data != nil && data.PerTrackToleranceSecondsMax > 0 {
-				toleranceSec = data.PerTrackToleranceSecondsMax
-			} else if data != nil && data.PerTrackToleranceSeconds > 0 {
-				toleranceSec = data.PerTrackToleranceSeconds
-			}
-
-			toleranceMs := int64(toleranceSec) * int64(*fileCount) * 1000
-
-			diff := itunessTotalMs - localTotalMs
-			if diff < 0 {
-				diff = -diff
-			}
-
-			if diff > toleranceMs {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Int64("itunessTotalMs", itunessTotalMs).
-					Int64("localTotalMs", localTotalMs).
-					Int64("toleranceMs", toleranceMs).
-					Msg("iTunes fallback: runtime mismatch")
-
-				continue
-			}
+		if !fallbackRuntimeWithinTolerance(
+			itunessTotalMs,
+			localTotalMs,
+			*fileCount,
+			data,
+			folder,
+			"itunes",
+		) {
+			continue
 		}
 
 		// Check for existing DB entry by iTunes collection ID.
@@ -2727,55 +2652,19 @@ func tryMusicItunesFallback(
 				continue
 			}
 
-			itunesTitle := releaseTitleName(release.Title, albumTitle)
-			slug := logger.StringToSlugCached(itunesTitle)
-
-			result, insertErr := database.ExecNid(
-				`INSERT INTO dbalbums (title, musicbrainz_release_group_id, musicbrainz_release_id,
-				  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
-				  label, country, total_tracks, total_runtime_ms, genres, cover_url, itunes_id)
-				 VALUES (?, '', '', '', '', '', ?, ?, '', '', '', '', ?, ?, '', ?, ?)`,
-				&itunesTitle,
-				&slug,
-				&release.ReleaseYear,
-				fileCount,
-				&itunessTotalMs,
-				&release.CoverURL,
-				&itunesIDStr,
+			existingID = insertSyntheticAlbum(
+				&syntheticAlbum{
+					title:          releaseTitleName(release.Title, albumTitle),
+					year:           release.ReleaseYear,
+					totalRuntimeMs: itunessTotalMs,
+					coverURL:       release.CoverURL,
+					itunesID:       itunesIDStr,
+				},
+				release.Artists, artist, release.Tracks, false, fileCount, folder, "itunes",
 			)
-			if insertErr != nil {
-				logger.Logtype("debug", 1).
-					Str("folder", folder).
-					Err(insertErr).
-					Msg("iTunes fallback: failed to insert synthetic dbalbum")
-
+			if existingID == 0 {
 				continue
 			}
-
-			existingID = logger.Int64ToUint(result)
-
-			itunesArtistName, itunesArtistMBID := releaseArtistName(release.Artists, artist)
-
-			itunesArtistNamePtr := &itunesArtistName
-			if aid := addOrGetArtist(itunesArtistNamePtr, &itunesArtistMBID); aid > 0 {
-				pos := 0
-
-				_, _ = database.ExecNid(
-					`INSERT INTO dbalbum_artists (dbalbum_id, dbartist_id, position) VALUES (?, ?, ?)`,
-					&existingID,
-					&aid,
-					&pos,
-				)
-			}
-
-			insertSyntheticTracks(&existingID, release.Tracks)
-
-			logger.Logtype("info", 1).
-				Str("folder", folder).
-				Str("artist", *artist).
-				Str("album", *albumTitle).
-				Uint("dbalbumID", existingID).
-				Msg("iTunes fallback: inserted synthetic album into database")
 		}
 
 		ids = append(ids, existingID)

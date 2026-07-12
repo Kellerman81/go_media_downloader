@@ -46,10 +46,40 @@ type Config struct {
 	LogZeroValues bool
 }
 
-const logfile = "./logs/downloader.log"
+const (
+	logfile      = "./logs/downloader.log"
+	errorlogfile = "./logs/errors.log"
+	weblogfile   = "./logs/weblogs.log"
+)
+
+// errorLevelWriter is a zerolog LevelWriter that only forwards events at
+// ErrorLevel or above (Error, Fatal, Panic) to the wrapped writer. It lets the
+// same log stream additionally be persisted to an errors-only file. Lower-level
+// events are accepted and discarded so they still reach the other writers.
+type errorLevelWriter struct {
+	w io.Writer
+}
+
+func (ew errorLevelWriter) Write(p []byte) (int, error) {
+	// Unleveled writes have no level context; drop them from the errors file.
+	return len(p), nil
+}
+
+func (ew errorLevelWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
+	if level >= zerolog.ErrorLevel {
+		return ew.w.Write(p)
+	}
+
+	return len(p), nil
+}
 
 var (
 	logZeroValues bool
+
+	// webLog is a dedicated logger for HTTP request logging (the gin middleware).
+	// It writes only to weblogs.log so web access lines stay out of the main
+	// application and error logs. Initialized by InitLogger.
+	webLog zerolog.Logger
 
 	logMap = map[string]func() *zerolog.Event{
 		"info":  log.Info,
@@ -130,18 +160,67 @@ func InitLogger(config Config) {
 		writers = io.Discard
 	}
 
+	// Gate verbosity via zerolog's atomic global level rather than baking the
+	// level into the logger instance. This lets SetLevel change verbosity at
+	// runtime (including enabling debug) without rebuilding the logger or racing
+	// with concurrent logging.
+	zerolog.SetGlobalLevel(level)
+
+	// Dedicated errors-only file. Receives the same formatted lines as the main
+	// log, but the level writer keeps only Error/Fatal/Panic entries.
+	errorFile := errorLevelWriter{w: &lumberjack.Logger{
+		Filename:   errorlogfile,
+		MaxSize:    config.LogFileSize, // megabytes
+		MaxBackups: int(config.LogFileCount),
+		MaxAge:     28,                 // days
+		Compress:   config.LogCompress, // disabled by default
+	}}
+
 	logctx := zerolog.New(zerolog.MultiLevelWriter(writers, &lumberjack.Logger{
 		Filename:   logfile,
 		MaxSize:    config.LogFileSize, // megabytes
 		MaxBackups: int(config.LogFileCount),
 		MaxAge:     28,                 // days
 		Compress:   config.LogCompress, // disabled by default
-	})).Level(level).With().Timestamp()
+	}, errorFile)).With().Timestamp()
 	if dbug {
 		log = logctx.Caller().Logger()
 	} else {
 		log = logctx.Logger()
 	}
+
+	// Web request logging goes to its own file only (not stdout, downloader.log,
+	// or errors.log).
+	webLog = zerolog.New(&lumberjack.Logger{
+		Filename:   weblogfile,
+		MaxSize:    config.LogFileSize, // megabytes
+		MaxBackups: int(config.LogFileCount),
+		MaxAge:     28,                 // days
+		Compress:   config.LogCompress, // disabled by default
+	}).With().Timestamp().Logger()
+}
+
+// SetLevel changes the active logging verbosity at runtime without a restart.
+// Accepted values (case-insensitive): "debug", "info", "warn"/"warning",
+// "error". Unknown values are ignored. Safe to call concurrently with logging
+// because it uses zerolog's atomic global level.
+func SetLevel(level string) {
+	switch {
+	case strings.EqualFold(level, StrDebug):
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case strings.EqualFold(level, "info"):
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case strings.EqualFold(level, "warn"), strings.EqualFold(level, "warning"):
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case strings.EqualFold(level, "error"):
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	}
+}
+
+// GetLevel returns the current global logging level as a lowercase string
+// (e.g. "debug", "info", "warn", "error").
+func GetLevel() string {
+	return zerolog.GlobalLevel().String()
 }
 
 // Logtype returns a zerolog.Event with the specified log level. If the log level is not recognized,

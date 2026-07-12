@@ -7,7 +7,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -158,7 +158,11 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 											html.ID("selected_regex_config"),
 											html.Name("selected_regex_config"),
 											func() gomponents.Node {
-												var options []gomponents.Node
+												options := make(
+													[]gomponents.Node,
+													0,
+													1+len(regexConfigs),
+												)
 
 												options = append(
 													options,
@@ -206,7 +210,11 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 											html.ID("selected_quality_config"),
 											html.Name("selected_quality_config"),
 											func() gomponents.Node {
-												var options []gomponents.Node
+												options := make(
+													[]gomponents.Node,
+													0,
+													1+len(qualityConfigs),
+												)
 
 												options = append(
 													options,

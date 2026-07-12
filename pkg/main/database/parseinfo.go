@@ -635,7 +635,7 @@ func (m *ParseInfo) Getepisodestoimport() error {
 // determineSplitChar identifies the character used to separate episode numbers in a string.
 // It checks for common episode separators like 'E', 'e', 'X', 'x', or a dash.
 // Returns the first matching separator character, or an empty string if no separator is found.
-func (m *ParseInfo) determineSplitChar(str1 string) string {
+func (*ParseInfo) determineSplitChar(str1 string) string {
 	for i := range episodeSplitChars {
 		if strings.ContainsRune(str1, rune(episodeSplitChars[i][0])) {
 			return episodeSplitChars[i]
@@ -3339,7 +3339,7 @@ func (m *ParseInfo) IsAudioBitrateAcceptable(quality *config.QualityConfig) bool
 // the given input string inval. It checks the Strings and Regex fields of each
 // QualitiesRegex struct, returning the ID if a match is found. 0 is returned if no
 // match is found.
-func (m *ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
+func (*ParseInfo) Gettypeids(inval string, qualitytype []Qualities) uint {
 	for idx := range qualitytype {
 		qual := &qualitytype[idx]
 		if qual.Strings != "" && !config.GetSettingsGeneral().DisableParserStringMatch &&

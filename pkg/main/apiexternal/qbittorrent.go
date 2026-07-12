@@ -14,7 +14,7 @@ import (
 // logs in using the provided username and password, and then downloads the torrent
 // from the given URL with the specified save path and paused state.
 func SendToQBittorrent(
-	downloaderName, host, port, username, password, urlv, dlpath, addpaused string,
+	downloaderName, _, _, username, password, urlv, dlpath, addpaused string,
 ) error {
 	// Try v2 provider first
 	provider := providers.GetQBittorrent(downloaderName)

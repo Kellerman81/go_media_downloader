@@ -120,12 +120,12 @@ func NewProvider(
 }
 
 // GetProviderType returns the download provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.DownloadProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.DownloadProviderType {
 	return apiexternal_v2.DownloadProviderRTorrent
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "rtorrent"
 }
 
@@ -192,8 +192,8 @@ func (p *Provider) AddTorrent(
 }
 
 // GetTorrentInfo retrieves information about a specific torrent.
-func (p *Provider) GetTorrentInfo(
-	ctx context.Context,
+func (*Provider) GetTorrentInfo(
+	_ context.Context,
 	hash string,
 ) (*apiexternal_v2.TorrentInfo, error) {
 	// rTorrent multicall to get torrent info
@@ -209,7 +209,7 @@ func (p *Provider) GetTorrentInfo(
 // ListTorrents lists all torrents in rTorrent.
 func (p *Provider) ListTorrents(
 	ctx context.Context,
-	filter string,
+	_ string,
 ) (*apiexternal_v2.TorrentListResponse, error) {
 	// Get list of torrent hashes
 	// This is simplified - full implementation would use d.multicall2 for efficiency
@@ -327,7 +327,7 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 //
 
 // GetHTTPClient returns an HTTP client for this provider.
-func (p *Provider) GetHTTPClient() *http.Client {
+func (*Provider) GetHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 

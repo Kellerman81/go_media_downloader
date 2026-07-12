@@ -2,6 +2,7 @@ package scrapers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -82,7 +83,7 @@ func (s *Service) getScraperMutex(scraperType ScraperType) *sync.Mutex {
 //   - error: Any errors during scraper initialization
 func (s *Service) GetScrapersForSeries(serieName string, firstPageDBOnly bool) ([]Scraper, error) {
 	if serieName == "" {
-		return nil, fmt.Errorf("series name is required")
+		return nil, errors.New("series name is required")
 	}
 
 	// Find the series configuration by loading TOML files
@@ -120,7 +121,7 @@ func (s *Service) GetScrapersForSeries(serieName string, firstPageDBOnly bool) (
 		return nil, fmt.Errorf("failed to create scraper for series %s: %w", serieName, err)
 	}
 
-	var scrapers []Scraper
+	scrapers := make([]Scraper, 0, 1)
 
 	scrapers = append(scrapers, scraper)
 
@@ -244,7 +245,7 @@ func (s *Service) RunScrapersForSeries(
 // Returns:
 //   - *config.SerieConfig: The found series configuration
 //   - error: Any errors during search or file loading
-func (s *Service) findSeriesConfig(serieName string) (*config.ManualConfig, error) {
+func (*Service) findSeriesConfig(serieName string) (*config.ManualConfig, error) {
 	// Get the config directory path (hardcoded to ./config)
 	configDir := "./config"
 
@@ -334,7 +335,7 @@ func (s *Service) createScraperFromSerieConfig(
 // Returns:
 //   - Scraper: Initialized Project1Service scraper
 //   - error: Any errors during scraper creation
-func (s *Service) createProject1ServiceScraperFromSerie(
+func (*Service) createProject1ServiceScraperFromSerie(
 	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
@@ -358,7 +359,7 @@ func (s *Service) createProject1ServiceScraperFromSerie(
 // Returns:
 //   - Scraper: Initialized Algolia scraper
 //   - error: Any errors during scraper creation
-func (s *Service) createAlgoliaScraperFromSerie(
+func (*Service) createAlgoliaScraperFromSerie(
 	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
@@ -385,7 +386,7 @@ func (s *Service) createAlgoliaScraperFromSerie(
 // Returns:
 //   - Scraper: Initialized HTML/XPath scraper
 //   - error: Any errors during scraper creation
-func (s *Service) createHTMLXPathScraperFromSerie(
+func (*Service) createHTMLXPathScraperFromSerie(
 	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {
@@ -428,7 +429,7 @@ func (s *Service) createHTMLXPathScraperFromSerie(
 // Returns:
 //   - Scraper: Initialized CSRF API scraper
 //   - error: Any errors during scraper creation
-func (s *Service) createCSRFAPIScraperFromSerie(
+func (*Service) createCSRFAPIScraperFromSerie(
 	cfg *config.ManualConfig,
 	firstPageDBOnly bool,
 ) (Scraper, error) {

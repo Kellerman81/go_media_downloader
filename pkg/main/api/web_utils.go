@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	gin "github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )

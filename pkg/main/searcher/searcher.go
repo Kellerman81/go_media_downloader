@@ -55,15 +55,16 @@ type ConfigSearcher struct {
 	// Quality is a pointer to a QualityConfig
 	Quality *config.QualityConfig
 
-	// Optimization: Pre-allocated buffers for frequent operations
-	episodeBuffer [4]string // Pre-allocated buffer for episode prefix array
-	// qualityChecks    [4]qualityCheck // Pre-allocated for quality validation
 	indexerConfigMap map[string]int // Cache for indexer config lookups
 
 	// Optimization: Maps for O(1) duplicate checking
 	downloadedMap   map[uint]struct{}   // O(1) lookup for downloaded items
 	processedURLs   map[string]struct{} // O(1) lookup for processed URLs
 	processedTitles map[string]struct{} // O(1) lookup for processed titles
+	// processedNorm dedupes the same release listed by multiple indexers:
+	// keyed by lowercased title + size bucket, so case or indexer differences
+	// don't cause the same release to be parsed twice.
+	processedNorm map[string]struct{}
 }
 
 type searchParams struct {
@@ -135,6 +136,11 @@ func clearNzbSlice(slice []apiexternal_v2.Nzbwithprio) {
 func (s *ConfigSearcher) reset() {
 	s.searchActionType = ""
 	s.isArtistAuthorSearch = false
+	s.isSeasonSearch = false
+	// Clear config references so a pooled searcher can never carry a stale
+	// quality profile into its next use (NewSearcher only overwrites Quality
+	// when the caller provides one).
+	s.Quality = nil
 	atomic.StoreInt32(&s.Done, 0)
 
 	// Clear slices efficiently - reset internal references before truncating
@@ -151,6 +157,7 @@ func (s *ConfigSearcher) reset() {
 	clear(s.downloadedMap)
 	clear(s.processedURLs)
 	clear(s.processedTitles)
+	clear(s.processedNorm)
 	clear(s.indexerConfigMap)
 }
 
@@ -159,10 +166,8 @@ func (s *ConfigSearcher) reset() {
 //   - plsearchparam: Pool for searchParams structs used in search operations
 //   - plsearcher: Pool for ConfigSearcher instances with pre-allocated buffers
 //
-// The ConfigSearcher pool is pre-configured with optimized buffer sizes for:
-//   - Raw search results (8000 capacity)
-//   - Indexer configuration lookup map (10 capacity)
-//   - Episode prefix buffer for efficient string operations
+// The ConfigSearcher pool is pre-configured with optimized buffer sizes for
+// raw/denied/accepted result slices and the duplicate-tracking maps.
 //
 // This initialization reduces memory allocations during frequent search operations.
 func Init() {
@@ -180,9 +185,7 @@ func Init() {
 		cs.downloadedMap = make(map[uint]struct{}, defaultDownloadedCap)
 		cs.processedURLs = make(map[string]struct{}, defaultProcessedCap)
 		cs.processedTitles = make(map[string]struct{}, defaultProcessedCap)
-
-		// Pre-populate episode buffer
-		copy(cs.episodeBuffer[:], episodePrefixes[:])
+		cs.processedNorm = make(map[string]struct{}, defaultProcessedCap)
 	}, func(cs *ConfigSearcher) bool {
 		cs.reset()
 		return false
@@ -215,8 +218,8 @@ func NewSearcher(
 			downloadedMap:    make(map[uint]struct{}, defaultDownloadedCap),
 			processedURLs:    make(map[string]struct{}, defaultProcessedCap),
 			processedTitles:  make(map[string]struct{}, defaultProcessedCap),
+			processedNorm:    make(map[string]struct{}, defaultProcessedCap),
 		}
-		copy(s.episodeBuffer[:], episodePrefixes[:])
 	}
 
 	s.Cfgp = cfgp
@@ -372,7 +375,7 @@ func (s *ConfigSearcher) MediaSearch(
 	s.searchindexers(ctx, false, p)
 	// logger.Logtype("debug", 1).Uint("mediaid", mediaid).Msg("Post searchindexers")
 	if atomic.LoadInt32(&s.Done) == 0 && len(s.Raw.Arr) == 0 {
-		s.searchlog("error", "All searches failed", p)
+		s.searchlog("warn", "All searches failed", p)
 		return nil
 	}
 
@@ -421,9 +424,36 @@ func (s *ConfigSearcher) executeSearch(p *searchParams, indcfg *config.IndexersC
 // types: media search, RSS search, or RSS season search. The function returns true if any of the search tasks
 // were successful.
 func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *searchParams) {
-	if len(s.Quality.IndexerCfg) == 0 {
+	if s.Quality == nil || len(s.Quality.IndexerCfg) == 0 {
 		return
 	}
+
+	// Collect eligible indexers first (nil check before any field access),
+	// then order them by historical success rate so healthy indexers are
+	// queried first when the worker pool is saturated.
+	indexers := make([]*config.IndexersConfig, 0, len(s.Quality.IndexerCfg))
+
+	for _, indcfg := range s.Quality.IndexerCfg {
+		if indcfg == nil || !strings.EqualFold(indcfg.IndexerType, "newznab") {
+			continue
+		}
+
+		if userss && !indcfg.Rssenabled {
+			continue
+		}
+
+		if !userss && !indcfg.Enabled {
+			continue
+		}
+
+		indexers = append(indexers, indcfg)
+	}
+
+	if len(indexers) == 0 {
+		return
+	}
+
+	sortIndexersByHealth(indexers)
 
 	var pl pond.TaskGroup
 
@@ -435,19 +465,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 
 	atomic.StoreInt32(&s.Done, 0)
 
-	for _, indcfg := range s.Quality.IndexerCfg {
-		if userss && !indcfg.Rssenabled {
-			continue
-		}
-
-		if !userss && !indcfg.Enabled {
-			continue
-		}
-
-		if s.Quality == nil || indcfg == nil || !strings.EqualFold(indcfg.IndexerType, "newznab") {
-			continue
-		}
-
+	for _, indcfg := range indexers {
 		pl.Submit(func() {
 			defer logger.HandlePanic()
 
@@ -462,9 +480,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 				return
 			}
 
-			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Msg("Starting executeSearch")
 			err := s.executeSearch(p, indcfg)
-			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Err(err).Msg("Completed executeSearch")
 			if err == nil {
 				atomic.CompareAndSwapInt32(&s.Done, 0, 1)
 			}
@@ -519,6 +535,12 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 		!mediatype.SupportsIDSearch(s.Cfgp.IsType) ||
 		!mediatype.HasSearchID(s.Cfgp.IsType, &p.e)
 
+	// Collect this indexer's results in a goroutine-local slice so result-count
+	// decisions (title fallback, first-found short-circuit) are per-indexer and
+	// race-free; merged into s.Raw once at the end. Reading len(s.Raw.Arr) here
+	// would race with sibling indexer goroutines appending concurrently.
+	var local apiexternal.NzbSlice
+
 	var err error
 
 	// ID-based search (more efficient)
@@ -528,10 +550,10 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 			Str("search_type", s.searchActionType).
 			Msg("Using ID-based search strategy")
 
-		err = s.performIDSearch(p, indcfg, cats)
+		err = s.performIDSearch(p, indcfg, cats, &local)
 
 		// Check if we should fallback to title search
-		if s.Quality.SearchForTitleIfEmpty && len(s.Raw.Arr) == 0 {
+		if s.Quality.SearchForTitleIfEmpty && len(local.Arr) == 0 {
 			logger.Logtype("debug", 2).
 				Str(logger.StrIndexer, indcfg.Name).
 				Str("search_type", s.searchActionType).
@@ -542,17 +564,19 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 	}
 
 	// Title-based search
-	if usequerysearch {
+	if usequerysearch && (!s.Quality.CheckUntilFirstFound || len(local.Arr) <= 0) {
 		logger.Logtype("debug", 2).
 			Str(logger.StrIndexer, indcfg.Name).
 			Str("search_type", s.searchActionType).
 			Msg("Using title-based search strategy")
 
-		errsub := s.performTitleSearch(p, indcfg, cats)
+		errsub := s.performTitleSearch(p, indcfg, cats, &local)
 		if err == nil && errsub != nil {
 			err = errsub
 		}
 	}
+
+	s.Raw.AddSlice(local.Arr)
 
 	// Log search completion
 	if err == nil {
@@ -560,18 +584,23 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 			Str(logger.StrIndexer, indcfg.Name).
 			Str("quality", s.Quality.Name).
 			Str("search_type", s.searchActionType).
-			Int("results", len(s.Raw.Arr)).
+			Int("results", len(local.Arr)).
 			Msg("Media search completed successfully")
 	}
 
 	return err
 }
 
-// performTitleSearch extracted and optimized.
+// performTitleSearch runs the title, absolute-episode, and alternate-title
+// queries against one indexer, collecting results into the goroutine-local
+// results slice. With CheckUntilFirstFound, it stops querying this indexer
+// as soon as any query returned candidate results - the remaining fallback
+// queries would only produce redundant candidates.
 func (s *ConfigSearcher) performTitleSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
+	results *apiexternal.NzbSlice,
 ) error {
 	var err error
 
@@ -584,10 +613,8 @@ func (s *ConfigSearcher) performTitleSearch(
 			searchQuery = p.e.SearchFor
 		}
 
-		// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Str("title", searchQuery).Msg("Pre executeQuerySearch Title")
-		if err = s.executeQuerySearch(p, indcfg, cats, searchQuery, "Title"); err == nil {
-			// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Msg("Post executeQuerySearch Title - success")
-			if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
+		if err = s.executeQuerySearch(p, indcfg, cats, searchQuery, "Title", results); err == nil {
+			if s.Quality.CheckUntilFirstFound && len(results.Arr) > 0 {
 				return nil
 			}
 		}
@@ -604,8 +631,9 @@ func (s *ConfigSearcher) performTitleSearch(
 			cats,
 			absoluteSearch,
 			"Absolute Episode",
+			results,
 		); err == nil {
-			if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
+			if s.Quality.CheckUntilFirstFound && len(results.Arr) > 0 {
 				return nil
 			}
 		}
@@ -652,8 +680,9 @@ func (s *ConfigSearcher) performTitleSearch(
 				cats,
 				searchstr,
 				"Alternative Title",
+				results,
 			); errsub == nil {
-				if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
+				if s.Quality.CheckUntilFirstFound && len(results.Arr) > 0 {
 					break
 				}
 			} else {
@@ -874,6 +903,7 @@ func (s *ConfigSearcher) searchparse(
 
 		if entry.NZB.Title != "" {
 			s.processedTitles[entry.NZB.Title] = struct{}{}
+			s.processedNorm[normalizedTitleKey(entry.NZB.Title, entry.NZB.Size)] = struct{}{}
 		}
 
 		if qual.CheckUntilFirstFound {
@@ -887,6 +917,10 @@ func (s *ConfigSearcher) searchparse(
 			Msg("Entries found")
 	}
 
+	if len(s.Denied) > 0 {
+		s.logDenialSummary()
+	}
+
 	if len(s.Accepted) > 1 {
 		slices.SortFunc(s.Accepted, func(a, b apiexternal_v2.Nzbwithprio) int {
 			return cmp.Compare(a.Info.Priority, b.Info.Priority)
@@ -895,8 +929,8 @@ func (s *ConfigSearcher) searchparse(
 }
 
 // executeQuerySearch performs a Newznab query search for media content
-// using the provided search parameters, indexer configuration, and quality settings.
-// It returns a boolean indicating whether the search was successful.
+// using the provided search parameters, indexer configuration, and quality settings,
+// collecting results into the given results slice.
 //
 // Parameters:
 //   - p: Search parameters containing media entry details
@@ -904,20 +938,17 @@ func (s *ConfigSearcher) searchparse(
 //   - cats: Category identifier for the search
 //   - searchTerm: Term used for searching media content
 //   - searchType: Type of search being performed
-//
-// Returns:
-//   - true if the search completes without errors, false otherwise
+//   - results: Destination slice for found entries (goroutine-local during indexer searches)
 func (s *ConfigSearcher) executeQuerySearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
 	searchTerm, searchType string,
+	results *apiexternal.NzbSlice,
 ) error {
-	// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Str("searchterm", searchTerm).Msg("Pre QueryNewznabQuery")
 	_, _, err := apiexternal.QueryNewznabQuery(
-		s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, &s.Raw,
+		s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, results,
 	)
-	// logger.Logtype("debug", 1).Str("indexer", indcfg.Name).Err(err).Msg("Post QueryNewznabQuery")
 
 	if err != nil && !errors.Is(err, logger.ErrToWait) && !errors.Is(err, newznab.ErrBroke) {
 		p.e.Info.TempID = p.mediaid
@@ -1032,13 +1063,12 @@ func (s *ConfigSearcher) getmediadatarss(
 }
 
 // performIDSearch searches for media content using either IMDB (for movies) or TVDB (for TV series) identifiers
-// across configured indexers. It performs a search based on the current configuration (series or movies)
-// and handles potential search errors. Returns true if a search was successful or if the first matching
-// result is found, depending on the quality configuration.
+// on the given indexer, collecting results into the goroutine-local results slice.
 func (s *ConfigSearcher) performIDSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
+	results *apiexternal.NzbSlice,
 ) error {
 	// Query-only media types (books, audiobooks, music) don't support ID-based search
 	// as they don't have IMDB/TVDB IDs. Return nil to fall through to title search.
@@ -1049,21 +1079,14 @@ func (s *ConfigSearcher) performIDSearch(
 	var err error
 
 	if h := mediatype.Get(s.Cfgp.IsType); h != nil {
-		err = h.PerformIDSearch(indcfg, s.Quality, &p.e, cats, &s.Raw)
+		err = h.PerformIDSearch(indcfg, s.Quality, &p.e, cats, results)
 	}
 
 	if err != nil && !errors.Is(err, logger.ErrToWait) {
 		p.e.Info.TempID = p.mediaid
 		logsearcherror("Error Searching Media by ID", p.e.Info.TempID, s.Cfgp.IsType, "", err)
+
 		return err
-	}
-
-	if err == nil {
-		if s.Quality.CheckUntilFirstFound && len(s.Accepted) > 0 {
-			return nil
-		}
-
-		return nil
 	}
 
 	return nil
@@ -1104,6 +1127,7 @@ func (s *ConfigSearcher) handleMovieImport(
 			s.Cfgp,
 			addinlistid,
 			true,
+			false,
 		)
 		if err != nil {
 			s.logdenied(err.Error(), entry)
@@ -1122,6 +1146,7 @@ func (s *ConfigSearcher) handleMovieImport(
 		if entry.Info.MovieID == 0 {
 			err := importfeed.Checkaddmovieentry(
 				&entry.Info.DbmovieID,
+				s.Cfgp,
 				&s.Cfgp.Lists[addinlistid],
 				entry.NZB.IMDBID,
 			)
@@ -1165,7 +1190,7 @@ func getrssdata(isType uint, entry *apiexternal_v2.Nzbwithprio) {
 // It returns true if the indexer has failed within the configured block interval,
 // preventing repeated attempts to use a problematic indexer.
 // Returns false if blocking is disabled or no recent failures are found.
-func (s *ConfigSearcher) isIndexerBlocked(url string) bool {
+func (*ConfigSearcher) isIndexerBlocked(url string) bool {
 	if config.GetSettingsGeneral().FailedIndexerBlockTime == 0 {
 		return false
 	}
@@ -1248,7 +1273,7 @@ func getsearchtype(minimumPriority int, dont, force bool) (string, error) {
 // - p: a pointer to a searchParams struct containing information about the search.
 func (s *ConfigSearcher) searchlog(typev, msg string, p *searchParams) {
 	// Only create log entry if we have results to report
-	if len(s.Accepted) == 0 && len(s.Denied) == 0 && typev != "error" {
+	if len(s.Accepted) == 0 && len(s.Denied) == 0 && typev != "error" && typev != "warn" {
 		return
 	}
 
@@ -1278,7 +1303,7 @@ func logsearcherror(msg string, id uint, isType uint, title string, err error) {
 	}
 
 	// Skip logging rate limit errors
-	if err != nil && strings.Contains(err.Error(), "] rate limit") {
+	if isRateLimitError(err) {
 		return
 	}
 
@@ -1288,6 +1313,40 @@ func logsearcherror(msg string, id uint, isType uint, title string, err error) {
 		Str(logger.StrTitle, title).
 		Err(err).
 		Msg(msg)
+}
+
+// logDenialSummary logs one aggregated line of denial reasons for the current
+// search (e.g. "lower Prio=12, unwanted Title=9"), so "why was nothing
+// grabbed" is answerable without trawling per-entry debug lines.
+func (s *ConfigSearcher) logDenialSummary() {
+	counts := make(map[string]int, 8)
+
+	for i := range s.Denied {
+		reason := s.Denied[i].Reason
+		if reason == "" {
+			reason = "other"
+		}
+
+		counts[reason]++
+	}
+
+	var b strings.Builder
+
+	for reason, count := range counts {
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+
+		b.WriteString(reason)
+		b.WriteByte('=')
+		b.WriteString(strconv.Itoa(count))
+	}
+
+	logger.Logtype("debug", 3).
+		Int(logger.StrDenied, len(s.Denied)).
+		Int(logger.StrAccepted, len(s.Accepted)).
+		Str(logger.StrReason, b.String()).
+		Msg("Denial summary")
 }
 
 // deniedappend appends the given Nzbwithprio entry to the ConfigSearcher's Denied slice
@@ -1301,6 +1360,7 @@ func (s *ConfigSearcher) deniedappend(entry *apiexternal_v2.Nzbwithprio) {
 
 	if entry.NZB.Title != "" {
 		s.processedTitles[entry.NZB.Title] = struct{}{}
+		s.processedNorm[normalizedTitleKey(entry.NZB.Title, entry.NZB.Size)] = struct{}{}
 	}
 }
 
@@ -1533,6 +1593,10 @@ func searchArtistsOrAuthors(
 
 	var err error
 	for i := range rows {
+		if errctx := logger.CheckContextEnded(ctx); errctx != nil {
+			return errctx
+		}
+
 		if errsub := searchSingleArtistOrAuthor(ctx, cfgp, &rows[i], forMissing); errsub != nil {
 			err = errsub
 		}
@@ -1634,6 +1698,10 @@ func searchSingleArtistOrAuthor(
 			&row.Num,
 		)
 		for i := range seriesNames {
+			if logger.CheckContextEnded(ctx) != nil {
+				break
+			}
+
 			p.e.SearchFor = seriesNames[i]
 			s.searchindexers(ctx, false, p)
 			logger.Logtype("info", 3).
@@ -1652,6 +1720,10 @@ func searchSingleArtistOrAuthor(
 			&row.Num,
 		)
 		for i := range seriesNames {
+			if logger.CheckContextEnded(ctx) != nil {
+				break
+			}
+
 			p.e.SearchFor = seriesNames[i]
 			s.searchindexers(ctx, false, p)
 			logger.Logtype("info", 3).
@@ -1794,23 +1866,15 @@ func calculateFilePriority(
 		// must not trigger a re-download.
 	}
 
-	var prio int
-	// Try wanted priorities first
-	intid := parser.Findpriorityidxwanted(r, q, c, a, 0, qualcfg)
-	if intid == -1 {
-		intid = parser.Findpriorityidx(r, q, c, a, 0, qualcfg)
-		if intid == -1 {
-			logger.Logtype("debug", 2).
-				Str("in", qualcfg.Name).
-				Str("searched for", parser.BuildPrioStr(file.ResolutionID, file.QualityID, file.CodecID, file.AudioID, 0)).
-				Msg("prio not found")
+	// Try wanted priorities first, then the full table - one snapshot-consistent call.
+	prio, found := parser.FindPriorityValue(r, q, c, a, 0, qualcfg)
+	if !found {
+		logger.Logtype("debug", 2).
+			Str("in", qualcfg.Name).
+			Str("searched for", parser.BuildPrioStr(file.ResolutionID, file.QualityID, file.CodecID, file.AudioID, 0)).
+			Msg("prio not found")
 
-			return 0
-		}
-
-		prio = parser.GetAllArrPrio(intid)
-	} else {
-		prio = parser.GetwantedArrPrio(intid)
+		return 0
 	}
 
 	// Add bonuses for special attributes
@@ -1881,17 +1945,7 @@ func calculateAudioFilePriority(
 	}
 
 	// Use the same priority lookup as movies (resolution/quality/codec/audio all 0 for audio media)
-	intid := parser.Findpriorityidxwanted(0, 0, 0, 0, audioformat, qualcfg)
-
-	var prio int
-	if intid == -1 {
-		intid = parser.Findpriorityidx(0, 0, 0, 0, audioformat, qualcfg)
-		if intid != -1 {
-			prio = parser.GetAllArrPrio(intid)
-		}
-	} else {
-		prio = parser.GetwantedArrPrio(intid)
-	}
+	prio, _ := parser.FindPriorityValue(0, 0, 0, 0, audioformat, qualcfg)
 
 	// Bitrate bonus modifier
 	if qualcfg.UseForPriorityAudioBitrate || useall {
@@ -2078,4 +2132,11 @@ func (s *ConfigSearcher) getminimumpriority(
 // It returns true if the error is either "no results" or "wait" error.
 func isExpectedError(err error) bool {
 	return errors.Is(err, logger.Errnoresults) || errors.Is(err, logger.ErrToWait)
+}
+
+// isRateLimitError reports whether err is any rate-limit variant produced by
+// the API client. Delegates to logger.IsRateLimitError so all packages share
+// one definition of what counts as a rate-limit error.
+func isRateLimitError(err error) bool {
+	return logger.IsRateLimitError(err)
 }

@@ -24,7 +24,8 @@ func init() {
 
 func refreshMoviesWrapper(ctx context.Context, cfgp *config.MediaTypeConfig, data any) error {
 	if arr, ok := data.([]string); ok {
-		return refreshmovies(ctx, cfgp, arr)
+		// Scheduled refresh respects the per-movie update throttle.
+		return refreshmovies(ctx, cfgp, arr, false)
 	}
 
 	return nil
@@ -60,6 +61,7 @@ func getdbmovieidbyimdb(
 			cfgp,
 			cfgp.GetMediaListsEntryListID(list.Name),
 			true,
+			false,
 		)
 		if err != nil || m.DbmovieID == 0 {
 			m.MovieID = 0
@@ -237,14 +239,24 @@ func RefreshMovie(cfgp *config.MediaTypeConfig, id *string) error {
 			"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id where dbmovies.id = ?",
 			id,
 		),
+		true, // manual single-movie refresh forces the metadata update
 	)
 }
 
 // refreshmovies refreshes movie data for the given movies. It takes a media config, count of movies to refresh, a query to get the movie IDs, and an optional parameter for the query. It gets the list of movie IDs to refresh, logs info for each, looks up the list name, and calls the import job. Any errors are logged.
-func refreshmovies(ctx context.Context, cfgp *config.MediaTypeConfig, arr []string) error {
+func refreshmovies(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	arr []string,
+	force bool,
+) error {
 	if len(arr) == 0 {
 		return nil
 	}
+
+	// Aggregate per-entry outcomes so one summary line is logged per run.
+	ctx, summary := importfeed.WithImportSummary(ctx)
+	defer summary.Log(cfgp.NamePrefix, "refresh")
 
 	var err error
 	for idx := range arr {
@@ -256,12 +268,26 @@ func refreshmovies(ctx context.Context, cfgp *config.MediaTypeConfig, arr []stri
 			Str(logger.StrImdb, arr[idx]).
 			Msg("Refresh Movie")
 
+		// The scheduled refresh pulls a global movie list but runs per config,
+		// so a movie may belong to a different movie config's list. Skip those
+		// here — their own config's refresh run handles them — instead of
+		// passing listid -1 down and failing with "listid not set".
+		listid := getrefreshlistid(&arr[idx], cfgp)
+		if listid == -1 {
+			logger.Logtype("debug", 1).
+				Str(logger.StrImdb, arr[idx]).
+				Msg("Skipped refresh: movie not in this config's lists")
+
+			continue
+		}
+
 		errsub := importfeed.JobImportMoviesByList(
 			ctx, arr[idx],
 			idx,
 			cfgp,
-			getrefreshlistid(&arr[idx], cfgp),
+			listid,
 			false,
+			force,
 		)
 		if errsub != nil {
 			err = errsub

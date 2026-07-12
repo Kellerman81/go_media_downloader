@@ -43,12 +43,12 @@ func NewProviderWithConfig(config base.ClientConfig, apiToken, userKey string) *
 }
 
 // GetProviderType returns the provider type.
-func (p *Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
+func (*Provider) GetProviderType() apiexternal_v2.NotificationProviderType {
 	return apiexternal_v2.NotificationPushover
 }
 
 // GetProviderName returns the provider name.
-func (p *Provider) GetProviderName() string {
+func (*Provider) GetProviderName() string {
 	return "pushover"
 }
 
@@ -264,7 +264,7 @@ func (p *Provider) GetSounds(ctx context.Context) (map[string]string, error) {
 }
 
 // GetBaseURL returns the base URL for the Pushover API.
-func (p *Provider) GetBaseURL() string {
+func (*Provider) GetBaseURL() string {
 	return "https://api.pushover.net/1"
 }
 

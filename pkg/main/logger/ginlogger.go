@@ -41,6 +41,10 @@ var (
 	BodyFieldName       = "body"
 )
 
+// maxLoggedPayloadBytes bounds how large a request body may be before its payload
+// is skipped for logging. Avoids buffering large uploads into a log field.
+const maxLoggedPayloadBytes = 16 << 10 // 16 KiB
+
 func ErrorLogger() gin.HandlerFunc {
 	return ErrorLoggerT(gin.ErrorTypeAny)
 }
@@ -75,9 +79,9 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 		opt.FieldsOrder = ginDefaultFieldsOrder()
 	}
 
-	// Logger to use
+	// Logger to use - defaults to the dedicated web logger (weblogs.log only).
 	if opt.Logger == nil {
-		opt.Logger = &log
+		opt.Logger = &webLog
 	}
 
 	//
@@ -90,8 +94,8 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 		// get zerolog
 		z := opt.Logger
 
-		// return if zerolog is disabled
-		if z.GetLevel() == zerolog.Disabled {
+		// return if zerolog is disabled (verbosity is gated by the global level)
+		if zerolog.GlobalLevel() == zerolog.Disabled {
 			ctx.Next()
 			return
 		}
@@ -111,7 +115,12 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 			payloadErr error
 		)
 
-		if !opt.isExcluded(PayloadFieldName) {
+		// Only buffer the body for logging when its size is known and small enough.
+		// Large or unknown-length (chunked) bodies are left untouched so they are
+		// neither truncated for the handler nor fully buffered just to be logged.
+		if !opt.isExcluded(PayloadFieldName) &&
+			ctx.Request.ContentLength >= 0 &&
+			ctx.Request.ContentLength <= maxLoggedPayloadBytes {
 			payload, payloadErr = io.ReadAll(ctx.Request.Body)
 			if payloadErr != nil {
 				// Log the error but continue processing
@@ -122,11 +131,6 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 
 			ctx.Request.Body = io.NopCloser(bytes.NewReader(payload))
 		}
-
-		// Get a copy of the body
-		w := &responseBodyWriter{body: &bytes.Buffer{}, ResponseWriter: ctx.Writer}
-
-		ctx.Writer = w
 
 		// executes the pending handlers
 		ctx.Next()
@@ -263,7 +267,6 @@ func ginDefaultFieldsOrder() []string {
 		RefererFieldName,
 		statusCodeFieldName,
 		DataLengthFieldName,
-		BodyFieldName,
 	}
 }
 
@@ -274,19 +277,4 @@ func (o *Options) isExcluded(field string) bool {
 	}
 
 	return slices.Contains(o.FieldsExclude, field)
-}
-
-type responseBodyWriter struct {
-	gin.ResponseWriter
-	body *bytes.Buffer
-}
-
-func (r responseBodyWriter) Write(b []byte) (int, error) {
-	r.body.Write(b)
-	return r.ResponseWriter.Write(b)
-}
-
-func (r responseBodyWriter) WriteString(s string) (n int, err error) {
-	r.body.WriteString(s)
-	return r.ResponseWriter.WriteString(s)
 }

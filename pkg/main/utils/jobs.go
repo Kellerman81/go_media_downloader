@@ -1913,7 +1913,7 @@ func addAlbumFilesToDatabase(
 
 	albumListID := database.GetAlbumListEntryID(album.DatabaseID, listname)
 	if albumListID == 0 {
-		logger.Logtype("error", 1).
+		logger.Logtype("warn", 1).
 			Str("folder", folder).
 			Uint("dbalbumID", album.DatabaseID).
 			Str("listname", listname).
@@ -2262,12 +2262,12 @@ func runjoblistfunc(
 
 	case "refreshinc":
 		if h := mediatype.Get(cfgp.IsType); h != nil {
-			return h.Refresh(rootctx, cfgp, h.GetRefreshIncData())
+			return h.Refresh(rootctx, cfgp, h.GetRefreshIncData(cfgp))
 		}
 
 	case "refresh":
 		if h := mediatype.Get(cfgp.IsType); h != nil {
-			return h.Refresh(rootctx, cfgp, h.GetRefreshFullData())
+			return h.Refresh(rootctx, cfgp, h.GetRefreshFullData(cfgp))
 		}
 
 	case logger.StrClearHistory:
@@ -2654,12 +2654,12 @@ func checkmissingflag(
 // job map for use by the worker scheduler system.
 func LoadGlobalSchedulerConfig() {
 	config.GetSettingsGeneral().Jobs = map[string]func(uint32, context.Context) error{
-		"RefreshImdb": func(key uint32, ctx context.Context) error {
+		"RefreshImdb": func(key uint32, _ context.Context) error {
 			FillImdb()
 			worker.RemoveQueueEntry(key)
 			return nil
 		},
-		"CheckDatabase": func(key uint32, ctx context.Context) error {
+		"CheckDatabase": func(key uint32, _ context.Context) error {
 			worker.RemoveQueueEntry(key)
 
 			if database.DBIntegrityCheck() != "ok" {
@@ -2668,7 +2668,7 @@ func LoadGlobalSchedulerConfig() {
 
 			return nil
 		},
-		"BackupDatabase": func(key uint32, ctx context.Context) error {
+		"BackupDatabase": func(key uint32, _ context.Context) error {
 			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 				worker.StopCronWorker()
 				worker.CloseWorkerPools()
@@ -2697,7 +2697,7 @@ func LoadGlobalSchedulerConfig() {
 
 			return err
 		},
-		"RefreshCache": func(key uint32, ctx context.Context) error {
+		"RefreshCache": func(key uint32, _ context.Context) error {
 			logger.Logtype("info", 0).Msg("Starting scheduled cache refresh")
 
 			for i := range allCacheTypes {
