@@ -1,7 +1,9 @@
 package api
 
 import (
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"crypto/subtle"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
@@ -15,14 +17,23 @@ type JSONNaming struct {
 	Foldername string             `json:"foldername"`
 	Filename   string             `json:"filename"`
 }
+
+// Jsonresults is referenced only from Swagger @Success doc comments (never
+// constructed in code), so it exists purely to document the shape of the
+// accepted/denied lists for swag codegen. Its element type follows the
+// live apiexternal_v2.Nzbwithprio type, which superseded the old
+// apiexternal.Nzbwithprio/Nzb types package-wide.
 type Jsonresults struct {
-	Accepted []apiexternal.Nzbwithprio `json:"accepted"`
-	Denied   []apiexternal.Nzbwithprio `json:"denied"`
+	Accepted []apiexternal_v2.Nzbwithprio `json:"accepted"`
+	Denied   []apiexternal_v2.Nzbwithprio `json:"denied"`
 }
 
 // AddAllRoutes sets up HTTP routes for the "all" API endpoints.
 // It configures routes for feeds, data scanning, and search operations
-// that apply to both movies and series. All routes require API key authentication.
+// that apply to every configured media type (movies, series, books,
+// audiobooks, and music - not just movies/series, since utils.AllJobs with
+// MediaTypeAll iterates config.RangeSettingsMedia with no type filter).
+// All routes require API key authentication.
 func AddAllRoutes(rg *gin.RouterGroup) {
 	rg.Use(checkauth)
 	{
@@ -41,7 +52,7 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 }
 
 // @Summary      Search all feeds
-// @Description  Search all feeds of movies and series for new entries
+// @Description  Search all feeds of every configured media type for new entries
 // @Tags         feeds
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -53,7 +64,7 @@ func apiAllGetFeeds(c *gin.Context) {
 }
 
 // @Summary      Search all folders
-// @Description  Search all folders of movies and series for new entries
+// @Description  Search all folders of every configured media type for new entries
 // @Tags         data
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -65,7 +76,7 @@ func apiAllGetData(c *gin.Context) {
 }
 
 // @Summary      Search all rss feeds
-// @Description  Search all rss feeds of movies and series for new releases
+// @Description  Search all rss feeds of every configured media type for new releases
 // @Tags         search
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -77,7 +88,7 @@ func apiAllGetRss(c *gin.Context) {
 }
 
 // @Summary      Search all Missing
-// @Description  Search all media of movies and series for missing releases
+// @Description  Search all media of every configured media type for missing releases
 // @Tags         search
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -89,7 +100,7 @@ func apiAllGetMissingFull(c *gin.Context) {
 }
 
 // @Summary      Search all Missing Incremental
-// @Description  Search all media of movies and series for missing releases (incremental)
+// @Description  Search all media of every configured media type for missing releases (incremental)
 // @Tags         search
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -101,7 +112,7 @@ func apiAllGetMissingInc(c *gin.Context) {
 }
 
 // @Summary      Search all Upgrades
-// @Description  Search all media of movies and series for upgrades
+// @Description  Search all media of every configured media type for upgrades
 // @Tags         search
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -113,7 +124,7 @@ func apiAllGetUpgradeFull(c *gin.Context) {
 }
 
 // @Summary      Search all Upgrades Incremental
-// @Description  Search all media of movies and series for upgrades (incremental)
+// @Description  Search all media of every configured media type for upgrades (incremental)
 // @Tags         search
 // @Param        apikey query     string    true  "apikey"
 // @Success      200  {object}  string "returns ok"
@@ -135,7 +146,8 @@ func checkauth(c *gin.Context) {
 		return
 	}
 
-	if apikey != config.GetSettingsGeneral().WebAPIKey {
+	expected := config.GetSettingsGeneral().WebAPIKey
+	if subtle.ConstantTimeCompare([]byte(apikey), []byte(expected)) != 1 {
 		sendUnauthorized(c, "unauthorized - wrong apikey in query")
 		c.Abort()
 		return

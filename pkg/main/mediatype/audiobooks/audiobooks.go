@@ -327,6 +327,7 @@ func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 
 // PerformIDSearch executes a search - audiobooks use query-based search only.
 func (*handler) PerformIDSearch(
+	_ context.Context,
 	_ *config.IndexersConfig,
 	_ *config.QualityConfig,
 	_ *apiexternal_v2.Nzbwithprio,
@@ -685,14 +686,13 @@ func (*handler) FillNamingData(
 		if data.Dbbook.GetDbbookByIDP(&data.Dbaudiobook.DbbookID) == nil {
 			// Get series information if book is part of a series
 			if data.Dbbook.DbbookSeriesID > 0 {
-				database.Scanrowsdyn(
-					false,
+				database.GetdatarowArgs(
 					"SELECT name, description, goodreads_id, openlibrary_id FROM dbbook_series WHERE id = ?",
+					&data.Dbbook.DbbookSeriesID,
 					&data.BookSeries.Name,
 					&data.BookSeries.Description,
 					&data.BookSeries.GoodreadsID,
 					&data.BookSeries.OpenlibraryID,
-					&data.Dbbook.DbbookSeriesID,
 				)
 
 				data.BookSeries.ID = data.Dbbook.DbbookSeriesID

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -198,7 +199,7 @@ func triggerEpisodeDownloads(
 		}
 
 		// Trigger search for this episode
-		err := triggerEpisodeSearch(serieData, episodeData, mediaConfig, qualityConfig)
+		err := triggerEpisodeSearch(episode.ID, episodeData, mediaConfig, qualityConfig)
 		if err != nil {
 			results.FailedDownloads++
 
@@ -227,9 +228,12 @@ func triggerEpisodeDownloads(
 	return results, nil
 }
 
-// triggerEpisodeSearch initiates a search for a specific episode.
+// triggerEpisodeSearch initiates a real search for a specific episode.
+// serieEpisodeID is the concrete serie_episodes.id (the per-list episode
+// instance) - MediaSearch requires this, not the dbserie_episodes.id used
+// only for the episode's descriptive metadata.
 func triggerEpisodeSearch(
-	_ database.Serie,
+	serieEpisodeID uint,
 	episode database.DbserieEpisode,
 	mediaConfig *config.MediaTypeConfig,
 	qualityConfig *config.QualityConfig,
@@ -238,12 +242,13 @@ func triggerEpisodeSearch(
 	searcherInstance := searcher.NewSearcher(
 		mediaConfig,
 		qualityConfig,
-		logger.StrSearchMissingInc,
-		nil,
+		"search",
+		&serieEpisodeID,
 	)
 	if searcherInstance == nil {
 		return errors.New("failed to create searcher instance")
 	}
+	defer searcherInstance.Close()
 
 	// Log the search attempt
 	logger.Logtype("info", 3).
@@ -252,12 +257,14 @@ func triggerEpisodeSearch(
 		Str("title", episode.Title).
 		Msg("Triggering episode search")
 
-	// Note: In a real implementation, you would call the actual search method
-	// For now, we'll mark the episode as being searched
-	database.ExecN("UPDATE serie_episodes SET dont_search = 0, last_searched = ? WHERE id = ?",
-		time.Now(), episode.ID)
+	if err := searcherInstance.MediaSearch(context.Background(), mediaConfig, serieEpisodeID, false, false, false); err != nil {
+		return err
+	}
 
-	return nil
+	return database.ExecNErr(
+		"UPDATE serie_episodes SET dont_search = 0, last_searched = ? WHERE id = ?",
+		time.Now(), serieEpisodeID,
+	)
 }
 
 // EpisodeDownloadResults holds the results of episode download operations.

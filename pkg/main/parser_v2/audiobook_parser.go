@@ -59,18 +59,26 @@ func NewAudiobookParserWithMatcher(rm *RuntimeMatcher) *AudiobookParser {
 
 // Audiobook pattern strings as constants so they can be used as cache keys.
 const (
-	reAudioASIN            = `(?i)(?:asin[:\s-]?)?B0[A-Z0-9]{8}`
-	reAudioISBN            = `(?i)(?:isbn[:\s-]?)?(?:978|979)[\s-]?\d[\s-]?\d{2}[\s-]?\d{5}[\s-]?\d{3}[\s-]?\d`
-	reAudioYear            = `[\(\[]?((?:19|20)\d{2})[\)\]]?`
-	reAudioPartNumber      = `(?i)(?:part|pt\.?|p)[\s._-]?(\d+)|(\d+)\s*(?:of|/)[\s._-]?(\d+)|(?:[\(\[]|\s|^)(\d{1,3})(?:[\)\]]|\s|$)`
-	reAudioDiscNumber      = `(?i)(?:disc|disk|cd|d)[\s._-]?(\d+)`
-	reAudioChapterNum      = `(?i)(?:chapter|ch\.?|chap\.?)[\s._-]?(\d+)`
-	reAudioSeries          = `(?i)(?:\(|\[)?\s*([^()\[\]]+?)\s*(?:book|#|,?\s*no\.?|,?\s*vol\.?|,?\s*volume)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?`
-	reAudioSeriesNum       = `(?i)(?:book|#|no\.?|vol\.?|volume)\s*(\d+(?:\.\d+)?)`
-	reAudioNarrator        = `(?i)(?:read\s+by|narrated\s+by|narrator[:\s]+)[\s,:]*([^,\[\]\(\)]+)`
-	reAudioAuthor          = `(?i)(?:by|author[:\s]+)[\s,:]*([^,\[\]\(\)-]+)`
-	reAudioAbridged        = `(?i)[\[\(\s]abr(?:idged)?[\]\)\s]`
-	reAudioUnabridged      = `(?i)[\[\(\s](?:un)?abr(?:idged)?[\]\)\s]`
+	reAudioASIN       = `(?i)(?:asin[:\s-]?)?B0[A-Z0-9]{8}`
+	reAudioISBN       = `(?i)(?:isbn[:\s-]?)?(?:978|979)[\s-]?\d[\s-]?\d{2}[\s-]?\d{5}[\s-]?\d{3}[\s-]?\d`
+	reAudioYear       = `[\(\[]?((?:19|20)\d{2})[\)\]]?`
+	reAudioPartNumber = `(?i)(?:part|pt\.?|p)[\s._-]?(\d+)|(\d+)\s*(?:of|/)[\s._-]?(\d+)|(?:[\(\[]|\s|^)(\d{1,3})(?:[\)\]]|\s|$)`
+	// The leading (?:^|[^a-z0-9]) requires a non-alphanumeric boundary (or
+	// string start) before the marker - without it, the bare "d" alternative
+	// matched inside ordinary words immediately followed by a digit (e.g.
+	// "Weird2Track" -> false "d2" match), corrupting DiscNumber-based sorting.
+	reAudioDiscNumber = `(?i)(?:^|[^a-z0-9])(?:disc|disk|cd|d)[\s._-]?(\d+)`
+	reAudioChapterNum = `(?i)(?:chapter|ch\.?|chap\.?)[\s._-]?(\d+)`
+	reAudioSeries     = `(?i)(?:\(|\[)?\s*([^()\[\]]+?)\s*(?:book|#|,?\s*no\.?|,?\s*vol\.?|,?\s*volume)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?`
+	reAudioSeriesNum  = `(?i)(?:book|#|no\.?|vol\.?|volume)\s*(\d+(?:\.\d+)?)`
+	reAudioNarrator   = `(?i)(?:read\s+by|narrated\s+by|narrator[:\s]+)[\s,:]*([^,\[\]\(\)]+)`
+	reAudioAuthor     = `(?i)(?:by|author[:\s]+)[\s,:]*([^,\[\]\(\)-]+)`
+	reAudioAbridged   = `(?i)[\[\(\s]abr(?:idged)?[\]\)\s]`
+	// "un" is mandatory here (was `(?:un)?abr...`, an optional prefix that
+	// made this pattern also match plain "abridged" - since this check runs
+	// after reAudioAbridged below, Abridged was unconditionally reset back
+	// to false for every genuinely-abridged filename).
+	reAudioUnabridged      = `(?i)[\[\(\s]unabr(?:idged)?[\]\)\s]`
 	reAudioGroup           = `(?i)[\[\(]([a-z0-9_-]+)[\]\)]$`
 	reAudioAuthorDash      = `^(.+?)\s+-\s+(.+)$`
 	reAudioBitrate         = `(?i)(\d+)\s*(?:kbps|kb\/s|kbit)`

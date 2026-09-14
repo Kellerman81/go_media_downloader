@@ -17,12 +17,10 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/spotify"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
 // -----------------------------------------------------------------------------
@@ -251,66 +249,6 @@ func GetTitleConfigs() map[uint]TitleConfig {
 	return titleConfigs
 }
 
-// AddAlternateTitle adds an alternate title to the database if it doesn't exist.
-func AddAlternateTitle(
-	mediaType uint,
-	parentID uint,
-	title, region string,
-	existingTitles []database.DbstaticTwoString,
-) bool {
-	if title == "" || database.GetDBStaticTwoStringIdx1(existingTitles, title) != -1 {
-		return false
-	}
-
-	cfg, ok := GetTitleConfigs()[mediaType]
-	if !ok {
-		return false
-	}
-
-	// Check if title already exists
-	var count int
-
-	countQuery := "select count() from " + cfg.TableName + " where " + cfg.ParentIDColumn + " = ? and title = ? COLLATE NOCASE"
-	database.Scanrowsdyn(false, countQuery, &count, &parentID, &title)
-
-	if count > 0 {
-		return false
-	}
-
-	// Insert new title
-	slug := GenerateSlug(title)
-	insertQuery := "INSERT INTO " + cfg.TableName + " (title, slug, " + cfg.ParentIDColumn + ", region) VALUES (?, ?, ?, ?)"
-	database.ExecN(insertQuery, &title, &slug, &parentID, &region)
-
-	// Update cache if enabled
-	if config.GetSettingsGeneral().UseMediaCache && cfg.CacheKey != "" {
-		database.AppendCacheTwoString(
-			cfg.CacheKey,
-			syncops.DbstaticTwoStringOneInt{Num: parentID, Str1: title, Str2: slug},
-		)
-	}
-
-	return true
-}
-
-// GetExistingTitles retrieves existing alternate titles for a media item.
-func GetExistingTitles(mediaType uint, parentID uint) []database.DbstaticTwoString {
-	cfg, ok := GetTitleConfigs()[mediaType]
-	if !ok {
-		return nil
-	}
-
-	countQuery := "select count() from " + cfg.TableName + " where " + cfg.ParentIDColumn + " = ?"
-	selectQuery := "select title, slug from " + cfg.TableName + " where " + cfg.ParentIDColumn + " = ?"
-
-	return database.Getrowssize[database.DbstaticTwoString](
-		false,
-		countQuery,
-		selectQuery,
-		&parentID,
-	)
-}
-
 // ShouldProcessTitle checks if a title should be added based on language filters.
 func ShouldProcessTitle(
 	region, title string,
@@ -362,7 +300,6 @@ var (
 	musicbrainzProvider *musicbrainz.Provider
 	goodreadsProvider   *goodreads.Provider
 	discogsProvider     *discogs.Provider
-	spotifyProvider     *spotify.Provider
 
 	// sync.Once instances for thread-safe initialization.
 	openLibraryOnce sync.Once
@@ -370,7 +307,6 @@ var (
 	musicbrainzOnce sync.Once
 	goodreadsOnce   sync.Once
 	discogsOnce     sync.Once
-	spotifyOnce     sync.Once
 
 	// levenshteinPool provides reusable slices for Levenshtein distance calculation.
 	// This reduces allocations when computing distances for multiple strings.
@@ -446,25 +382,6 @@ func getDiscogsProvider() *discogs.Provider {
 	})
 
 	return discogsProvider
-}
-
-func getSpotifyProvider() *spotify.Provider {
-	spotifyOnce.Do(func() {
-		settings := config.GetSettingsGeneral()
-		clientID := settings.SpotifyClientID
-		clientSecret := settings.SpotifyClientSecret
-
-		if clientID == "" || clientSecret == "" {
-			return
-		}
-
-		spotifyProvider = spotify.NewProvider(clientID, clientSecret)
-		if settings.SpotifyRegion != "" {
-			spotifyProvider.SetRegion(settings.SpotifyRegion)
-		}
-	})
-
-	return spotifyProvider
 }
 
 // -----------------------------------------------------------------------------
@@ -558,16 +475,6 @@ func applyBookDetails(book *database.Dbbook, details *apiexternal_v2.BookDetails
 	if book.Year == 0 || overwrite {
 		book.Year = ExtractYearFromTime(details.PublishDate)
 	}
-}
-
-// BookSearchByTitle searches for books by title and author.
-func BookSearchByTitle(
-	ctx context.Context,
-	title, author string,
-	limit int,
-) ([]apiexternal_v2.BookSearchResult, error) {
-	provider := getOpenLibraryProvider()
-	return provider.SearchBooks(ctx, title, author, limit)
 }
 
 // AuthorGetMetadata retrieves metadata for an author from configured sources.
@@ -996,9 +903,15 @@ func getOrCreateAuthorID(authorName string) uint {
 // missing. Returns 0 on failure.
 func getOrCreateNarratorID(narratorName string) uint {
 	var dbnarratorID uint
+	// COLLATE NOCASE matches getOrCreateAuthorID/getOrCreateArtistID -
+	// AudiobookGetMetadata tries Audible then falls back to Audnex for the
+	// same audiobook, and a case-only difference between the two providers'
+	// narrator names would otherwise create a duplicate dbnarrators row
+	// instead of reusing the existing one (no slug column exists on this
+	// table to also match on, unlike dbauthors/dbartists).
 	database.Scanrowsdyn(
 		false,
-		"SELECT id FROM dbnarrators WHERE name = ?",
+		"SELECT id FROM dbnarrators WHERE name = ? COLLATE NOCASE",
 		&dbnarratorID,
 		&narratorName,
 	)
@@ -1246,28 +1159,6 @@ func applyAudiobookDetails(
 
 		audiobook.DbbookID = dbbookID
 	}
-}
-
-// AudiobookSearchByTitle searches for audiobooks by title.
-func AudiobookSearchByTitle(
-	ctx context.Context,
-	region audible.Region,
-	title string,
-	limit int,
-) ([]apiexternal_v2.AudiobookSearchResult, error) {
-	provider := getAudibleProvider(region)
-	return provider.SearchByTitle(ctx, title, limit)
-}
-
-// AudiobookSearchByAuthor searches for audiobooks by author.
-func AudiobookSearchByAuthor(
-	ctx context.Context,
-	region audible.Region,
-	author string,
-	limit int,
-) ([]apiexternal_v2.AudiobookSearchResult, error) {
-	provider := getAudibleProvider(region)
-	return provider.SearchByAuthor(ctx, author, limit)
 }
 
 // NarratorGetMetadata retrieves metadata for a narrator from configured sources.
@@ -1538,7 +1429,20 @@ func applyAlbumDetails(
 		}
 
 		for i := range details.Tracks {
-			key := [2]int{details.Tracks[i].DiscNumber, details.Tracks[i].Position}
+			// Position is a running sequence across the whole release for
+			// every provider except MusicBrainz (which sets Position to the
+			// real per-disc number and leaves TrackNumber at 0) - Discogs,
+			// Deezer, iTunes, TheAudioDB, and Spotify all set TrackNumber to
+			// the real per-disc number instead. Prefer TrackNumber so the
+			// stored track_number resets per disc like the DB queries
+			// expect (e.g. "order by disc_number, track_number"), falling
+			// back to Position only for providers that leave it at 0.
+			trackNum := details.Tracks[i].TrackNumber
+			if trackNum == 0 {
+				trackNum = details.Tracks[i].Position
+			}
+
+			key := [2]int{details.Tracks[i].DiscNumber, trackNum}
 
 			dbtrackID, ok := existingTracks[key]
 			if !ok {
@@ -1546,7 +1450,7 @@ func applyAlbumDetails(
 					"INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid, musicbrainz_recording_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
 					album.ID,
 					details.Tracks[i].Title,
-					details.Tracks[i].Position,
+					trackNum,
 					details.Tracks[i].DiscNumber,
 					details.Tracks[i].Duration.Milliseconds(),
 					details.Tracks[i].AcoustID,
@@ -1665,17 +1569,6 @@ func enrichNewArtist(ctx context.Context, dbartistID uint) {
 	)
 }
 
-// AlbumSearchByTitle searches for albums by title.
-func AlbumSearchByTitle(
-	ctx context.Context,
-	title string,
-	limit int,
-) ([]apiexternal_v2.ReleaseSearchResult, error) {
-	provider := getMusicBrainzProvider()
-	results, _, err := provider.SearchReleases(ctx, title, limit, 0)
-	return results, err
-}
-
 // ArtistGetMetadata retrieves metadata for a music artist from configured sources.
 func ArtistGetMetadata(ctx context.Context, artist *database.Dbartist, overwrite bool) error {
 	if artist.MusicbrainzID == "" {
@@ -1755,16 +1648,6 @@ func applyArtistDetails(
 	}
 }
 
-// ArtistSearchByName searches for artists by name.
-func ArtistSearchByName(
-	ctx context.Context,
-	name string,
-	limit int,
-) ([]apiexternal_v2.ArtistSearchResult, error) {
-	provider := getMusicBrainzProvider()
-	return provider.SearchArtists(ctx, name, limit)
-}
-
 // TrackGetMetadata retrieves metadata for a music track from configured sources.
 func TrackGetMetadata(ctx context.Context, track *database.Dbtrack, overwrite bool) error {
 	if track.MusicbrainzRecordingID == "" && track.ISRC == "" {
@@ -1807,67 +1690,4 @@ func applyTrackDetails(track *database.Dbtrack, details *apiexternal_v2.Track, o
 	if details.DurationMs > 0 {
 		UpdateInt64(&track.RuntimeMs, int64(details.DurationMs), overwrite)
 	}
-}
-
-// -----------------------------------------------------------------------------
-// Unified Metadata Functions
-// -----------------------------------------------------------------------------
-
-// GetMetadataForType retrieves metadata for any media type.
-func GetMetadataForType(
-	ctx context.Context,
-	cfgp *config.MediaTypeConfig,
-	mediaType uint,
-	id uint,
-	overwrite bool,
-) error {
-	switch mediaType {
-	case config.MediaTypeMovie:
-		var movie database.Dbmovie
-		if err := movie.GetDbmovieByIDP(&id); err != nil {
-			return err
-		}
-
-		// Use existing movie metadata functions
-		MovieGetMetadata(&movie, true, true, true, true)
-
-		return nil
-
-	case config.MediaTypeSeries:
-		var serie database.Dbserie
-		if err := serie.GetDbserieByIDP(&id); err != nil {
-			return err
-		}
-
-		// Use existing series metadata functions
-		SerieGetMetadata(&serie, "", true, true, overwrite, nil)
-
-		return nil
-
-	case config.MediaTypeBook:
-		var book database.Dbbook
-		if err := book.GetDbbookByIDP(&id); err != nil {
-			return err
-		}
-
-		return BookGetMetadata(ctx, &book, overwrite)
-
-	case config.MediaTypeAudiobook:
-		var audiobook database.Dbaudiobook
-		if err := audiobook.GetDbaudiobookByIDP(&id); err != nil {
-			return err
-		}
-
-		return AudiobookGetMetadata(ctx, cfgp, &audiobook, overwrite)
-
-	case config.MediaTypeMusic:
-		var album database.Dbalbum
-		if err := album.GetDbalbumByIDP(&id); err != nil {
-			return err
-		}
-
-		return AlbumGetMetadata(ctx, &album, overwrite)
-	}
-
-	return nil
 }

@@ -118,6 +118,7 @@ type Handler interface {
 
 	// PerformIDSearch executes a search by external ID (IMDB or TVDB)
 	PerformIDSearch(
+		ctx context.Context,
 		indcfg *config.IndexersConfig,
 		quality *config.QualityConfig,
 		entry *apiexternal_v2.Nzbwithprio,
@@ -590,7 +591,7 @@ func CheckVideoExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) 
 // Returns (false, false) if extension is not allowed.
 func CheckAudioExtensions(pathcfg *config.PathsConfig, ext string) (bool, bool) {
 	if pathcfg.AllowedAudioExtensionsLen == 0 {
-		return true, false
+		return true, true
 	}
 
 	if logger.SlicesContainsI(pathcfg.AllowedAudioExtensions, ext) {

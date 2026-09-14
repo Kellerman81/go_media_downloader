@@ -544,11 +544,14 @@ func TestPath(t *testing.T) {
 		{"Empty string", "", true, ""},
 		{"Simple path", "test/path", true, "test/path"},
 		{"Path with backslashes", "test\\path", true, "testpath"},
-		{"Path without slashes", "test/path", false, "test/path"},
+		// allowslash=false strips all '/' and '\' regardless of input.
+		{"Path without slashes", "test/path", false, "testpath"},
 		{"Path with diacritics", "tést/päth", true, "tést/paeth"},
 		{"Path with special chars", "test$path", true, "test$path"},
-		{"Double slashes", "test//path", true, "test//path"},
-		{"Dots in path", "../test/./path", true, "../test/./path"},
+		// path.Clean collapses doubled separators.
+		{"Double slashes", "test//path", true, "test/path"},
+		// path.Clean also removes "./" segments.
+		{"Dots in path", "../test/./path", true, "../test/path"},
 		{"Mixed slashes", "test\\//path", true, "test/path"},
 	}
 

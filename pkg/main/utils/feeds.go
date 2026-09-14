@@ -199,11 +199,17 @@ func (d *feedResults) getTraktUserMovieList(cfglist *config.MediaListsConfig) er
 	removeFromList := cfglist.CfgList.RemoveFromList && cfglist.CfgList.TraktListName != "watchlist"
 	for idx := range arr {
 		if checkaddimdbfeed(&arr[idx].Movie.IDs.Imdb, cfglist, d) && removeFromList {
-			apiexternal.RemoveMovieFromTraktUserList(
+			if err := apiexternal.RemoveMovieFromTraktUserList(
 				cfglist.CfgList.TraktUsername,
 				cfglist.CfgList.TraktListName,
 				arr[idx].Movie.IDs.Imdb,
-			)
+			); err != nil {
+				logger.Logtype("warn", 1).
+					Str("imdb", arr[idx].Movie.IDs.Imdb).
+					Str("list", cfglist.CfgList.TraktListName).
+					Err(err).
+					Msg("Failed to remove movie from Trakt user list")
+			}
 		}
 	}
 
@@ -552,13 +558,37 @@ func checkaddimdbfeed(imdb *string, cfglist *config.MediaListsConfig, d *feedRes
 		return false
 	}
 
-	if database.Getdatarow[uint](
-		false,
-		"select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE",
-		imdb,
-		&cfglist.Name,
-	) == 0 || d.AddAll {
+	movieid := importfeed.MovieFindDBIDByImdb(imdb)
+
+	if movieid == 0 || !getmovieid(&movieid, cfglist) || d.AddAll {
 		d.Movies = append(d.Movies, *imdb)
+		return true
+	}
+
+	return false
+}
+
+// checkaddtvdbfeed checks if a series with the given TVDB ID is not already tracked
+// in the given list, and if so, adds it to the d.Series slice. Mirrors checkaddimdbfeed's
+// dedup gating for the movie path so entries from a Trakt/Plex/Jellyfin series list are
+// not reprocessed on every scheduled run regardless of whether they are already imported.
+func checkaddtvdbfeed(tvdbid int, name string, cfglist *config.MediaListsConfig, d *feedResults) bool {
+	if tvdbid == 0 {
+		d.Series = append(d.Series, config.ManualConfig{Name: name, TvdbID: tvdbid})
+		return true
+	}
+
+	dbserieid := database.Getdatarow[uint](false, database.QueryDbseriesGetIDByTvdb, &tvdbid)
+
+	if dbserieid == 0 ||
+		database.Getdatarow[uint](
+			false,
+			database.QuerySeriesGetIDByDBIDListname,
+			&dbserieid,
+			&cfglist.Name,
+		) == 0 ||
+		d.AddAll {
+		d.Series = append(d.Series, config.ManualConfig{Name: name, TvdbID: tvdbid})
 		return true
 	}
 
@@ -749,17 +779,29 @@ func (d *feedResults) getTraktUserSeriesList(cfglist *config.MediaListsConfig) e
 		return err
 	}
 
-	removeFromList := cfglist.CfgList.RemoveFromList
+	// TraktListName != "watchlist" guard matches getTraktUserMovieList above -
+	// protects a user's Trakt watchlist from being auto-emptied by this feed.
+	removeFromList := cfglist.CfgList.RemoveFromList && cfglist.CfgList.TraktListName != "watchlist"
 	for idx := range arr {
-		d.Series = append(d.Series, config.ManualConfig{
-			Name: arr[idx].Serie.Title, TvdbID: arr[idx].Serie.IDs.Tvdb,
-		})
+		if !checkaddtvdbfeed(arr[idx].Serie.IDs.Tvdb, arr[idx].Serie.Title, cfglist, d) {
+			continue
+		}
 		if removeFromList {
-			apiexternal.RemoveSerieFromTraktUserList(
+			// Was arr[idx].Movie.IDs.Tvdb - Movie is never populated for a
+			// show-type list entry (only Serie is), so this always passed
+			// tvdb id 0, matching nothing on Trakt's side and making
+			// "Remove From List" a silent no-op for every series list.
+			if err := apiexternal.RemoveSerieFromTraktUserList(
 				cfglist.CfgList.TraktUsername,
 				cfglist.CfgList.TraktListName,
-				arr[idx].Movie.IDs.Tvdb,
-			)
+				arr[idx].Serie.IDs.Tvdb,
+			); err != nil {
+				logger.Logtype("warn", 1).
+					Int("tvdb", arr[idx].Serie.IDs.Tvdb).
+					Str("list", cfglist.CfgList.TraktListName).
+					Err(err).
+					Msg("Failed to remove series from Trakt user list")
+			}
 		}
 	}
 
@@ -965,7 +1007,7 @@ func Feeds(
 		return d, err
 
 	case "moviescraper":
-		return d, d.getmoviescraper(cfgp, list)
+		return d, d.getmoviescraper(ctx, cfgp, list)
 
 	case "traktpublicshowlist":
 		return d, d.gettraktserielist(4, list)
@@ -1006,7 +1048,7 @@ func Feeds(
 	case "tmdbmovieupcoming":
 		return d, d.gettmdbmovieupcoming(list)
 	case "newznabrss":
-		return d, searcher.Getnewznabrss(cfgp, list)
+		return d, searcher.Getnewznabrss(ctx, cfgp, list)
 	case "plexwatchlist":
 		return d, d.getplexwatchlist(list)
 	case "jellyfinwatchlist":
@@ -1203,6 +1245,7 @@ func (d *feedResults) getjellyfinwatchlist(cfglist *config.MediaListsConfig) err
 // It validates the scraper configuration, runs the appropriate scraper type (HTML/XPath or CSRF API),
 // and populates d.Movies with IMDB IDs from the scraped movies.
 func (d *feedResults) getmoviescraper(
+	ctx context.Context,
 	cfgp *config.MediaTypeConfig,
 	cfglist *config.MediaListsConfig,
 ) error {
@@ -1220,7 +1263,7 @@ func (d *feedResults) getmoviescraper(
 		Msg("Starting movie scraper")
 
 	// Run the movie scraper based on type
-	imdbIDs, err := runMovieScraper(cfgp, cfglist)
+	imdbIDs, err := runMovieScraper(ctx, cfgp, cfglist)
 	if err != nil {
 		return err
 	}
@@ -1240,6 +1283,7 @@ func (d *feedResults) getmoviescraper(
 // runMovieScraper executes the movie scraper and returns a list of IMDB IDs.
 // It creates the appropriate scraper based on the type and runs it to extract movie data.
 func runMovieScraper(
+	ctx context.Context,
 	cfgp *config.MediaTypeConfig,
 	cfglist *config.MediaListsConfig,
 ) ([]string, error) {
@@ -1247,7 +1291,7 @@ func runMovieScraper(
 
 	switch cfglist.CfgList.MovieScraperType {
 	case "htmlxpath":
-		ids, err := runMovieHTMLXPathScraper(cfgp, cfglist)
+		ids, err := runMovieHTMLXPathScraper(ctx, cfgp, cfglist)
 		if err != nil {
 			return nil, err
 		}
@@ -1255,7 +1299,7 @@ func runMovieScraper(
 		imdbIDs = ids
 
 	case "csrfapi":
-		ids, err := runMovieCSRFAPIScraper(cfgp, cfglist)
+		ids, err := runMovieCSRFAPIScraper(ctx, cfgp, cfglist)
 		if err != nil {
 			return nil, err
 		}
@@ -1275,6 +1319,7 @@ func runMovieScraper(
 // runMovieHTMLXPathScraper runs the HTML/XPath movie scraper.
 // It scrapes movies from HTML pages using XPath selectors and returns IMDB IDs.
 func runMovieHTMLXPathScraper(
+	ctx context.Context,
 	_ *config.MediaTypeConfig,
 	cfglist *config.MediaListsConfig,
 ) ([]string, error) {
@@ -1306,8 +1351,6 @@ func runMovieHTMLXPathScraper(
 	}
 
 	// Scrape movies (limit to 10 pages for now)
-	ctx := context.Background()
-
 	imdbIDs, err := scraper.Scrape(ctx, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scrape movies: %w", err)
@@ -1568,6 +1611,7 @@ func (d *feedResults) getbookbestsellers(cfglist *config.MediaListsConfig) error
 // runMovieCSRFAPIScraper runs the CSRF API movie scraper.
 // It scrapes movies from CSRF-protected JSON APIs and returns IMDB IDs.
 func runMovieCSRFAPIScraper(
+	ctx context.Context,
 	_ *config.MediaTypeConfig,
 	cfglist *config.MediaListsConfig,
 ) ([]string, error) {
@@ -1598,8 +1642,6 @@ func runMovieCSRFAPIScraper(
 	}
 
 	// Scrape movies (limit to 10 pages for now)
-	ctx := context.Background()
-
 	imdbIDs, err := scraper.Scrape(ctx, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scrape movies: %w", err)

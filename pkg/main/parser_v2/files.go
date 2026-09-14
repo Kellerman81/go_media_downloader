@@ -858,27 +858,6 @@ func runFFProbeAudio(ctx context.Context, filePath string) (*ffprobeAudioResult,
 	return &result, nil
 }
 
-// ReadAudioTagsBatch reads tags from multiple audio files efficiently.
-func ReadAudioTagsBatch(filepaths []string) ([]*TrackInfo, error) {
-	tracks := make([]*TrackInfo, 0, len(filepaths))
-
-	for i := range filepaths {
-		track, err := ReadAudioTags(filepaths[i])
-		if err != nil {
-			// Return the pooled structs collected so far before bailing out.
-			for j := range tracks {
-				PutTrackInfo(tracks[j])
-			}
-
-			return nil, err
-		}
-
-		tracks = append(tracks, track)
-	}
-
-	return tracks, nil
-}
-
 // IsLosslessFormat returns true if the format is lossless audio.
 func IsLosslessFormat(format string) bool {
 	return logger.SlicesContainsI(losslessFormats, format)

@@ -119,7 +119,7 @@ func retryOnRateLimit[T any](ctx context.Context, fn func() (T, error)) (T, erro
 			return result, err
 		}
 
-		logger.Logtype("warning", 1).
+		logger.Logtype("warn", 1).
 			Int("attempt", attempt+1).
 			Int("max", rateLimitMaxRetries).
 			Dur("sleep", rateLimitSleep).
@@ -502,7 +502,7 @@ func BuildArtistAlbumSearch(album, artist string) []byte {
 	defer logger.PlAddBuffer.Put(buf)
 
 	buf.WriteString("release:")
-	buf.WriteString(album)
+	luceneEscapeTo(buf, album)
 
 	if artist != "" && !IsVariousArtists(artist) {
 		buf.WriteString(` AND artist:"`)

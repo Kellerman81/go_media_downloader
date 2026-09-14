@@ -12,6 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/sitethrottle"
 	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
 )
@@ -203,10 +204,7 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 			}
 		}
 
-		// Wait between requests
-		if page < maxPages-1 && s.config.WaitSeconds > 0 {
-			time.Sleep(time.Duration(s.config.WaitSeconds) * time.Second)
-		}
+		// Per-page spacing is enforced per site in scrapePage (sitethrottle).
 	}
 
 	logger.Logtype("info", 1).
@@ -225,6 +223,10 @@ func (s *MovieScraper) scrapePage(ctx context.Context, url string) ([]MovieData,
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	// Enforce the configured delay per site (host), shared across all scraper
+	// configs targeting the same site.
+	sitethrottle.Wait(ctx, req.URL.Host, time.Duration(s.config.WaitSeconds)*time.Second)
 
 	resp, err := s.client.Do(req)
 	if err != nil {

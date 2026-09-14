@@ -208,39 +208,43 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 			}
 		}
 
-		database.ExecN(
-			"update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
-			&dbmovie.Title,
-			&dbmovie.ReleaseDate,
-			&dbmovie.Year,
-			&dbmovie.Adult,
-			&dbmovie.Budget,
-			&dbmovie.Genres,
-			&dbmovie.OriginalLanguage,
-			&dbmovie.OriginalTitle,
-			&dbmovie.Overview,
-			&dbmovie.Popularity,
-			&dbmovie.Revenue,
-			&dbmovie.Runtime,
-			&dbmovie.SpokenLanguages,
-			&dbmovie.Status,
-			&dbmovie.Tagline,
-			&dbmovie.VoteAverage,
-			&dbmovie.VoteCount,
-			&dbmovie.TraktID,
-			&dbmovie.MoviedbID,
-			&dbmovie.ImdbID,
-			&dbmovie.FreebaseMID,
-			&dbmovie.FreebaseID,
-			&dbmovie.FacebookID,
-			&dbmovie.InstagramID,
-			&dbmovie.TwitterID,
-			&dbmovie.URL,
-			&dbmovie.Backdrop,
-			&dbmovie.Poster,
-			&dbmovie.Slug,
-			&dbmovie.ID,
-		)
+		if dbmovie.ID != 0 {
+			if err := database.ExecNErr(
+				"update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
+				&dbmovie.Title,
+				&dbmovie.ReleaseDate,
+				&dbmovie.Year,
+				&dbmovie.Adult,
+				&dbmovie.Budget,
+				&dbmovie.Genres,
+				&dbmovie.OriginalLanguage,
+				&dbmovie.OriginalTitle,
+				&dbmovie.Overview,
+				&dbmovie.Popularity,
+				&dbmovie.Revenue,
+				&dbmovie.Runtime,
+				&dbmovie.SpokenLanguages,
+				&dbmovie.Status,
+				&dbmovie.Tagline,
+				&dbmovie.VoteAverage,
+				&dbmovie.VoteCount,
+				&dbmovie.TraktID,
+				&dbmovie.MoviedbID,
+				&dbmovie.ImdbID,
+				&dbmovie.FreebaseMID,
+				&dbmovie.FreebaseID,
+				&dbmovie.FacebookID,
+				&dbmovie.InstagramID,
+				&dbmovie.TwitterID,
+				&dbmovie.URL,
+				&dbmovie.Backdrop,
+				&dbmovie.Poster,
+				&dbmovie.Slug,
+				&dbmovie.ID,
+			); err != nil {
+				logger.Logtype("error", 0).Err(err).Msg("Failed to persist movie metadata")
+			}
+		}
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"data": dbmovie})
@@ -278,7 +282,7 @@ const allowedjobsmoviesstr = "rss,data,datafull,checkmissing,checkmissingflag,ch
 func apimoviesAllJobs(c *gin.Context) {
 	jobParam := c.Param(StrJobLower)
 	if !validateJobParam(jobParam, allowedjobsmoviesstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
+		sendJSONError(c, http.StatusBadRequest, "Job "+jobParam+" not allowed!")
 		return
 	}
 
@@ -457,7 +461,7 @@ func apimoviesAllJobs(c *gin.Context) {
 func apimoviesJobs(c *gin.Context) {
 	jobParam := c.Param(StrJobLower)
 	if !validateJobParam(jobParam, allowedjobsmoviesstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
+		sendJSONError(c, http.StatusBadRequest, "Job "+jobParam+" not allowed!")
 		return
 	}
 
@@ -780,7 +784,7 @@ func updateMovie(c *gin.Context) {
 
 	counter := database.Getdatarow[uint](
 		false,
-		"select count() from dbmovies where id != 0 and id = ?",
+		"select count() from movies where id != 0 and id = ?",
 		&movie.ID,
 	)
 
@@ -815,7 +819,7 @@ func updateMovie(c *gin.Context) {
 		)
 	} else {
 		inres, err = database.UpdateArray(
-			"dbmovies",
+			"movies",
 			[]string{
 				"missing",
 				"listname",
@@ -864,8 +868,10 @@ func apimoviesSearch(c *gin.Context) {
 		err     error
 	)
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
 
@@ -901,13 +907,18 @@ func apimoviesSearch(c *gin.Context) {
 				)
 				sendSuccess(c, StrStarted)
 
+				found = true
+
 				return nil
 			}
 		}
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a movie (List ok, nok)
@@ -935,13 +946,18 @@ func apimoviesSearchList(c *gin.Context) {
 	}
 
 	var err error
+
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
 
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
+				found = true
+
 				ctx := context.Background()
 				searchresults := searcher.NewSearcher(media, nil, "", nil)
 
@@ -970,7 +986,10 @@ func apimoviesSearchList(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Movie RSS (list ok, nok)
@@ -982,12 +1001,16 @@ func apimoviesSearchList(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/movies/rss/search/list/{group} [get].
 func apiMoviesRssSearchList(c *gin.Context) {
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
 
 		if strings.EqualFold(media.Name, c.Param("group")) {
+			found = true
+
 			ctx := context.Background()
 			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, nil)
 
@@ -1010,7 +1033,10 @@ func apiMoviesRssSearchList(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Download a movie (manual)
@@ -1038,8 +1064,10 @@ func apimoviesSearchDownload(c *gin.Context) {
 	}
 
 	// defer logger.ClearVar(&nzb)
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
 			return nil
 		}
 
@@ -1047,13 +1075,19 @@ func apimoviesSearchDownload(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
 				downloader.DownloadMovie(media, &nzb)
 				sendSuccess(c, StrStarted)
+
+				found = true
+
 				return nil
 			}
 		}
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Refresh Movies
@@ -1064,18 +1098,23 @@ func apimoviesSearchDownload(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/all/refreshall [get].
 func apirefreshMovies(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if media.NamePrefix[:5] == logger.StrMovie {
-			cfgp = media
-			return true
+	// RangeSettingsMediaBreak would stop at the first matching config; if more
+	// than one movie-type config is configured (a supported, first-class
+	// case elsewhere, e.g. apimoviesAllJobs), "refresh all movies" must
+	// dispatch a job per config, not just refresh one arbitrarily-chosen one.
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+			return nil
 		}
 
-		return false
+		cfgpstr := media.NamePrefix
+
+		worker.Dispatch(logger.StrRefreshMovies+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
+		}, "Feeds")
+
+		return nil
 	})
-	worker.Dispatch(logger.StrRefreshMovies, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
 
@@ -1135,18 +1174,21 @@ func apirefreshMovie(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/movies/all/refresh [get].
 func apirefreshMoviesInc(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if media.NamePrefix[:5] == logger.StrMovie {
-			cfgp = media
-			return true
+	// See apirefreshMovies above - must dispatch a job per matching config,
+	// not just the first one found.
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
+			return nil
 		}
 
-		return false
+		cfgpstr := media.NamePrefix
+
+		worker.Dispatch(logger.StrRefreshMoviesInc+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
+		}, "Feeds")
+
+		return nil
 	})
-	worker.Dispatch(logger.StrRefreshMoviesInc, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
 
@@ -1159,7 +1201,15 @@ func apirefreshMoviesInc(c *gin.Context) {
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/movies/search/history/clear/{name} [get].
 func apimoviesClearHistoryName(c *gin.Context) {
-	utils.SingleJobs(c, logger.StrClearHistory, "movie_"+c.Param("name"), "", true, 0)
+	// Unlike every other job endpoint in this file, this previously ran
+	// utils.SingleJobs synchronously on the request goroutine (blocking until
+	// a potentially large history table finished clearing) while still
+	// responding "started" as if it had been dispatched to the background.
+	cfgpstr := "movie_" + c.Param("name")
+
+	worker.Dispatch(logger.StrClearHistory+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, logger.StrClearHistory, cfgpstr, "", true, key)
+	}, "Data")
 	sendSuccess(c, StrStarted)
 }
 

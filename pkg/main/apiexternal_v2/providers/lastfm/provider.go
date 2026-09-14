@@ -19,7 +19,7 @@ import (
 //
 
 const (
-	defaultBaseURL = "http://ws.audioscrobbler.com/2.0/"
+	defaultBaseURL = "https://ws.audioscrobbler.com/2.0/"
 )
 
 // Provider implements the Last.fm music metadata and chart provider.

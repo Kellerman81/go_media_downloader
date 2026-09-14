@@ -466,6 +466,18 @@ func renderWeekViewWithFilter(
 		baseDate = time.Now()
 	}
 
+	// Truncate to midnight: events are parsed to UTC midnight, so a baseDate
+	// that retains the current wall-clock time (the default/no-param case)
+	// would push startOfWeek past midnight and wrongly exclude any event
+	// dated exactly on the first day of the week.
+	baseDate = time.Date(
+		baseDate.Year(),
+		baseDate.Month(),
+		baseDate.Day(),
+		0, 0, 0, 0,
+		baseDate.Location(),
+	)
+
 	startOfWeek := baseDate.AddDate(0, 0, -int(baseDate.Weekday()))
 
 	eventsByDay := make([][]calendarEvent, 7)

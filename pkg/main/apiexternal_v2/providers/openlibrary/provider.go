@@ -98,7 +98,7 @@ func (p *Provider) SearchByISBN(
 	ctx context.Context,
 	isbn string,
 ) (*apiexternal_v2.BookDetails, error) {
-	endpoint := fmt.Sprintf("/isbn/%s.json", isbn)
+	endpoint := fmt.Sprintf("/isbn/%s.json", url.PathEscape(isbn))
 
 	var response olEditionResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -151,7 +151,7 @@ func (p *Provider) GetBooksByAuthor(
 	limit int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
 	// Extract the author key if full path given
-	endpoint := fmt.Sprintf("/authors/%s/works.json", authorID)
+	endpoint := fmt.Sprintf("/authors/%s/works.json", url.PathEscape(authorID))
 	if limit > 0 {
 		endpoint += fmt.Sprintf("?limit=%d", limit)
 	}
@@ -170,7 +170,7 @@ func (p *Provider) GetEditionsByWork(
 	workID string,
 	limit int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
-	endpoint := fmt.Sprintf("/works/%s/editions.json", workID)
+	endpoint := fmt.Sprintf("/works/%s/editions.json", url.PathEscape(workID))
 	if limit > 0 {
 		endpoint += fmt.Sprintf("?limit=%d", limit)
 	}

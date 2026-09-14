@@ -938,6 +938,13 @@ func apiAdminTableDelete(ctx *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/admin [get].
 func apiAdminInterface(ctx *gin.Context) {
+	if sessVal, exists := ctx.Get("session"); exists {
+		if sess, ok := sessVal.(*Session); ok && !sess.WizardDismissed && wizardConfigLooksDefault() {
+			ctx.Redirect(http.StatusFound, "/api/admin/wizard")
+			return
+		}
+	}
+
 	// Generate HTML using gomponents
 	csrfToken := getCSRFToken(ctx)
 	pageContent := adminPage()

@@ -30,11 +30,13 @@ func SendToTransmission(
 			SavePath: dlpath,
 			Paused:   addpaused,
 		})
-		if err == nil {
-			return nil
-		}
 
-		// Fall through to legacy client on error
+		// The "legacy client" this used to fall through to on error is long
+		// gone (commented out below) - returning nil regardless of err made
+		// every add-torrent failure look like a successful download to
+		// every caller, silently recording history/notifications for a
+		// download that was never actually queued.
+		return err
 	}
 
 	// Fall back to legacy transmission library
@@ -58,5 +60,5 @@ func SendToTransmission(
 	// 	return erradd
 	// }
 
-	return nil
+	return errNoClient
 }

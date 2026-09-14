@@ -105,8 +105,6 @@ func NewProvider(
 		Password:                password,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}

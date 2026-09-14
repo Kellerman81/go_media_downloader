@@ -409,13 +409,7 @@ func queueScript() gomponents.Node {
 				if (!btn) return;
 				var queueId = btn.getAttribute('data-queue-id');
 				confirmAction('Cancel this job?', 'This will remove the job from the active queue.', function() {
-					fetch('/api/queue/cancel/' + queueId + '?apikey=' + encodeURIComponent('` + config.GetSettingsGeneral().WebAPIKey + `'), {
-						method: 'DELETE',
-						headers: {
-							'Content-Type': 'application/json',
-							'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-						}
-					})
+					gmdApiProxyFetch('/api/queue/cancel/' + queueId)
 					.then(function(r){ return r.json(); })
 					.then(function(data){
 						if (data.success) {
@@ -1241,492 +1235,11 @@ func addEditFormJavascript() gomponents.Node {
 			`))
 }
 
-// renderCustomFilters creates table-specific filter fields for enhanced searching.
+// renderCustomFilters creates table-specific filter fields for enhanced
+// searching, rendered from the single filterFieldDefs source of truth
+// (web_filters.go) shared with buildCustomFilters.
 func renderCustomFilters(tableName string) gomponents.Node {
-	var filterFields []gomponents.Node
-
-	// Get filterable fields from goadmin models
-	filterFields = getFilterableFieldsForTable(tableName)
-
-	// If no dynamic filters found, check for special hardcoded cases
-	if len(filterFields) == 0 {
-		switch tableName {
-		case "dbmovie_titles":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Title")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-title"), html.Placeholder("Filter by title...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Movie Name")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-movie_title"), html.Placeholder("Filter by movie name...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Region")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-region"), html.Placeholder("Region...")),
-				),
-			}
-		}
-	}
-
-	// Enhanced cases with dynamic options (only if dynamic filters not available)
-	if len(filterFields) == 0 {
-		switch tableName {
-		case "movies":
-			qualityConfigs := config.GetSettingsQualityAll()
-			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
-
-			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
-			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
-			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
-
-			for _, qc := range qualityConfigs {
-				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
-			}
-
-			listoptions := make([]gomponents.Node, 0, 3+len(config.GetSettingsMediaListAll()))
-
-			listoptions = append(listoptions, html.Class("form-control custom-filter"))
-			listoptions = append(listoptions, html.ID("filter-listname"))
-
-			listoptions = append(listoptions, createOption("", "All Lists", false))
-			for _, lc := range config.GetSettingsMediaListAll() {
-				listoptions = append(listoptions, createOption(lc, lc, false))
-			}
-
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Title")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-title"), html.Placeholder("Filter by title...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Year")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("number"),
-						html.ID("filter-year"), html.Placeholder("Year...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("IMDB ID")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-imdb_id"), html.Placeholder("tt1234567...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Listname")),
-					html.Select(listoptions...),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality Reached")),
-					html.Select(
-						html.Class("form-control custom-filter"),
-						html.ID("filter-quality_reached"),
-						createOption("", "All", false),
-						createOption("1", "Yes", false),
-						createOption("0", "No", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Missing")),
-					html.Select(html.Class("form-control custom-filter"), html.ID("filter-missing"),
-						createOption("", "All", false),
-						createOption("1", "Missing", false),
-						createOption("0", "Available", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-					html.Select(qualoptions...),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Rootpath")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-rootpath"), html.Placeholder("Filter by rootpath...")),
-				),
-			}
-
-		case "series":
-			listoptions := make([]gomponents.Node, 0, 3+len(config.GetSettingsMediaListAll()))
-
-			listoptions = append(listoptions, html.Class("form-control custom-filter"))
-			listoptions = append(listoptions, html.ID("filter-listname"))
-
-			listoptions = append(listoptions, createOption("", "All Lists", false))
-			for _, lc := range config.GetSettingsMediaListAll() {
-				listoptions = append(listoptions, createOption(lc, lc, false))
-			}
-
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Series Name")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-seriename"), html.Placeholder("Filter by series name...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Listname")),
-					html.Select(listoptions...),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Rootpath")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-rootpath"), html.Placeholder("Filter by rootpath...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Don't Upgrade")),
-					html.Select(
-						html.Class("form-control custom-filter"),
-						html.ID("filter-dont_upgrade"),
-						createOption("", "All", false),
-						createOption("1", "Yes", false),
-						createOption("0", "No", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Don't Search")),
-					html.Select(
-						html.Class("form-control custom-filter"),
-						html.ID("filter-dont_search"),
-						createOption("", "All", false),
-						createOption("1", "Yes", false),
-						createOption("0", "No", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Search Specials")),
-					html.Select(
-						html.Class("form-control custom-filter"),
-						html.ID("filter-search_specials"),
-						createOption("", "All", false),
-						createOption("1", "Yes", false),
-						createOption("0", "No", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Ignore Runtime")),
-					html.Select(
-						html.Class("form-control custom-filter"),
-						html.ID("filter-ignore_runtime"),
-						createOption("", "All", false),
-						createOption("1", "Yes", false),
-						createOption("0", "No", false),
-					),
-				),
-			}
-
-		case "movie_files", "serie_episode_files":
-			qualityConfigs := config.GetSettingsQualityAll()
-			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
-
-			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
-			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
-			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
-
-			for _, qc := range qualityConfigs {
-				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
-			}
-
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Filename")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-filename"), html.Placeholder("Filter by filename...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Resolution")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-resolution"), html.Placeholder("1080p, 720p...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-					html.Select(qualoptions...),
-				),
-			}
-
-		case "dbserie_alternates":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Title")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-title"), html.Placeholder("Filter by title...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Series Name")),
-					html.Input(
-						html.Class("form-control custom-filter"),
-						html.Type("text"),
-						html.ID(
-							"filter-series_name",
-						),
-						html.Placeholder("Filter by series name..."),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Region")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-region"), html.Placeholder("Region...")),
-				),
-			}
-
-		case "dbserie_episodes":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Episode Title")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-title"), html.Placeholder("Filter by episode title...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Series Name")),
-					html.Input(
-						html.Class("form-control custom-filter"),
-						html.Type("text"),
-						html.ID(
-							"filter-series_name",
-						),
-						html.Placeholder("Filter by series name..."),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Season")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("number"),
-						html.ID("filter-season"), html.Placeholder("Season...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Episode")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("number"),
-						html.ID("filter-episode"), html.Placeholder("Episode...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Identifier")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-identifier"), html.Placeholder("Identifier...")),
-				),
-			}
-
-		case "serie_episodes":
-			qualityConfigs := config.GetSettingsQualityAll()
-			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
-
-			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
-			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
-			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
-
-			for _, qc := range qualityConfigs {
-				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
-			}
-
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("TVDB ID")),
-					html.Input(
-						html.Class("form-control custom-filter"),
-						html.Type("text"),
-						html.ID("filter-tvdb_id"),
-						html.Placeholder("Filter by TVDB ID..."),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Episode Title")),
-					html.Input(
-						html.Class("form-control custom-filter"),
-						html.Type("text"),
-						html.ID(
-							"filter-episode_title",
-						),
-						html.Placeholder("Filter by episode title..."),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-					html.Select(qualoptions...),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Missing")),
-					html.Select(html.Class("form-control custom-filter"), html.ID("filter-missing"),
-						createOption("", "All", false),
-						createOption("1", "Missing", false),
-						createOption("0", "Available", false),
-					),
-				),
-			}
-
-		case "job_histories":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Job Type")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-job_type"), html.Placeholder("Filter by job type...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Job Category")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-job_category"), html.Placeholder("Filter by category...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Job Group")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-job_group"), html.Placeholder("Filter by group...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Status")),
-					html.Select(html.Class("form-control custom-filter"), html.ID("filter-ended"),
-						createOption("", "All", false),
-						createOption("1", "Completed", false),
-						createOption("0", "Running", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Started Date")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("date"),
-						html.ID("filter-started_date"), html.Placeholder("Started date...")),
-				),
-			}
-
-		case "qualities":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Type")),
-					html.Select(html.Class("form-control custom-filter"), html.ID("filter-type"),
-						createOption("", "All Types", false),
-						createOption("0", "Movies", false),
-						createOption("1", "Series", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Name")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-name"), html.Placeholder("Filter by name...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Use Regex")),
-					html.Select(
-						html.Class("form-control custom-filter"),
-						html.ID("filter-use_regex"),
-						createOption("", "All", false),
-						createOption("1", "Yes", false),
-						createOption("0", "No", false),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Priority")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("number"),
-						html.ID("filter-priority"), html.Placeholder("Priority...")),
-				),
-			}
-
-		case "movie_histories":
-			qualityConfigs := config.GetSettingsQualityAll()
-			qualoptions := make([]gomponents.Node, 0, 3+len(qualityConfigs))
-
-			qualoptions = append(qualoptions, html.Class("form-control custom-filter"))
-			qualoptions = append(qualoptions, html.ID("filter-quality_profile"))
-			qualoptions = append(qualoptions, createOption("", "All Profiles", false))
-
-			for _, qc := range qualityConfigs {
-				qualoptions = append(qualoptions, createOption(qc.Name, qc.Name, false))
-			}
-
-			// var listoptions []gomponents.Node
-			// listoptions = append(listoptions, html.Class("form-control custom-filter"))
-			// listoptions = append(listoptions, html.ID("filter-listname"))
-			// listoptions = append(listoptions, createOption("", "All Lists", false))
-			// for _, lc := range config.GetSettingsMediaListAll() {
-			// 	listoptions = append(listoptions, createOption(lc, lc, false))
-			// }
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Title")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-title"), html.Placeholder("Filter by title...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Indexer")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-indexer"), html.Placeholder("Filter by indexer...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-					html.Select(qualoptions...),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Downloaded Date")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("date"),
-						html.ID("filter-downloaded_date"), html.Placeholder("Downloaded date...")),
-				),
-			}
-
-		case "movie_file_unmatcheds":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Filepath")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-filepath"), html.Placeholder("Filter by filepath...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Listname")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-listname"), html.Placeholder("Filter by listname...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality Profile")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-movie_quality_profile"), html.Placeholder("Quality...")),
-				),
-			}
-
-		case "serie_file_unmatcheds":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Filepath")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-filepath"), html.Placeholder("Filter by filepath...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Listname")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-listname"), html.Placeholder("Filter by listname...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Root Path")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-series_rootpath"), html.Placeholder("Root path...")),
-				),
-			}
-
-		case "serie_episode_histories":
-			filterFields = []gomponents.Node{
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Title")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-title"), html.Placeholder("Filter by title...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Episode Title")),
-					html.Input(
-						html.Class("form-control custom-filter"),
-						html.Type("text"),
-						html.ID(
-							"filter-episode_title",
-						),
-						html.Placeholder("Filter by episode title..."),
-					),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Indexer")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-indexer"), html.Placeholder("Indexer...")),
-				),
-				html.Div(
-					html.Label(html.Class("form-label"), gomponents.Text("Quality")),
-					html.Input(html.Class("form-control custom-filter"), html.Type("text"),
-						html.ID("filter-quality_profile"), html.Placeholder("Quality...")),
-				),
-			}
-
-		default:
-			// No special filters defined for this table
-		}
-	}
+	filterFields := renderFilterInputs(tableName)
 
 	if len(filterFields) == 0 {
 		return html.Div()
@@ -2369,7 +1882,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 					$(document).on('click', '.btn-action-edit', function() {
 						var id = $(this).data('id');
 						$('#editFormModal .modal-body').html('<div class="text-center"><div class="spinner-border" role="status"><span class="sr-only">Loading...</span></div><p class="mt-2">Loading edit form...</p></div>');
-						var url = '/api/admin/tableedit/%s/' + id + '?apikey=%s';
+						var url = '/api/admin/tableedit/%s/' + id;
 						
 						// Set a timeout to help debug hanging requests
 						var requestTimeout = setTimeout(function() {
@@ -2412,7 +1925,7 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						var id = $(this).data('id');
 						confirmAction('Please confirm', '⚠️ Are you sure you want to permanently delete this record?\n\nThis action cannot be undone.', function() {
 							$.ajax({
-								url: '/api/admin/table/%s/delete/' + id + '?apikey=%s',
+								url: '/api/admin/table/%s/delete/' + id,
 								type: 'POST',
 								headers: {
 									'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
@@ -2451,43 +1964,33 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						var tableName = '%s';
 						if (tableName === 'movies') {
 							confirmAction('Please confirm', 'Start search for this movie by IMDB ID?', function() {
-								$.ajax({
-									url: '/api/movies/search/list/' + id + '?apikey=%s&searchByTitle=false&download=true',
-									type: 'GET',
-									headers: {
-										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
-									},
-									success: function(data) {
+								gmdApiProxyFetch('/api/movies/search/list/' + id + '?searchByTitle=false&download=true')
+									.then(function(r){ return r.json().catch(function(){ return {}; }); })
+									.then(function(data){
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
 										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
 										alert(msg);
 										oTable.ajax.reload();
-									},
-									error: function(xhr) {
-										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
-									}
-								});
+									})
+									.catch(function(err){
+										alert('Error starting search: ' + err.message);
+									});
 							})
 						} else if (tableName === 'serie_episodes') {
 							confirmAction('Please confirm', 'Start search for this episode by TVDB ID?', function() {
-								$.ajax({
-									url: '/api/series/episodes/search/list/' + id + '?apikey=%s&searchByTitle=false&download=true',
-									type: 'GET',
-									headers: {
-										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
-									},
-									success: function(data) {
+								gmdApiProxyFetch('/api/series/episodes/search/list/' + id + '?searchByTitle=false&download=true')
+									.then(function(r){ return r.json().catch(function(){ return {}; }); })
+									.then(function(data){
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
 										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
 										alert(msg);
 										oTable.ajax.reload();
-									},
-									error: function(xhr) {
-										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
-									}
-								});
+									})
+									.catch(function(err){
+										alert('Error starting search: ' + err.message);
+									});
 							})
 						}
 					});
@@ -2498,43 +2001,33 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						var tableName = '%s';
 						if (tableName === 'movies') {
 							confirmAction('Please confirm', 'Start search for this movie by Title?', function() {
-								$.ajax({
-									url: '/api/movies/search/list/' + id + '?apikey=%s&searchByTitle=true&download=true',
-									type: 'GET',
-									headers: {
-										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
-									},
-									success: function(data) {
+								gmdApiProxyFetch('/api/movies/search/list/' + id + '?searchByTitle=true&download=true')
+									.then(function(r){ return r.json().catch(function(){ return {}; }); })
+									.then(function(data){
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
 										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
 										alert(msg);
 										oTable.ajax.reload();
-									},
-									error: function(xhr) {
-										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
-									}
-								});
+									})
+									.catch(function(err){
+										alert('Error starting search: ' + err.message);
+									});
 							})
 						} else if (tableName === 'serie_episodes') {
 							confirmAction('Please confirm', 'Start search for this episode by Title?', function() {
-								$.ajax({
-									url: '/api/series/episodes/search/list/' + id + '?apikey=%s&searchByTitle=true&download=true',
-									type: 'GET',
-									headers: {
-										'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
-									},
-									success: function(data) {
+								gmdApiProxyFetch('/api/series/episodes/search/list/' + id + '?searchByTitle=true&download=true')
+									.then(function(r){ return r.json().catch(function(){ return {}; }); })
+									.then(function(data){
 										var msg = 'Search completed!\n';
 										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
 										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
 										alert(msg);
 										oTable.ajax.reload();
-									},
-									error: function(xhr) {
-										alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
-									}
-								});
+									})
+									.catch(function(err){
+										alert('Error starting search: ' + err.message);
+									});
 							})
 						}
 					});
@@ -2551,41 +2044,35 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 								if (type === 'album') jobUrl = '/api/music/job/refresh';
 								else if (type === 'audiobook') jobUrl = '/api/audiobooks/job/refresh';
 								else if (type === 'book') jobUrl = '/api/books/job/refresh';
-								$.ajax({
-									url: jobUrl + '?apikey=%s',
-									type: 'GET',
-									headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
-									success: function(data) {
+								gmdApiProxyFetch(jobUrl)
+									.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
+									.then(function(data){
 										alert('Metadata refresh job started successfully!');
 										oTable.ajax.reload();
-									},
-									error: function(xhr) {
-										alert('Error starting metadata refresh: ' + (xhr.responseText || 'Unknown error'));
-									}
-								});
+									})
+									.catch(function(err){
+										alert('Error starting metadata refresh: ' + err.message);
+									});
 							} else {
 								// Per-record refresh for movies/series (two-step lookup)
 								var apiUrl = type === 'movie' ? '/api/movies/refresh/' : '/api/series/refresh/';
 								$.ajax({
-									url: '/api/admin/tablejson/' + (type === 'movie' ? 'movies' : 'series') + '?apikey=%s',
+									url: '/api/admin/tablejson/' + (type === 'movie' ? 'movies' : 'series'),
 									type: 'POST',
 									headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
 									data: { sSearch: dbId, iDisplayStart: 0, iDisplayLength: 1 },
 									success: function(response) {
 										if (response.aaData && response.aaData.length > 0) {
 											var recordId = response.aaData[0][0];
-											$.ajax({
-												url: apiUrl + recordId + '?apikey=%s',
-												type: 'GET',
-												headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
-												success: function(data) {
+											gmdApiProxyFetch(apiUrl + recordId)
+												.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
+												.then(function(data){
 													alert('Metadata refresh started successfully!');
 													oTable.ajax.reload();
-												},
-												error: function(xhr) {
-													alert('Error starting metadata refresh: ' + (xhr.responseText || 'Unknown error'));
-												}
-											});
+												})
+												.catch(function(err){
+													alert('Error starting metadata refresh: ' + err.message);
+												});
 										} else {
 											alert('No related ' + type + ' record found for this db' + type + ' ID');
 										}
@@ -2614,18 +2101,15 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						}
 						var listname = row[listIdx];
 						confirmAction('Please confirm', 'Start search for ' + media + ' list "' + listname + '"?', function() {
-							$.ajax({
-								url: '/api/' + media + '/search/list/' + listname + '?apikey=%s',
-								type: 'GET',
-								headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
-								success: function(data) {
+							gmdApiProxyFetch('/api/' + media + '/search/list/' + listname)
+								.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
+								.then(function(data){
 									alert('Search started for ' + media + ' list: ' + listname);
 									oTable.ajax.reload();
-								},
-								error: function(xhr) {
-									alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
-								}
-							});
+								})
+								.catch(function(err){
+									alert('Error starting search: ' + err.message);
+								});
 						})
 					});
 
@@ -2654,18 +2138,15 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 						}
 						var listname = row[listIdx];
 						confirmAction('Please confirm', 'Search missing ' + media + ' for ' + endpoint + ' in list "' + listname + '"?', function() {
-							$.ajax({
-								url: '/api/' + media + '/search/' + endpoint + '/missing/' + listname + '?apikey=%s',
-								type: 'GET',
-								headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
-								success: function(data) {
+							gmdApiProxyFetch('/api/' + media + '/search/' + endpoint + '/missing/' + listname)
+								.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
+								.then(function(data){
 									alert('Search started for missing ' + media + ' by ' + endpoint + ' in list: ' + listname);
 									oTable.ajax.reload();
-								},
-								error: function(xhr) {
-									alert('Error starting search: ' + (xhr.responseText || 'Unknown error'));
-								}
-							});
+								})
+								.catch(function(err){
+									alert('Error starting search: ' + err.message);
+								});
 						})
 					});
 
@@ -2673,20 +2154,17 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 					$(document).on('click', '.btn-action-discover-series', function() {
 						var id = $(this).data('id');
 						confirmAction('Please confirm', 'Discover and import series albums for artist #' + id + '?', function() {
-							$.ajax({
-								url: '/api/music/discover/series/artist/' + id + '?apikey=%s',
-								type: 'GET',
-								headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
-								success: function(data) {
+							gmdApiProxyFetch('/api/music/discover/series/artist/' + id)
+								.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
+								.then(function(data){
 									alert('Discover series albums queued for artist #' + id);
-								},
-								error: function(xhr) {
-									alert('Error: ' + (xhr.responseText || 'Unknown error'));
-								}
-							});
+								})
+								.catch(function(err){
+									alert('Error: ' + err.message);
+								});
 						})
 					});
-					`, tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, "", tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, tableInfo.Name, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey, config.GetSettingsGeneral().WebAPIKey)),
+					`, tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, "", tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, tableInfo.Name, tableInfo.Name, tableInfo.Name, tableInfo.Name, tableInfo.Name)),
 			),
 		})
 }

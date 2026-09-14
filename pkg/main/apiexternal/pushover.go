@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 // SendPushoverMessage sends a Pushover message with the given message, title, and recipient.
@@ -32,33 +31,34 @@ func SendPushoverMessage(cfgname, apikey, message, title, recipient string) erro
 		return errTitleTooLong
 	}
 
-	// Try v2 provider first
-	if cm, exists := apiexternal_v2.GetGlobalClientManager(); exists {
-		if provider, providerExists := cm.GetNotificationProvider(
-			"pushover_" + cfgname,
-		); providerExists {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			// Pass apikey and recipient in Options for dynamic credentials
-			_, err := provider.SendNotification(ctx, apiexternal_v2.NotificationRequest{
-				Title:   title,
-				Message: message,
-				Options: map[string]string{
-					"api_token": apikey,
-					"user_key":  recipient,
-				},
-			})
-			if err == nil {
-				return nil
-			}
-
-			// Log error but fall through to legacy client
-			logger.Logtype("debug", 0).
-				Err(err).
-				Msg("v2 provider failed, falling back to legacy client")
-		}
+	cm, exists := apiexternal_v2.GetGlobalClientManager()
+	if !exists {
+		return errClientEmpty
 	}
 
-	return errClientEmpty
+	provider, providerExists := cm.GetNotificationProvider("pushover_" + cfgname)
+	if !providerExists {
+		return errClientEmpty
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Pass apikey and recipient in Options for dynamic credentials.
+	// No "legacy client" fallback exists anymore (it never did in this
+	// package) - returning errClientEmpty here regardless of the real
+	// cause discarded the actual failure reason (bad API key, unreachable
+	// server, rate limit, etc.) from both the downloader's notify() log
+	// output and the "send test notification" UI, which renders this error
+	// directly to the user.
+	_, err := provider.SendNotification(ctx, apiexternal_v2.NotificationRequest{
+		Title:   title,
+		Message: message,
+		Options: map[string]string{
+			"api_token": apikey,
+			"user_key":  recipient,
+		},
+	})
+
+	return err
 }

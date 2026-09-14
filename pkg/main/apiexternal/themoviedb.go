@@ -146,7 +146,6 @@ func NewTmdbClient(
 		CircuitBreakerThreshold:   5,
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
-		EnableStats:               true,
 		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
@@ -645,11 +644,14 @@ func GetTVExternal(id int) (*TheMovieDBTVExternal, error) {
 
 // TestTMDBConnectivity tests the connectivity to the TMDB API
 // Returns status code and error if any.
-func TestTMDBConnectivity(_ time.Duration) (int, error) {
+func TestTMDBConnectivity(timeout time.Duration) (int, error) {
 	// Use v2 provider if available
 	if provider := providers.GetTMDB(); provider != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		// Test with a simple search
-		_, err := provider.SearchMovies(context.Background(), "test", 0)
+		_, err := provider.SearchMovies(ctx, "test", 0)
 		if err != nil {
 			return 0, err
 		}
@@ -960,20 +962,30 @@ func SearchTMDBMovieImdbID(title string, year int) (string, error) {
 		titleMatch := strings.EqualFold(result.Title, title) ||
 			strings.EqualFold(result.OriginalTitle, title)
 
-		// If year is provided, verify it matches
-		if year > 0 && result.ReleaseDate != "" {
-			if len(result.ReleaseDate) < 4 {
-				continue
-			}
+		if !titleMatch {
+			continue
+		}
 
-			releaseYear, err := strconv.Atoi(result.ReleaseDate[:4])
-			if err == nil && releaseYear == year && titleMatch {
-				// Exact match on both title and year
-				bestMatch = result
-				break
-			}
-		} else if titleMatch {
-			// No year provided or no release date, match on title only
+		if year <= 0 {
+			// No year constraint requested - match on title alone.
+			bestMatch = result
+			break
+		}
+
+		// A year was requested - only accept a candidate whose release date
+		// actually confirms it. A candidate with no/unparseable release date
+		// can't confirm the year, so it must be skipped here rather than
+		// matched on title alone - the previous `year > 0 && ReleaseDate !=
+		// ""` condition being false for such a candidate fell through to a
+		// title-only match, silently ignoring the caller's year constraint
+		// (a real risk for franchise/remake titles sharing a name across
+		// different years).
+		if len(result.ReleaseDate) < 4 {
+			continue
+		}
+
+		releaseYear, err := strconv.Atoi(result.ReleaseDate[:4])
+		if err == nil && releaseYear == year {
 			bestMatch = result
 			break
 		}

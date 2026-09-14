@@ -140,9 +140,15 @@ func apiBookDelete(ctx *gin.Context) {
 	}
 
 	// Delete book files first
-	database.ExecN("DELETE FROM book_files WHERE book_id = ?", &id)
+	if err := database.ExecNErr("DELETE FROM book_files WHERE book_id = ?", &id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete book files: " + err.Error()})
+		return
+	}
 	// Delete the book
-	database.ExecN("DELETE FROM books WHERE id = ?", &id)
+	if err := database.ExecNErr("DELETE FROM books WHERE id = ?", &id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete book: " + err.Error()})
+		return
+	}
 
 	ctx.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -162,179 +168,12 @@ func itoa(i int) string {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/books/job/{job} [get].
 func apiBooksAllJobs(c *gin.Context) {
-	jobParam := c.Param(StrJobLower)
-	if !validateJobParam(jobParam, allowedjobsbooksstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
-		return
-	}
-
-	returnval := "Job " + jobParam + " started"
-	foundConfigs := 0
-
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrBook) {
-			return nil
-		}
-
-		foundConfigs++
-
-		logger.Logtype("debug", 2).
-			Str("job", jobParam).
-			Str("media", media.NamePrefix).
-			Int("lists", len(media.Lists)).
-			Msg("Processing book media config")
-
-		cfgpstr := media.NamePrefix
-
-		switch c.Param(StrJobLower) {
-		case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"Data",
-			)
-
-		case logger.StrSearchMissingFull,
-			logger.StrSearchMissingInc,
-			logger.StrSearchUpgradeFull,
-			logger.StrSearchUpgradeInc,
-			logger.StrSearchMissingFullTitle,
-			logger.StrSearchMissingIncTitle,
-			logger.StrSearchUpgradeFullTitle,
-			logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"Search",
-			)
-
-		case logger.StrRss:
-			worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"RSS",
-			)
-
-		case logger.StrFeeds,
-			logger.StrCheckMissing,
-			logger.StrCheckMissingFlag,
-			logger.StrReachedFlag:
-			var err error
-
-			dispatchedLists := 0
-			for idxi := range media.Lists {
-				if !media.Lists[idxi].Enabled {
-					logger.Logtype("debug", 2).
-						Str("list", media.Lists[idxi].Name).
-						Msg("Skipping disabled book list")
-					continue
-				}
-
-				if media.Lists[idxi].CfgList == nil {
-					logger.Logtype("debug", 2).
-						Str("list", media.Lists[idxi].Name).
-						Msg("Skipping book list with nil CfgList")
-					continue
-				}
-
-				if !config.GetSettingsList(media.Lists[idxi].TemplateList).Enabled {
-					logger.Logtype("debug", 2).
-						Str("list", media.Lists[idxi].Name).
-						Str("template", media.Lists[idxi].TemplateList).
-						Msg("Skipping book list with disabled template")
-
-					continue
-				}
-
-				listname := media.Lists[idxi].Name
-
-				queueName := "Data"
-				if c.Param(StrJobLower) == logger.StrFeeds {
-					queueName = "Feeds"
-				}
-
-				logger.Logtype("debug", 2).
-					Str("job", c.Param(StrJobLower)).
-					Str("list", listname).
-					Str("queue", queueName).
-					Msg("Dispatching book job")
-
-				dispatchedLists++
-
-				if errsub := worker.Dispatch(
-					c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
-					func(key uint32, ctx context.Context) error {
-						return utils.SingleJobs(
-							ctx,
-							c.Param(StrJobLower),
-							cfgpstr,
-							listname,
-							true,
-							key,
-						)
-					},
-					queueName,
-				); errsub != nil {
-					err = errsub
-				}
-			}
-
-			if dispatchedLists == 0 {
-				logger.Logtype("warn", 1).
-					Str("job", c.Param(StrJobLower)).
-					Str("media", media.NamePrefix).
-					Int("total_lists", len(media.Lists)).
-					Msg("No enabled book lists found to dispatch job")
-			}
-
-			return err
-
-		case "refresh":
-			return worker.Dispatch(
-				"refresh_books",
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
-				},
-				"Feeds",
-			)
-
-		case "refreshinc":
-			return worker.Dispatch(
-				"refreshinc_books",
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
-				},
-				"Feeds",
-			)
-
-		case "":
-			return nil
-		default:
-			return worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"Data",
-			)
-		}
-
-		return nil
+	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
+		TypeName:    "book",
+		NamePrefix:  logger.StrBook,
+		Plural:      "books",
+		AllowedJobs: allowedjobsbooksstr,
 	})
-
-	if foundConfigs == 0 {
-		logger.Logtype("warn", 1).
-			Str("job", jobParam).
-			Msg("No book media configurations found")
-	}
-
-	sendSuccess(c, returnval)
 }
 
 // @Summary      Start Book Jobs
@@ -348,146 +187,12 @@ func apiBooksAllJobs(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/books/job/{job}/{name} [get].
 func apiBooksJobs(c *gin.Context) {
-	jobParam := c.Param(StrJobLower)
-	if !validateJobParam(jobParam, allowedjobsbooksstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
-		return
-	}
-
-	returnval := "Job " + jobParam + " started"
-	cfgpstr := "book_" + c.Param("name")
-
-	switch c.Param(StrJobLower) {
-	case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_books_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"Data",
-		)
-
-	case logger.StrSearchMissingFull,
-		logger.StrSearchMissingInc,
-		logger.StrSearchUpgradeFull,
-		logger.StrSearchUpgradeInc,
-		logger.StrSearchMissingFullTitle,
-		logger.StrSearchMissingIncTitle,
-		logger.StrSearchUpgradeFullTitle,
-		logger.StrSearchUpgradeIncTitle:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_books_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"Search",
-		)
-
-	case logger.StrRss:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_books_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"RSS",
-		)
-
-	case logger.StrFeeds,
-		logger.StrCheckMissing,
-		logger.StrCheckMissingFlag,
-		logger.StrReachedFlag:
-		config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-			if !strings.HasPrefix(media.NamePrefix, logger.StrBook) {
-				return nil
-			}
-
-			if strings.EqualFold(media.Name, c.Param("name")) {
-				for idxlist := range media.Lists {
-					if !media.Lists[idxlist].Enabled {
-						continue
-					}
-
-					if media.Lists[idxlist].CfgList == nil {
-						continue
-					}
-
-					if !config.GetSettingsList(media.Lists[idxlist].TemplateList).Enabled {
-						continue
-					}
-
-					listname := media.Lists[idxlist].Name
-					if c.Param(StrJobLower) == logger.StrFeeds {
-						worker.Dispatch(
-							c.Param(StrJobLower)+"_books_"+media.Name+"_"+media.Lists[idxlist].Name,
-							func(key uint32, ctx context.Context) error {
-								return utils.SingleJobs(
-									ctx,
-									c.Param(StrJobLower),
-									cfgpstr,
-									listname,
-									true,
-									key,
-								)
-							},
-							"Feeds",
-						)
-					}
-
-					if c.Param(StrJobLower) == logger.StrCheckMissing ||
-						c.Param(StrJobLower) == logger.StrCheckMissingFlag ||
-						c.Param(StrJobLower) == logger.StrReachedFlag {
-						worker.Dispatch(
-							c.Param(StrJobLower)+"_books_"+media.Name+"_"+media.Lists[idxlist].Name,
-							func(key uint32, ctx context.Context) error {
-								return utils.SingleJobs(
-									ctx,
-									c.Param(StrJobLower),
-									cfgpstr,
-									listname,
-									true,
-									key,
-								)
-							},
-							"Data",
-						)
-					}
-				}
-			}
-
-			return nil
-		})
-
-	case "refresh":
-		worker.Dispatch(
-			"refresh_books_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
-			},
-			"Feeds",
-		)
-
-	case "refreshinc":
-		worker.Dispatch(
-			"refreshinc_books_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
-			},
-			"Feeds",
-		)
-
-	case "":
-		break
-	default:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_books_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"Data",
-		)
-	}
-
-	sendSuccess(c, returnval)
+	dispatchMediaJob(c, mediaJobDispatchConfig{
+		TypeName:    "book",
+		NamePrefix:  logger.StrBook,
+		Plural:      "books",
+		AllowedJobs: allowedjobsbooksstr,
+	})
 }
 
 // @Summary      RSS Search Books List
@@ -541,8 +246,8 @@ func apiBooksSearchList(c *gin.Context) {
 // @Router       /api/books/search/history/clear/{name} [get].
 func apiBooksClearHistoryName(c *gin.Context) {
 	name := c.Param("name")
-	database.ExecN("DELETE FROM book_histories WHERE listname = ?", &name)
-	sendSuccess(c, "History cleared for "+name)
+	err := database.ExecNErr("DELETE FROM book_histories WHERE listname = ?", &name)
+	handleDBError(c, err, "History cleared for "+name)
 }
 
 // @Summary      Clear Book History by ID
@@ -559,8 +264,8 @@ func apiBooksClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	database.ExecN("DELETE FROM book_histories WHERE id = ?", &id)
-	sendSuccess(c, "History entry cleared")
+	err := database.ExecNErr("DELETE FROM book_histories WHERE id = ?", &id)
+	handleDBError(c, err, "History entry cleared")
 }
 
 // @Summary      Search Missing Books by Author
@@ -629,6 +334,11 @@ func apiBooksFeedsDate(c *gin.Context) {
 		return
 	}
 
+	// dispatched also doubles as "a response was already sent inside the
+	// closure" - every early-return path below (list disabled, bad chart
+	// URL, or a real dispatch) must set it, or the trailing
+	// sendBadRequest below double-writes a second JSON body onto the
+	// already-committed response.
 	var dispatched bool
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
@@ -646,13 +356,19 @@ func apiBooksFeedsDate(c *gin.Context) {
 			}
 
 			if !media.Lists[idxlist].Enabled || media.Lists[idxlist].CfgList == nil {
+				dispatched = true
+
 				sendBadRequest(c, "list "+listName+" is disabled or not configured")
+
 				return nil
 			}
 
 			overrideURL, err := buildChartDateURL(media.Lists[idxlist].CfgList, dateStr)
 			if err != nil {
+				dispatched = true
+
 				sendBadRequest(c, err.Error())
+
 				return nil
 			}
 

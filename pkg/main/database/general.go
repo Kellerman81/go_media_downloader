@@ -199,10 +199,19 @@ func InitDB(dbloglevel string) error {
 		return err
 	}
 
-	dbData.SetMaxIdleConns(5)
+	// In WAL mode SQLite deletes the -shm wal-index file once the LAST
+	// connection closes. Expiring/rotating connections let the pool fall to
+	// zero while idle, so the next query recreated -shm and rebuilt it via
+	// walIndexRecover - and any connection still holding the old mapping then
+	// read past the truncated file and took a SIGBUS, which Go cannot recover
+	// from and which killed the whole process. Keeping idle capacity equal to
+	// max open, with no expiry, keeps at least one connection (and therefore
+	// the wal-index) alive for the process lifetime. Connection rotation is a
+	// client/server-database idiom; nothing about in-process SQLite needs it.
+	dbData.SetMaxIdleConns(25)
 	dbData.SetMaxOpenConns(25)
-	dbData.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
-	dbData.SetConnMaxIdleTime(1 * time.Minute) // Close idle
+	dbData.SetConnMaxLifetime(0)
+	dbData.SetConnMaxIdleTime(0)
 	SetDBLogLevel(strings.ToLower(dbloglevel)) // Use thread-safe accessor
 
 	return nil
@@ -1544,38 +1553,45 @@ func GetDBStaticOneStringOneIntIdx(tbl []DbstaticOneStringOneUInt, v string) int
 	return -1
 }
 
+// GetSettingTemplatesFor returns the picker options for a quality-profile
+// array-select field (key is "quality", "resolution", "audio", or "codec").
+//
+// The options are the canonical Name of each qualities row (e.g. "1080p"),
+// matching what QualityConfig.WantedResolution/WantedQuality/WantedAudio/
+// WantedCodec actually store. This must NOT reuse
+// DBConnect.QualityStrIn/ResolutionStrIn/AudioStrIn/CodecStrIn - those are a
+// different thing: lowercased, comma-split *parsing alias* lists consumed by
+// parser/fileparser.go and parser_v2/dbpatterns.go to match strings found in
+// release filenames, not a canonical name list. An earlier version of this
+// function returned those alias lists, so saved values could never
+// case/content-match any option and the picker always rendered blank.
 func GetSettingTemplatesFor(key string) map[string][]string {
 	// Get a thread-safe copy of DBConnect
 	dbConnect := GetDBConnect()
 
-	out := make(map[string][]string)
+	var qualities []Qualities
 
 	switch key {
 	case "quality":
-		out["options"] = make([]string, 0, len(dbConnect.QualityStrIn))
-		out["options"] = append(out["options"], "")
-		out["options"] = append(out["options"], dbConnect.QualityStrIn...)
-
+		qualities = dbConnect.GetqualitiesIn
 	case "resolution":
-		out["options"] = make([]string, 0, len(dbConnect.ResolutionStrIn))
-		out["options"] = append(out["options"], "")
-		out["options"] = append(out["options"], dbConnect.ResolutionStrIn...)
-
+		qualities = dbConnect.GetresolutionsIn
 	case "audio":
-		out["options"] = make([]string, 0, len(dbConnect.AudioStrIn))
-		out["options"] = append(out["options"], "")
-		out["options"] = append(out["options"], dbConnect.AudioStrIn...)
-
+		qualities = dbConnect.GetaudiosIn
 	case "codec":
-		out["options"] = make([]string, 0, len(dbConnect.CodecStrIn))
-		out["options"] = append(out["options"], "")
-		out["options"] = append(out["options"], dbConnect.CodecStrIn...)
-
+		qualities = dbConnect.GetcodecsIn
 	default:
 		return nil
 	}
 
-	return out
+	options := make([]string, 0, len(qualities)+1)
+	options = append(options, "")
+
+	for idx := range qualities {
+		options = append(options, qualities[idx].Name)
+	}
+
+	return map[string][]string{"options": options}
 }
 
 // types

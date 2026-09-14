@@ -41,8 +41,6 @@ func NewProvider(apiToken string) *Provider {
 		RateLimitPer24h:         5000,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}

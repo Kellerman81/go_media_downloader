@@ -311,9 +311,7 @@ func (s *ConfigSearcher) MediaSearch(
 	nzbID := handler.GetNzbIDP(&p.e)
 
 	// Use audio priority for audio types, video priority for video types
-	if cfgp.IsType == config.MediaTypeMusic ||
-		cfgp.IsType == config.MediaTypeAudiobook ||
-		cfgp.IsType == config.MediaTypeBook {
+	if !mediatype.SupportsVideoFile(cfgp.IsType) {
 		p.e.MinimumPriority, _ = GetpriobyfilesAudio(
 			cfgp.IsType,
 			nzbID,
@@ -399,16 +397,20 @@ func (s *ConfigSearcher) MediaSearch(
 // executeSearch performs a search based on the search type specified in the search parameters.
 // It supports different search types: missing media, RSS feed, and season search.
 // Returns a boolean indicating whether the search was successful.
-func (s *ConfigSearcher) executeSearch(p *searchParams, indcfg *config.IndexersConfig) error {
+func (s *ConfigSearcher) executeSearch(
+	ctx context.Context,
+	p *searchParams,
+	indcfg *config.IndexersConfig,
+) error {
 	switch p.searchtype {
 	case searchTypeMissing:
-		return s.searchnameid(p, indcfg)
+		return s.searchnameid(ctx, p, indcfg)
 	case searchTypeRSS:
-		return s.handleRSSSearch(indcfg, p)
+		return s.handleRSSSearch(ctx, indcfg, p)
 	case searchTypeSeason:
-		return s.handleSeasonSearch(indcfg, p)
+		return s.handleSeasonSearch(ctx, indcfg, p)
 	case searchTypeSeasonDate:
-		return s.handleSeasonDateSearch(indcfg, p)
+		return s.handleSeasonDateSearch(ctx, indcfg, p)
 	default:
 		return nil
 	}
@@ -480,7 +482,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 				return
 			}
 
-			err := s.executeSearch(p, indcfg)
+			err := s.executeSearch(ctx, p, indcfg)
 			if err == nil {
 				atomic.CompareAndSwapInt32(&s.Done, 0, 1)
 			}
@@ -510,7 +512,11 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 // such as whether to use a query search or a search by ID, and whether to search for a movie
 // or a TV series. It also handles errors that may occur during the search and logs them.
 // The method returns a boolean indicating whether the search was successful.
-func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersConfig) error {
+func (s *ConfigSearcher) searchnameid(
+	ctx context.Context,
+	p *searchParams,
+	indcfg *config.IndexersConfig,
+) error {
 	logger.Logtype("debug", 3).
 		Str(logger.StrIndexer, indcfg.Name).
 		Str("quality", s.Quality.Name).
@@ -550,7 +556,7 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 			Str("search_type", s.searchActionType).
 			Msg("Using ID-based search strategy")
 
-		err = s.performIDSearch(p, indcfg, cats, &local)
+		err = s.performIDSearch(ctx, p, indcfg, cats, &local)
 
 		// Check if we should fallback to title search
 		if s.Quality.SearchForTitleIfEmpty && len(local.Arr) == 0 {
@@ -570,7 +576,7 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 			Str("search_type", s.searchActionType).
 			Msg("Using title-based search strategy")
 
-		errsub := s.performTitleSearch(p, indcfg, cats, &local)
+		errsub := s.performTitleSearch(ctx, p, indcfg, cats, &local)
 		if err == nil && errsub != nil {
 			err = errsub
 		}
@@ -597,6 +603,7 @@ func (s *ConfigSearcher) searchnameid(p *searchParams, indcfg *config.IndexersCo
 // as soon as any query returned candidate results - the remaining fallback
 // queries would only produce redundant candidates.
 func (s *ConfigSearcher) performTitleSearch(
+	ctx context.Context,
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
@@ -613,7 +620,7 @@ func (s *ConfigSearcher) performTitleSearch(
 			searchQuery = p.e.SearchFor
 		}
 
-		if err = s.executeQuerySearch(p, indcfg, cats, searchQuery, "Title", results); err == nil {
+		if err = s.executeQuerySearch(ctx, p, indcfg, cats, searchQuery, "Title", results); err == nil {
 			if s.Quality.CheckUntilFirstFound && len(results.Arr) > 0 {
 				return nil
 			}
@@ -626,6 +633,7 @@ func (s *ConfigSearcher) performTitleSearch(
 		// Build search string with absolute episode number (e.g., "Series Name E643")
 		absoluteSearch := p.e.WantedTitle + " E" + strconv.Itoa(p.e.Info.AbsoluteEpisode)
 		if err = s.executeQuerySearch(
+			ctx,
 			p,
 			indcfg,
 			cats,
@@ -675,6 +683,7 @@ func (s *ConfigSearcher) performTitleSearch(
 			searchedWordSets = append(searchedWordSets, altWords)
 
 			if errsub := s.executeQuerySearch(
+				ctx,
 				p,
 				indcfg,
 				cats,
@@ -940,6 +949,7 @@ func (s *ConfigSearcher) searchparse(
 //   - searchType: Type of search being performed
 //   - results: Destination slice for found entries (goroutine-local during indexer searches)
 func (s *ConfigSearcher) executeQuerySearch(
+	ctx context.Context,
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
@@ -947,14 +957,17 @@ func (s *ConfigSearcher) executeQuerySearch(
 	results *apiexternal.NzbSlice,
 ) error {
 	_, _, err := apiexternal.QueryNewznabQuery(
-		s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, results,
+		ctx, s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, results,
 	)
 
 	if err != nil && !errors.Is(err, logger.ErrToWait) && !errors.Is(err, newznab.ErrBroke) {
-		p.e.Info.TempID = p.mediaid
+		// p is shared across all concurrent per-indexer goroutines (see
+		// searchindexers) - write the id straight into the log call instead
+		// of through p.e.Info.TempID, which was an unsynchronized write to
+		// that shared struct.
 		logsearcherror(
 			logger.JoinStrings("Error Searching Media by ", searchType),
-			p.e.Info.TempID,
+			p.mediaid,
 			s.Cfgp.IsType,
 			searchTerm,
 			err,
@@ -1065,6 +1078,7 @@ func (s *ConfigSearcher) getmediadatarss(
 // performIDSearch searches for media content using either IMDB (for movies) or TVDB (for TV series) identifiers
 // on the given indexer, collecting results into the goroutine-local results slice.
 func (s *ConfigSearcher) performIDSearch(
+	ctx context.Context,
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
@@ -1079,12 +1093,13 @@ func (s *ConfigSearcher) performIDSearch(
 	var err error
 
 	if h := mediatype.Get(s.Cfgp.IsType); h != nil {
-		err = h.PerformIDSearch(indcfg, s.Quality, &p.e, cats, results)
+		err = h.PerformIDSearch(ctx, indcfg, s.Quality, &p.e, cats, results)
 	}
 
 	if err != nil && !errors.Is(err, logger.ErrToWait) {
-		p.e.Info.TempID = p.mediaid
-		logsearcherror("Error Searching Media by ID", p.e.Info.TempID, s.Cfgp.IsType, "", err)
+		// See executeQuerySearch: p is shared across concurrent per-indexer
+		// goroutines, so avoid writing through p.e.Info.TempID here too.
+		logsearcherror("Error Searching Media by ID", p.mediaid, s.Cfgp.IsType, "", err)
 
 		return err
 	}
@@ -2090,9 +2105,7 @@ func (s *ConfigSearcher) getminimumpriority(
 	}
 
 	// Use audio priority function for audio media types
-	if s.Cfgp.IsType == config.MediaTypeMusic ||
-		s.Cfgp.IsType == config.MediaTypeAudiobook ||
-		s.Cfgp.IsType == config.MediaTypeBook {
+	if !mediatype.SupportsVideoFile(s.Cfgp.IsType) {
 		entry.MinimumPriority, _ = GetpriobyfilesAudio(
 			s.Cfgp.IsType,
 			&entry.Info.TempID,

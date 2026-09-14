@@ -4,6 +4,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 )
 
 // dupTableSpec describes one per-config item table and the child rows that hang
@@ -66,31 +67,42 @@ func specForType(isType uint) (dupTableSpec, bool) {
 	return dupTableSpec{}, false
 }
 
-// trackerSpecForType returns the author/artist tracker table that also lives
-// per-config for a media group type, or false when the type has none. These
-// rows carry no files but are referenced by items (audiobooks/books/albums), so
-// their refs are repointed to the keeper before a duplicate is removed.
-func trackerSpecForType(isType uint) (dupTableSpec, bool) {
+// trackerSpecForType returns the author/artist/book_series tracker tables that
+// also live per-config for a media group type, or false when the type has none.
+// These rows carry no files but are referenced by items (audiobooks/books/albums),
+// so their refs are repointed to the keeper before a duplicate is removed.
+func trackerSpecForType(isType uint) ([]dupTableSpec, bool) {
 	switch isType {
 	case config.MediaTypeBook, config.MediaTypeAudiobook:
-		return dupTableSpec{
-			label: "author", table: "authors", idCol: "dbauthor_id",
-			refs: [][2]string{
-				{"books", "author_id"},
-				{"audiobooks", "author_id"},
-				{"book_series", "author_id"},
+		return []dupTableSpec{
+			{
+				label: "author", table: "authors", idCol: "dbauthor_id",
+				refs: [][2]string{
+					{"books", "author_id"},
+					{"audiobooks", "author_id"},
+					{"book_series", "author_id"},
+				},
+			},
+			{
+				label: "book_series", table: "book_series", idCol: "dbbook_series_id",
+				refs: [][2]string{
+					{"books", "book_series_id"},
+					{"audiobooks", "book_series_id"},
+				},
 			},
 		}, true
 	case config.MediaTypeMusic:
-		return dupTableSpec{
-			label: "artist", table: "artists", idCol: "dbartist_id",
-			refs: [][2]string{
-				{"albums", "artist_id"},
+		return []dupTableSpec{
+			{
+				label: "artist", table: "artists", idCol: "dbartist_id",
+				refs: [][2]string{
+					{"albums", "artist_id"},
+				},
 			},
 		}, true
 	}
 
-	return dupTableSpec{}, false
+	return nil, false
 }
 
 // CleanupListDuplicates removes rows that exist more than once for the same
@@ -114,16 +126,19 @@ func CleanupListDuplicates(apply bool) {
 		}
 
 		if spec, ok := specForType(cfgp.IsType); ok {
-			g, d := dedupTableForConfig(spec, cfgp, apply)
+			g, d := dedupTableForConfig(spec, cfgp, cfgp.IsType, apply)
 			totalGroups += g
 			totalDeleted += d
 		}
 
-		// Author/artist tracker rows also live per-config for book/audiobook/music.
-		if spec, ok := trackerSpecForType(cfgp.IsType); ok {
-			g, d := dedupTableForConfig(spec, cfgp, apply)
-			totalGroups += g
-			totalDeleted += d
+		// Author/artist/book_series tracker rows also live per-config for
+		// book/audiobook/music.
+		if specs, ok := trackerSpecForType(cfgp.IsType); ok {
+			for _, spec := range specs {
+				g, d := dedupTableForConfig(spec, cfgp, cfgp.IsType, apply)
+				totalGroups += g
+				totalDeleted += d
+			}
 		}
 
 		return nil
@@ -148,7 +163,12 @@ func CleanupListDuplicates(apply bool) {
 // dedupTableForConfig finds and collapses duplicate rows of one table across a
 // single media group's sibling lists. Returns the number of duplicate groups
 // found and the number of rows deleted.
-func dedupTableForConfig(spec dupTableSpec, cfgp *config.MediaTypeConfig, apply bool) (int, int) {
+func dedupTableForConfig(
+	spec dupTableSpec,
+	cfgp *config.MediaTypeConfig,
+	isType uint,
+	apply bool,
+) (int, int) {
 	listargs := make([]any, 0, cfgp.ListsLen)
 	for i := range cfgp.ListsNames {
 		listargs = append(listargs, &cfgp.ListsNames[i])
@@ -167,7 +187,7 @@ func dedupTableForConfig(spec dupTableSpec, cfgp *config.MediaTypeConfig, apply 
 	var groups, deleted int
 
 	for i := range dupIDs {
-		if g, d := dedupeGroup(spec, cfgp.Name, inClause, dupIDs[i], listargs, apply); g {
+		if g, d := dedupeGroup(spec, cfgp.Name, inClause, dupIDs[i], listargs, isType, apply); g {
 			groups++
 			deleted += d
 		}
@@ -183,6 +203,7 @@ func dedupeGroup(
 	cfgName, inClause string,
 	dbid uint,
 	listargs []any,
+	isType uint,
 	apply bool,
 ) (bool, int) {
 	args := make([]any, 0, len(listargs)+1)
@@ -197,7 +218,7 @@ func dedupeGroup(
 		return false, 0
 	}
 
-	keeper := pickKeeper(spec, ids)
+	keeper := pickKeeper(spec, ids, isType)
 
 	var deleted int
 
@@ -234,19 +255,82 @@ func dedupeGroup(
 	return true, deleted
 }
 
-// pickKeeper chooses the row to retain: the first (lowest id) row that has
-// downloaded files, otherwise the lowest id. ids must be sorted ascending.
-func pickKeeper(spec dupTableSpec, ids []uint) uint {
-	if spec.fileTable != "" {
-		for _, id := range ids {
-			if database.Getdatarow[uint](false,
-				"select count() from "+spec.fileTable+" where "+spec.fileFK+" = ?", &id) > 0 {
-				return id
-			}
+// pickKeeper chooses the row to retain. Among rows that have downloaded
+// files, it prefers the one whose files score highest under its own
+// quality profile (via searcher.Getpriobyfiles/GetpriobyfilesAudio) -
+// previously this just took the first (lowest id) row with files, ignoring
+// quality entirely, so two sibling lists that each independently downloaded
+// the same item at different qualities could keep the worse one. Falls back
+// to the first row with files (then the lowest id) when no candidate can be
+// scored (e.g. no quality profile configured on either row). ids must be
+// sorted ascending.
+func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
+	if spec.fileTable == "" {
+		return ids[0]
+	}
+
+	var withFiles []uint
+
+	for _, id := range ids {
+		if database.Getdatarow[uint](false,
+			"select count() from "+spec.fileTable+" where "+spec.fileFK+" = ?", &id) > 0 {
+			withFiles = append(withFiles, id)
 		}
 	}
 
-	return ids[0]
+	if len(withFiles) == 0 {
+		return ids[0]
+	}
+
+	if len(withFiles) == 1 {
+		return withFiles[0]
+	}
+
+	// Books/audiobooks/music are scored on audio attributes (format/bitrate/
+	// sample rate); movies/series on resolution/quality/codec - matches the
+	// same audio-vs-video split used elsewhere in this codebase (e.g.
+	// searcher.go's priority-selection branches).
+	audio := isType == config.MediaTypeMusic ||
+		isType == config.MediaTypeAudiobook ||
+		isType == config.MediaTypeBook
+
+	best := withFiles[0]
+	bestPrio := -1
+	scored := false
+
+	for _, id := range withFiles {
+		idCopy := id
+
+		profile := database.Getdatarow[string](false,
+			"select quality_profile from "+spec.table+" where id = ?", &idCopy)
+		if profile == "" {
+			continue
+		}
+
+		qualcfg := config.GetSettingsQuality(profile)
+		if qualcfg == nil {
+			continue
+		}
+
+		var prio int
+		if audio {
+			prio, _ = searcher.GetpriobyfilesAudio(isType, &idCopy, true, -1, qualcfg, false)
+		} else {
+			prio, _ = searcher.Getpriobyfiles(isType, &idCopy, true, -1, qualcfg, false)
+		}
+
+		if !scored || prio > bestPrio {
+			scored = true
+			bestPrio = prio
+			best = id
+		}
+	}
+
+	if !scored {
+		return withFiles[0]
+	}
+
+	return best
 }
 
 // deleteParentRow removes a parent row and all of its child rows (files,

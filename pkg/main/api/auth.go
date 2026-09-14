@@ -2,13 +2,16 @@ package api
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
@@ -27,6 +30,10 @@ type Session struct {
 	ExpiresAt time.Time
 	UserID    string
 	CSRFToken string
+	// WizardDismissed tracks whether this session has already been sent to (or
+	// dismissed) the setup wizard, so the dashboard doesn't redirect to it on
+	// every load while the config still looks untouched.
+	WizardDismissed bool
 }
 
 var sessionStore = &SessionStore{
@@ -96,6 +103,17 @@ func (ss *SessionStore) deleteSession(sessionID string) {
 	delete(ss.sessions, sessionID)
 }
 
+// markWizardDismissed flags a session so the dashboard stops auto-redirecting
+// it to the setup wizard.
+func (ss *SessionStore) markWizardDismissed(sessionID string) {
+	ss.mutex.Lock()
+	defer ss.mutex.Unlock()
+
+	if session, exists := ss.sessions[sessionID]; exists {
+		session.WizardDismissed = true
+	}
+}
+
 // cleanupExpiredSessions removes expired sessions.
 func (ss *SessionStore) cleanupExpiredSessions() {
 	ss.mutex.Lock()
@@ -116,7 +134,47 @@ const (
 	SessionDuration = 24 * time.Hour
 	CSRFTokenLength = 16
 	SessionIDLength = 32
+	// WebAPIKeyLength is the byte length used for admin-generated (not
+	// user-typed) WebAPIKey values - see HandleGenerateAPIKey.
+	WebAPIKeyLength = 32
 )
+
+// HandleGenerateAPIKey returns a fresh, cryptographically random API key as
+// plain text for the admin to review before saving. It deliberately does
+// NOT write it into config itself - WebAPIKey also doubles as the web UI's
+// login password (see config/types.go's own doc comment on that field), so
+// silently replacing it here would invalidate the admin's own session's
+// expectations and every existing external API integration without any
+// confirmation. The admin still has to paste it into the General config
+// form's existing WebAPIKey field and click Save, exactly as if they'd
+// typed a new value by hand.
+func HandleGenerateAPIKey(c *gin.Context) {
+	c.Header("Content-Type", "text/plain")
+	c.String(http.StatusOK, generateSecureToken(WebAPIKeyLength))
+}
+
+// renderGenerateAPIKeyControl renders a "Generate Random Key" button that
+// fills the named field (via the shared window.gmdGenerateApiKey JS helper,
+// see web.go's adminJavaScript) with a fresh value from HandleGenerateAPIKey.
+// Purely client-side - the admin still has to click the form's own Save
+// button afterward, same as typing a value in by hand.
+func renderGenerateAPIKeyControl(fieldName string) gomponents.Node {
+	fieldNameJSON, _ := json.Marshal(fieldName)
+
+	return html.Div(
+		html.Class("d-flex align-items-center gap-2 mt-1"),
+		html.Button(
+			html.Class("btn btn-sm btn-outline-warning"),
+			html.Type("button"),
+			gomponents.Text("Generate Random Key"),
+			gomponents.Attr("onclick", "gmdGenerateApiKey("+string(fieldNameJSON)+")"),
+		),
+		html.Small(
+			html.Class("text-muted"),
+			gomponents.Text("Fills the field above - remember to Save afterward."),
+		),
+	)
+}
 
 // authenticateUser checks if the provided credentials are valid.
 func authenticateUser(username, password string) bool {
@@ -128,7 +186,10 @@ func authenticateUser(username, password string) bool {
 		expectedPassword = DefaultPassword
 	}
 
-	return username == DefaultUsername && password == expectedPassword
+	usernameMatch := subtle.ConstantTimeCompare([]byte(username), []byte(DefaultUsername)) == 1
+	passwordMatch := subtle.ConstantTimeCompare([]byte(password), []byte(expectedPassword)) == 1
+
+	return usernameMatch && passwordMatch
 }
 
 // requireAuth middleware checks for valid session.
@@ -175,7 +236,7 @@ func requireCSRF(c *gin.Context) {
 		csrfToken = c.PostForm("csrf_token")
 	}
 
-	if csrfToken != sessionObj.CSRFToken {
+	if subtle.ConstantTimeCompare([]byte(csrfToken), []byte(sessionObj.CSRFToken)) != 1 {
 		sendForbidden(c, "Invalid CSRF token")
 		return
 	}
@@ -186,7 +247,8 @@ func requireCSRF(c *gin.Context) {
 // redirectToLogin redirects user to login page.
 func redirectToLogin(c *gin.Context) {
 	// Clear any existing session cookie
-	c.SetCookie("session_id", "", -1, "/", "", false, true)
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("session_id", "", -1, "/", "", c.Request.TLS != nil, true)
 
 	// Check if this is a web page request that should redirect to login
 	// Admin and manage pages should redirect, not return JSON
@@ -579,8 +641,9 @@ func handleLogin(c *gin.Context) {
 	// Create session
 	session := sessionStore.createSession(username)
 
-	// Set secure session cookie
-	c.SetCookie("session_id", session.ID, int(24*time.Hour.Seconds()), "/", "", false, true)
+	// Set session cookie
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("session_id", session.ID, int(24*time.Hour.Seconds()), "/", "", c.Request.TLS != nil, true)
 
 	// Redirect to admin panel
 	c.Redirect(http.StatusFound, "/api/admin")
@@ -592,7 +655,8 @@ func handleLogout(c *gin.Context) {
 		sessionStore.deleteSession(sessionCookie)
 	}
 
-	c.SetCookie("session_id", "", -1, "/", "", false, true)
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("session_id", "", -1, "/", "", c.Request.TLS != nil, true)
 	c.Redirect(http.StatusFound, "/api/login")
 }
 
@@ -771,6 +835,8 @@ func handleRootRedirect(c *gin.Context) {
 // startSessionCleanup starts a goroutine to periodically clean expired sessions.
 func startSessionCleanup() {
 	go func() {
+		defer logger.HandlePanic()
+
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 

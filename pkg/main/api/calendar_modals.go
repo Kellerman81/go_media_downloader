@@ -94,11 +94,29 @@ func calendarModalsAndScripts() gomponents.Node {
 
 		// JavaScript for modal functionality
 		html.Script(gomponents.Raw(`
+function escapeCalendarHtml(value) {
+	return String(value == null ? '' : value)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
 function showEventDetails(id, title, type, network, season, episode, date, overview, imdbId, thetvdbId, moviedbId, traktId, downloaded, listname) {
 	const modalTitle = document.getElementById('eventDetailsModalLabel');
 	const modalBody = document.getElementById('eventDetailsBody');
 
 	modalTitle.textContent = title;
+
+	// title/network/overview/listname come from provider-supplied or
+	// user-editable metadata and are inserted via innerHTML below, so they
+	// must be HTML-escaped first - unlike modalTitle.textContent above,
+	// string concatenation into innerHTML gets no automatic escaping.
+	title = escapeCalendarHtml(title);
+	network = escapeCalendarHtml(network);
+	overview = escapeCalendarHtml(overview);
+	listname = escapeCalendarHtml(listname);
 
 	let detailsHTML = '<div class="row justify-content-center">';
 	detailsHTML += '<div class="col-md-10">';
@@ -129,29 +147,29 @@ function showEventDetails(id, title, type, network, season, episode, date, overv
 		detailsHTML += '<tr><td class="fw-bold">External Links:</td><td>';
 
 		if (imdbId && imdbId !== '') {
-			detailsHTML += '<a href="https://www.imdb.com/title/' + imdbId + '" target="_blank" class="btn btn-sm btn-outline-warning me-2">';
+			detailsHTML += '<a href="https://www.imdb.com/title/' + encodeURIComponent(imdbId) + '" target="_blank" class="btn btn-sm btn-outline-warning me-2">';
 			detailsHTML += '<i class="fas fa-external-link-alt me-1"></i>IMDB</a>';
 		}
 
 		if (thetvdbId && thetvdbId > 0 && type === 'series') {
-			detailsHTML += '<a href="https://thetvdb.com/search?query=' + thetvdbId + '" target="_blank" class="btn btn-sm btn-outline-info me-2">';
+			detailsHTML += '<a href="https://thetvdb.com/search?query=' + encodeURIComponent(thetvdbId) + '" target="_blank" class="btn btn-sm btn-outline-info me-2">';
 			detailsHTML += '<i class="fas fa-external-link-alt me-1"></i>TheTVDB</a>';
 		}
 
 		if (moviedbId && moviedbId > 0) {
 			if (type === 'movie') {
-				detailsHTML += '<a href="https://www.themoviedb.org/movie/' + moviedbId + '" target="_blank" class="btn btn-sm btn-outline-primary me-2">';
+				detailsHTML += '<a href="https://www.themoviedb.org/movie/' + encodeURIComponent(moviedbId) + '" target="_blank" class="btn btn-sm btn-outline-primary me-2">';
 			} else {
-				detailsHTML += '<a href="https://www.themoviedb.org/tv/' + moviedbId + '" target="_blank" class="btn btn-sm btn-outline-primary me-2">';
+				detailsHTML += '<a href="https://www.themoviedb.org/tv/' + encodeURIComponent(moviedbId) + '" target="_blank" class="btn btn-sm btn-outline-primary me-2">';
 			}
 			detailsHTML += '<i class="fas fa-external-link-alt me-1"></i>TMDB</a>';
 		}
 
 		if (traktId && traktId > 0) {
 			if (type === 'movie') {
-				detailsHTML += '<a href="https://trakt.tv/movies/' + traktId + '" target="_blank" class="btn btn-sm btn-outline-dark me-2">';
+				detailsHTML += '<a href="https://trakt.tv/movies/' + encodeURIComponent(traktId) + '" target="_blank" class="btn btn-sm btn-outline-dark me-2">';
 			} else {
-				detailsHTML += '<a href="https://trakt.tv/shows/' + traktId + '" target="_blank" class="btn btn-sm btn-outline-dark me-2">';
+				detailsHTML += '<a href="https://trakt.tv/shows/' + encodeURIComponent(traktId) + '" target="_blank" class="btn btn-sm btn-outline-dark me-2">';
 			}
 			detailsHTML += '<i class="fas fa-external-link-alt me-1"></i>Trakt</a>';
 		}
@@ -190,20 +208,15 @@ function searchCalendarEvent(id, type, searchByTitle) {
 	var url;
 	var confirmMsg;
 	if (type === 'movie') {
-		url = '/api/movies/search/list/' + id + '?apikey=' + encodeURIComponent(window.calendarApiKey || '') + '&searchByTitle=' + searchByTitle + '&download=true';
+		url = '/api/movies/search/list/' + id + '?searchByTitle=' + searchByTitle + '&download=true';
 		confirmMsg = searchByTitle ? 'Start search for this movie by Title?' : 'Start search for this movie by IMDB ID?';
 	} else {
-		url = '/api/series/episodes/search/list/' + id + '?apikey=' + encodeURIComponent(window.calendarApiKey || '') + '&searchByTitle=' + searchByTitle + '&download=true';
+		url = '/api/series/episodes/search/list/' + id + '?searchByTitle=' + searchByTitle + '&download=true';
 		confirmMsg = searchByTitle ? 'Start search for this episode by Title?' : 'Start search for this episode by TVDB ID?';
 	}
 
 	confirmAction('Please confirm', confirmMsg, function() {
-		fetch(url, {
-			method: 'GET',
-			headers: {
-				'X-CSRF-Token': document.querySelector('input[name="csrf_token"]')?.value || ''
-			}
-		})
+		gmdApiProxyFetch(url)
 		.then(response => response.json())
 		.then(data => {
 			var msg = 'Search completed!\n';

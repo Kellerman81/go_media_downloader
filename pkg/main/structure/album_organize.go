@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 )
 
@@ -427,7 +429,12 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 		false,
 		&s.forcedAlbumID,
 	)
-	if matchReason != "" || album == nil {
+	// A zero DatabaseID is a failed match however the matcher labelled it:
+	// everything below this point looks up or writes rows keyed by that id, so
+	// accepting one burns the removeOldAlbumFiles queries, the
+	// listname/rootpath lookups, the Organizerdata allocation and the whole
+	// naming pass before dying in GenerateNamingTemplate.
+	if matchReason != "" || album == nil || album.DatabaseID == 0 {
 		logger.Logtype("debug", 0).
 			Str("folder", folder).
 			Str("reason", matchReason).
@@ -633,10 +640,24 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 		addAlbumFilesToDatabase(ctx, targetPath, album, cfgp, listid)
 	}
 
+	// m is a naming-data carrier built from the matched album metadata, not a
+	// parsed release, so m.Priority is always 0 here - comparing it to
+	// CutoffPriority marked every album and audiobook as not-reached. Score the
+	// files that were just added instead, like addAudiobookFilesToDatabase in
+	// utils does.
 	var reached int
+
 	if listid >= 0 && listid < len(cfgp.Lists) {
-		if qual := cfgp.Lists[listid].CfgQuality; qual != nil && m.Priority >= qual.CutoffPriority {
-			reached = 1
+		if qual := cfgp.Lists[listid].CfgQuality; qual != nil {
+			mediaid := m.AudiobookID
+			if cfgp.IsType == config.MediaTypeMusic {
+				mediaid = m.AlbumID
+			}
+
+			prio, _ := searcher.GetpriobyfilesAudio(cfgp.IsType, &mediaid, false, -1, qual, false)
+			if prio >= qual.CutoffPriority {
+				reached = 1
+			}
 		}
 	}
 
@@ -825,6 +846,33 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 
 		// Add file to database
 		addAudiobookFilesToDatabase(ctx, targetPath, album, cfgp, listid)
+
+		// Mirror the single-album path: clear missing and score what was just
+		// imported. Without this a successfully organized multi-episode
+		// audiobook stayed missing=1 and kept getting re-searched.
+		var reached int
+
+		if listid >= 0 && listid < len(cfgp.Lists) {
+			if qual := cfgp.Lists[listid].CfgQuality; qual != nil {
+				prio, _ := searcher.GetpriobyfilesAudio(
+					cfgp.IsType,
+					&album.DatabaseID,
+					false,
+					-1,
+					qual,
+					false,
+				)
+				if prio >= qual.CutoffPriority {
+					reached = 1
+				}
+			}
+		}
+
+		database.ExecN(
+			mtstrings.GetStringsMap(cfgp.IsType, "UpdateMissingReached"),
+			&reached,
+			&album.DatabaseID,
+		)
 
 		matchedCount++
 	}
@@ -1083,16 +1131,26 @@ func (*Organizer) writeRenameLogSingle(
 // removeOldAlbumFiles removes old files from database and filesystem for an album.
 // This is called before moving new files to ensure we don't have duplicates.
 func (s *Organizer) removeOldAlbumFiles(ctx context.Context, albumID uint, mediaType uint) {
+	// No id means no old files to replace. Skipping also keeps this from
+	// deleting whatever happens to sit under a zero foreign key.
+	if albumID == 0 {
+		return
+	}
+
 	var query, querycount string
 
 	switch mediaType {
 	case config.MediaTypeMusic:
-		query = "SELECT location FROM album_files WHERE album_id = ?"
-		querycount = "SELECT count() FROM album_files WHERE album_id = ?"
+		// albumID here is the dbalbum_id value (callers pass album.DatabaseID,
+		// which is set from dbalbums.id via "WHERE dbalbum_id = ?" lookups
+		// elsewhere in this file) - filter on dbalbum_id, not the distinct
+		// album_id (list-entry) column.
+		query = "SELECT location FROM album_files WHERE dbalbum_id = ?"
+		querycount = "SELECT count() FROM album_files WHERE dbalbum_id = ?"
 
 	case config.MediaTypeAudiobook:
-		query = "SELECT location FROM audiobook_files WHERE audiobook_id = ?"
-		querycount = "SELECT count() FROM audiobook_files WHERE audiobook_id = ?"
+		query = "SELECT location FROM audiobook_files WHERE dbaudiobook_id = ?"
+		querycount = "SELECT count() FROM audiobook_files WHERE dbaudiobook_id = ?"
 
 	default:
 		return
@@ -1779,7 +1837,7 @@ func TagAlbumFiles(
 
 		// Fall back to Cover Art Archive for MusicBrainz releases without a stored cover URL
 		if coverURL == "" && mbReleaseID != "" {
-			coverURL = "https://coverartarchive.org/release/" + mbReleaseID + "/front"
+			coverURL = "https://coverartarchive.org/release/" + url.PathEscape(mbReleaseID) + "/front"
 		}
 
 		if coverURL != "" {
@@ -1841,6 +1899,17 @@ func TagAlbumFiles(
 		if len(coverData) > 0 {
 			audioTags.CoverData = coverData
 			audioTags.CoverMIME = coverMIME
+		} else {
+			// No new album-wide cover was fetched - carry forward whatever
+			// cover is already embedded in this specific file. Without this,
+			// WriteTags below would silently strip any existing embedded
+			// cover art (confirmed for MP3 via the id3v2 library's ParseFrames
+			// behavior, which discards unlisted frames like APIC entirely
+			// rather than round-tripping them - see tags.ReadCoverData).
+			if existingCover, existingMIME := tags.ReadCoverData(album.Tracks[i].Filepath); len(existingCover) > 0 {
+				audioTags.CoverData = existingCover
+				audioTags.CoverMIME = existingMIME
+			}
 		}
 
 		// Fetch and embed lyrics when enabled.

@@ -114,7 +114,7 @@ func (p *Provider) SearchByISBN(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/book/isbn/%s?key=%s", isbn, p.apiKey)
+	endpoint := fmt.Sprintf("/book/isbn/%s?key=%s", url.PathEscape(isbn), p.apiKey)
 
 	var response grBookResponse
 
@@ -143,7 +143,7 @@ func (p *Provider) GetBookByID(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/book/show/%s.xml?key=%s", id, p.apiKey)
+	endpoint := fmt.Sprintf("/book/show/%s.xml?key=%s", url.PathEscape(id), p.apiKey)
 
 	var response grBookResponse
 
@@ -168,7 +168,7 @@ func (p *Provider) GetAuthorByID(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/author/show/%s?key=%s", id, p.apiKey)
+	endpoint := fmt.Sprintf("/author/show/%s?key=%s", url.PathEscape(id), p.apiKey)
 
 	var response grAuthorResponse
 
@@ -194,7 +194,7 @@ func (p *Provider) GetBooksByAuthor(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/author/list/%s?key=%s&format=xml", authorID, p.apiKey)
+	endpoint := fmt.Sprintf("/author/list/%s?key=%s&format=xml", url.PathEscape(authorID), p.apiKey)
 	if page > 1 {
 		endpoint += fmt.Sprintf("&page=%d", page)
 	}
@@ -222,7 +222,7 @@ func (p *Provider) GetSeriesByID(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/series/%s?key=%s", id, p.apiKey)
+	endpoint := fmt.Sprintf("/series/%s?key=%s", url.PathEscape(id), p.apiKey)
 
 	var response grSeriesResponse
 

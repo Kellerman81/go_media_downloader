@@ -1,6 +1,7 @@
 package acoustid
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -176,7 +177,7 @@ func convertResult(result *acoustidResult) []apiexternal_v2.RecordingMatch {
 			for k := range result.Recordings[i].Releases[0].Mediums {
 				for j := range result.Recordings[i].Releases[0].Mediums[k].Tracks {
 					// Find matching track by title or position
-					if result.Recordings[i].Releases[0].Mediums[k].Tracks[j].Title != result.Recordings[i].Title &&
+					if !strings.EqualFold(result.Recordings[i].Releases[0].Mediums[k].Tracks[j].Title, result.Recordings[i].Title) &&
 						len(result.Recordings[i].Releases[0].Mediums[k].Tracks) != 1 {
 						continue
 					}

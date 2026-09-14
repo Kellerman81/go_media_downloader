@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -78,7 +79,7 @@ func (p *Provider) FindMovieByIMDbID(
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
 	// TVDB v2 can search by IMDb ID
-	endpoint := fmt.Sprintf("/search/series?imdbId=%s", imdbID)
+	endpoint := fmt.Sprintf("/search/series?imdbId=%s", url.QueryEscape(imdbID))
 
 	var response tvdbSearchResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -102,7 +103,7 @@ func (p *Provider) SearchSeries(
 	query string,
 	year int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
-	endpoint := fmt.Sprintf("/search/series?name=%s", query)
+	endpoint := fmt.Sprintf("/search/series?name=%s", url.QueryEscape(query))
 	if year > 0 {
 		endpoint += fmt.Sprintf("&year=%d", year)
 	}
@@ -175,23 +176,24 @@ func (p *Provider) GetSeasonDetails(
 	seriesID int,
 	seasonNumber int,
 ) (*apiexternal_v2.Season, error) {
-	// TVDB v2 episodes endpoint
-	endpoint := fmt.Sprintf("/series/%d/episodes", seriesID)
-
-	var response tvdbV2EpisodesResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+	// Use the paginated fetch (GetAllEpisodes) instead of a single
+	// unpaginated page - a single page only covers the first ~100 episodes,
+	// so any season only reachable on page 2+ (common for long-running
+	// shows) would incorrectly report "not found" even though it exists.
+	allEpisodes, err := p.GetAllEpisodes(ctx, seriesID)
+	if err != nil {
 		return nil, err
 	}
 
-	// Filter episodes for this season
-	var seasonEpisodes []tvdbV2Episode
-	for i := range response.Data {
-		if response.Data[i].AiredSeason == seasonNumber {
-			seasonEpisodes = append(seasonEpisodes, response.Data[i])
+	episodeCount := 0
+
+	for i := range allEpisodes {
+		if allEpisodes[i].SeasonNumber == seasonNumber {
+			episodeCount++
 		}
 	}
 
-	if len(seasonEpisodes) == 0 {
+	if episodeCount == 0 {
 		return nil, errors.New(
 			logger.JoinStrings("season ", strconv.Itoa(seasonNumber), " not found"),
 		)
@@ -200,7 +202,7 @@ func (p *Provider) GetSeasonDetails(
 	return &apiexternal_v2.Season{
 		ID:           seriesID*1000 + seasonNumber, // Generate ID
 		SeasonNumber: seasonNumber,
-		EpisodeCount: len(seasonEpisodes),
+		EpisodeCount: episodeCount,
 	}, nil
 }
 
@@ -211,19 +213,16 @@ func (p *Provider) GetEpisodeDetails(
 	seasonNumber int,
 	episodeNumber int,
 ) (*apiexternal_v2.Episode, error) {
-	// Get all episodes for the series, then filter
-	endpoint := fmt.Sprintf("/series/%d/episodes", seriesID)
-
-	var response tvdbV2EpisodesResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+	// See GetSeasonDetails - use the paginated fetch, not a single page.
+	allEpisodes, err := p.GetAllEpisodes(ctx, seriesID)
+	if err != nil {
 		return nil, err
 	}
 
-	// Find the specific episode
-	for i := range response.Data {
-		if response.Data[i].AiredSeason == seasonNumber &&
-			response.Data[i].AiredEpisodeNumber == episodeNumber {
-			return convertV2EpisodeToDetails(&response.Data[i]), nil
+	for i := range allEpisodes {
+		if allEpisodes[i].SeasonNumber == seasonNumber &&
+			allEpisodes[i].EpisodeNumber == episodeNumber {
+			return &allEpisodes[i], nil
 		}
 	}
 

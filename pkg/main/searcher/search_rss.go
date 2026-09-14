@@ -59,13 +59,18 @@ func (s *ConfigSearcher) SearchRSS(
 // It queries the last RSS entry, updates the RSS history if a new entry is found,
 // and handles potential errors during the search process.
 // Returns true if the RSS search is successful, false otherwise.
-func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searchParams) error {
+func (s *ConfigSearcher) handleRSSSearch(
+	ctx context.Context,
+	indcfg *config.IndexersConfig,
+	_ *searchParams,
+) error {
 	logger.Logtype("debug", 2).
 		Str(logger.StrIndexer, indcfg.Name).
 		Str("quality", s.Quality.Name).
 		Msg("Starting RSS search")
 
 	firstid, err := apiexternal.QueryNewznabRSSLast(
+		ctx,
 		indcfg,
 		s.Quality,
 		database.Getdatarow[string](
@@ -114,7 +119,11 @@ func (s *ConfigSearcher) handleRSSSearch(indcfg *config.IndexersConfig, _ *searc
 // It queries the TV series using TVDB ID and season information, and handles potential
 // errors during the search process. Returns true if the season search is successful,
 // false otherwise.
-func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *searchParams) error {
+func (s *ConfigSearcher) handleSeasonSearch(
+	ctx context.Context,
+	indcfg *config.IndexersConfig,
+	p *searchParams,
+) error {
 	// Season search only applies to media types with season/episode structure
 	if !mediatype.SupportsSeasonSearch(s.Cfgp.IsType) {
 		return nil
@@ -128,6 +137,7 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 		Msg("Starting season search")
 
 	_, _, err := apiexternal.QueryNewznabTvTvdb(
+		ctx,
 		indcfg,
 		s.Quality,
 		p.thetvdbid,
@@ -170,6 +180,7 @@ func (s *ConfigSearcher) handleSeasonSearch(indcfg *config.IndexersConfig, p *se
 // configuring the custom RSS feed URL, getting the last ID to prevent duplicates,
 // parsing results, and updating the RSS history.
 func (s *ConfigSearcher) getRSSFeed(
+	ctx context.Context,
 	listentry *config.MediaListsConfig,
 	downloadentries bool,
 ) error {
@@ -210,6 +221,7 @@ func (s *ConfigSearcher) getRSSFeed(
 	customindexer := setupIndexerConfig(listentry)
 
 	firstid, err := apiexternal.QueryNewznabRSSLastCustom(
+		ctx,
 		customindexer,
 		s.Quality,
 		database.Getdatarow[string](
@@ -353,6 +365,7 @@ func SearchSeriesRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig
 // Instead of querying by TVDB ID + season, it searches by series name so that all
 // recent releases are returned and matched against episodes we don't have yet.
 func (s *ConfigSearcher) handleSeasonDateSearch(
+	ctx context.Context,
 	indcfg *config.IndexersConfig,
 	p *searchParams,
 ) error {
@@ -375,6 +388,7 @@ func (s *ConfigSearcher) handleSeasonDateSearch(
 	emptyEntry := searchParams{}
 
 	_, _, err := apiexternal.QueryNewznabQuery(
+		ctx,
 		s.Cfgp,
 		&emptyEntry.e,
 		indcfg,
@@ -639,12 +653,16 @@ func addrsshistory(urlv, lastid *string, quality *config.QualityConfig, configv 
 // Getnewznabrss queries Newznab indexers from the given MediaListsConfig
 // using the provided MediaTypeConfig. It searches for and downloads any
 // matching RSS feed items.
-func Getnewznabrss(cfgp *config.MediaTypeConfig, list *config.MediaListsConfig) error {
+func Getnewznabrss(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	list *config.MediaListsConfig,
+) error {
 	if list.CfgList == nil || cfgp == nil {
 		return logger.ErrNotFound
 	}
 
-	return NewSearcher(cfgp, list.CfgQuality, logger.StrRss, nil).getRSSFeed(list, true)
+	return NewSearcher(cfgp, list.CfgQuality, logger.StrRss, nil).getRSSFeed(ctx, list, true)
 }
 
 // searchseasons searches for missing episodes for series matching the given

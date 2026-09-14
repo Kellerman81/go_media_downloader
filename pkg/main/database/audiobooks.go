@@ -514,15 +514,14 @@ func GetAudiobookByRootpath(rootpath string) (*Audiobook, error) {
 	}
 
 	var ab Audiobook
-	Scanrowsdyn(
-		false,
+	GetdatarowArgs(
 		"SELECT id, dbaudiobook_id, listname, rootpath, quality_profile FROM audiobooks WHERE rootpath = ? LIMIT 1",
+		&rootpath,
 		&ab.ID,
 		&ab.DbaudiobookID,
 		&ab.Listname,
 		&ab.Rootpath,
 		&ab.QualityProfile,
-		&rootpath,
 	)
 
 	if ab.ID == 0 {

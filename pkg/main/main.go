@@ -37,6 +37,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sendmail"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -136,7 +137,6 @@ func initproviders() {
 				CircuitBreakerThreshold:   3,
 				CircuitBreakerTimeout:     30 * time.Second,
 				CircuitBreakerHalfOpenMax: 1,
-				EnableStats:               true,
 				UserAgent:                 config.GetSettingsGeneral().UserAgent,
 			}
 			if provider := pushover.NewProviderWithConfig(
@@ -168,7 +168,6 @@ func initproviders() {
 				CircuitBreakerThreshold:   3,
 				CircuitBreakerTimeout:     30 * time.Second,
 				CircuitBreakerHalfOpenMax: 1,
-				EnableStats:               true,
 				UserAgent:                 config.GetSettingsGeneral().UserAgent,
 			}
 			if provider := gotify.NewProviderWithConfig(
@@ -219,23 +218,23 @@ func initproviders() {
 					Msg("Registered apprise notification provider")
 			}
 
-			// case "sendmail":
-			// 	// Sendmail only has simple NewProvider
-			// 	if notifCfg.SMTPServer != "" && notifCfg.SMTPFromEmail != "" &&
-			// 		notifCfg.SMTPToEmail != "" {
-			// 		port, _ := strconv.Atoi(notifCfg.SMTPPort)
-			// 		if port == 0 {
-			// 			port = 587 // Default SMTP port
-			// 		}
+		case "sendmail":
+			// Sendmail only has simple NewProvider
+			if notifCfg.SMTPServer != "" && notifCfg.SMTPFromEmail != "" &&
+				notifCfg.SMTPToEmail != "" {
+				port, _ := strconv.Atoi(notifCfg.SMTPPort)
+				if port == 0 {
+					port = 587 // Default SMTP submission port
+				}
 
-			// 		toEmails := []string{notifCfg.SMTPToEmail}
-			// 		if provider := sendmail.NewProvider(notifCfg.SMTPServer, port, notifCfg.SMTPFromEmail, toEmails, notifCfg.SMTPUsername, notifCfg.SMTPPassword); provider != nil {
-			// 			cm.RegisterNotificationProvider(name, provider)
-			// 			logger.Logtype(logger.StatusDebug, 0).
-			// 				Str("notification", name).
-			// 				Msg("Registered sendmail notification provider")
-			// 		}
-			// 	}
+				toEmails := []string{notifCfg.SMTPToEmail}
+				if provider := sendmail.NewProvider(notifCfg.SMTPServer, port, notifCfg.SMTPFromEmail, toEmails, notifCfg.SMTPUsername, notifCfg.SMTPPassword); provider != nil {
+					cm.RegisterNotificationProvider(name, provider)
+					logger.Logtype(logger.StatusDebug, 0).
+						Str("notification", name).
+						Msg("Registered sendmail notification provider")
+				}
+			}
 		}
 	})
 
@@ -883,6 +882,17 @@ func main() {
 	}()
 
 	logger.Logtype("info", 1).Str("port", general.WebPort).Msg("Started API Webserver on port ")
+
+	webPassword := general.WebAPIKey
+	if webPassword == "" {
+		webPassword = api.DefaultPassword
+	}
+
+	//nolint:forbidigo // user-facing startup hint, easy to spot next to the JSON logs
+	fmt.Printf(
+		"Web UI: http://localhost:%s/api/admin (user '%s', password '%s')\n",
+		general.WebPort, api.DefaultUsername, webPassword,
+	)
 
 	// Wait for interrupt signal to gracefully shutdown the server with
 	quit := make(chan os.Signal, 1)

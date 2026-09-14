@@ -23,9 +23,13 @@ import (
 
 // SQL query constants to avoid repeated string allocations.
 const (
-	querySelectBookByDbID      = "select id from books where dbbook_id = ? and listname = ?"
-	querySelectAudiobookByDbID = "select id from audiobooks where dbaudiobook_id = ? and listname = ?"
-	querySelectAlbumByDbID     = "select id from albums where dbalbum_id = ? and listname = ?"
+	// COLLATE NOCASE matches querySelectMovieByImdb (jobs_movies.go) - without
+	// it, a listname differing only in case from list.Name (config rename,
+	// casing drift) makes a just-matched book/audiobook/album ID stay 0,
+	// so the file is dropped as unmatched even though the DB row was found.
+	querySelectBookByDbID      = "select id from books where dbbook_id = ? and listname = ? COLLATE NOCASE"
+	querySelectAudiobookByDbID = "select id from audiobooks where dbaudiobook_id = ? and listname = ? COLLATE NOCASE"
+	querySelectAlbumByDbID     = "select id from albums where dbalbum_id = ? and listname = ? COLLATE NOCASE"
 	querySelectTrackByAlbum    = "SELECT id FROM dbtracks WHERE dbalbum_id = ? AND track_number = ? AND disc_number = ?"
 	// querySelectImdbByDbmovie   = "select imdb_id from dbmovies where id = ?".
 )
@@ -438,8 +442,9 @@ func jobImportParseCommon(
 				if qualityProfileName != "" {
 					database.ExecN(updateProfile, &qualityProfileName, &m.Episodes[idx].Num1)
 				}
-
-				database.ExecN(deleteUnmatched, &m.File)
+				// deleteUnmatched already runs once, unconditionally, for
+				// this path after the switch below - no need to repeat it
+				// per episode for a multi-episode file.
 			}
 		}
 
@@ -488,25 +493,31 @@ func jobImportParseCommon(
 
 			// Read audio tags to match file to track
 			var dbtrackID uint
-			if tagData := parser_v2.ReadTagsForFirstFile([]string{pathv}); tagData != nil &&
-				dbMediaID != 0 {
-				// Try to find matching track in dbtracks by track number and disc number
-				database.Scanrowsdyn(
-					false,
-					querySelectTrackByAlbum,
-					&dbtrackID,
-					&dbMediaID,
-					&tagData.TrackNumber,
-					&tagData.DiscNumber,
-				)
+			if tagData := parser_v2.ReadTagsForFirstFile([]string{pathv}); tagData != nil {
+				if dbMediaID != 0 {
+					// Try to find matching track in dbtracks by track number and disc number
+					database.Scanrowsdyn(
+						false,
+						querySelectTrackByAlbum,
+						&dbtrackID,
+						&dbMediaID,
+						&tagData.TrackNumber,
+						&tagData.DiscNumber,
+					)
 
-				logger.Logtype("debug", 2).
-					Uint("dbalbum_id", dbMediaID).
-					Int("track_number", tagData.TrackNumber).
-					Int("disc_number", tagData.DiscNumber).
-					Uint("dbtrack_id", dbtrackID).
-					Str("file", pathv).
-					Msg("Matched music file to track")
+					logger.Logtype("debug", 2).
+						Uint("dbalbum_id", dbMediaID).
+						Int("track_number", tagData.TrackNumber).
+						Int("disc_number", tagData.DiscNumber).
+						Uint("dbtrack_id", dbtrackID).
+						Str("file", pathv).
+						Msg("Matched music file to track")
+				}
+
+				// Every other ReadTagsForFirstFile/ReadAudioTags call site in
+				// this codebase returns the pooled object right after use -
+				// this one didn't, silently draining the bounded TrackInfo pool.
+				parser_v2.PutTrackInfo(tagData)
 			}
 
 			database.ExecN(insertQuery,

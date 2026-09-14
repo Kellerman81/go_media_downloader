@@ -1001,6 +1001,8 @@ func performSearch(
 			episodeLimit = 20
 		}
 
+		// Prefer missing episodes; if none are missing, fall back to all episodes so
+		// a search still returns something (e.g. for upgrades or to verify availability).
 		episodeIDs := database.GetrowsN[uint](
 			false,
 			uint(episodeLimit),
@@ -1008,6 +1010,22 @@ func performSearch(
 			serie.ID,
 			episodeLimit,
 		)
+		if len(episodeIDs) == 0 {
+			episodeIDs = database.GetrowsN[uint](
+				false,
+				uint(episodeLimit),
+				"select id from serie_episodes where serie_id = ? order by id limit ?",
+				serie.ID,
+				episodeLimit,
+			)
+		}
+
+		if len(episodeIDs) == 0 {
+			return nil, fmt.Errorf(
+				"series '%s' has no episodes in the database to search - refresh/import the series first",
+				serie.Listname,
+			)
+		}
 
 		sr := searcher.NewSearcher(
 			mediaTypeConfig,

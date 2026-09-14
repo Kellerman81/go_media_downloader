@@ -347,6 +347,7 @@ func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 
 // PerformIDSearch executes a search by TVDB ID.
 func (*handler) PerformIDSearch(
+	ctx context.Context,
 	indcfg *config.IndexersConfig,
 	quality *config.QualityConfig,
 	entry *apiexternal_v2.Nzbwithprio,
@@ -358,7 +359,7 @@ func (*handler) PerformIDSearch(
 	}
 
 	_, _, err := apiexternal.QueryNewznabTvTvdb(
-		indcfg, quality, entry.NZB.TVDBID, cats,
+		ctx, indcfg, quality, entry.NZB.TVDBID, cats,
 		entry.NZB.Season, entry.NZB.Episode, true, true, raw,
 	)
 

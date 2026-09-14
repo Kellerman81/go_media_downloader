@@ -3,7 +3,6 @@ package importfeed
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
-	"github.com/pelletier/go-toml/v2"
 )
 
 var (
@@ -299,7 +297,12 @@ func processprovider(
 		}
 
 	default:
-		return true
+		// An unrecognized provider name (e.g. a config typo) must not look
+		// like "found" to the caller's `if processprovider(...) { return }` -
+		// that would abort MovieFindImdbIDByTitle's whole fallback chain
+		// after this one bad entry instead of trying the remaining
+		// configured providers.
+		return false
 	}
 
 	return false
@@ -777,20 +780,6 @@ func getsearchprovider(searchtyperss bool) []string {
 	}
 
 	return defaultproviders
-}
-
-func LoadSeriesConfig(file string) ([]config.ManualConfig, error) {
-	content, err := os.Open(file)
-	if err != nil {
-		return nil, errLoadingConfig
-	}
-	defer content.Close()
-
-	var s config.MainManualConfig
-
-	err = toml.NewDecoder(content).Decode(&s)
-
-	return s.Config, err
 }
 
 // findSerieConfigByName searches for a SerieConfig entry across all media configurations
@@ -1271,10 +1260,25 @@ func jobImportDBSeries(
 					// Collect episodes from TVDB first (primary source)
 					var episodes map[string]*apiexternal.CollectedEpisode
 					if dbserie.ThetvdbID != 0 {
-						episodes = apiexternal.CollectTvdbSeriesEpisodes(
+						var err error
+
+						episodes, err = apiexternal.CollectTvdbSeriesEpisodes(
 							dbserie.ThetvdbID,
 							cfgp.MetadataLanguage,
 						)
+						if err != nil {
+							// Genuine fetch failure (network/auth/etc) - do not treat as
+							// "series has zero episodes". Skip this series for this run
+							// so it gets retried on a later scheduled import instead of
+							// permanently under-collecting episodes.
+							logger.Logtype("warn", 1).
+								Int(logger.StrTvdb, dbserie.ThetvdbID).
+								Str(logger.StrSeries, serieconfig.Name).
+								Err(err).
+								Msg("Skipping series this run: failed to collect TVDB episodes")
+
+							return err
+						}
 					} else {
 						episodes = make(map[string]*apiexternal.CollectedEpisode)
 					}

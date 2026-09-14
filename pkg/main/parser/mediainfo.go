@@ -30,15 +30,13 @@ type mediaInfoJSON struct {
 // If not, it constructs the default path based on the OS and the
 // config.GetSettingsGeneral().MediainfoPath setting.
 func getmediainfoFilename() string {
-	if mediainfopath != "" {
-		return mediainfopath
-	}
-
-	if runtime.GOOS == "windows" {
-		mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo.exe")
-	} else {
-		mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo")
-	}
+	mediainfoOnce.Do(func() {
+		if runtime.GOOS == "windows" {
+			mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo.exe")
+		} else {
+			mediainfopath = filepath.Join(config.GetSettingsGeneral().MediainfoPath, "mediainfo")
+		}
+	})
 
 	return mediainfopath
 }

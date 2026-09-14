@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
@@ -596,16 +595,6 @@ func updateDbbook(dbbook *database.Dbbook) {
 	)
 }
 
-// BookSearchByTitle searches for books by title using OpenLibrary.
-func BookSearchByTitle(
-	ctx context.Context,
-	title, author string,
-	limit int,
-) ([]apiexternal_v2.BookSearchResult, error) {
-	provider := getOpenLibraryProvider()
-	return provider.SearchBooks(ctx, title, author, limit)
-}
-
 // -----------------------------------------------------------------------------
 // Author Import Functions
 // -----------------------------------------------------------------------------
@@ -618,121 +607,6 @@ type AuthorConfig struct {
 	AlternateName []string
 	TrackMode     string // "all", "series_only", "manual"
 	DontSearch    bool
-}
-
-// JobImportAuthor imports an author into the database.
-func JobImportAuthor(
-	ctx context.Context,
-	authorConfig *AuthorConfig,
-	cfgp *config.MediaTypeConfig,
-	listid int,
-	addnew bool,
-) (uint, error) {
-	if cfgp.Name == "" {
-		return 0, logger.ErrCfgpNotFound
-	}
-
-	if authorConfig.Name == "" && authorConfig.OpenlibraryID == "" &&
-		authorConfig.GoodreadsID == "" {
-		return 0, errAuthorIdentifierEmpty
-	}
-
-	jobName := authorConfig.Name
-	if jobName == "" {
-		jobName = authorConfig.OpenlibraryID
-	}
-
-	if !startJobIfAbsent(jobName) {
-		return 0, errJobRunning
-	}
-
-	defer endJob(jobName)
-
-	var (
-		dbauthoradded bool
-		dbauthor      database.Dbauthor
-	)
-
-	// Try to find existing author
-	if authorConfig.OpenlibraryID != "" {
-		database.Scanrowsdyn(
-			false,
-			"select id from dbauthors where openlibrary_id = ?",
-			&dbauthor.ID,
-			&authorConfig.OpenlibraryID,
-		)
-	}
-
-	if dbauthor.ID == 0 && authorConfig.GoodreadsID != "" {
-		database.Scanrowsdyn(
-			false,
-			"select id from dbauthors where goodreads_id = ?",
-			&dbauthor.ID,
-			&authorConfig.GoodreadsID,
-		)
-	}
-
-	if dbauthor.ID == 0 && authorConfig.Name != "" {
-		database.Scanrowsdyn(
-			false,
-			"select id from dbauthors where name = ? COLLATE NOCASE",
-			&dbauthor.ID,
-			&authorConfig.Name,
-		)
-	}
-
-	if dbauthor.ID == 0 && addnew {
-		logger.Logtype("debug", 1).
-			Str("author", authorConfig.Name).
-			Msg("Insert dbauthor for")
-
-		authorSlug := logger.StringToSlugCached(authorConfig.Name)
-
-		dbresult, err := database.ExecNid(
-			"insert into dbauthors (name, slug, openlibrary_id, goodreads_id) VALUES (?, ?, ?, ?)",
-			&authorConfig.Name,
-			&authorSlug,
-			&authorConfig.OpenlibraryID,
-			&authorConfig.GoodreadsID,
-		)
-		if err != nil {
-			return 0, err
-		}
-
-		dbauthor.ID = logger.Int64ToUint(dbresult)
-		dbauthoradded = true
-	}
-
-	if dbauthor.ID == 0 {
-		return 0, errAuthorNotFoundInDatabase
-	}
-
-	// Update metadata if needed
-	if dbauthoradded || !addnew {
-		err := dbauthor.GetDbauthorByIDP(&dbauthor.ID)
-		if err != nil {
-			return 0, errAuthorIgnored
-		}
-
-		if !dbauthoradded && !shouldUpdateMetadata(dbauthor.UpdatedAt) {
-			logger.Logtype("debug", 1).
-				Str("author", authorConfig.Name).
-				Msg("Skipped update metadata for dbauthor")
-		} else {
-			metadata.AuthorGetMetadata(ctx, &dbauthor, true)
-			updateDbauthor(&dbauthor)
-		}
-	}
-
-	// Add to tracking list if needed
-	if addnew && listid >= 0 {
-		err := CheckaddAuthorEntry(&dbauthor.ID, cfgp, &cfgp.Lists[listid], authorConfig)
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	return dbauthor.ID, nil
 }
 
 // CheckaddAuthorEntry checks if an author should be added to tracking.
@@ -977,16 +851,6 @@ func updateDbaudiobook(dbaudiobook *database.Dbaudiobook) {
 		&dbaudiobook.Description,
 		&dbaudiobook.ID,
 	)
-}
-
-// AudiobookSearchByTitle searches for audiobooks by title using Audible.
-func AudiobookSearchByTitle(
-	ctx context.Context,
-	title string,
-	limit int,
-) ([]apiexternal_v2.AudiobookSearchResult, error) {
-	provider := getAudibleProvider()
-	return provider.SearchByTitle(ctx, title, limit)
 }
 
 // -----------------------------------------------------------------------------
@@ -1241,17 +1105,6 @@ func updateDbalbum(dbalbum *database.Dbalbum) {
 	)
 }
 
-// AlbumSearchByTitle searches for albums by title using MusicBrainz.
-func AlbumSearchByTitle(
-	ctx context.Context,
-	title string,
-	limit int,
-) ([]apiexternal_v2.ReleaseSearchResult, error) {
-	provider := getMusicBrainzProvider()
-	results, _, err := provider.SearchReleases(ctx, title, limit, 0)
-	return results, err
-}
-
 // -----------------------------------------------------------------------------
 // Music Artist Import Functions
 // -----------------------------------------------------------------------------
@@ -1439,51 +1292,6 @@ func updateDbartist(dbartist *database.Dbartist) {
 	)
 }
 
-// ArtistSearchByName searches for artists by name using MusicBrainz.
-func ArtistSearchByName(
-	ctx context.Context,
-	name string,
-	limit int,
-) ([]apiexternal_v2.ArtistSearchResult, error) {
-	provider := getMusicBrainzProvider()
-	return provider.SearchArtists(ctx, name, limit)
-}
-
-// -----------------------------------------------------------------------------
-// Unified Import Function
-// -----------------------------------------------------------------------------
-
-// JobImportByType provides a unified entry point for importing any media type.
-func JobImportByType(
-	ctx context.Context,
-	mediaType uint,
-	identifier string,
-	cfgp *config.MediaTypeConfig,
-	listid int,
-	addnew bool,
-) (uint, error) {
-	switch mediaType {
-	case config.MediaTypeMovie:
-		return JobImportMovies(identifier, cfgp, listid, addnew, false)
-
-	case config.MediaTypeSeries:
-		// Series uses different config structure - call jobImportDBSeries directly
-		return 0, errUseJobImportDBSeries
-
-	case config.MediaTypeBook:
-		return JobImportBooks(ctx, identifier, cfgp, listid, addnew)
-
-	case config.MediaTypeAudiobook:
-		return JobImportAudiobooks(ctx, identifier, cfgp, listid, addnew)
-
-	case config.MediaTypeMusic:
-		return JobImportAlbums(ctx, identifier, cfgp, listid, addnew)
-
-	default:
-		return 0, errUnsupportedMediaType
-	}
-}
-
 // -----------------------------------------------------------------------------
 // Alternate Title Management (unified for all media types)
 // -----------------------------------------------------------------------------
@@ -1530,152 +1338,4 @@ func addAlternateTitle(mediaType uint, dbid *uint, title *string, regionin ...*s
 			syncops.DbstaticTwoStringOneInt{Str1: *title, Str2: slug, Num: *dbid},
 		)
 	}
-}
-
-// AddBookAlternateTitle adds an alternate title for a book.
-func AddBookAlternateTitle(dbbookid *uint, title *string, region ...*string) {
-	addAlternateTitle(config.MediaTypeBook, dbbookid, title, region...)
-}
-
-// AddAudiobookAlternateTitle adds an alternate title for an audiobook.
-func AddAudiobookAlternateTitle(dbaudiobookid *uint, title *string, region ...*string) {
-	addAlternateTitle(config.MediaTypeAudiobook, dbaudiobookid, title, region...)
-}
-
-// AddAlbumAlternateTitle adds an alternate title for an album.
-func AddAlbumAlternateTitle(dbalbumid *uint, title *string, region ...*string) {
-	addAlternateTitle(config.MediaTypeMusic, dbalbumid, title, region...)
-}
-
-// -----------------------------------------------------------------------------
-// Identifier Lookup Functions
-// -----------------------------------------------------------------------------
-
-// FindBookByTitle searches for a book in the database or external APIs by title.
-func FindBookByTitle(
-	ctx context.Context,
-	title string,
-	author string,
-	year uint16,
-) (*database.Dbbook, error) {
-	// First check database
-	var dbbook database.Dbbook
-	database.Scanrowsdyn(
-		false,
-		"select id from dbbooks where title = ? COLLATE NOCASE",
-		&dbbook.ID,
-		&title,
-	)
-
-	if dbbook.ID != 0 {
-		dbbook.GetDbbookByIDP(&dbbook.ID)
-		return &dbbook, nil
-	}
-
-	// Search external API
-	results, err := BookSearchByTitle(ctx, title, author, 5)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range results {
-		// Check year if provided
-		if year != 0 && results[i].PublishYear != 0 {
-			if results[i].PublishYear != int(year) && results[i].PublishYear != int(year+1) &&
-				results[i].PublishYear != int(year-1) {
-				continue
-			}
-		}
-
-		// Check author if provided
-		if author != "" && len(results[i].Authors) > 0 {
-			found := false
-			for j := range results[i].Authors {
-				if logger.ContainsI(results[i].Authors[j], author) {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				continue
-			}
-		}
-
-		// Create dbbook from result
-		dbbook.Title = results[i].Title
-		dbbook.ISBN13 = results[i].ISBN13
-		dbbook.ISBN10 = results[i].ISBN10
-
-		dbbook.OpenlibraryID = results[i].ID
-		if results[i].PublishYear != 0 {
-			dbbook.Year = uint16(
-				results[i].PublishYear,
-			)
-		}
-
-		return &dbbook, nil
-	}
-
-	return nil, logger.ErrNotFoundBook
-}
-
-// FindAudiobookByTitle searches for an audiobook in the database or external APIs by title.
-func FindAudiobookByTitle(
-	ctx context.Context,
-	title string,
-	author string,
-) (*database.Dbaudiobook, error) {
-	// First check database
-	var dbaudiobook database.Dbaudiobook
-	database.Scanrowsdyn(
-		false,
-		"select id from dbaudiobooks where title = ? COLLATE NOCASE",
-		&dbaudiobook.ID,
-		&title,
-	)
-
-	if dbaudiobook.ID != 0 {
-		dbaudiobook.GetDbaudiobookByIDP(&dbaudiobook.ID)
-		return &dbaudiobook, nil
-	}
-
-	// Search external API
-	results, err := AudiobookSearchByTitle(ctx, title, 5)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range results {
-		// Check author if provided
-		if author != "" && len(results[i].Authors) > 0 {
-			found := false
-			for j := range results[i].Authors {
-				if logger.ContainsI(results[i].Authors[j], author) {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				continue
-			}
-		}
-
-		// Create dbaudiobook from result
-		dbaudiobook.Title = results[i].Title
-		dbaudiobook.ASIN = results[i].ASIN
-		dbaudiobook.AudibleID = results[i].ID
-
-		dbaudiobook.RuntimeMinutes = results[i].RuntimeMinutes
-		if results[i].ReleaseYear != 0 {
-			dbaudiobook.Year = uint16(
-				results[i].ReleaseYear,
-			)
-		}
-
-		return &dbaudiobook, nil
-	}
-
-	return nil, logger.ErrNotFoundAudiobook
 }

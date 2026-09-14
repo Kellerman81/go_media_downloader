@@ -703,7 +703,7 @@ func (s *Organizer) validateRuntime(
 	}
 
 	if s.targetpathCfg.MaxRuntimeDifference == 0 {
-		logger.Logtype("warning", 2).
+		logger.Logtype("warn", 2).
 			Int(logger.StrWanted, wantedruntime).
 			Int(logger.StrFound, targetruntime).
 			Msg("wrong runtime")
@@ -722,7 +722,7 @@ func (s *Organizer) validateRuntime(
 			s.fileCleanup(o.Folder, o.MediaFile, o.Rootpath)
 		}
 
-		logger.Logtype("warning", 2).
+		logger.Logtype("warn", 2).
 			Int(logger.StrWanted, wantedruntime).
 			Int(logger.StrFound, targetruntime).
 			Msg("wrong runtime")
@@ -793,7 +793,7 @@ func (s *Organizer) validateLanguage(
 		return err
 	}
 
-	logger.Logtype("warning", 2).
+	logger.Logtype("warn", 2).
 		Str(logger.StrFound, foundLang).
 		Str(logger.StrWanted, wantedLang).
 		Msg("wrong language")
@@ -850,6 +850,20 @@ func stringRemoveAllRunes(s string, r byte) string {
 // the naming template to replace placeholders with actual values. It handles movies and shows
 // differently based on the UseSeries config option.
 func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseInfo, dbid *uint) {
+	// Every media type's FillNamingData starts by loading its row by this id,
+	// so a zero id can only ever end in the failure branch below. Bail before
+	// the template split, the debug event, the handler lookup and the DB
+	// round-trip instead of paying for all of them first.
+	if dbid == nil || *dbid == 0 {
+		o.Filename = ""
+
+		logger.Logtype("warn", 0).
+			Uint("type", s.Cfgp.IsType).
+			Msg("GenerateNamingTemplate called without a database id")
+
+		return
+	}
+
 	forparser := parsertype{Source: m}
 
 	var bl bool
@@ -868,7 +882,7 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 	if handler == nil {
 		o.Filename = ""
 
-		logger.Logtype("warning", 0).Uint("type", s.Cfgp.IsType).Msg("Handler is nil")
+		logger.Logtype("warn", 0).Uint("type", s.Cfgp.IsType).Msg("Handler is nil")
 		return
 	}
 
@@ -879,7 +893,7 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 	if !ok {
 		o.Filename = ""
 
-		logger.Logtype("warning", 0).
+		logger.Logtype("warn", 0).
 			Uint("type", s.Cfgp.IsType).
 			Uint("dbid", *dbid).
 			Msg("FillNamingData failed")
@@ -1160,7 +1174,23 @@ func (s *Organizer) moveRemoveOldMediaFile(
 		)
 	}
 
-	database.ExecNMap(s.Cfgp.IsType, logger.DBDeleteFileByIDLocation, id, oldfilep)
+	if id != nil {
+		database.ExecNMap(s.Cfgp.IsType, logger.DBDeleteFileByIDLocation, id, oldfilep)
+	} else {
+		// moveReplacedAlbumFiles (music/audiobooks) calls here with id == nil
+		// since it only has a filesystem path, not a database id, at that
+		// point. Passing a nil *uint through the shared ID+location query
+		// above binds as SQL NULL, and "album_id = NULL" never matches any
+		// row - the delete would silently no-op, leaving a stale DB row
+		// pointing at the file's old (now-moved) location. Delete by
+		// location alone for the media types that can reach this.
+		switch s.Cfgp.IsType {
+		case config.MediaTypeMusic:
+			database.ExecN("DELETE FROM album_files WHERE location = ?", oldfilep)
+		case config.MediaTypeAudiobook:
+			database.ExecN("DELETE FROM audiobook_files WHERE location = ?", oldfilep)
+		}
+	}
 
 	fileext := filepath.Ext(oldfile)
 
@@ -1705,8 +1735,17 @@ func (s *Organizer) moveremoveoldfiles(
 	var err error
 	for idx := range oldfiles {
 		if usecompare {
-			_, teststr := filepath.Split(oldfiles[idx])
-			if teststr == o.Filename || strings.HasPrefix(teststr, o.TargetPath) {
+			// Skip only when this "old" entry is literally the exact file we
+			// just wrote as the replacement (defense in depth - the caller,
+			// moveandcleanup, already excludes the real new-file path via
+			// slices.DeleteFunc before calling here). A directory-prefix or
+			// bare-basename check is wrong for libraries that organize files
+			// in place (source and destination are the same folder, e.g. a
+			// scraper-fed list with no separate download/library split):
+			// every pre-existing file there would then always match and
+			// never actually get removed, even though it is a genuinely
+			// different, lower-priority file for the same episode.
+			if oldfiles[idx] == filepath.Join(o.TargetPath, o.Filename) {
 				continue
 			}
 		}
@@ -1717,13 +1756,15 @@ func (s *Organizer) moveremoveoldfiles(
 
 		err = s.moveRemoveOldMediaFile(oldfiles[idx], &oldfiles[idx], id, move)
 		if err != nil {
-			// Continue if old cannot be moved
+			// Continue the loop on a single old-file failure rather than
+			// aborting the whole batch - callers reach this after the new
+			// file has already been moved into place (moveandcleanup), so
+			// returning here previously skipped the DB insert/cache update
+			// for a file that was already physically in the library.
 			logger.Logtype("error", 1).
 				Str(logger.StrFile, oldfiles[idx]).
 				Err(err).
 				Msg("Move old")
-
-			return err
 		}
 	}
 
@@ -2669,12 +2710,11 @@ func checksplit(foldername string) byte {
 	return foldername[idx]
 }
 
-// UpdateRootpath updates the rootpath column in the database for the given object type and ID.
-// It searches through the provided config to find which path the given file is under.
-// It then extracts the first folder from the relative path of the file to that config path.
-// It joins that folder with the config path to form the new rootpath value.
-// Finally it executes a SQL update statement to update the rootpath for that object ID.
-func UpdateRootpath(file, objtype string, objid *uint, cfgp *config.MediaTypeConfig) {
+// computeRootpath searches through the given config to find which configured
+// path the given file is under, and returns the folder immediately below
+// that path (joined back onto it) as the new rootpath value. ok is false if
+// no configured path matches the file.
+func computeRootpath(file string, cfgp *config.MediaTypeConfig) (rootpath string, ok bool) {
 	for _, data := range cfgp.DataMap {
 		if !logger.ContainsI(file, data.CfgPath.Path) {
 			continue
@@ -2690,15 +2730,28 @@ func UpdateRootpath(file, objtype string, objid *uint, cfgp *config.MediaTypeCon
 			firstfolder = filepath.Dir(firstfolder)
 		}
 
-		firstfolder = filepath.Join(data.CfgPath.Path, getrootpath(firstfolder))
-		database.ExecN(
-			logger.JoinStrings("update ", objtype, " set rootpath = ? where id = ?"),
-			&firstfolder,
-			objid,
-		)
+		return filepath.Join(data.CfgPath.Path, getrootpath(firstfolder)), true
+	}
 
+	return "", false
+}
+
+// UpdateRootpath updates the rootpath column in the database for the given object type and ID.
+// It searches through the provided config to find which path the given file is under.
+// It then extracts the first folder from the relative path of the file to that config path.
+// It joins that folder with the config path to form the new rootpath value.
+// Finally it executes a SQL update statement to update the rootpath for that object ID.
+func UpdateRootpath(file, objtype string, objid *uint, cfgp *config.MediaTypeConfig) {
+	rootpath, ok := computeRootpath(file, cfgp)
+	if !ok {
 		return
 	}
+
+	database.ExecN(
+		logger.JoinStrings("update ", objtype, " set rootpath = ? where id = ?"),
+		&rootpath,
+		objid,
+	)
 }
 
 // getrootpath returns the root path of the given folder name by splitting on '/' or '\'

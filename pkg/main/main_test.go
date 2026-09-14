@@ -24,6 +24,7 @@ import (
 	"unicode"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
@@ -2143,7 +2144,7 @@ func BenchmarkPrio1(b *testing.B) {
 func BenchmarkClose1(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = apiexternal.Nzbwithprio{
+		_ = apiexternal_v2.Nzbwithprio{
 			WantedTitle:      "ffff",
 			WantedAlternates: []syncops.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
 			Quality:          "test",
@@ -2157,7 +2158,7 @@ func BenchmarkClose1(b *testing.B) {
 func BenchmarkClose2(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = apiexternal.Nzbwithprio{
+		_ = apiexternal_v2.Nzbwithprio{
 			WantedTitle:      "ffff",
 			WantedAlternates: []syncops.DbstaticTwoStringOneInt{{Str1: "ffff", Str2: "ffff"}},
 			Quality:          "test",

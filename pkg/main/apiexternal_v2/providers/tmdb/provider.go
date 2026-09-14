@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -81,16 +82,16 @@ func (p *Provider) SearchMovies(
 	query string,
 	year int,
 ) ([]apiexternal_v2.MovieSearchResult, error) {
-	url := fmt.Sprintf("%s/search/movie?query=%s", p.baseURL, query)
+	reqURL := fmt.Sprintf("%s/search/movie?query=%s", p.baseURL, url.QueryEscape(query))
 	if year > 0 {
-		url += fmt.Sprintf("&year=%d", year)
+		reqURL += fmt.Sprintf("&year=%d", year)
 	}
 
 	var response struct {
 		Results []tmdbMovieSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.makeRequest(ctx, reqURL, &response); err != nil {
 		return nil, err
 	}
 
@@ -114,14 +115,14 @@ func (p *Provider) FindMovieByIMDbID(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
-	url := fmt.Sprintf("%s/find/%s?external_source=imdb_id", p.baseURL, imdbID)
+	reqURL := fmt.Sprintf("%s/find/%s?external_source=imdb_id", p.baseURL, url.PathEscape(imdbID))
 
 	var response struct {
 		MovieResults []tmdbMovieSearchResult  `json:"movie_results"`
 		TVResults    []tmdbSeriesSearchResult `json:"tv_results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.makeRequest(ctx, reqURL, &response); err != nil {
 		return nil, err
 	}
 
@@ -156,16 +157,16 @@ func (p *Provider) SearchSeries(
 	query string,
 	year int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
-	url := fmt.Sprintf("%s/search/tv?query=%s", p.baseURL, query)
+	reqURL := fmt.Sprintf("%s/search/tv?query=%s", p.baseURL, url.QueryEscape(query))
 	if year > 0 {
-		url += fmt.Sprintf("&first_air_date_year=%d", year)
+		reqURL += fmt.Sprintf("&first_air_date_year=%d", year)
 	}
 
 	var response struct {
 		Results []tmdbSeriesSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.makeRequest(ctx, reqURL, &response); err != nil {
 		return nil, err
 	}
 

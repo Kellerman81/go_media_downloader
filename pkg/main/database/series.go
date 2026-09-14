@@ -238,16 +238,13 @@ func InsertEpisodeFile(
 
 	// Get related IDs from serie_episode
 
-	Scanrowsdyn(
-		false,
+	GetdatarowArgs(
 		"SELECT serie_id, dbserie_id, dbserie_episode_id FROM serie_episodes WHERE id = ?",
-		&serieID,
 		&serieEpisodeID,
+		&serieID,
+		&dbserieID,
+		&dbserieEpisodeID,
 	)
-	Scanrowsdyn(false, "SELECT dbserie_id, dbserie_episode_id FROM serie_episodes WHERE id = ?",
-		&dbserieID, &serieEpisodeID)
-	Scanrowsdyn(false, "SELECT dbserie_episode_id FROM serie_episodes WHERE id = ?",
-		&dbserieEpisodeID, &serieEpisodeID)
 
 	ExecN(
 		"insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -23,9 +24,14 @@ import (
 // Provider implements the DownloadProvider interface for Transmission.
 type Provider struct {
 	*base.BaseClient
-	baseURL   string
-	username  string
-	password  string
+	baseURL  string
+	username string
+	password string
+	// sessionMu guards sessionID - Provider instances are cached singletons
+	// in providers/registry.go, reused across every concurrent operation
+	// against a given Transmission instance for the app's lifetime, so this
+	// field is read/written from multiple goroutines.
+	sessionMu sync.Mutex
 	sessionID string
 }
 
@@ -43,8 +49,6 @@ func NewProvider(baseURL, username, password string) *Provider {
 		RateLimitPer24h:         10000,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -326,13 +330,48 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 
 // Helper methods
 
+// maxCSRFRetries caps the number of times makeRPCCallWithRetry will recurse
+// in response to Transmission's HTTP 409 CSRF-token-refresh signal. Without
+// a cap, a persistently-409ing endpoint (broken reverse proxy, server bug)
+// would recurse indefinitely with no backoff, risking stack exhaustion or an
+// effectively-hung call.
+const maxCSRFRetries = 3
+
+// loadSessionID returns the current session ID under sessionMu.
+func (p *Provider) loadSessionID() string {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+
+	return p.sessionID
+}
+
+// storeSessionID sets the session ID under sessionMu.
+func (p *Provider) storeSessionID(id string) {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+
+	p.sessionID = id
+}
+
+// makeRPCCall is the public entry point used by every RPC method on this
+// provider. It keeps its signature stable while delegating to
+// makeRPCCallWithRetry, which enforces a bounded CSRF-retry count.
 func (p *Provider) makeRPCCall(
 	ctx context.Context,
 	method string,
 	args any,
 ) (*transmissionRPCResponse, error) {
+	return p.makeRPCCallWithRetry(ctx, method, args, 0)
+}
+
+func (p *Provider) makeRPCCallWithRetry(
+	ctx context.Context,
+	method string,
+	args any,
+	retryCount int,
+) (*transmissionRPCResponse, error) {
 	// Get session ID if needed
-	if p.sessionID == "" {
+	if p.loadSessionID() == "" {
 		if err := p.getSessionID(ctx); err != nil {
 			return nil, err
 		}
@@ -352,8 +391,8 @@ func (p *Provider) makeRPCCall(
 		"Content-Type": "application/json",
 	}
 
-	if p.sessionID != "" {
-		headers["X-Transmission-Session-Id"] = p.sessionID
+	if sessionID := p.loadSessionID(); sessionID != "" {
+		headers["X-Transmission-Session-Id"] = sessionID
 	}
 
 	if p.username != "" && p.password != "" {
@@ -374,7 +413,7 @@ func (p *Provider) makeRPCCall(
 			// Handle CSRF - retry with new session ID
 			if resp.StatusCode == http.StatusConflict {
 				if sessionID := resp.Header.Get("X-Transmission-Session-Id"); sessionID != "" {
-					p.sessionID = sessionID
+					p.storeSessionID(sessionID)
 					// Don't decode response, will retry
 					return errors.New("CSRF retry needed")
 				}
@@ -393,9 +432,16 @@ func (p *Provider) makeRPCCall(
 		headers,
 	)
 
-	// Handle CSRF retry
+	// Handle CSRF retry, bounded to avoid unbounded recursion against a
+	// persistently-409ing endpoint.
 	if err != nil && err.Error() == "CSRF retry needed" {
-		return p.makeRPCCall(ctx, method, args)
+		if retryCount >= maxCSRFRetries {
+			return nil, errors.New(
+				"transmission CSRF retry limit exceeded: server kept requesting a session refresh",
+			)
+		}
+
+		return p.makeRPCCallWithRetry(ctx, method, args, retryCount+1)
 	}
 
 	if err != nil {
@@ -425,7 +471,7 @@ func (p *Provider) getSessionID(ctx context.Context) error {
 		func(resp *http.Response) error {
 			if resp.StatusCode == http.StatusConflict {
 				if sessionID := resp.Header.Get("X-Transmission-Session-Id"); sessionID != "" {
-					p.sessionID = sessionID
+					p.storeSessionID(sessionID)
 					return nil
 				}
 			}

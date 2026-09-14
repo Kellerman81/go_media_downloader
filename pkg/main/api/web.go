@@ -9,453 +9,6 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// getFilterableFieldsForTable extracts filterable fields from goadmin models and creates filter inputs.
-func getFilterableFieldsForTable(tableName string) []gomponents.Node {
-	var filterFields []gomponents.Node
-
-	// Define filterable fields based on goadmin model definitions
-	filterDefinitions := map[string][]FilterFieldDef{
-		"dbmovies": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
-			{Field: "imdb_id", Label: "IMDB ID", Type: "text", Placeholder: "tt1234567..."},
-			{
-				Field:       "vote_average",
-				Label:       "Vote Average",
-				Type:        "number",
-				Placeholder: "Rating...",
-			},
-			{Field: "runtime", Label: "Runtime", Type: "number", Placeholder: "Minutes..."},
-			{
-				Field:       "original_language",
-				Label:       "Language",
-				Type:        "text",
-				Placeholder: "en, de, fr...",
-			},
-			{
-				Field:        "adult",
-				Label:        "Adult Content",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-			{Field: "status", Label: "Status", Type: "text", Placeholder: "Status..."},
-		},
-		"movies": {
-			{Field: "title", Label: "Movie Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "imdb_id", Label: "IMDB ID", Type: "text", Placeholder: "Filter by IMDB ID..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality profile...",
-			},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-			{Field: "rootpath", Label: "Root Path", Type: "text", Placeholder: "Path..."},
-			{
-				Field:        "quality_reached",
-				Label:        "Quality Reached",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-			{
-				Field:        "missing",
-				Label:        "Missing",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-		},
-		"dbseries": {
-			{
-				Field:       "seriename",
-				Label:       "Series Name",
-				Type:        "text",
-				Placeholder: "Filter by series name...",
-			},
-			{Field: "status", Label: "Status", Type: "text", Placeholder: "Status..."},
-			{Field: "genre", Label: "Genre", Type: "text", Placeholder: "Genre..."},
-			{Field: "imdb_id", Label: "IMDB ID", Type: "text", Placeholder: "tt1234567..."},
-			{Field: "thetvdb_id", Label: "TVDB ID", Type: "number", Placeholder: "TVDB ID..."},
-		},
-		"qualities": {
-			{
-				Field:        "type",
-				Label:        "Type",
-				Type:         "select",
-				Options:      []string{"", "1", "2", "3", "4"},
-				OptionLabels: []string{"All", "Resolution", "Quality", "Codec", "Audio"},
-			},
-			{Field: "name", Label: "Name", Type: "text", Placeholder: "Quality name..."},
-			{Field: "regex", Label: "Regex", Type: "text", Placeholder: "Regular expression..."},
-			{Field: "strings", Label: "Strings", Type: "text", Placeholder: "String patterns..."},
-			{Field: "priority", Label: "Priority", Type: "number", Placeholder: "Priority..."},
-			{
-				Field:        "use_regex",
-				Label:        "Use Regex",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-		},
-		"series": {
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-			{Field: "rootpath", Label: "Root Path", Type: "text", Placeholder: "Path..."},
-		},
-		"movie_files": {
-			{Field: "movie_id", Label: "Movie ID", Type: "text", Placeholder: "Movie ID..."},
-			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
-			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
-			{Field: "extension", Label: "Extension", Type: "text", Placeholder: "Extension..."},
-			{Field: "quality_profile", Label: "Quality", Type: "text", Placeholder: "Quality..."},
-		},
-		"serie_episode_files": {
-			{
-				Field:       "serie_episode_id",
-				Label:       "Episode ID",
-				Type:        "text",
-				Placeholder: "Episode ID...",
-			},
-			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
-			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
-			{Field: "extension", Label: "Extension", Type: "text", Placeholder: "Extension..."},
-		},
-		"dbmovie_titles": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{
-				Field:       "movie_title",
-				Label:       "Movie Name",
-				Type:        "text",
-				Placeholder: "Filter by movie name...",
-			},
-			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
-		},
-		"job_histories": {
-			{Field: "job_type", Label: "Job Type", Type: "text", Placeholder: "Job type..."},
-			{Field: "job_group", Label: "Job Group", Type: "text", Placeholder: "Job group..."},
-			{
-				Field:       "job_category",
-				Label:       "Job Category",
-				Type:        "text",
-				Placeholder: "Job category...",
-			},
-			{
-				Field:       "started",
-				Label:       "Started After",
-				Type:        "datetime-local",
-				Placeholder: "Start date...",
-			},
-			{
-				Field:       "ended",
-				Label:       "Ended After",
-				Type:        "datetime-local",
-				Placeholder: "End date...",
-			},
-		},
-		// Book tables
-		"dbbooks": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "isbn", Label: "ISBN", Type: "text", Placeholder: "ISBN-10 or ISBN-13..."},
-			{Field: "author", Label: "Author", Type: "text", Placeholder: "Author name..."},
-			{Field: "publisher", Label: "Publisher", Type: "text", Placeholder: "Publisher..."},
-			{Field: "language", Label: "Language", Type: "text", Placeholder: "Language..."},
-			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
-		},
-		"dbauthors": {
-			{Field: "name", Label: "Name", Type: "text", Placeholder: "Author name..."},
-			{
-				Field:       "goodreads_id",
-				Label:       "Goodreads ID",
-				Type:        "text",
-				Placeholder: "Goodreads ID...",
-			},
-		},
-		"dbbook_titles": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "book_title", Label: "Book Title", Type: "text", Placeholder: "Book title..."},
-			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
-		},
-		"dbbook_series": {
-			{Field: "name", Label: "Series Name", Type: "text", Placeholder: "Series name..."},
-			{
-				Field:       "goodreads_id",
-				Label:       "Goodreads ID",
-				Type:        "text",
-				Placeholder: "Goodreads ID...",
-			},
-		},
-		"books": {
-			{Field: "title", Label: "Book Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "author", Label: "Author", Type: "text", Placeholder: "Author name..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality...",
-			},
-			{
-				Field:        "missing",
-				Label:        "Missing",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-			{
-				Field:        "quality_reached",
-				Label:        "Quality Reached",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-		},
-		"book_files": {
-			{Field: "book_id", Label: "Book ID", Type: "text", Placeholder: "Book ID..."},
-			{Field: "title", Label: "Book Title", Type: "text", Placeholder: "Book title..."},
-			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
-			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
-		},
-		"authors": {
-			{Field: "name", Label: "Author Name", Type: "text", Placeholder: "Author name..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-		},
-		"book_series": {
-			{Field: "name", Label: "Series Name", Type: "text", Placeholder: "Series name..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-		},
-		"book_file_unmatcheds": {
-			{Field: "filepath", Label: "File Path", Type: "text", Placeholder: "File path..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-		},
-		"book_histories": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Release title..."},
-			{Field: "indexer", Label: "Indexer", Type: "text", Placeholder: "Indexer..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality...",
-			},
-		},
-		// Audiobook tables
-		"dbaudiobooks": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "asin", Label: "ASIN", Type: "text", Placeholder: "Amazon ASIN..."},
-			{Field: "narrator", Label: "Narrator", Type: "text", Placeholder: "Narrator name..."},
-			{Field: "publisher", Label: "Publisher", Type: "text", Placeholder: "Publisher..."},
-			{Field: "language", Label: "Language", Type: "text", Placeholder: "Language..."},
-			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
-		},
-		"dbnarrators": {
-			{Field: "name", Label: "Name", Type: "text", Placeholder: "Narrator name..."},
-			{Field: "audible_id", Label: "Audible ID", Type: "text", Placeholder: "Audible ID..."},
-		},
-		"dbaudiobook_titles": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{
-				Field:       "audiobook_title",
-				Label:       "Audiobook Title",
-				Type:        "text",
-				Placeholder: "Audiobook title...",
-			},
-			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
-		},
-		"audiobooks": {
-			{
-				Field:       "title",
-				Label:       "Audiobook Title",
-				Type:        "text",
-				Placeholder: "Filter by title...",
-			},
-			{Field: "narrator", Label: "Narrator", Type: "text", Placeholder: "Narrator name..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality...",
-			},
-			{
-				Field:        "missing",
-				Label:        "Missing",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-			{
-				Field:        "quality_reached",
-				Label:        "Quality Reached",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-		},
-		"audiobook_files": {
-			{
-				Field:       "audiobook_id",
-				Label:       "Audiobook ID",
-				Type:        "text",
-				Placeholder: "Audiobook ID...",
-			},
-			{
-				Field:       "title",
-				Label:       "Audiobook Title",
-				Type:        "text",
-				Placeholder: "Audiobook title...",
-			},
-			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
-			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
-		},
-		"audiobook_file_unmatcheds": {
-			{Field: "filepath", Label: "File Path", Type: "text", Placeholder: "File path..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-		},
-		"audiobook_histories": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Release title..."},
-			{Field: "indexer", Label: "Indexer", Type: "text", Placeholder: "Indexer..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality...",
-			},
-		},
-		// Music tables
-		"dbalbums": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "artist", Label: "Artist", Type: "text", Placeholder: "Artist name..."},
-			{Field: "label", Label: "Label", Type: "text", Placeholder: "Record label..."},
-			{Field: "year", Label: "Year", Type: "number", Placeholder: "Year..."},
-		},
-		"dbartists": {
-			{Field: "name", Label: "Name", Type: "text", Placeholder: "Artist name..."},
-			{Field: "country", Label: "Country", Type: "text", Placeholder: "Country..."},
-		},
-		"dbalbum_titles": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Filter by title..."},
-			{
-				Field:       "album_title",
-				Label:       "Album Title",
-				Type:        "text",
-				Placeholder: "Album title...",
-			},
-			{Field: "region", Label: "Region", Type: "text", Placeholder: "Region..."},
-		},
-		"dbtracks": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Track title..."},
-			{
-				Field:       "album_title",
-				Label:       "Album Title",
-				Type:        "text",
-				Placeholder: "Album title...",
-			},
-			{
-				Field:       "track_number",
-				Label:       "Track Number",
-				Type:        "number",
-				Placeholder: "Track #...",
-			},
-		},
-		"artists": {
-			{Field: "name", Label: "Artist Name", Type: "text", Placeholder: "Artist name..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-		},
-		"albums": {
-			{Field: "title", Label: "Album Title", Type: "text", Placeholder: "Filter by title..."},
-			{Field: "artist", Label: "Artist", Type: "text", Placeholder: "Artist name..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality...",
-			},
-			{
-				Field:        "missing",
-				Label:        "Missing",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-			{
-				Field:        "quality_reached",
-				Label:        "Quality Reached",
-				Type:         "select",
-				Options:      []string{"", "0", "1"},
-				OptionLabels: []string{"All", "No", "Yes"},
-			},
-		},
-		"album_files": {
-			{Field: "album_id", Label: "Album ID", Type: "text", Placeholder: "Album ID..."},
-			{Field: "title", Label: "Album Title", Type: "text", Placeholder: "Album title..."},
-			{Field: "filename", Label: "Filename", Type: "text", Placeholder: "Filename..."},
-			{Field: "location", Label: "Location", Type: "text", Placeholder: "File path..."},
-		},
-		"album_file_unmatcheds": {
-			{Field: "filepath", Label: "File Path", Type: "text", Placeholder: "File path..."},
-			{Field: "listname", Label: "List Name", Type: "text", Placeholder: "List name..."},
-		},
-		"album_histories": {
-			{Field: "title", Label: "Title", Type: "text", Placeholder: "Release title..."},
-			{Field: "indexer", Label: "Indexer", Type: "text", Placeholder: "Indexer..."},
-			{
-				Field:       "quality_profile",
-				Label:       "Quality Profile",
-				Type:        "text",
-				Placeholder: "Quality...",
-			},
-		},
-	}
-
-	if definitions, exists := filterDefinitions[tableName]; exists {
-		for _, def := range definitions {
-			filterFields = append(filterFields, createFilterField(def))
-		}
-	}
-
-	return filterFields
-}
-
-// createFilterField creates a filter input field based on field definition.
-func createFilterField(def FilterFieldDef) gomponents.Node {
-	switch def.Type {
-	case "select":
-		options := []gomponents.Node{html.Option(html.Value(""), gomponents.Text("All"))}
-		for i, opt := range def.Options[1:] { // Skip first empty option as we added "All"
-			label := opt
-			if i+1 < len(def.OptionLabels) {
-				label = def.OptionLabels[i+1]
-			}
-
-			options = append(options, html.Option(html.Value(opt), gomponents.Text(label)))
-		}
-
-		return html.Div(
-			html.Label(html.Class("form-label"), gomponents.Text(def.Label)),
-			html.Select(
-				append([]gomponents.Node{
-					html.Class("form-control custom-filter"),
-					html.ID("filter-" + def.Field),
-				}, options...)...),
-		)
-
-	case "datetime-local":
-		return html.Div(
-			html.Label(html.Class("form-label"), gomponents.Text(def.Label)),
-			html.Input(html.Class("form-control custom-filter"), html.Type("datetime-local"),
-				html.ID("filter-"+def.Field), html.Placeholder(def.Placeholder)),
-		)
-
-	default:
-		return html.Div(
-			html.Label(html.Class("form-label"), gomponents.Text(def.Label)),
-			html.Input(html.Class("form-control custom-filter"), html.Type(def.Type),
-				html.ID("filter-"+def.Field), html.Placeholder(def.Placeholder)),
-		)
-	}
-}
-
 // Helper functions for admin functionality
 
 // FieldMapping holds both struct field name and display name for a database field.
@@ -564,6 +117,15 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 						html.Class(cssRootConfig),
 						html.ID("Configuration"),
 						html.Data("bs-parent", "#sidebar"),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/wizard"),
+								html.I(html.Class("align-middle fa-solid fa-wand-magic-sparkles")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Setup Wizard")),
+							),
+						),
 						html.Li(
 							html.Class("sidebar-item"),
 							html.A(
@@ -1485,6 +1047,37 @@ func adminJavaScript() gomponents.Node {
 						});
 						modalEl.addEventListener('hidden.bs.modal', function() { modalEl.remove(); });
 						modal.show();
+					};
+
+					// gmdApiProxyFetch calls the session-authenticated admin proxy
+					// (admin_proxy.go) for the small set of external, apikey-gated
+					// API actions the admin UI's own JS needs to trigger (search,
+					// queue-cancel, etc.) - the real WebAPIKey never reaches the
+					// browser this way; the proxy attaches it server-side after
+					// re-checking the admin session + CSRF token.
+					window.gmdApiProxyFetch = function(path) {
+						var csrfInput = document.querySelector('input[name="csrf_token"]');
+						var csrfToken = csrfInput ? csrfInput.value : '';
+						return fetch('/api/admin/proxy?path=' + encodeURIComponent(path), {
+							method: 'POST',
+							headers: { 'X-CSRF-Token': csrfToken }
+						});
+					};
+
+					// gmdGenerateApiKey fetches a fresh random API key and fills the
+					// named field with it - it does not save the config itself, so
+					// the admin must still click Save, exactly as if they had typed
+					// a new value in by hand.
+					window.gmdGenerateApiKey = function(fieldName) {
+						var csrfInput = document.querySelector('input[name="csrf_token"]');
+						var csrfToken = csrfInput ? csrfInput.value : '';
+						fetch('/api/admin/generate-apikey', {
+							method: 'POST',
+							headers: { 'X-CSRF-Token': csrfToken }
+						}).then(function(r) { return r.text(); }).then(function(key) {
+							var el = document.querySelector('[name=' + CSS.escape(fieldName) + ']');
+							if (el) { el.value = key; }
+						});
 					};
 
 					// Route HTMX hx-confirm prompts through the styled modal instead of native confirm().

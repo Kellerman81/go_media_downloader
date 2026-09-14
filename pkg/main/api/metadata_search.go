@@ -827,8 +827,8 @@ func createMovieResultCard(movie apiexternal_v2.MovieSearchResult) gomponents.No
 	}
 
 	overview := movie.Overview
-	if len(overview) > 200 {
-		overview = overview[:200] + "..."
+	if runes := []rune(overview); len(runes) > 200 {
+		overview = string(runes[:200]) + "..."
 	}
 
 	rating := ""
@@ -892,8 +892,8 @@ func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult) gomponents
 	}
 
 	overview := series.Overview
-	if len(overview) > 200 {
-		overview = overview[:200] + "..."
+	if runes := []rune(overview); len(runes) > 200 {
+		overview = string(runes[:200]) + "..."
 	}
 
 	rating := ""
@@ -1071,14 +1071,22 @@ func AddMovieToDatabase(c *gin.Context) {
 	}
 
 	// Add to movies table
-	database.ExecN(
+	if err := database.ExecNErr(
 		"INSERT INTO movies (dbmovie_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
 		dbMovieID,
 		listName,
 		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		// ExecN (the fire-and-forget variant previously used here) has no
+		// return value at all - a write failure here (lock contention,
+		// constraint violation, disk full) was reported to the user as
+		// success even though the movie was never actually linked into the
+		// requested list.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Movie added successfully to " + listName})
 }
@@ -1216,14 +1224,20 @@ func AddSeriesToDatabase(c *gin.Context) {
 	}
 
 	// Add to series table
-	database.ExecN(
+	if err := database.ExecNErr(
 		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
 		dbSeriesID,
 		listName,
 		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		// ExecN (the fire-and-forget variant previously used here) has no
+		// return value - a write failure here was reported to the user as
+		// success even though the series was never linked into the list.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series: " + err.Error()})
+		return
+	}
 
 	// Kick off episode import in the background so the series is actually populated
 	// (the previous flow added the series row but never imported any episodes).
@@ -1262,18 +1276,7 @@ func findSeriesCfgpAndListID(listName string) (*config.MediaTypeConfig, int) {
 		return nil, -1
 	}
 
-	for i := range allMedia.Series {
-		cfgp := config.GetSettingsMedia("serie_" + allMedia.Series[i].Name)
-		if cfgp == nil {
-			continue
-		}
-
-		if listid, ok := cfgp.ListsMapIdx[listName]; ok {
-			return cfgp, listid
-		}
-	}
-
-	return nil, -1
+	return findCfgpAndListID(listName, "serie_", allMedia.Series)
 }
 
 // AddMovieManual handles manual movie entry.
@@ -1371,14 +1374,17 @@ func AddMovieManual(c *gin.Context) {
 		return
 	}
 
-	database.ExecN(
+	if err := database.ExecNErr(
 		"INSERT INTO movies (dbmovie_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
 		int(newID),
 		listName,
 		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Movie added manually to " + listName})
 }
@@ -1475,14 +1481,17 @@ func AddSeriesManual(c *gin.Context) {
 		}
 	}
 
-	database.ExecN(
+	if err := database.ExecNErr(
 		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
 		int(newID),
 		listName,
 		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Series added manually to " + listName})
 }

@@ -267,7 +267,7 @@ func renderSeriesConfigEditor(
 								"onclick",
 								fmt.Sprintf(
 									"window.location.href='/api/admin/seriesconfig/add?file=%s'",
-									filename,
+									url.QueryEscape(filename),
 								),
 							),
 							html.I(html.Class("fa-solid fa-plus me-2")),
@@ -327,14 +327,22 @@ func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.
 				html.A(
 					html.Class("btn btn-sm btn-primary me-2"),
 					html.Href(
-						fmt.Sprintf("/api/admin/seriesconfig/edit?file=%s&index=%d", filename, i),
+						fmt.Sprintf(
+							"/api/admin/seriesconfig/edit?file=%s&index=%d",
+							url.QueryEscape(filename),
+							i,
+						),
 					),
 					html.I(html.Class("fa-solid fa-edit")),
 				),
 				html.A(
 					html.Class("btn btn-sm btn-danger"),
 					html.Href(
-						fmt.Sprintf("/api/admin/seriesconfig/delete?file=%s&index=%d", filename, i),
+						fmt.Sprintf(
+							"/api/admin/seriesconfig/delete?file=%s&index=%d",
+							url.QueryEscape(filename),
+							i,
+						),
 					),
 					gomponents.Attr(
 						"onclick",
@@ -539,7 +547,7 @@ func renderSeriesConfigForm(
 									html.Href(
 										fmt.Sprintf(
 											"/api/admin/seriesconfig/helper?file=%s&index=%d",
-											filename,
+											url.QueryEscape(filename),
 											index,
 										),
 									),
@@ -1288,8 +1296,8 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 	// Algolia DSN is consistent across their network
 	apiURL := fmt.Sprintf(
 		"https://tsmkfa364q-dsn.algolia.net/1/indexes/*/queries?x-algolia-application-id=%s&x-algolia-api-key=%s",
-		data.AlgoliaAppID,
-		data.AlgoliaAPIKey,
+		url.QueryEscape(data.AlgoliaAppID),
+		url.QueryEscape(data.AlgoliaAPIKey),
 	)
 
 	// Helper function for min
@@ -1337,10 +1345,16 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 			lastError = fmt.Sprintf("Failed to fetch index '%s': %v", indexName, err)
 			continue // Try next index
 		}
-		defer resp.Body.Close()
+		// Drain and close here rather than deferring: this is a loop over
+		// candidate indexes, so a deferred Close would keep every response body
+		// open until the whole function returns.
+		body, readErr := io.ReadAll(resp.Body)
+		statusCode := resp.StatusCode
+
+		resp.Body.Close()
 
 		// Check HTTP status
-		if resp.StatusCode != http.StatusOK {
+		if statusCode != http.StatusOK {
 			// Build debug info for 403 errors
 			debugInfo = fmt.Sprintf(
 				"\n\nDEBUG INFO:\nAPI URL: %s\nApp ID: %s\nAPI Key: %s\nRequest Body: %s\nReferer: %s\nHTTP Status: %d",
@@ -1349,16 +1363,15 @@ func fetchAlgoliaSample(startURL string, data *ScraperDiscoveryData) {
 				data.AlgoliaAPIKey,
 				requestBody,
 				startURL,
-				resp.StatusCode,
+				statusCode,
 			)
-			lastError = fmt.Sprintf("Index '%s' returned HTTP %d", indexName, resp.StatusCode)
+			lastError = fmt.Sprintf("Index '%s' returned HTTP %d", indexName, statusCode)
 
 			continue // Try next index
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			lastError = fmt.Sprintf("Failed to read response for index '%s': %v", indexName, err)
+		if readErr != nil {
+			lastError = fmt.Sprintf("Failed to read response for index '%s': %v", indexName, readErr)
 			continue // Try next index
 		}
 
@@ -1727,8 +1740,8 @@ func renderScraperHelperPage(
 						html.Href(
 							fmt.Sprintf(
 								"/api/admin/seriesconfig/edit?file=%s&index=%s",
-								filename,
-								index,
+								url.QueryEscape(filename),
+								url.QueryEscape(index),
 							),
 						),
 						gomponents.Text("Back to Edit"),

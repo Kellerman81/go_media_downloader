@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -24,9 +25,14 @@ import (
 // Provider implements the DownloadProvider interface for Deluge.
 type Provider struct {
 	*base.BaseClient
-	baseURL   string
-	username  string
-	password  string
+	baseURL  string
+	username string
+	password string
+	// sessionMu guards sessionID - Provider instances are cached singletons
+	// in providers/registry.go, reused across every concurrent operation
+	// against a given Deluge instance for the app's lifetime, so this field
+	// is read/written from multiple goroutines.
+	sessionMu sync.Mutex
 	sessionID string
 	cookieJar http.CookieJar
 }
@@ -45,8 +51,6 @@ func NewProvider(baseURL, username, password string) *Provider {
 		RateLimitPer24h:         10000,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -142,10 +146,17 @@ func (p *Provider) AddTorrent(
 		return nil, err
 	}
 
-	// Deluge returns the torrent hash on success
+	// Deluge returns the torrent hash (a non-empty string) on success, and
+	// null (no RPC-level error) when the daemon silently rejects the add -
+	// most commonly a torrent already present in the session, but also a
+	// rejected/invalid magnet. Treating any non-string result as success
+	// made a real, silent add-failure indistinguishable from success.
 	hash, ok := result.(string)
-	if !ok {
-		hash = ""
+	if !ok || hash == "" {
+		return &apiexternal_v2.TorrentAddResponse{
+			Success: false,
+			Error:   "deluge rejected the add (already present in session, or invalid torrent/magnet)",
+		}, errors.New("deluge rejected the torrent add - no hash returned")
 	}
 
 	return &apiexternal_v2.TorrentAddResponse{
@@ -321,8 +332,24 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 
 // Helper methods
 
+// loadSessionID returns the current session ID under sessionMu.
+func (p *Provider) loadSessionID() string {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+
+	return p.sessionID
+}
+
+// storeSessionID sets the session ID under sessionMu.
+func (p *Provider) storeSessionID(id string) {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+
+	p.sessionID = id
+}
+
 func (p *Provider) ensureAuthenticated(ctx context.Context) error {
-	if p.sessionID != "" {
+	if p.loadSessionID() != "" {
 		return nil
 	}
 
@@ -347,28 +374,28 @@ func (p *Provider) authenticate(ctx context.Context) error {
 	result, err := p.makeRPCCall(ctx, "web.get_hosts", []any{})
 	if err != nil {
 		// If this fails, we might already be connected or it's not needed
-		p.sessionID = "authenticated"
+		p.storeSessionID("authenticated")
 		return nil
 	}
 
 	// Parse hosts list
 	hosts, ok := result.([]any)
 	if !ok || len(hosts) == 0 {
-		p.sessionID = "authenticated"
+		p.storeSessionID("authenticated")
 		return nil
 	}
 
 	// Get the first host (usually the local daemon)
 	firstHost, ok := hosts[0].([]any)
 	if !ok || len(firstHost) == 0 {
-		p.sessionID = "authenticated"
+		p.storeSessionID("authenticated")
 		return nil
 	}
 
 	// Extract host ID (first element)
 	hostID, ok := firstHost[0].(string)
 	if !ok {
-		p.sessionID = "authenticated"
+		p.storeSessionID("authenticated")
 		return nil
 	}
 
@@ -376,7 +403,7 @@ func (p *Provider) authenticate(ctx context.Context) error {
 	connResult, err := p.makeRPCCall(ctx, "web.connected", []any{})
 	if err == nil {
 		if connected, ok := connResult.(bool); ok && connected {
-			p.sessionID = "authenticated"
+			p.storeSessionID("authenticated")
 			return nil
 		}
 	}
@@ -387,7 +414,7 @@ func (p *Provider) authenticate(ctx context.Context) error {
 		return errors.New(logger.JoinStrings("failed to connect to daemon: ", err.Error()))
 	}
 
-	p.sessionID = "authenticated"
+	p.storeSessionID("authenticated")
 
 	return nil
 }
@@ -415,7 +442,7 @@ func (p *Provider) makeRPCCall(ctx context.Context, method string, params []any)
 		nil,
 		func(resp *http.Response) error {
 			if resp.StatusCode == http.StatusUnauthorized {
-				p.sessionID = "" // Clear session
+				p.storeSessionID("") // Clear session
 			}
 
 			if decodeErr := json.NewDecoder(resp.Body).Decode(&rpcResponse); decodeErr != nil {

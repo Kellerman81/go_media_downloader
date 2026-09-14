@@ -141,37 +141,37 @@ func performStorageHealthCheck(
 
 // getConfiguredMediaPaths returns all configured media paths from the application config.
 func getConfiguredMediaPaths() []string {
-	var paths []string
-
-	// Get movie paths
-	media := config.GetSettingsMediaAll()
-	for i := range media.Movies {
-		for _, pathCfg := range media.Movies[i].Data {
-			if pathCfg.CfgPath != nil && pathCfg.CfgPath.Path != "" {
-				paths = append(paths, pathCfg.CfgPath.Path)
-			}
-		}
-	}
-
-	// Get series paths
-	for i := range media.Series {
-		for _, pathCfg := range media.Series[i].Data {
-			if pathCfg.CfgPath != nil && pathCfg.CfgPath.Path != "" {
-				paths = append(paths, pathCfg.CfgPath.Path)
-			}
-		}
-	}
-
-	// Remove duplicates
 	pathSet := make(map[string]bool)
 
 	uniquePaths := make([]string, 0)
-	for _, path := range paths {
-		if !pathSet[path] {
-			pathSet[path] = true
-			uniquePaths = append(uniquePaths, path)
+
+	addPath := func(path string) {
+		if path == "" || pathSet[path] {
+			return
 		}
+
+		pathSet[path] = true
+		uniquePaths = append(uniquePaths, path)
 	}
+
+	// Cover every configured media type (movies, series, music, books,
+	// audiobooks) and their import paths, not just movies/series - mirrors
+	// config.RangeSettingsMedia's usage in getStorageStatistics (statistics.go).
+	config.RangeSettingsMedia(func(_ string, mediaConfig *config.MediaTypeConfig) error {
+		for _, dataConfig := range mediaConfig.Data {
+			if dataConfig.CfgPath != nil {
+				addPath(dataConfig.CfgPath.Path)
+			}
+		}
+
+		for _, importConfig := range mediaConfig.DataImport {
+			if importConfig.CfgPath != nil {
+				addPath(importConfig.CfgPath.Path)
+			}
+		}
+
+		return nil
+	})
 
 	return uniquePaths
 }
@@ -211,30 +211,30 @@ func getDiskUsage(path string) (free uint64, total uint64, err error) {
 
 // getDiskUsageFallback provides basic disk usage estimation as fallback.
 func getDiskUsageFallback(path string) (free uint64, total uint64, err error) {
-	// Try to get some basic info by creating a test file and checking available space
+	// The platform-specific syscall failed or is unsupported here; we have no
+	// real way to learn disk usage on this path. Previously this fabricated a
+	// plausible-looking 100GB-free/500GB-total (or 1GB/100GB) reading, which
+	// could report a genuinely full disk as "healthy" or vice versa. Report
+	// disk usage as unknown instead of inventing numbers - callers already
+	// treat a non-nil error as an unusable reading (see performStorageHealthCheck).
 	testFile := filepath.Join(path, ".diskcheck_temp")
-	if file, err := os.Create(testFile); err == nil {
+	if file, createErr := os.Create(testFile); createErr == nil {
 		file.Close()
 		os.Remove(testFile)
-		// If we can create files, assume reasonable disk space
-		free = 100 * 1024 * 1024 * 1024  // 100 GB free
-		total = 500 * 1024 * 1024 * 1024 // 500 GB total
 
-		return free, total, nil
+		return 0, 0, errors.New("disk usage unavailable on this platform (path is writable)")
 	}
 
-	// If we can't even create test files, assume disk is nearly full
-	free = 1 * 1024 * 1024 * 1024    // 1 GB free
-	total = 100 * 1024 * 1024 * 1024 // 100 GB total
-
-	return free, total, errors.New("unable to determine disk usage, using fallback values")
+	return 0, 0, errors.New("disk usage unavailable on this platform (path is not writable)")
 }
 
 // testPathPermissions tests if a path has read/write permissions.
 func testPathPermissions(path string) bool {
 	// Test read permission
-	if _, err := os.Open(path); err != nil {
+	if f, err := os.Open(path); err != nil {
 		return false
+	} else {
+		f.Close()
 	}
 
 	// Test write permission by creating a temporary file

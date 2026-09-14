@@ -402,7 +402,7 @@ func createDownloaderConfig(index string, c *gin.Context) config.DownloaderConfi
 
 	builder.
 		SetStringRequired(&cfg.Name, "Name").
-		SetString(&cfg.DlType, "DLType").
+		SetString(&cfg.DlType, "DlType").
 		SetString(&cfg.Hostname, "Hostname").
 		SetInt(&cfg.Port, "Port").
 		SetString(&cfg.Username, "Username").
@@ -437,14 +437,15 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetString(&cfg.TraktUsername, "TraktUsername").
 		SetString(&cfg.TraktListName, "TraktListName").
 		SetString(&cfg.TraktListType, "TraktListType").
-		SetStringArray(&cfg.Excludegenre, "ExcludeGenre").
-		SetStringArray(&cfg.Includegenre, "IncludeGenre").
-		SetStringArray(&cfg.TmdbDiscover, "TmdbDiscover").
+		SetStringArrayFromForm(&cfg.Excludegenre, "Excludegenre").
+		SetStringArrayFromForm(&cfg.Includegenre, "Includegenre").
+		SetStringArrayFromForm(&cfg.TmdbDiscover, "TmdbDiscover").
 		SetIntArray(&cfg.TmdbList, "TmdbList").
 		SetString(&cfg.Limit, "Limit").
 		SetInt(&cfg.MinVotes, "MinVotes").
 		SetFloat32(&cfg.MinRating, "MinRating").
 		SetBool(&cfg.RemoveFromList, "RemoveFromList").
+		SetBool(&cfg.SkipEmptySize, "SkipEmptySize").
 		SetString(&cfg.PlexServerURL, "PlexServerURL").
 		SetString(&cfg.PlexToken, "PlexToken").
 		SetString(&cfg.PlexUsername, "PlexUsername").
@@ -457,8 +458,8 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetString(&cfg.IRCNick, "IRCNick").
 		SetString(&cfg.IRCNickServPassword, "IRCNickServPassword").
 		SetString(&cfg.IRCInviteCommand, "IRCInviteCommand").
-		SetStringArray(&cfg.IRCChannels, "IRCChannels").
-		SetStringArray(&cfg.IRCAnnounceNicks, "IRCAnnounceNicks").
+		SetStringArrayFromForm(&cfg.IRCChannels, "IRCChannels").
+		SetStringArrayFromForm(&cfg.IRCAnnounceNicks, "IRCAnnounceNicks").
 		SetString(&cfg.IRCAnnounceRegex, "IRCAnnounceRegex").
 		SetInt(&cfg.IRCReadSeconds, "IRCReadSeconds").
 		SetBool(&cfg.Enabled, "Enabled").
@@ -554,17 +555,17 @@ func createPathsConfig(index string, c *gin.Context) config.PathsConfig {
 	builder.
 		SetStringRequired(&cfg.Name, "Name").
 		SetString(&cfg.Path, "Path").
-		SetStringArray(&cfg.AllowedVideoExtensions, "AllowedVideoExtensions").
-		SetStringArray(&cfg.AllowedOtherExtensions, "AllowedOtherExtensions").
-		SetStringArray(&cfg.AllowedVideoExtensionsNoRename, "AllowedVideoExtensionsNoRename").
-		SetStringArray(&cfg.AllowedOtherExtensionsNoRename, "AllowedOtherExtensionsNoRename").
-		SetStringArray(&cfg.AllowedAudioExtensions, "AllowedAudioExtensions").
-		SetStringArray(&cfg.AllowedAudioExtensionsNoRename, "AllowedAudioExtensionsNoRename").
-		SetStringArray(&cfg.AllowedBookExtensions, "AllowedBookExtensions").
-		SetStringArray(&cfg.AllowedBookExtensionsNoRename, "AllowedBookExtensionsNoRename").
-		SetStringArray(&cfg.Blocked, "Blocked").
-		SetStringArray(&cfg.Disallowed, "Disallowed").
-		SetStringArray(&cfg.AllowedLanguages, "AllowedLanguages").
+		SetStringArrayFromForm(&cfg.AllowedVideoExtensions, "AllowedVideoExtensions").
+		SetStringArrayFromForm(&cfg.AllowedOtherExtensions, "AllowedOtherExtensions").
+		SetStringArrayFromForm(&cfg.AllowedVideoExtensionsNoRename, "AllowedVideoExtensionsNoRename").
+		SetStringArrayFromForm(&cfg.AllowedOtherExtensionsNoRename, "AllowedOtherExtensionsNoRename").
+		SetStringArrayFromForm(&cfg.AllowedAudioExtensions, "AllowedAudioExtensions").
+		SetStringArrayFromForm(&cfg.AllowedAudioExtensionsNoRename, "AllowedAudioExtensionsNoRename").
+		SetStringArrayFromForm(&cfg.AllowedBookExtensions, "AllowedBookExtensions").
+		SetStringArrayFromForm(&cfg.AllowedBookExtensionsNoRename, "AllowedBookExtensionsNoRename").
+		SetStringArrayFromForm(&cfg.Blocked, "Blocked").
+		SetStringArrayFromForm(&cfg.Disallowed, "Disallowed").
+		SetStringArrayFromForm(&cfg.AllowedLanguages, "AllowedLanguages").
 		SetInt(&cfg.MaxSize, "MaxSize").
 		SetInt(&cfg.MinSize, "MinSize").
 		SetInt(&cfg.MinVideoSize, "MinVideoSize").
@@ -598,7 +599,7 @@ func savePathsConfigs(configs []config.PathsConfig) error {
 func createNotificationConfig(index string, c *gin.Context) config.NotificationConfig {
 	var cfg config.NotificationConfig
 
-	builder := NewConfigBuilder(c, fmt.Sprintf("notification_%s", index), "")
+	builder := NewConfigBuilder(c, fmt.Sprintf("notifications_%s", index), "")
 
 	builder.
 		SetStringRequired(&cfg.Name, "Name").
@@ -607,7 +608,13 @@ func createNotificationConfig(index string, c *gin.Context) config.NotificationC
 		SetString(&cfg.Recipient, "Recipient").
 		SetString(&cfg.Outputto, "Outputto").
 		SetString(&cfg.ServerURL, "ServerURL").
-		SetString(&cfg.AppriseURLs, "AppriseURLs")
+		SetString(&cfg.AppriseURLs, "AppriseURLs").
+		SetString(&cfg.SMTPServer, "SMTPServer").
+		SetString(&cfg.SMTPPort, "SMTPPort").
+		SetString(&cfg.SMTPFromEmail, "SMTPFromEmail").
+		SetString(&cfg.SMTPToEmail, "SMTPToEmail").
+		SetString(&cfg.SMTPUsername, "SMTPUsername").
+		SetString(&cfg.SMTPPassword, "SMTPPassword")
 
 	return cfg
 }
@@ -883,7 +890,7 @@ func createQualityConfig(index string, c *gin.Context) config.QualityConfig {
 		SetBool(&qualityConfig.UseForPriorityOther, "UseForPriorityOther").
 		SetBool(&qualityConfig.PreferLossless, "PreferLossless").
 		SetInt(&qualityConfig.MinAudioBitrate, "MinAudioBitrate").
-		SetStringArray(&qualityConfig.WantedAudioFormats, "WantedAudioFormats").
+		SetStringArrayFromForm(&qualityConfig.WantedAudioFormats, "WantedAudioFormats").
 		SetInt(&qualityConfig.UseForPriorityMinDifference, "UseForPriorityMinDifference")
 
 	// Parse nested configurations
@@ -1192,19 +1199,6 @@ func (cb *ConfigBuilder) SetBool(target *bool, fieldName string) *ConfigBuilder 
 	return cb
 }
 
-// SetStringArray sets a string array field by splitting comma-separated values.
-func (cb *ConfigBuilder) SetStringArray(target *[]string, fieldName string) *ConfigBuilder {
-	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
-		*target = strings.Split(value, ",")
-		// Clean up whitespace
-		for i, v := range *target {
-			(*target)[i] = strings.TrimSpace(v)
-		}
-	}
-
-	return cb
-}
-
 func (cb *ConfigBuilder) SetStringMultiSelectArray(
 	target *[]string,
 	fieldName string,
@@ -1270,8 +1264,7 @@ func (cb *ConfigBuilder) SetUint8(target *uint8, fieldName string) *ConfigBuilde
 
 // SetStringArrayFromForm sets a string array field from PostFormArray.
 func (cb *ConfigBuilder) SetStringArrayFromForm(target *[]string, fieldName string) *ConfigBuilder {
-	fieldKey := fmt.Sprintf("%s_%s_%s", cb.prefix, cb.index, fieldName)
-	if values := cb.context.PostFormArray(fieldKey); len(values) > 0 {
+	if values := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName); len(values) > 0 {
 		*target = filterStringArray(values)
 	}
 

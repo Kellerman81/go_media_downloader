@@ -169,6 +169,16 @@ type Limiter struct {
 // NewLimiter creates a new improved sliding window rate limiter
 // with comprehensive metrics and performance optimizations.
 func NewLimiter(interval time.Duration, maxRequests int64) *Limiter {
+	// Every current caller already guards maxRequests > 0 before calling this,
+	// but that's an unenforced convention, not a type-level guarantee - a
+	// maxRequests of 0 would make l.max*4 == 0 in
+	// AllowWithWaitContextAndMaxWait/CheckWithWait, and dividing a
+	// time.Duration by a zero divisor panics. Enforce the invariant here
+	// once instead of trusting every future caller to replicate the guard.
+	if maxRequests <= 0 {
+		maxRequests = 1
+	}
+
 	capacity := max(int(maxRequests), 10)
 
 	limiter := &Limiter{
@@ -490,9 +500,12 @@ func (l *Limiter) CheckBool() bool {
 }
 
 // Interval returns the interval duration configured for the rate limiter.
+// interval is set once in NewLimiter and never mutated afterward, so this
+// only needs a read lock - the write lock unnecessarily serialized every
+// caller against concurrent Allow()/Reserve() calls.
 func (l *Limiter) Interval() time.Duration {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.interval
 }
 

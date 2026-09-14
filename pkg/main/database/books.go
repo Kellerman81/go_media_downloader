@@ -218,7 +218,7 @@ func FindBook(title, author, isbn string) (*ResultBooks, error) {
 		// Check ISBN-13
 		Scanrowsdyn(
 			false,
-			"SELECT b.id, b.dbbook_id, b.listname, b.rootpath, db.title FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.isbn_13 = ? LIMIT 1",
+			"SELECT b.id FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.isbn_13 = ? LIMIT 1",
 			&result.ID,
 			&isbn,
 		)
@@ -231,7 +231,7 @@ func FindBook(title, author, isbn string) (*ResultBooks, error) {
 		// Check ISBN-10
 		Scanrowsdyn(
 			false,
-			"SELECT b.id, b.dbbook_id, b.listname, b.rootpath, db.title FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.isbn_10 = ? LIMIT 1",
+			"SELECT b.id FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.isbn_10 = ? LIMIT 1",
 			&result.ID,
 			&isbn,
 		)
@@ -244,7 +244,7 @@ func FindBook(title, author, isbn string) (*ResultBooks, error) {
 		// Check ASIN
 		Scanrowsdyn(
 			false,
-			"SELECT b.id, b.dbbook_id, b.listname, b.rootpath, db.title FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.asin = ? LIMIT 1",
+			"SELECT b.id FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.asin = ? LIMIT 1",
 			&result.ID,
 			&isbn,
 		)

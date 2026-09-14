@@ -28,15 +28,17 @@ func SendToRtorrent(
 			URL:      urlv,
 			SavePath: dlpath,
 		})
-		if err == nil {
-			return nil
-		}
 
-		// Fall through to legacy client on error
+		// The "legacy client" this used to fall through to on error is long
+		// gone (commented out below) - returning nil regardless of err made
+		// every add-torrent failure look like a successful download to
+		// every caller, silently recording history/notifications for a
+		// download that was never actually queued.
+		return err
 	}
 
 	// cl := rtorrent.New(hostname, insecure)
 
 	// return cl.Add(urlv, rtorrent.DBasePath.SetValue(dlpath), rtorrent.DName.SetValue(name))
-	return nil
+	return errNoClient
 }

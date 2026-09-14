@@ -14,6 +14,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/sitethrottle"
 	"github.com/goccy/go-json"
 )
 
@@ -246,6 +247,11 @@ func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]any
 	req.Header.Set("sec-fetch-site", "same-origin")
 	req.Header.Set("sec-fetch-mode", "cors")
 	req.Header.Set("sec-fetch-dest", "empty")
+
+	// Enforce the configured delay per site (host), shared across all scraper
+	// configs targeting the same site rather than only between this scrape's
+	// pages. Mirrors htmlxpath.Scraper.fetchPage.
+	sitethrottle.Wait(ctx, req.URL.Host, time.Duration(s.config.WaitSeconds)*time.Second)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -531,12 +537,21 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 	totalProcessed := 0
 	maxPages := 1000
 
-	if firstpageonly {
-		maxPages = 2 // Process up to 2 pages for first_page_db_only
+	// firstpageonly (per-call override) and config.FirstPageDBOnly (persisted
+	// series setting) both mean "incremental: only the first page", matching
+	// algolia/project1service's semantics and the documented first_page_db_only
+	// behavior (see scrapers/README.md).
+	if firstpageonly || s.config.FirstPageDBOnly {
+		maxPages = 1
 	}
 
 	for page := s.config.PageStartIndex; page < s.config.PageStartIndex+maxPages; page++ {
-		time.Sleep(time.Duration(s.config.WaitSeconds) * time.Second)
+		select {
+		case <-ctx.Done():
+			return totalProcessed, ctx.Err()
+		case <-time.After(time.Duration(s.config.WaitSeconds) * time.Second):
+		}
+
 		logger.Logtype(logger.StatusInfo, 0).
 			Str("site", s.config.SiteName).
 			Int("page", page).
@@ -631,6 +646,12 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 				Int("page", page).
 				Msg("No valid items processed, stopping")
 
+			break
+		}
+
+		// Break if first page only (defense in depth alongside maxPages above,
+		// matching algolia/project1service).
+		if s.config.FirstPageDBOnly {
 			break
 		}
 	}

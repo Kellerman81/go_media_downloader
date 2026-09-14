@@ -55,6 +55,14 @@ const (
 	queueCheckInterval = 200 * time.Millisecond
 	queueCheckDelay    = 100 * time.Millisecond
 	maxQueueRetries    = 10
+
+	// maxPoolQueueSize caps each worker pool's waiting queue - see the comment
+	// at its use in InitWorkerPools.
+	maxPoolQueueSize = 50_000
+
+	// staleJobThreshold and staleSweepInterval - see sweepStaleJobs.
+	staleJobThreshold  = 60 * time.Hour
+	staleSweepInterval = 30 * time.Minute
 )
 
 var (
@@ -87,6 +95,10 @@ var (
 
 	// cronWorkerSearch is a Cron instance for scheduling search worker jobs.
 	cronWorkerSearch *cron.Cron
+
+	// staleSweeperCancel stops the stale-job sweeper goroutine started by
+	// InitWorkerPools; see sweepStaleJobs.
+	staleSweeperCancel context.CancelFunc
 
 	// globalScheduleSet is a sync.Map to store jobSchedule objects.
 	globalScheduleSet = syncops.NewSyncMapUint[syncops.JobSchedule](100)
@@ -1001,19 +1013,108 @@ func InitWorkerPools(
 		workerindex = 1
 	}
 
-	workerPoolSearch = pond.NewPool(workersearch)
-	workerPoolRSS = pond.NewPool(workerrss)
-	workerPoolFiles = pond.NewPool(workerfiles)
-	workerPoolMetadata = pond.NewPool(workermeta)
-	WorkerPoolIndexer = pond.NewPool(workerindex)
-	WorkerPoolIndexerRSS = pond.NewPool(workerindex)
-	WorkerPoolParse = pond.NewPool(workerfiles)
+	// pond's default queue size is Unbounded (math.MaxInt), so checkQueueCapacity's
+	// "queue full" guard never actually trips - a pool whose workers are all stuck
+	// on hung jobs would otherwise accept new submissions forever, growing the
+	// waiting queue without bound instead of failing loudly. Capping it still
+	// leaves plenty of headroom for legitimate backlogs (e.g. large RSS/search
+	// batches) while turning silent unbounded growth into a clean, already-handled
+	// ErrQueueFull once something is actually wrong.
+	queueOpt := pond.WithQueueSize(maxPoolQueueSize)
+
+	workerPoolSearch = pond.NewPool(workersearch, queueOpt)
+	workerPoolRSS = pond.NewPool(workerrss, queueOpt)
+	workerPoolFiles = pond.NewPool(workerfiles, queueOpt)
+	workerPoolMetadata = pond.NewPool(workermeta, queueOpt)
+	WorkerPoolIndexer = pond.NewPool(workerindex, queueOpt)
+	WorkerPoolIndexerRSS = pond.NewPool(workerindex, queueOpt)
+	WorkerPoolParse = pond.NewPool(workerfiles, queueOpt)
 
 	recentJobs, _ = ristretto.NewCache(&ristretto.Config[string, struct{}]{
 		NumCounters: 10_000,
 		MaxCost:     1 << 20, // 1MB
 		BufferItems: 64,
 	})
+
+	staleSweeperCancel = startStaleJobSweeper()
+}
+
+// sweepStaleJobs clears the queue and job-name-index bookkeeping for any job
+// that has been in the "Started" state for longer than staleJobThreshold.
+//
+// Job runtimes here range from seconds to multiple days, so there's no safe
+// universal execution timeout to enforce (see runJobLifecycle - a job's
+// bookkeeping is normally only cleared once its function returns, which a
+// genuinely hung job never does, permanently blocking that job name from
+// ever being re-dispatched for the rest of the process's uptime). 60h is
+// deliberately far above any legitimate job duration, so this only fires for
+// jobs that are almost certainly stuck.
+//
+// This does NOT and cannot force-kill the underlying goroutine - Go has no
+// such mechanism. It best-effort cancels the job's context (a no-op if the
+// job doesn't check it, which is presumably why it's stuck) and then forgets
+// the bookkeeping so the job name becomes dispatchable again. If the old
+// goroutine is in fact still running and later completes, its own deferred
+// cleanup in runJobLifecycle will safely no-op (delete-if-present semantics).
+func sweepStaleJobs() {
+	now := logger.TimeGetNow()
+
+	// ForEach holds globalQueueSet's read lock for the whole callback (see
+	// SyncMapUint.ForEach in syncops/maps.go). QueueWorkerMapDelete is
+	// synchronous and its handler needs the write lock on this same map, so
+	// calling it from inside the callback would deadlock the single writer
+	// goroutine against this read lock - and since that goroutine is the only
+	// thing draining the sync-ops queue, the whole app's syncops layer would
+	// freeze with it. Collect the stale entries here and act on them only
+	// after ForEach has released the lock.
+	var stale []syncops.Job
+
+	globalQueueSet.ForEach(func(_ uint32, job syncops.Job) {
+		if job.Started.IsZero() || now.Sub(job.Started) < staleJobThreshold {
+			return
+		}
+
+		stale = append(stale, job)
+	})
+
+	for _, job := range stale {
+		logger.Logtype("error", 0).
+			Uint32("job_id", job.ID).
+			Str(logger.StrJob, job.Name).
+			Time("started", job.Started).
+			Msg("job exceeded stale threshold - clearing bookkeeping so its name can be re-dispatched; the job itself may still be running if it ignores cancellation")
+
+		if job.CancelFunc != nil {
+			job.CancelFunc()
+		}
+
+		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, job.ID)
+		jobNameIndex.Delete(job.Name)
+	}
+}
+
+// startStaleJobSweeper runs sweepStaleJobs on a fixed interval until the
+// returned cancel func is called (see CloseWorkerPools).
+func startStaleJobSweeper() context.CancelFunc {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		defer logger.HandlePanic()
+
+		ticker := time.NewTicker(staleSweepInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sweepStaleJobs()
+			}
+		}
+	}()
+
+	return cancel
 }
 
 // closeWaitTimeout bounds how long CloseWorkerPools waits for running jobs to
@@ -1045,6 +1146,10 @@ func StopIntervalSchedules() {
 // could kill jobs mid-write despite documenting a graceful wait.
 func CloseWorkerPools() {
 	StopIntervalSchedules()
+
+	if staleSweeperCancel != nil {
+		staleSweeperCancel()
+	}
 
 	pools := []pond.Pool{
 		workerPoolSearch,

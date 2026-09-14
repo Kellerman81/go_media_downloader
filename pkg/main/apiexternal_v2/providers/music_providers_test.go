@@ -14,7 +14,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/spotify"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 )
@@ -54,7 +53,7 @@ const (
 // Keys are optional per provider — missing keys cause individual tests to skip.
 func loadMusicTestConfig(
 	t *testing.T,
-) (acoustIDKey, lastFMKey, discogsToken, spotifyID, spotifySecret string) {
+) (acoustIDKey, lastFMKey, discogsToken string) {
 	t.Helper()
 	if config.Configfile == "" || config.Configfile == "./config/config.toml" {
 		config.Configfile = "R:\\golang_ent\\config\\config.toml"
@@ -65,9 +64,7 @@ func loadMusicTestConfig(
 	}
 	return cfg.General.AcoustIDAPIKey,
 		cfg.General.LastFMAPIKey,
-		cfg.General.DiscogsToken,
-		cfg.General.SpotifyClientID,
-		cfg.General.SpotifyClientSecret
+		cfg.General.DiscogsToken
 }
 
 // testCtx returns a 30-second context for a single provider call.
@@ -138,7 +135,7 @@ func TestMusicBrainzReturnsData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAcoustIDReturnsData(t *testing.T) {
-	acoustIDKey, _, _, _, _ := loadMusicTestConfig(t)
+	acoustIDKey, _, _ := loadMusicTestConfig(t)
 	if acoustIDKey == "" {
 		t.Skip("AcoustID API key not configured — skipping")
 	}
@@ -175,7 +172,7 @@ func TestAcoustIDReturnsData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLastFMReturnsData(t *testing.T) {
-	_, lastFMKey, _, _, _ := loadMusicTestConfig(t)
+	_, lastFMKey, _ := loadMusicTestConfig(t)
 	if lastFMKey == "" {
 		t.Skip("Last.fm API key not configured — skipping")
 	}
@@ -249,7 +246,7 @@ func TestLastFMReturnsData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDiscogsReturnsData(t *testing.T) {
-	_, _, discogsToken, _, _ := loadMusicTestConfig(t)
+	_, _, discogsToken := loadMusicTestConfig(t)
 	// Discogs works without a token; token just raises the rate limit.
 
 	p := discogs.NewProviderWithConfig(base.ClientConfig{
@@ -351,52 +348,6 @@ func TestDeezerReturnsData(t *testing.T) {
 		)
 		if details.Title == "" {
 			t.Error("album title is empty")
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// Spotify — requires client ID + secret
-// ---------------------------------------------------------------------------
-
-func TestSpotifyReturnsData(t *testing.T) {
-	_, _, _, spotifyID, spotifySecret := loadMusicTestConfig(t)
-	if spotifyID == "" || spotifySecret == "" {
-		t.Skip("Spotify credentials not configured — skipping")
-	}
-
-	p := spotify.NewProviderWithConfig(base.ClientConfig{
-		UserAgent:        "go_media_downloader/test (github.com/Kellerman81/go_media_downloader)",
-		RateLimitCalls:   5,
-		RateLimitSeconds: 1,
-	}, spotifyID, spotifySecret, "")
-
-	t.Run("SearchAlbums", func(t *testing.T) {
-		ctx, cancel := testCtx(t)
-		defer cancel()
-
-		results, err := p.SearchAlbums(ctx, testMusicArtist, testMusicAlbum, 5)
-		if err != nil {
-			if strings.Contains(err.Error(), "HTTP 403") {
-				t.Skipf(
-					"Spotify returned 403 — credentials may lack required API permissions or token reuse is blocked: %v",
-					err,
-				)
-			}
-			t.Fatalf("SearchAlbums error: %v", err)
-		}
-		if len(results) == 0 {
-			t.Fatal("SearchAlbums returned no results")
-		}
-		r := results[0]
-		t.Logf(
-			"Spotify SearchAlbums first: %q by %q SpotifyID: %s",
-			r.Title,
-			artistNames(r.Artists),
-			r.ID,
-		)
-		if r.Title == "" {
-			t.Error("first result has empty title")
 		}
 	})
 }
@@ -580,7 +531,7 @@ func logTracks(t *testing.T, provider string, details *apiexternal_v2.ReleaseDet
 }
 
 func TestFallbackDiag(t *testing.T) {
-	_, lastFMKey, discogsToken, _, _ := loadMusicTestConfig(t)
+	_, lastFMKey, discogsToken := loadMusicTestConfig(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -803,7 +754,6 @@ func TestAllMusicProviders(t *testing.T) {
 	t.Run("LastFM", func(t *testing.T) { TestLastFMReturnsData(t) })
 	t.Run("Discogs", func(t *testing.T) { TestDiscogsReturnsData(t) })
 	t.Run("Deezer", func(t *testing.T) { TestDeezerReturnsData(t) })
-	t.Run("Spotify", func(t *testing.T) { TestSpotifyReturnsData(t) })
 	t.Run("TheAudioDB", func(t *testing.T) { TestTheAudioDBReturnsData(t) })
 	t.Run("iTunes", func(t *testing.T) { TestITunesReturnsData(t) })
 }

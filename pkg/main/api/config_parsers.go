@@ -211,6 +211,7 @@ func createListsParser() *ConfigParser[config.ListsConfig] {
 				MinVotes:         builder.getInt("MinVotes", 0),
 				MinRating:        builder.getFloat32("MinRating", 0),
 				RemoveFromList:   builder.getBool("RemoveFromList"),
+				SkipEmptySize:    builder.getBool("SkipEmptySize"),
 				Enabled:          builder.getBool("Enabled"),
 
 				// Plex
@@ -299,6 +300,12 @@ func createNotificationParser() *ConfigParser[config.NotificationConfig] {
 				Outputto:         builder.getString("Outputto"),
 				ServerURL:        builder.getString("ServerURL"),
 				AppriseURLs:      builder.getString("AppriseURLs"),
+				SMTPServer:       builder.getString("SMTPServer"),
+				SMTPPort:         builder.getString("SMTPPort"),
+				SMTPFromEmail:    builder.getString("SMTPFromEmail"),
+				SMTPToEmail:      builder.getString("SMTPToEmail"),
+				SMTPUsername:     builder.getString("SMTPUsername"),
+				SMTPPassword:     builder.getString("SMTPPassword"),
 			}
 		},
 		Validate: func(configs []config.NotificationConfig) error {
@@ -451,7 +458,7 @@ func parseMediaTypeConfig[T any](
 		SetString(&cfg.TemplateQuality, "TemplateQuality").
 		SetString(&cfg.TemplateScheduler, "TemplateScheduler").
 		SetString(&cfg.MetadataLanguage, "MetadataLanguage").
-		SetStringArray(&cfg.MetadataTitleLanguages, "MetadataTitleLanguages").
+		SetStringArrayFromForm(&cfg.MetadataTitleLanguages, "MetadataTitleLanguages").
 		SetBool(&cfg.Structure, "Structure").
 		SetUint16(&cfg.SearchmissingIncremental, "SearchmissingIncremental").
 		SetUint16(&cfg.SearchupgradeIncremental, "SearchupgradeIncremental").
@@ -971,9 +978,9 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		SetInt(&updatedConfig.MoveBufferSizeKB, "MoveBufferSizeKB").
 		SetBool(&updatedConfig.SerieMetaSourceTrakt, "SerieMetaSourceTrakt").
 		SetBool(&updatedConfig.SerieMetaSourceTmdb, "SerieMetaSourceTmdb").
-		SetStringArray(&updatedConfig.MovieParseMetaSourcePriority, "MovieParseMetaSourcePriority").
-		SetStringArray(&updatedConfig.MovieRSSMetaSourcePriority, "MovieRSSMetaSourcePriority").
-		SetStringArray(&updatedConfig.MovieMetaSourcePriority, "MovieMetaSourcePriority").
+		SetStringArrayFromForm(&updatedConfig.MovieParseMetaSourcePriority, "MovieParseMetaSourcePriority").
+		SetStringArrayFromForm(&updatedConfig.MovieRSSMetaSourcePriority, "MovieRSSMetaSourcePriority").
+		SetStringArrayFromForm(&updatedConfig.MovieMetaSourcePriority, "MovieMetaSourcePriority").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceTrakt, "SerieAlternateTitleMetaSourceTrakt").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceImdb, "SerieAlternateTitleMetaSourceImdb").
 		SetBool(&updatedConfig.MovieAlternateTitleMetaSourceTrakt, "MovieAlternateTitleMetaSourceTrakt").
@@ -1034,7 +1041,7 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		// TheAudioDB
 		SetString(&updatedConfig.TheAudioDBAPIKey, "TheAudioDBAPIKey").
 		// Music metadata source priority
-		SetStringArray(&updatedConfig.MusicMetaSourcePriority, "MusicMetaSourcePriority").
+		SetStringArrayFromForm(&updatedConfig.MusicMetaSourcePriority, "MusicMetaSourcePriority").
 		// Music metadata source penalties (provider -> penalty weight)
 		SetStringFloatMap(&updatedConfig.MusicMetaSourcePenalties, "MusicMetaSourcePenalties")
 

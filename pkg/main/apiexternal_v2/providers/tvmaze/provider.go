@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -49,7 +50,7 @@ func (p *Provider) FindMovieByIMDbID(
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
 	// TVMaze can search by IMDb ID for TV shows
-	endpoint := fmt.Sprintf("/lookup/shows?imdb=%s", imdbID)
+	endpoint := fmt.Sprintf("/lookup/shows?imdb=%s", url.QueryEscape(imdbID))
 
 	var response tvmazeShow
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -82,7 +83,7 @@ func (p *Provider) SearchSeries(
 	query string,
 	_ int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
-	endpoint := fmt.Sprintf("/search/shows?q=%s", query)
+	endpoint := fmt.Sprintf("/search/shows?q=%s", url.QueryEscape(query))
 
 	var response tvmazeSearchResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -314,78 +315,4 @@ func (p *Provider) GetSeriesImages(
 	}
 
 	return convertImagesToCollection(response.Image), nil
-}
-
-//
-// TVMaze-specific methods
-//
-
-// GetSchedule retrieves the TV schedule for a specific country and date.
-func (p *Provider) GetSchedule(
-	ctx context.Context,
-	countryCode string,
-	date string,
-) ([]apiexternal_v2.Episode, error) {
-	endpoint := fmt.Sprintf("/schedule?country=%s&date=%s", countryCode, date)
-
-	var response tvmazeEpisodeResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	episodes := make([]apiexternal_v2.Episode, len(response))
-	for i, ep := range response {
-		episodes[i] = *convertEpisodeToDetails(&ep)
-	}
-
-	return episodes, nil
-}
-
-// GetFullSchedule retrieves the full TV schedule (all countries).
-func (p *Provider) GetFullSchedule(ctx context.Context) ([]apiexternal_v2.Episode, error) {
-	endpoint := "/schedule/full"
-
-	var response tvmazeEpisodeResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	episodes := make([]apiexternal_v2.Episode, len(response))
-	for i, ep := range response {
-		episodes[i] = *convertEpisodeToDetails(&ep)
-	}
-
-	return episodes, nil
-}
-
-// GetShowUpdates retrieves shows that have been updated since a specific timestamp.
-func (p *Provider) GetShowUpdates(ctx context.Context, since string) (map[int]int64, error) {
-	endpoint := fmt.Sprintf("/updates/shows?since=%s", since)
-
-	var response map[int]int64
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return response, nil
-}
-
-// GetEpisodesByDate retrieves all episodes airing on a specific date.
-func (p *Provider) GetEpisodesByDate(
-	ctx context.Context,
-	date string,
-) ([]apiexternal_v2.Episode, error) {
-	endpoint := fmt.Sprintf("/schedule?date=%s", date)
-
-	var response tvmazeEpisodeResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	episodes := make([]apiexternal_v2.Episode, len(response))
-	for i, ep := range response {
-		episodes[i] = *convertEpisodeToDetails(&ep)
-	}
-
-	return episodes, nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
@@ -674,6 +675,28 @@ func SearchMusicArtists(c *gin.Context) {
 		return
 	}
 
+	// Fetch each artist's album preview concurrently (bounded) instead of one
+	// at a time - previously this was up to 5 sequential external calls
+	// (MusicBrainz/Discogs, MusicBrainz rate-limited to ~1 req/s) sharing the
+	// same 45s context, making the request take as long as the sum of all
+	// artists' lookups instead of the slowest one.
+	previews := make([][]apiexternal_v2.ReleaseSearchResult, len(artists))
+
+	wg := pool.NewSizedGroup(maxConcurrentArtistPreviewFetches)
+
+	for i := range artists {
+		wg.Add()
+
+		go func() {
+			defer wg.Done()
+
+			result, _ := musicArtistReleases(ctx, provider, &artists[i], 5)
+			previews[i] = result
+		}()
+	}
+
+	wg.Wait()
+
 	nodes := make([]gomponents.Node, 0, len(artists)+1)
 
 	nodes = append(
@@ -682,21 +705,28 @@ func SearchMusicArtists(c *gin.Context) {
 	)
 
 	for i := range artists {
-		nodes = append(nodes, createArtistCard(ctx, provider, mode, &artists[i]))
+		nodes = append(nodes, createArtistCard(mode, &artists[i], previews[i]))
 	}
 
 	renderMusicHTML(c, html.Div(nodes...))
 }
 
-// createArtistCard renders an artist with album previews and the mode-specific action.
-func createArtistCard(
-	ctx context.Context,
-	provider, mode string,
-	artist *apiexternal_v2.ArtistSearchResult,
-) gomponents.Node {
-	// Preview a few releases to help disambiguate same-named artists.
-	previews, _ := musicArtistReleases(ctx, provider, artist, 5)
+// maxConcurrentArtistPreviewFetches bounds how many artist album-preview
+// lookups (see createArtistCard) run at once in SearchMusicArtists. Artist
+// search results are already capped at 5, so this is mostly a defensive
+// bound against that cap changing, expressed the same way as
+// maxConcurrentEpisodeSearches in series.go.
+const maxConcurrentArtistPreviewFetches = 5
 
+// createArtistCard renders an artist with album previews and the mode-specific action.
+// previews is the (already-fetched) album preview list for this artist - see
+// SearchMusicArtists, which fetches previews for all candidate artists
+// concurrently before calling this per-artist render step.
+func createArtistCard(
+	mode string,
+	artist *apiexternal_v2.ArtistSearchResult,
+	previews []apiexternal_v2.ReleaseSearchResult,
+) gomponents.Node {
 	previewNodes := make([]gomponents.Node, 0, len(previews))
 	for i := range previews {
 		if i >= 5 {
@@ -1366,16 +1396,5 @@ func findMusicCfgpAndListID(listName string) (*config.MediaTypeConfig, int) {
 		return nil, -1
 	}
 
-	for i := range allMedia.Music {
-		cfgp := config.GetSettingsMedia("music_" + allMedia.Music[i].Name)
-		if cfgp == nil {
-			continue
-		}
-
-		if listid, ok := cfgp.ListsMapIdx[listName]; ok {
-			return cfgp, listid
-		}
-	}
-
-	return nil, -1
+	return findCfgpAndListID(listName, "music_", allMedia.Music)
 }

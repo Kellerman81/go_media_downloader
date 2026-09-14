@@ -118,13 +118,11 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 		cleanedName = bp.patterns.retail.ReplaceAllLiteralString(cleanedName, "")
 	}
 
-	// Extract release group (typically at the end)
-	if loc := bp.patterns.group.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
-		result.ReleaseGroup = cleanedName[loc[2]:loc[3]]
-		cleanedName = bp.patterns.group.ReplaceAllLiteralString(cleanedName, "")
-	}
-
-	// Extract year
+	// Extract year BEFORE release group (group pattern matches digits too,
+	// e.g. reBookGroup's [a-z0-9_-]+ matches a bare "(2020)" and would
+	// consume/strip the year as a "release group" before year-extraction
+	// ever ran, leaving Year at 0 - matches audiobook_parser.go's ordering
+	// for the identical reason).
 	if loc := bp.patterns.year.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
 		result.Year = parseInt(cleanedName[loc[2]:loc[3]])
 		// Only remove year if it's in parentheses/brackets or standalone
@@ -132,6 +130,12 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 		if strings.Contains(fullMatch, "(") || strings.Contains(fullMatch, "[") {
 			cleanedName = strings.Replace(cleanedName, fullMatch, "", 1)
 		}
+	}
+
+	// Extract release group (typically at the end)
+	if loc := bp.patterns.group.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+		result.ReleaseGroup = cleanedName[loc[2]:loc[3]]
+		cleanedName = bp.patterns.group.ReplaceAllLiteralString(cleanedName, "")
 	}
 
 	// Extract series information
@@ -357,34 +361,6 @@ func ValidateISBN10(isbn string) bool {
 	}
 
 	return sum%11 == 0
-}
-
-// ISBN10toISBN13 converts an ISBN-10 to ISBN-13.
-func ISBN10toISBN13(isbn10 string) string {
-	isbn10 = strings.ReplaceAll(isbn10, "-", "")
-	isbn10 = strings.ReplaceAll(isbn10, " ", "")
-
-	if len(isbn10) != 10 {
-		return ""
-	}
-
-	// Take first 9 digits and prepend 978
-	isbn13 := "978" + isbn10[:9]
-
-	// Calculate check digit
-	var sum int
-	for i, c := range isbn13 {
-		digit := int(c - '0')
-		if i%2 == 0 {
-			sum += digit
-		} else {
-			sum += digit * 3
-		}
-	}
-
-	checkDigit := (10 - (sum % 10)) % 10
-
-	return isbn13 + string('0'+byte(checkDigit))
 }
 
 // cleanTitle cleans up a title string.

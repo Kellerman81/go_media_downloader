@@ -618,6 +618,253 @@ func renderExternalServiceHealthCheckPage(csrfToken string) gomponents.Node {
 	)
 }
 
+// apiEndpointDoc describes one row in the API Testing Suite's "API Endpoints
+// Reference" accordion.
+type apiEndpointDoc struct {
+	Method string
+	Path   string
+	Desc   string
+}
+
+// renderAPIEndpointsSection renders one collapsible accordion item listing
+// endpoints. The header's count is derived from len(endpoints) instead of a
+// hand-typed number, so it can never drift out of sync with the list again
+// (the previous hardcoded counts were wrong for Movies/Series/General).
+func renderAPIEndpointsSection(id, title string, endpoints []apiEndpointDoc) gomponents.Node {
+	items := make([]gomponents.Node, 0, len(endpoints))
+	for _, e := range endpoints {
+		items = append(
+			items,
+			html.Li(gomponents.Text(e.Method+" "+e.Path+" - "+e.Desc)),
+		)
+	}
+
+	return html.Div(
+		html.Class("accordion-item"),
+		html.H2(
+			html.Class("accordion-header"),
+			html.ID("heading"+id),
+			html.Button(
+				html.Class("accordion-button collapsed"),
+				html.Type("button"),
+				gomponents.Attr("data-bs-toggle", "collapse"),
+				gomponents.Attr("data-bs-target", "#collapse"+id),
+				gomponents.Attr("aria-expanded", "false"),
+				gomponents.Attr("aria-controls", "collapse"+id),
+				gomponents.Text(fmt.Sprintf("%s (%d)", title, len(endpoints))),
+			),
+		),
+		html.Div(
+			html.ID("collapse"+id),
+			html.Class("accordion-collapse collapse"),
+			gomponents.Attr("aria-labelledby", "heading"+id),
+			gomponents.Attr("data-bs-parent", "#endpointsAccordion"),
+			html.Div(
+				html.Class("accordion-body"),
+				html.Ul(html.Class("list-unstyled mb-0"), gomponents.Group(items)),
+			),
+		),
+	)
+}
+
+// The endpoint lists below are the source of truth for the "API Endpoints
+// Reference" accordion - kept as data instead of hand-written HTML so a
+// route change only needs one line here, not a matching accordion-item edit.
+// Cross-checked against the actual route registrations in general.go,
+// all.go, movies.go, series.go, books.go, audiobooks.go and music.go.
+
+var apiEndpointsAll = []apiEndpointDoc{
+	{"GET", "/api/all/feeds", "Search all feeds"},
+	{"GET", "/api/all/data", "Search all folders"},
+	{"GET", "/api/all/search/rss", "Search all rss feeds"},
+	{"GET", "/api/all/search/missing/full", "Search all Missing"},
+	{"GET", "/api/all/search/missing/inc", "Search all Missing Incremental"},
+	{"GET", "/api/all/search/upgrade/full", "Search all Upgrades"},
+	{"GET", "/api/all/search/upgrade/inc", "Search all Upgrades Incremental"},
+}
+
+var apiEndpointsMovies = []apiEndpointDoc{
+	{"GET", "/api/movies", "Get all movies"},
+	{"GET", "/api/movies/unmatched", "Get unmatched movies"},
+	{"DELETE", "/api/movies/{id}", "Delete movie"},
+	{"GET", "/api/movies/list/{name}", "Get movies by list name"},
+	{"GET", "/api/movies/metadata/{imdb}", "Get movie metadata"},
+	{"DELETE", "/api/movies/list/{id}", "Delete movie from list"},
+	{"GET", "/api/movies/job/{job}", "Execute movie job"},
+	{"GET", "/api/movies/job/{job}/{name}", "Execute movie job for config"},
+	{"POST", "/api/movies", "Create/update movie"},
+	{"POST", "/api/movies/list", "Create/update movie list"},
+	{"GET", "/api/movies/search/id/{id}", "Search movie by ID"},
+	{"GET", "/api/movies/search/list/{id}", "Search movie list"},
+	{"GET", "/api/movies/rss/search/list/{group}", "RSS search movie list"},
+	{"POST", "/api/movies/search/download/{id}", "Download movie"},
+	{"GET", "/api/movies/all/refreshall", "Refresh all movies metadata"},
+	{"GET", "/api/movies/refresh/{id}", "Refresh movie metadata"},
+	{"GET", "/api/movies/all/refresh", "Refresh movies"},
+	{"GET", "/api/movies/search/history/clear/{name}", "Clear movie search history"},
+	{"GET", "/api/movies/search/history/clearid/{id}", "Clear movie search history by ID"},
+}
+
+var apiEndpointsSeries = []apiEndpointDoc{
+	{"GET", "/api/series", "Get all series"},
+	{"DELETE", "/api/series/{id}", "Delete series"},
+	{"GET", "/api/series/list/{name}", "Get series by list name"},
+	{"DELETE", "/api/series/list/{id}", "Delete series from list"},
+	{"GET", "/api/series/metadata/{tvdb}", "Get series metadata"},
+	{"GET", "/api/series/unmatched", "Get unmatched series"},
+	{"GET", "/api/series/episodes", "Get all episodes"},
+	{"GET", "/api/series/episodes/{id}", "Get episode by ID"},
+	{"DELETE", "/api/series/episodes/{id}", "Delete episode"},
+	{"GET", "/api/series/episodes/list/{id}", "Get episodes by series ID"},
+	{"DELETE", "/api/series/episodes/list/{id}", "Delete episodes by series ID"},
+	{"GET", "/api/series/job/{job}", "Execute series job"},
+	{"GET", "/api/series/job/{job}/{name}", "Execute series job for config"},
+	{"POST", "/api/series", "Create/update series"},
+	{"POST", "/api/series/episodes", "Create/update episode"},
+	{"POST", "/api/series/list", "Create/update series list"},
+	{"POST", "/api/series/episodes/list", "Create/update episode list"},
+	{"GET", "/api/series/refresh/{id}", "Refresh series metadata"},
+	{"GET", "/api/series/all/refreshall", "Refresh all series metadata"},
+	{"GET", "/api/series/all/refresh", "Refresh series"},
+	{"GET", "/api/series/search/id/{id}", "Search series by ID"},
+	{"GET", "/api/series/search/id/{id}/{season}", "Search series season"},
+	{"GET", "/api/series/searchrss/id/{id}", "RSS search series"},
+	{"GET", "/api/series/searchrss/list/id/{id}", "RSS search series list"},
+	{"GET", "/api/series/searchrss/id/{id}/{season}", "RSS search series season"},
+	{"GET", "/api/series/episodes/search/id/{id}", "Search episodes"},
+	{"GET", "/api/series/episodes/search/list/{id}", "Search episode list"},
+	{"GET", "/api/series/rss/search/list/{group}", "RSS search series list"},
+	{"POST", "/api/series/episodes/search/download/{id}", "Download episode"},
+	{"GET", "/api/series/search/history/clear/{name}", "Clear series search history"},
+	{"GET", "/api/series/search/history/clearid/{id}", "Clear series search history by ID"},
+}
+
+var apiEndpointsBooks = []apiEndpointDoc{
+	{"GET", "/api/books", "Get all books"},
+	{"GET", "/api/books/list/{name}", "Get books by list name"},
+	{"DELETE", "/api/books/{id}", "Delete book"},
+	{"GET", "/api/books/job/{job}", "Execute book job"},
+	{"GET", "/api/books/job/{job}/{name}", "Execute book job for config"},
+	{"GET", "/api/books/feeds/date/{name}/{listname}", "Get book feed by date"},
+	{"GET", "/api/books/rss/search/list/{group}", "RSS search book list"},
+	{"GET", "/api/books/search/list/{id}", "Search book list"},
+	{"GET", "/api/books/search/history/clear/{name}", "Clear book search history"},
+	{"GET", "/api/books/search/history/clearid/{id}", "Clear book search history by ID"},
+	{"GET", "/api/books/search/authors/missing/{name}", "Search missing books by author"},
+	{"GET", "/api/books/search/authors/upgrade/{name}", "Search upgrade books by author"},
+}
+
+var apiEndpointsAudiobooks = []apiEndpointDoc{
+	{"GET", "/api/audiobooks/all/refresh", "Refresh audiobooks"},
+	{"GET", "/api/audiobooks/all/refreshall", "Refresh all audiobooks metadata"},
+	{"GET", "/api/audiobooks/refresh/{id}", "Refresh audiobook metadata"},
+	{"GET", "/api/audiobooks/tag/all", "Retag all audiobooks"},
+	{"GET", "/api/audiobooks/tag/author/{id}", "Retag all audiobooks for author"},
+	{"GET", "/api/audiobooks/tag/{id}", "Retag audiobook"},
+	{"GET", "/api/audiobooks", "Get all audiobooks"},
+	{"GET", "/api/audiobooks/list/{name}", "Get audiobooks by list name"},
+	{"DELETE", "/api/audiobooks/{id}", "Delete audiobook"},
+	{"GET", "/api/audiobooks/job/{job}", "Execute audiobook job"},
+	{"GET", "/api/audiobooks/job/{job}/{name}", "Execute audiobook job for config"},
+	{"GET", "/api/audiobooks/author/add/{name}/{listname}", "Add author to audiobook list"},
+	{"GET", "/api/audiobooks/rss/search/list/{group}", "RSS search audiobook list"},
+	{"GET", "/api/audiobooks/search/list/{id}", "Search audiobook list"},
+	{"GET", "/api/audiobooks/search/history/clear/{name}", "Clear audiobook search history"},
+	{
+		"GET",
+		"/api/audiobooks/search/history/clearid/{id}",
+		"Clear audiobook search history by ID",
+	},
+	{"GET", "/api/audiobooks/search/authors/missing/{name}", "Search missing audiobooks by author"},
+	{"GET", "/api/audiobooks/search/authors/upgrade/{name}", "Search upgrade audiobooks by author"},
+}
+
+var apiEndpointsMusic = []apiEndpointDoc{
+	{"GET", "/api/music/all/refresh", "Refresh music"},
+	{"GET", "/api/music/all/refreshall", "Refresh all music metadata"},
+	{"GET", "/api/music/refresh/{id}", "Refresh album metadata"},
+	{"GET", "/api/music/tag/all", "Retag all albums"},
+	{"GET", "/api/music/tag/artist/{id}", "Retag all albums for artist"},
+	{"GET", "/api/music/tag/{id}", "Retag album"},
+	{"GET", "/api/music", "Get all music"},
+	{"GET", "/api/music/list/{name}", "Get music by list name"},
+	{"DELETE", "/api/music/{id}", "Delete album"},
+	{"GET", "/api/music/artists", "Get all artists"},
+	{"GET", "/api/music/artist/add/{name}/{listname}", "Add artist to music list"},
+	{"GET", "/api/music/job/{job}", "Execute music job"},
+	{"GET", "/api/music/job/{job}/{name}", "Execute music job for config"},
+	{"GET", "/api/music/feeds/date/{name}/{listname}", "Get music feed by date"},
+	{"GET", "/api/music/rss/search/list/{group}", "RSS search music list"},
+	{"GET", "/api/music/discover/series/artist/{id}", "Discover series for artist"},
+	{"GET", "/api/music/search/list/{id}", "Search music list"},
+	{"GET", "/api/music/search/history/clear/{name}", "Clear music search history"},
+	{"GET", "/api/music/search/history/clearid/{id}", "Clear music search history by ID"},
+	{"GET", "/api/music/search/artists/missing/{name}", "Search missing albums by artist"},
+	{"GET", "/api/music/search/artists/upgrade/{name}", "Search upgrade albums by artist"},
+}
+
+var apiEndpointsGeneral = []apiEndpointDoc{
+	{"GET", "/api/debugstats", "Get debug statistics"},
+	{"GET", "/api/queue", "Get job queue"},
+	{"GET", "/api/queue/history", "Get job history"},
+	{"DELETE", "/api/queue/cancel/{id}", "Cancel job"},
+	{"GET", "/api/trakt/authorize", "Authorize Trakt"},
+	{"GET", "/api/trakt/token/{code}", "Get Trakt token"},
+	{"GET", "/api/trakt/user/{user}/{list}", "Get Trakt user list"},
+	{"GET", "/api/slug", "Get slug information"},
+	{"POST", "/api/parse/string", "Parse string"},
+	{"POST", "/api/parse/file", "Parse file"},
+	{"GET", "/api/fillimdb", "Fill IMDB data"},
+	{"GET", "/api/scheduler/stop", "Stop scheduler"},
+	{"GET", "/api/scheduler/start", "Start scheduler"},
+	{"GET", "/api/scheduler/list", "List scheduled jobs"},
+	{"GET", "/api/db/close", "Close database"},
+	{"GET", "/api/db/backup", "Backup database"},
+	{"GET", "/api/db/integrity", "Check database integrity"},
+	{"GET", "/api/db/cleanuporphans", "Clean up orphaned database entries"},
+	{"DELETE", "/api/db/clear/{name}", "Clear database table"},
+	{"DELETE", "/api/db/delete/{name}/{id}", "Delete database entry"},
+	{"DELETE", "/api/db/clearcache", "Clear cache"},
+	{"GET", "/api/db/vacuum", "Vacuum database"},
+	{"DELETE", "/api/db/oldjobs", "Delete old jobs"},
+	{"GET", "/api/quality", "Get quality profiles"},
+	{"DELETE", "/api/quality/{id}", "Delete quality profile"},
+	{"POST", "/api/quality", "Create/update quality profile"},
+	{"GET", "/api/quality/get/{name}", "Get quality by name"},
+	{"GET", "/api/quality/all", "Get all qualities"},
+	{"GET", "/api/quality/complete", "Get complete qualities"},
+	{"GET", "/api/config/all", "Get all configurations"},
+	{"DELETE", "/api/config/clear", "Clear configuration"},
+	{"GET", "/api/config/get/{name}", "Get config by name"},
+	{"DELETE", "/api/config/delete/{name}", "Delete configuration"},
+	{"GET", "/api/config/refresh", "Refresh configuration"},
+	{"POST", "/api/config/update/{name}", "Update configuration"},
+	{"GET", "/api/config/type/{type}", "Get config by type"},
+	{"POST", "/api/naming", "Test naming patterns"},
+	{"POST", "/api/structure", "Test file structure"},
+	{"POST", "/api/album/force-match", "Force-match an album"},
+	{"GET", "/api/cache/refresh", "Refresh in-memory cache"},
+	{"GET", "/api/cache/list", "List cache entries"},
+	{"POST", "/api/cache/add", "Add cache entry"},
+	{"DELETE", "/api/cache/remove/{key}", "Remove cache entry"},
+	{"DELETE", "/api/cache/clear/{type}", "Clear cache by type"},
+	{"GET", "/api/statistics", "Get overall statistics"},
+	{"GET", "/api/statistics/movies", "Get movie statistics"},
+	{"GET", "/api/statistics/series", "Get series statistics"},
+	{"GET", "/api/statistics/workers", "Get worker statistics"},
+}
+
+// apiEndpointsAdmin covers the session-cookie-authenticated browser admin
+// table routes (/api/admin/table/...), not the apikey-authenticated external
+// API the rest of this page tests - kept separate and out of the total count
+// below since it's a different auth mechanism entirely.
+var apiEndpointsAdmin = []apiEndpointDoc{
+	{"GET", "/api/admin", "Admin dashboard"},
+	{"POST", "/api/admin/table/{name}/insert", "Insert database record"},
+	{"POST", "/api/admin/table/{name}/update/{index}", "Update database record"},
+	{"POST", "/api/admin/table/{name}/delete/{index}", "Delete database record"},
+}
+
 // renderAPITestingPage renders a comprehensive API testing interface.
 func renderAPITestingPage() gomponents.Node {
 	// Get the actual API key from configuration
@@ -833,6 +1080,18 @@ func renderAPITestingPage() gomponents.Node {
 										html.Option(
 											html.Value("series"),
 											gomponents.Text("Series"),
+										),
+										html.Option(
+											html.Value("books"),
+											gomponents.Text("Books"),
+										),
+										html.Option(
+											html.Value("audiobooks"),
+											gomponents.Text("Audiobooks"),
+										),
+										html.Option(
+											html.Value("music"),
+											gomponents.Text("Music"),
 										),
 										html.Option(html.Value("db"), gomponents.Text("Database")),
 									),
@@ -1088,631 +1347,25 @@ func renderAPITestingPage() gomponents.Node {
 							html.Class("accordion"),
 							html.ID("endpointsAccordion"),
 
-							// All endpoints section
-							html.Div(
-								html.Class("accordion-item"),
-								html.H2(
-									html.Class("accordion-header"),
-									html.ID("headingAll"),
-									html.Button(
-										html.Class("accordion-button collapsed"),
-										html.Type("button"),
-										gomponents.Attr("data-bs-toggle", "collapse"),
-										gomponents.Attr("data-bs-target", "#collapseAll"),
-										gomponents.Attr("aria-expanded", "false"),
-										gomponents.Attr("aria-controls", "collapseAll"),
-										gomponents.Text("All Endpoints (7)"),
-									),
-								),
-								html.Div(
-									html.ID("collapseAll"),
-									html.Class("accordion-collapse collapse"),
-									gomponents.Attr("aria-labelledby", "headingAll"),
-									gomponents.Attr("data-bs-parent", "#endpointsAccordion"),
-									html.Div(
-										html.Class("accordion-body"),
-										html.Ul(
-											html.Class("list-unstyled mb-0"),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/feeds - Search all feeds",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/data - Search all folders",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/search/rss - Search all rss feeds",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/search/missing/full - Search all Missing",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/search/missing/inc - Search all Missing Incremental",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/search/upgrade/full - Search all Upgrades",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/all/search/upgrade/inc - Search all Upgrades Incremental",
-												),
-											),
-										),
-									),
-								),
+							renderAPIEndpointsSection("All", "All Endpoints", apiEndpointsAll),
+							renderAPIEndpointsSection("Movies", "Movies Endpoints", apiEndpointsMovies),
+							renderAPIEndpointsSection("Series", "Series Endpoints", apiEndpointsSeries),
+							renderAPIEndpointsSection("Books", "Books Endpoints", apiEndpointsBooks),
+							renderAPIEndpointsSection(
+								"Audiobooks",
+								"Audiobooks Endpoints",
+								apiEndpointsAudiobooks,
 							),
-
-							// Movies endpoints section
-							html.Div(
-								html.Class("accordion-item"),
-								html.H2(
-									html.Class("accordion-header"),
-									html.ID("headingMovies"),
-									html.Button(
-										html.Class("accordion-button collapsed"),
-										html.Type("button"),
-										gomponents.Attr("data-bs-toggle", "collapse"),
-										gomponents.Attr("data-bs-target", "#collapseMovies"),
-										gomponents.Attr("aria-expanded", "false"),
-										gomponents.Attr("aria-controls", "collapseMovies"),
-										gomponents.Text("Movies Endpoints (20)"),
-									),
-								),
-								html.Div(
-									html.ID("collapseMovies"),
-									html.Class("accordion-collapse collapse"),
-									gomponents.Attr("aria-labelledby", "headingMovies"),
-									gomponents.Attr("data-bs-parent", "#endpointsAccordion"),
-									html.Div(
-										html.Class("accordion-body"),
-										html.Ul(
-											html.Class("list-unstyled mb-0"),
-											html.Li(
-												gomponents.Text("GET /api/movies - Get all movies"),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/unmatched - Get unmatched movies",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/movies/{id} - Delete movie",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/list/{name} - Get movies by list name",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/metadata/{imdb} - Get movie metadata",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/movies/list/{id} - Delete movie from list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/job/{job} - Execute movie job",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/job/{job}/{name} - Execute movie job for config",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/movies - Create/update movie",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/movies/list - Create/update movie list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/search/id/{id} - Search movie by ID",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/search/list/{id} - Search movie list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/rss/search/list/{group} - RSS search movie list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/movies/search/download/{id} - Download movie",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/all/refreshall - Refresh all movies metadata",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/refresh/{id} - Refresh movie metadata",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/all/refresh - Refresh movies",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/search/history/clear/{name} - Clear movie search history",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/movies/search/history/clearid/{id} - Clear movie search history by ID",
-												),
-											),
-										),
-									),
-								),
+							renderAPIEndpointsSection("Music", "Music Endpoints", apiEndpointsMusic),
+							renderAPIEndpointsSection(
+								"General",
+								"General & System Endpoints",
+								apiEndpointsGeneral,
 							),
-
-							// Series endpoints section
-							html.Div(
-								html.Class("accordion-item"),
-								html.H2(
-									html.Class("accordion-header"),
-									html.ID("headingSeries"),
-									html.Button(
-										html.Class("accordion-button collapsed"),
-										html.Type("button"),
-										gomponents.Attr("data-bs-toggle", "collapse"),
-										gomponents.Attr("data-bs-target", "#collapseSeries"),
-										gomponents.Attr("aria-expanded", "false"),
-										gomponents.Attr("aria-controls", "collapseSeries"),
-										gomponents.Text("Series Endpoints (28)"),
-									),
-								),
-								html.Div(
-									html.ID("collapseSeries"),
-									html.Class("accordion-collapse collapse"),
-									gomponents.Attr("aria-labelledby", "headingSeries"),
-									gomponents.Attr("data-bs-parent", "#endpointsAccordion"),
-									html.Div(
-										html.Class("accordion-body"),
-										html.Ul(
-											html.Class("list-unstyled mb-0"),
-											html.Li(
-												gomponents.Text("GET /api/series - Get all series"),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/series/{id} - Delete series",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/list/{name} - Get series by list name",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/series/list/{id} - Delete series from list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/unmatched - Get unmatched series",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/episodes - Get all episodes",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/episodes/{id} - Get episode by ID",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/series/episodes/{id} - Delete episode",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/episodes/list/{id} - Get episodes by series ID",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/series/episodes/list/{id} - Delete episodes by series ID",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/job/{job} - Execute series job",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/job/{job}/{name} - Execute series job for config",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/series - Create/update series",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/series/episodes - Create/update episode",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/series/list - Create/update series list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/series/episodes/list - Create/update episode list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/refresh/{id} - Refresh series metadata",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/all/refreshall - Refresh all series metadata",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/all/refresh - Refresh series",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/search/id/{id} - Search series by ID",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/search/id/{id}/{season} - Search series season",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/searchrss/id/{id} - RSS search series",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/searchrss/list/id/{id} - RSS search series list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/searchrss/id/{id}/{season} - RSS search series season",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/episodes/search/id/{id} - Search episodes",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/episodes/search/list/{id} - Search episode list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/rss/search/list/{group} - RSS search series list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/series/episodes/search/download/{id} - Download episode",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/search/history/clear/{name} - Clear series search history",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/series/search/history/clearid/{id} - Clear series search history by ID",
-												),
-											),
-										),
-									),
-								),
-							),
-
-							// General endpoints section
-							html.Div(
-								html.Class("accordion-item"),
-								html.H2(
-									html.Class("accordion-header"),
-									html.ID("headingGeneral"),
-									html.Button(
-										html.Class("accordion-button collapsed"),
-										html.Type("button"),
-										gomponents.Attr("data-bs-toggle", "collapse"),
-										gomponents.Attr("data-bs-target", "#collapseGeneral"),
-										gomponents.Attr("aria-expanded", "false"),
-										gomponents.Attr("aria-controls", "collapseGeneral"),
-										gomponents.Text("General & System Endpoints (31)"),
-									),
-								),
-								html.Div(
-									html.ID("collapseGeneral"),
-									html.Class("accordion-collapse collapse"),
-									gomponents.Attr("aria-labelledby", "headingGeneral"),
-									gomponents.Attr("data-bs-parent", "#endpointsAccordion"),
-									html.Div(
-										html.Class("accordion-body"),
-										html.Ul(
-											html.Class("list-unstyled mb-0"),
-											html.Li(
-												gomponents.Text(
-													"GET /api/debugstats - Get debug statistics",
-												),
-											),
-											html.Li(
-												gomponents.Text("GET /api/queue - Get job queue"),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/queue/history - Get job history",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/queue/cancel/{id} - Cancel job",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/trakt/authorize - Authorize Trakt",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/trakt/token/{code} - Get Trakt token",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/trakt/user/{user}/{list} - Get Trakt user list",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/slug - Get slug information",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/parse/string - Parse string",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/parse/file - Parse file",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/fillimdb - Fill IMDB data",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/scheduler/stop - Stop scheduler",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/scheduler/start - Start scheduler",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/scheduler/list - List scheduled jobs",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/db/close - Close database",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/db/backup - Backup database",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/db/integrity - Check database integrity",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/db/clear/{name} - Clear database table",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/db/delete/{name}/{id} - Delete database entry",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/db/clearcache - Clear cache",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/db/vacuum - Vacuum database",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/db/oldjobs - Delete old jobs",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/quality - Get quality profiles",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/quality/{id} - Delete quality profile",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/quality - Create/update quality profile",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/quality/get/{name} - Get quality by name",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/quality/all - Get all qualities",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/quality/complete - Get complete qualities",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/config/all - Get all configurations",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/config/clear - Clear configuration",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/config/get/{name} - Get config by name",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"DELETE /api/config/delete/{name} - Delete configuration",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/config/refresh - Refresh configuration",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/config/update/{name} - Update configuration",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"GET /api/config/type/{type} - Get config by type",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/naming - Test naming patterns",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/structure - Test file structure",
-												),
-											),
-										),
-									),
-								),
-							),
-
-							// Admin endpoints section
-							html.Div(
-								html.Class("accordion-item"),
-								html.H2(
-									html.Class("accordion-header"),
-									html.ID("headingAdmin"),
-									html.Button(
-										html.Class("accordion-button collapsed"),
-										html.Type("button"),
-										gomponents.Attr("data-bs-toggle", "collapse"),
-										gomponents.Attr("data-bs-target", "#collapseAdmin"),
-										gomponents.Attr("aria-expanded", "false"),
-										gomponents.Attr("aria-controls", "collapseAdmin"),
-										gomponents.Text("Admin Endpoints (4)"),
-									),
-								),
-								html.Div(
-									html.ID("collapseAdmin"),
-									html.Class("accordion-collapse collapse"),
-									gomponents.Attr("aria-labelledby", "headingAdmin"),
-									gomponents.Attr("data-bs-parent", "#endpointsAccordion"),
-									html.Div(
-										html.Class("accordion-body"),
-										html.Ul(
-											html.Class("list-unstyled mb-0"),
-											html.Li(
-												gomponents.Text("GET /api/admin - Admin dashboard"),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/admin/table/{name}/insert - Insert database record",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/admin/table/{name}/update/{index} - Update database record",
-												),
-											),
-											html.Li(
-												gomponents.Text(
-													"POST /api/admin/table/{name}/delete/{index} - Delete database record",
-												),
-											),
-										),
-									),
-								),
+							renderAPIEndpointsSection(
+								"Admin",
+								"Admin Endpoints (browser session auth, not apikey)",
+								apiEndpointsAdmin,
 							),
 						),
 
@@ -1722,7 +1375,13 @@ func renderAPITestingPage() gomponents.Node {
 							html.P(
 								html.Class("mb-1 small"),
 								html.Strong(gomponents.Text("Total Endpoints:")),
-								gomponents.Text(" 90"),
+								gomponents.Text(fmt.Sprintf(
+									" %d external API (apikey auth) + %d admin table routes (session auth)",
+									len(apiEndpointsAll)+len(apiEndpointsMovies)+len(apiEndpointsSeries)+
+										len(apiEndpointsBooks)+len(apiEndpointsAudiobooks)+len(apiEndpointsMusic)+
+										len(apiEndpointsGeneral),
+									len(apiEndpointsAdmin),
+								)),
 							),
 							html.P(
 								html.Class("mb-1 small"),
@@ -1808,12 +1467,20 @@ func renderAPITestingPage() gomponents.Node {
 			// Store the original API key for reset functionality
 			const originalAPIKey = '`+apiKey+`';
 			
-			// Job options mapping
+			// Job options mapping - kept in sync with each type's allowedjobs*str
+			// constant in movies.go/series.go/books.go/audiobooks.go/music.go.
 			const jobOptions = {
-				movies: ['checkreachedflag', 'checkmissingflag', 'checkmissing', 'rss', 'structure', 'datafull', 'searchmissinginc', 'searchupgradeinc', 'searchmissingfull', 'searchupgradefull', 'refreshinc', 'feeds'],
-				series: ['checkreachedflag', 'checkmissingflag', 'checkmissing', 'rss', 'rssseasons', 'rssseasonsall', 'structure', 'datafull', 'searchmissinginc', 'searchupgradeinc', 'searchmissingfull', 'searchupgradefull', 'refreshinc', 'feeds'],
+				movies: ['rss', 'data', 'datafull', 'checkmissing', 'checkmissingflag', 'checkreachedflag', 'structure', 'searchmissingfull', 'searchmissinginc', 'searchupgradefull', 'searchupgradeinc', 'searchmissingfulltitle', 'searchmissinginctitle', 'searchupgradefulltitle', 'searchupgradeinctitle', 'clearhistory', 'feeds', 'refresh', 'refreshinc'],
+				series: ['rss', 'rssseasons', 'rssseasonsall', 'data', 'datafull', 'checkmissing', 'checkmissingflag', 'checkreachedflag', 'structure', 'searchmissingfull', 'searchmissinginc', 'searchupgradefull', 'searchupgradeinc', 'searchmissingfulltitle', 'searchmissinginctitle', 'searchupgradefulltitle', 'searchupgradeinctitle', 'clearhistory', 'feeds', 'refresh', 'refreshinc'],
+				books: ['rss', 'rssauthors', 'rssauthorsupgrade', 'data', 'datafull', 'checkmissing', 'checkmissingflag', 'checkreachedflag', 'structure', 'searchmissingfull', 'searchmissinginc', 'searchupgradefull', 'searchupgradeinc', 'searchmissingfulltitle', 'searchmissinginctitle', 'searchupgradefulltitle', 'searchupgradeinctitle', 'clearhistory', 'feeds', 'refresh', 'refreshinc'],
+				audiobooks: ['rss', 'rssauthors', 'rssauthorsupgrade', 'data', 'datafull', 'checkmissing', 'checkmissingflag', 'checkreachedflag', 'structure', 'searchmissingfull', 'searchmissinginc', 'searchupgradefull', 'searchupgradeinc', 'searchmissingfulltitle', 'searchmissinginctitle', 'searchupgradefulltitle', 'searchupgradeinctitle', 'clearhistory', 'feeds', 'refresh', 'refreshinc'],
+				music: ['rss', 'rssartists', 'rssartistsupgrade', 'data', 'datafull', 'checkmissing', 'checkmissingflag', 'checkreachedflag', 'structure', 'searchmissingfull', 'searchmissinginc', 'searchupgradefull', 'searchupgradeinc', 'searchmissingfulltitle', 'searchmissinginctitle', 'searchupgradefulltitle', 'searchupgradeinctitle', 'clearhistory', 'feeds', 'refresh', 'refreshinc'],
 				db: ['backup', 'integrity', 'clearcache', 'clear/serie_episode_histories', 'clear/movie_histories', 'clear/r_sshistories']
 			};
+
+			// DELETE db actions (matches the DELETE routes in general.go) - every
+			// other db action, and every non-db job, is a GET.
+			const dbDeleteActions = ['clearcache', 'clear/serie_episode_histories', 'clear/movie_histories', 'clear/r_sshistories'];
 			
 			function updateJobOptions() {
 				const jobType = document.getElementById('jobType').value;
@@ -1843,17 +1510,20 @@ func renderAPITestingPage() gomponents.Node {
 					return false;
 				}
 				
-				let endpoint;
+				let endpoint, method = 'GET';
 				if (jobType === 'db') {
 					endpoint = '/api/db/' + jobAction;
+					if (dbDeleteActions.includes(jobAction)) {
+						method = 'DELETE';
+					}
 				} else {
 					endpoint = '/api/' + jobType + '/job/' + jobAction;
 					if (jobConfig) {
 						endpoint += '/' + jobConfig;
 					}
 				}
-				
-				executeAPICall('GET', endpoint, '', 'Job: ' + jobType + '/' + jobAction);
+
+				executeAPICall(method, endpoint, '', 'Job: ' + jobType + '/' + jobAction);
 				return false;
 			}
 			
@@ -2657,10 +2327,23 @@ func HandleMissingEpisodes(c *gin.Context) {
 	seriesScanned := len(seriesMap)
 
 	downloadTriggered := 0
+
 	if autoDownload && totalMissing > 0 {
-		// Here we could trigger actual download searches
-		// For now, just simulate the count
-		downloadTriggered = totalMissing
+		// triggerEpisodeDownloads (episodes_functions.go) runs a real search per
+		// episode via searcher.MediaSearch - this previously just set
+		// downloadTriggered = totalMissing without doing anything, silently
+		// reporting success for a search that never ran.
+		downloadResult, err := triggerEpisodeDownloads(missingEpisodes, qualityProfile, autoDownload)
+		if err != nil {
+			c.String(
+				http.StatusOK,
+				renderAlert("Failed to trigger episode downloads: "+err.Error(), "danger"),
+			)
+
+			return
+		}
+
+		downloadTriggered = downloadResult.TriggeredDownloads
 	}
 
 	scanDuration := time.Since(startTime)

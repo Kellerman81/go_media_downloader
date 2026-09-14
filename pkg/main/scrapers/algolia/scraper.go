@@ -232,11 +232,46 @@ func (s *Scraper) extractAlgoliaCredentials(ctx context.Context) error {
 	return fmt.Errorf("algolia API credentials not found for %s", s.config.StartURL)
 }
 
+// warnIfMultipleFacetFilters logs a warning when more than one facet filter
+// field is configured. buildFacetFilter only ever applies the first non-empty
+// field in its SiteFilterName > SerieFilterName > NetworkFilterName >
+// NetworkSiteFilterName priority order, so an accidental second value would
+// otherwise be silently dropped with no indication anything was ignored.
+func (s *Scraper) warnIfMultipleFacetFilters() {
+	fields := []struct {
+		name  string
+		value string
+	}{
+		{"site_filter_name", s.config.SiteFilterName},
+		{"serie_filter_name", s.config.SerieFilterName},
+		{"network_filter_name", s.config.NetworkFilterName},
+		{"network_site_filter_name", s.config.NetworkSiteFilterName},
+	}
+
+	var configured []string
+
+	for _, f := range fields {
+		if f.value != "" {
+			configured = append(configured, f.name)
+		}
+	}
+
+	if len(configured) > 1 {
+		logger.Logtype(logger.StatusWarning, 0).
+			Str("site", s.config.SiteName).
+			Str("used", configured[0]).
+			Str("ignored", logger.JoinStringsSep(configured[1:], ", ")).
+			Msg("Multiple Algolia facet filter fields configured; only the first is applied")
+	}
+}
+
 // buildFacetFilter constructs the facet filter string for Algolia query.
 //
 // Returns:
 //   - string: URL-encoded facet filter string
 func (s *Scraper) buildFacetFilter() string {
+	s.warnIfMultipleFacetFilters()
+
 	if s.config.SiteFilterName != "" {
 		return url.QueryEscape(fmt.Sprintf(`[["sitename:%s"]]`, s.config.SiteFilterName))
 	}
@@ -246,8 +281,12 @@ func (s *Scraper) buildFacetFilter() string {
 	}
 
 	if s.config.NetworkFilterName != "" {
-		network := strings.ReplaceAll(s.config.NetworkFilterName, " ", "%20")
-		return url.QueryEscape(fmt.Sprintf(`[["network.lvl0:%s"]]`, network))
+		// url.QueryEscape below already encodes spaces correctly - a manual
+		// " " -> "%20" substitution before it double-encodes the "%" into
+		// "%25", producing the literal text "%2520" instead of a space once
+		// Algolia URL-decodes the query, so a network name containing a
+		// space (e.g. "Sinn Sage") never matched anything.
+		return url.QueryEscape(fmt.Sprintf(`[["network.lvl0:%s"]]`, s.config.NetworkFilterName))
 	}
 
 	if s.config.NetworkSiteFilterName != "" {
@@ -255,9 +294,6 @@ func (s *Scraper) buildFacetFilter() string {
 		if len(parts) == 2 {
 			network := strings.TrimSpace(parts[0])
 			site := strings.TrimSpace(parts[1])
-
-			network = strings.ReplaceAll(network, " ", "%20")
-			site = strings.ReplaceAll(site, " ", "%20")
 
 			return url.QueryEscape(fmt.Sprintf(`[["network.lvl1:%s > %s"]]`, network, site))
 		}
@@ -304,8 +340,8 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, error)
 	// Build API URL
 	apiURL := fmt.Sprintf(
 		"https://tsmkfa364q-dsn.algolia.net/1/indexes/*/queries?x-algolia-application-id=%s&x-algolia-api-key=%s",
-		s.applicationID,
-		s.apiKey,
+		url.QueryEscape(s.applicationID),
+		url.QueryEscape(s.apiKey),
 	)
 
 	requestBody := s.buildRequestBody(page)
@@ -411,6 +447,14 @@ func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 
 	if hit.ReleaseDate == "" {
 		return fmt.Errorf("release date is empty for clip: %s", hit.Title)
+	}
+
+	// Matches htmlxpath/csrfapi's guard: the existing-row lookup below keys
+	// on (dbserie_id, identifier, title), so a blank title would make every
+	// hit on the same release date collide into one DB row, each silently
+	// overwriting the last one's overview/scraper_url.
+	if hit.Title == "" {
+		return fmt.Errorf("title is empty for clip_id %d", hit.ClipID)
 	}
 
 	// Parse release date

@@ -81,16 +81,14 @@ func CheckAnalyzerPaths() {
 // getFFProbeFilename returns the path to the ffprobe executable.
 // It checks if the path has already been set, otherwise determines the path based on OS.
 func getFFProbeFilename() string {
-	if ffprobepath != "" {
-		return ffprobepath
-	}
+	ffprobeOnce.Do(func() {
+		executable := "ffprobe"
+		if runtime.GOOS == "windows" {
+			executable += ".exe"
+		}
 
-	executable := "ffprobe"
-	if runtime.GOOS == "windows" {
-		executable += ".exe"
-	}
-
-	ffprobepath = filepath.Join(config.GetSettingsGeneral().FfprobePath, executable)
+		ffprobepath = filepath.Join(config.GetSettingsGeneral().FfprobePath, executable)
+	})
 
 	return ffprobepath
 }
@@ -185,10 +183,12 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 		)
 	}
 
-	if stdErr.Len() > 0 {
-		return errors.New("cmd error: " + stdErr.String())
-	}
-
+	// A non-empty stderr does not by itself mean the probe failed - cmd.Run()
+	// already returned nil (process exited 0), and both tools are known to
+	// write non-fatal diagnostic/warning lines to stderr even under
+	// -loglevel fatal in some environments. Treating any stderr output as an
+	// unconditional failure discarded otherwise-good, parseable results; a
+	// genuine failure is still caught below when outputBuf isn't valid JSON.
 	var result T
 	if err := json.Unmarshal(outputBuf.Bytes(), &result); err != nil {
 		return err

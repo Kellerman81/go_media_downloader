@@ -261,8 +261,6 @@ func schedulerdispatch(
 ) {
 	if intervalstr != "" {
 		if config.GetSettingsGeneral().UseCronInsteadOfInterval {
-			rand.New(rand.NewSource(time.Now().UnixNano()))
-
 			if strings.ContainsRune(intervalstr, 'd') {
 				intervalstr = strings.Replace(intervalstr, "d", "", 1)
 				cronstr = "0 " + strconv.Itoa(
@@ -283,11 +281,23 @@ func schedulerdispatch(
 				intervalstr = strconv.Itoa(logger.StringToInt(intervalstr)*24) + "h"
 			}
 
-			dur, _ := time.ParseDuration(intervalstr)
-
-			err := worker.DispatchEvery(cfgpstr, dur, name, queue, jobname)
-			if err != nil {
-				logger.Logtype("error", 0).Err(err).Str("name", name).Msg("Cron interval")
+			dur, parseErr := time.ParseDuration(intervalstr)
+			if parseErr != nil || dur <= 0 {
+				// worker.DispatchEvery passes this straight to
+				// time.NewTicker, which panics on a non-positive duration -
+				// a malformed interval string (user typo in a scheduler
+				// config field, e.g. missing unit suffix) would otherwise
+				// crash the whole app synchronously during InitScheduler.
+				logger.Logtype("error", 0).
+					Err(parseErr).
+					Str("name", name).
+					Str("interval", intervalstr).
+					Msg("Invalid scheduler interval - skipping this job's interval schedule")
+			} else {
+				err := worker.DispatchEvery(cfgpstr, dur, name, queue, jobname)
+				if err != nil {
+					logger.Logtype("error", 0).Err(err).Str("name", name).Msg("Cron interval")
+				}
 			}
 		}
 	}

@@ -167,6 +167,7 @@ func buildURLNew(
 // a boolean indicating whether more results are available, the first ID for continuation,
 // and any error that occurred during processing.
 func processurl(
+	ctx context.Context,
 	ind *config.IndexersConfig,
 	qual *config.QualityConfig,
 	urlv string,
@@ -179,7 +180,7 @@ func processurl(
 		return false, "", errNoClientReturned
 	}
 
-	result, err := c.ExecuteRequest(context.Background(), urlv, tillid, ind, qual)
+	result, err := c.ExecuteRequest(ctx, urlv, tillid, ind, qual)
 	if err != nil && !errors.Is(err, newznab.ErrBroke) {
 		return false, "", err
 	}
@@ -523,6 +524,7 @@ func NewznabCheckLimiter(cfgindexer *config.IndexersConfig) bool {
 // quality, and other parameters, executes the query, and stores
 // the results in the given slice. Returns an error if one occurs.
 func QueryNewznabMovieImdb(
+	ctx context.Context,
 	cfgind *config.IndexersConfig,
 	qual *config.QualityConfig,
 	imdbid string,
@@ -546,7 +548,7 @@ func QueryNewznabMovieImdb(
 		}
 	}
 
-	c.SearchByIMDB(context.Background(), imdbid, additionalQueryParams, cfgind, qual)
+	c.SearchByIMDB(ctx, imdbid, additionalQueryParams, cfgind, qual)
 
 	b := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(b)
@@ -560,6 +562,7 @@ func QueryNewznabMovieImdb(
 	}
 
 	return processurl(
+		ctx,
 		cfgind,
 		qual,
 		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
@@ -598,7 +601,12 @@ func DownloadNZB(
 		filename = filepath.Base(urlv)
 	}
 
-	return Getnewznabclient(idxcfg).Download(context.Background(), urlv, targetpath, filename)
+	client := Getnewznabclient(idxcfg)
+	if client == nil {
+		return errNoClientReturned
+	}
+
+	return client.Download(context.Background(), urlv, targetpath, filename)
 
 	// return ProcessHTTP(
 	// 	&Getnewznabclient(idxcfg).Client,
@@ -627,6 +635,7 @@ func DownloadNZB(
 // the config, quality, and other parameters, executes the query, and stores
 // the results in the given slice. Returns an error if one occurs.
 func QueryNewznabTvTvdb(
+	ctx context.Context,
 	cfgind *config.IndexersConfig,
 	qual *config.QualityConfig,
 	tvdbid, indexerid int,
@@ -667,6 +676,7 @@ func QueryNewznabTvTvdb(
 	}
 
 	return processurl(
+		ctx,
 		cfgind,
 		qual,
 		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
@@ -711,6 +721,7 @@ func getaddstr(cfgp *config.MediaTypeConfig, title string, e *apiexternal_v2.Nzb
 // escaping the search query, adding quotes if configured, and limiting results.
 // It returns any error that occurs.
 func QueryNewznabQuery(
+	ctx context.Context,
 	cfgp *config.MediaTypeConfig,
 	e *apiexternal_v2.Nzbwithprio,
 	cfgind *config.IndexersConfig,
@@ -746,6 +757,7 @@ func QueryNewznabQuery(
 	}
 
 	return processurl(
+		ctx,
 		cfgind,
 		qual,
 		buildURLNew(false, indexerid, qual, cfgind, b.Bytes()),
@@ -760,6 +772,7 @@ func QueryNewznabQuery(
 // slice. It returns a bool indicating if the results were truncated, and
 // an error if one occurred.
 func QueryNewznabRSS(
+	ctx context.Context,
 	ind *config.IndexersConfig,
 	qual *config.QualityConfig,
 	maxitems, indexerid int,
@@ -774,6 +787,7 @@ func QueryNewznabRSS(
 	}
 
 	return processurl(
+		ctx,
 		ind,
 		qual,
 		buildURLNew(true, indexerid, qual, ind, b.Bytes()),
@@ -788,6 +802,7 @@ func QueryNewznabRSS(
 // to retrieve multiple pages of results if needed. It returns the ID of the first
 // result and any error.
 func QueryNewznabRSSLastCustom(
+	ctx context.Context,
 	ind *config.IndexersConfig,
 	qual *config.QualityConfig,
 	tillid string,
@@ -818,7 +833,7 @@ func QueryNewznabRSSLastCustom(
 		maxloop = 2
 	}
 
-	brokeloop, firstid, err := processurl(ind, qual, bld, tillid, results, false)
+	brokeloop, firstid, err := processurl(ctx, ind, qual, bld, tillid, results, false)
 	if err != nil || results == nil || len(results.Arr) == 0 || brokeloop || maxloop == 1 {
 		return firstid, err
 	}
@@ -835,7 +850,7 @@ func QueryNewznabRSSLastCustom(
 		buf.WriteString("&offset=")
 		buf.WriteUInt16(ind.MaxEntries * (uint16(count) + 1))
 
-		brokeloop, _, err = processurl(ind, qual, buf.String(), tillid, results, false)
+		brokeloop, _, err = processurl(ctx, ind, qual, buf.String(), tillid, results, false)
 		buf.Reset()
 
 		if err != nil || brokeloop || len(results.Arr) == 0 {
@@ -850,13 +865,14 @@ func QueryNewznabRSSLastCustom(
 // the given configuration and quality parameters. It returns the latest item ID
 // and any error.
 func QueryNewznabRSSLast(
+	ctx context.Context,
 	cfgind *config.IndexersConfig,
 	qual *config.QualityConfig,
 	tillid string,
 	indexerid int,
 	results *NzbSlice,
 ) (string, error) {
-	return QueryNewznabRSSLastCustom(cfgind, qual, tillid, indexerid, results)
+	return QueryNewznabRSSLastCustom(ctx, cfgind, qual, tillid, indexerid, results)
 }
 
 // newNewznab creates a new Newznab client instance.

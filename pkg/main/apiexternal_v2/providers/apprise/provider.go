@@ -52,8 +52,6 @@ func NewProvider(host string, port int, token string, urls []string, useSSL bool
 		RateLimitPer24h:         100000,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +13,22 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
+
+// hashFileSHA256 returns the hex-encoded SHA-256 digest of a file's contents.
+func hashFileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
 // getPathsToScan returns all media paths that should be scanned for cleanup.
 func getPathsToScan(paths string) []string {
@@ -151,10 +170,34 @@ func findDuplicateFiles(scanPaths []string, minFileSize int64) [][]string {
 		}
 	}
 
-	// Group files that have the same size (potential duplicates)
+	// Files that merely share a size are only *candidates*; confirm with a
+	// content hash before ever treating them as duplicates, since deleting a
+	// same-size-but-different-content file is permanent data loss.
 	for _, files := range sizeMap {
-		if len(files) > 1 {
-			duplicateGroups = append(duplicateGroups, files)
+		if len(files) <= 1 {
+			continue
+		}
+
+		hashMap := make(map[string][]string, len(files))
+
+		for _, path := range files {
+			hash, err := hashFileSHA256(path)
+			if err != nil {
+				logger.Logtype("error", 0).
+					Str("path", path).
+					Err(err).
+					Msg("Failed to hash file for duplicate detection")
+
+				continue
+			}
+
+			hashMap[hash] = append(hashMap[hash], path)
+		}
+
+		for _, group := range hashMap {
+			if len(group) > 1 {
+				duplicateGroups = append(duplicateGroups, group)
+			}
 		}
 	}
 
@@ -295,6 +338,12 @@ func performCleanupActions(
 				results.ActionsPerformed,
 				fmt.Sprintf("Removed orphaned file: %s", file),
 			)
+		} else {
+			logger.Logtype("error", 0).Str("path", file).Err(err).Msg("Failed to remove orphaned file")
+			results.ActionsPerformed = append(
+				results.ActionsPerformed,
+				fmt.Sprintf("Failed to remove orphaned file: %s (%v)", file, err),
+			)
 		}
 	}
 
@@ -305,6 +354,12 @@ func performCleanupActions(
 				results.ActionsPerformed = append(
 					results.ActionsPerformed,
 					fmt.Sprintf("Removed duplicate file: %s", group[i]),
+				)
+			} else {
+				logger.Logtype("error", 0).Str("path", group[i]).Err(err).Msg("Failed to remove duplicate file")
+				results.ActionsPerformed = append(
+					results.ActionsPerformed,
+					fmt.Sprintf("Failed to remove duplicate file: %s (%v)", group[i], err),
 				)
 			}
 		}
@@ -327,6 +382,12 @@ func performCleanupActions(
 			results.ActionsPerformed = append(
 				results.ActionsPerformed,
 				fmt.Sprintf("Removed empty directory: %s", dir),
+			)
+		} else {
+			logger.Logtype("error", 0).Str("path", dir).Err(err).Msg("Failed to remove empty directory")
+			results.ActionsPerformed = append(
+				results.ActionsPerformed,
+				fmt.Sprintf("Failed to remove empty directory: %s (%v)", dir, err),
 			)
 		}
 	}

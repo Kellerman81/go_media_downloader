@@ -265,15 +265,21 @@ func importAlbumsBySeries(
 
 		// Build Lucene query: optionally append format filter terms for server-side pre-filtering.
 		// Example: "Bravo Hits AND (format:CD)"
-		query := seriesName
+		// seriesName is free-text user config (AlbumSeriesName/AlbumSeriesID) and
+		// must be Lucene-escaped, matching BuildArtistAlbumSearch elsewhere in
+		// this package - a series name containing Lucene special characters
+		// (":", "(", ")", etc, e.g. "Bravo Hits: The Collection (Vol. 2)")
+		// would otherwise produce a malformed or misinterpreted query.
+		escapedSeriesName := LuceneEscape(seriesName)
+		query := escapedSeriesName
 		if len(mediaFormats) > 0 {
 			fmtParts := make([]string, 0, len(mediaFormats))
 			for i := range mediaFormats {
-				fmtParts = append(fmtParts, "format:"+mediaFormats[i])
+				fmtParts = append(fmtParts, "format:"+LuceneEscape(mediaFormats[i]))
 			}
 
 			query = logger.JoinStrings(
-				seriesName,
+				escapedSeriesName,
 				" AND (",
 				logger.JoinStringsSep(fmtParts, " OR "),
 				")",
@@ -282,7 +288,13 @@ func importAlbumsBySeries(
 
 		const pageSize = 100
 
-		var str string
+		// This import mode targets configured album series, which are
+		// overwhelmingly VA compilations (e.g. "Bravo Hits") - match
+		// DiscoverAndAddSeriesAlbums's behavior for the same scenario so
+		// addAlbumToDatabase's compilation fallback path (which only creates
+		// a tracked-artist entry when artistName is non-empty) actually
+		// runs, instead of trackedArtistID staying permanently 0.
+		str := VariousArtistsName
 		for offset := 0; ; offset += pageSize {
 			if err := logger.CheckContextEnded(ctx); err != nil {
 				return err
@@ -563,14 +575,25 @@ func addAlbumToDatabase(
 
 	// Add tracks to the database if we have release details
 	if releaseDetails != nil && len(releaseDetails.Tracks) > 0 {
-		var (
-			existingTrack, dbtrackID uint
-			runtimeMs                int64
-		)
+		type trackArtistPlan struct {
+			idx              int
+			artistID         uint
+			existingRelation uint
+		}
 
+		type trackPlan struct {
+			trackIdx        int
+			existingTrackID uint
+			artists         []trackArtistPlan
+		}
+
+		plans := make([]trackPlan, 0, len(releaseDetails.Tracks))
+
+		// Gather all existence checks and artist lookups up front - ExecNTxNid
+		// below holds the write lock for the whole transaction, and any read
+		// helper called from inside it would deadlock on that same lock.
 		for i := range releaseDetails.Tracks {
-			existingTrack = 0
-			dbtrackID = 0
+			var existingTrack uint
 			// Check if track already exists
 			database.Scanrowsdyn(
 				false,
@@ -581,59 +604,88 @@ func addAlbumToDatabase(
 				&releaseDetails.Tracks[i].Position,
 			)
 
-			if existingTrack == 0 {
-				runtimeMs = releaseDetails.Tracks[i].Duration.Milliseconds()
-
-				result, err := database.ExecNid(
-					`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
-					 VALUES (?, ?, ?, ?, ?, ?)`,
-					&dbalbumID,
-					&releaseDetails.Tracks[i].Title,
-					&releaseDetails.Tracks[i].Position,
-					&releaseDetails.Tracks[i].DiscNumber,
-					&runtimeMs,
-					&releaseDetails.Tracks[i].AcoustID,
-				)
-				if err == nil {
-					dbtrackID = logger.Int64ToUint(result)
-				}
-			} else {
-				dbtrackID = existingTrack
-			}
+			plan := trackPlan{trackIdx: i, existingTrackID: existingTrack}
 
 			// Add track artists if available
-			if dbtrackID > 0 && len(releaseDetails.Tracks[i].Artists) > 0 {
-				var artistID uint
+			if len(releaseDetails.Tracks[i].Artists) > 0 {
 				for idx := range releaseDetails.Tracks[i].Artists {
 					if releaseDetails.Tracks[i].Artists[idx].Name == "" {
 						continue
 					}
 
-					artistID = addOrGetArtist(
+					artistID := addOrGetArtist(
 						&releaseDetails.Tracks[i].Artists[idx].Name,
 						&releaseDetails.Tracks[i].Artists[idx].ID,
 					)
-					if artistID > 0 {
-						var existingRelation uint
+					if artistID == 0 {
+						continue
+					}
+
+					ap := trackArtistPlan{idx: idx, artistID: artistID}
+
+					if existingTrack > 0 {
 						database.Scanrowsdyn(
 							false,
 							"SELECT id FROM dbtrack_artists WHERE dbtrack_id = ? AND dbartist_id = ?",
-							&existingRelation,
-							&dbtrackID,
+							&ap.existingRelation,
+							&existingTrack,
 							&artistID,
 						)
-
-						if existingRelation == 0 {
-							_, _ = database.ExecNid(
-								`INSERT INTO dbtrack_artists (dbtrack_id, dbartist_id, position)
-								 VALUES (?, ?, ?)`,
-								&dbtrackID, &artistID, &idx,
-							)
-						}
 					}
+
+					plan.artists = append(plan.artists, ap)
 				}
 			}
+
+			plans = append(plans, plan)
 		}
+
+		// One transaction for all per-track/per-artist inserts of this release -
+		// per-statement implicit transactions pay a full fsync each, and this loop
+		// can run tens to hundreds of times for a single release import.
+		_ = database.ExecNTxNid(func(exec func(querystring string, args ...any) (int64, error)) error {
+			for pi := range plans {
+				plan := &plans[pi]
+				i := plan.trackIdx
+				dbtrackID := plan.existingTrackID
+
+				if dbtrackID == 0 {
+					runtimeMs := releaseDetails.Tracks[i].Duration.Milliseconds()
+
+					newID, err := exec(
+						`INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid)
+						 VALUES (?, ?, ?, ?, ?, ?)`,
+						&dbalbumID,
+						&releaseDetails.Tracks[i].Title,
+						&releaseDetails.Tracks[i].Position,
+						&releaseDetails.Tracks[i].DiscNumber,
+						&runtimeMs,
+						&releaseDetails.Tracks[i].AcoustID,
+					)
+					if err == nil {
+						dbtrackID = logger.Int64ToUint(newID)
+					}
+				}
+
+				if dbtrackID == 0 {
+					continue
+				}
+
+				for _, ap := range plan.artists {
+					if ap.existingRelation != 0 {
+						continue
+					}
+
+					_, _ = exec(
+						`INSERT INTO dbtrack_artists (dbtrack_id, dbartist_id, position)
+						 VALUES (?, ?, ?)`,
+						&dbtrackID, &ap.artistID, &ap.idx,
+					)
+				}
+			}
+
+			return nil
+		})
 	}
 
 	// Add artists to the database and create relationships
@@ -702,6 +754,10 @@ func addAlbumToDatabase(
 	// For 2-3 artist collaborations: primary gets 'albums', secondary get 'none'.
 	// For compilations (4+ artists like "Bravo Hits"): skip creating new tracking entries entirely.
 	var trackedArtistID uint
+
+	if listid == -1 {
+		return logger.ErrListnameEmpty
+	}
 
 	isMultiArtist := len(release.Artists) > 1
 	isCompilation := len(release.Artists) > 3

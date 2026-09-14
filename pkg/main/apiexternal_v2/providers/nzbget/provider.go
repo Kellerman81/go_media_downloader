@@ -95,8 +95,6 @@ func NewProvider(host string, port int, username, password string, useSSL bool) 
 		Password:                password,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -566,6 +564,14 @@ func (p *Provider) AddNZBExtended(
 	var nzbID int
 	if err := json.Unmarshal(result, &nzbID); err != nil {
 		return 0, errors.New(logger.JoinStrings("failed to decode NZB ID: ", err.Error()))
+	}
+
+	// NZBGet's "append" returns 0 (not an RPC error) when the server rejects
+	// the add (duplicate-detection with the "SCORE" mode passed above, or
+	// other server-side rejection) - treating any non-positive ID as success
+	// made a real, silent add-failure indistinguishable from success.
+	if nzbID <= 0 {
+		return 0, errors.New("nzbget rejected the NZB add (duplicate or invalid)")
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).

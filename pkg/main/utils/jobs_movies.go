@@ -307,9 +307,15 @@ func getrefreshlistid(imdb *string, cfgp *config.MediaTypeConfig) int {
 		return -1
 	}
 
+	// Prefer the list row that actually has files attached, so a movie duplicated
+	// across sibling lists deterministically resolves to the list it's really in
+	// instead of an arbitrary row order. Falls back to the lowest id when none
+	// of the duplicate rows have files.
 	listname := database.Getdatarow[string](
 		false,
-		"SELECT listname FROM movies where dbmovie_id = ?",
+		"SELECT listname FROM movies where dbmovie_id = ? "+
+			"ORDER BY (EXISTS(SELECT 1 FROM movie_files WHERE movie_files.movie_id = movies.id)) DESC, id ASC "+
+			"LIMIT 1",
 		&movieid,
 	)
 	if listname == "" {

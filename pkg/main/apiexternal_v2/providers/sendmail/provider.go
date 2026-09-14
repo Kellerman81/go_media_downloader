@@ -46,8 +46,6 @@ func NewProvider(
 		Password:                password,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -73,6 +71,13 @@ func (*Provider) GetProviderName() string {
 	return "sendmail"
 }
 
+// stripCRLF removes CR and LF from s, preventing header/command injection
+// when s is interpolated into a raw SMTP header line or address list.
+func stripCRLF(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	return strings.ReplaceAll(s, "\n", "")
+}
+
 // SendNotification sends an email notification.
 func (p *Provider) SendNotification(
 	_ context.Context,
@@ -89,13 +94,26 @@ func (p *Provider) SendNotification(
 		return nil, errors.New("no recipients configured")
 	}
 
-	// Build email message
-	subject := request.Title
+	// Header values must not contain CR/LF - request.Title/recipients/p.from
+	// are interpolated directly into the raw header block below, and an
+	// embedded \r\n would let a caller inject arbitrary extra headers
+	// (e.g. a forged Bcc, or override the To header) into the outgoing
+	// email. The body is not subject to this - it's the message content,
+	// not a header, so embedded newlines there are fine. Build a new slice
+	// rather than mutating recipients in place - it may alias p.to, the
+	// provider's own stored recipient list.
+	cleanRecipients := make([]string, len(recipients))
+	for i := range recipients {
+		cleanRecipients[i] = stripCRLF(recipients[i])
+	}
+
+	subject := stripCRLF(request.Title)
+	from := stripCRLF(p.from)
 	body := request.Message
 
 	msg := fmt.Appendf(nil, "From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n",
-		p.from,
-		logger.JoinStringsSep(recipients, ", "),
+		from,
+		logger.JoinStringsSep(cleanRecipients, ", "),
 		subject,
 		body,
 	)
@@ -106,7 +124,7 @@ func (p *Provider) SendNotification(
 	// Send email
 	addr := fmt.Sprintf("%s:%d", p.smtpHost, p.smtpPort)
 
-	err := smtp.SendMail(addr, auth, p.from, recipients, msg)
+	err := smtp.SendMail(addr, auth, from, cleanRecipients, msg)
 	if err != nil {
 		return &apiexternal_v2.NotificationResponse{
 			Success:   false,

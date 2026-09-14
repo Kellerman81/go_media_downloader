@@ -299,7 +299,6 @@ const (
 	// ProviderMusicBrainz and related constants are music metadata providers.
 	ProviderMusicBrainz ProviderType = "musicbrainz"
 	ProviderDiscogs     ProviderType = "discogs"
-	ProviderSpotify     ProviderType = "spotify"
 	ProviderAcoustID    ProviderType = "acoustid"
 	ProviderLastFM      ProviderType = "lastfm"
 	ProviderDeezer      ProviderType = "deezer"

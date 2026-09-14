@@ -48,13 +48,13 @@ func (h *FLACHandler) getMetaflacPath() string {
 // ReadTags reads Vorbis Comment tags from a FLAC file, skipping embedded cover art.
 // Cover art (PICTURE blocks) is intentionally omitted — it can be several MB per file
 // and is not needed for the matching / enrichment hot-path.
-// Use ReadTagsWithCover when cover art must be preserved (e.g. CopyTags).
+// Use ReadTagsWithCover when cover art must be preserved (e.g. ReadCoverData).
 func (h *FLACHandler) ReadTags(filepath string) (*AudioTags, error) {
 	return h.readTags(filepath, false)
 }
 
 // ReadTagsWithCover reads Vorbis Comment tags including embedded cover art.
-// Use this only when cover art is needed (e.g. CopyTags); prefer ReadTags
+// Use this only when cover art is needed (e.g. ReadCoverData); prefer ReadTags
 // for metadata-only access since loading cover art is expensive.
 func (h *FLACHandler) ReadTagsWithCover(filepath string) (*AudioTags, error) {
 	return h.readTags(filepath, true)
@@ -234,7 +234,20 @@ func (*FLACHandler) parseVorbisComments(comments [][2]string, tags *AudioTags) {
 	}
 }
 
-// WriteTags writes Vorbis Comment tags to a FLAC file using metaflac.
+// WriteTags writes Vorbis Comment tags (and, if present, cover art) to a FLAC
+// file using metaflac. Tag removal, tag setting, and picture import are all
+// "shorthand operations" in metaflac's own terminology and combine into one
+// atomic invocation; removing an existing picture block is a "major
+// operation" and metaflac refuses to mix major and shorthand operations in
+// the same invocation ("you may not mix shorthand and major operations"),
+// so replacing an existing cover still needs a separate preliminary call to
+// drop the old picture block first. This is still a meaningful improvement
+// over the previous 2-3-fully-independent-invocation approach: the tag
+// removal and tag/cover write now happen together, so a failure can no
+// longer leave the file with all tags wiped and nothing written back - the
+// residual risk window (old cover removed, then the main call fails before
+// importing the new one) is smaller and loses only the cover, not all
+// metadata.
 // Requires the metaflac command-line tool to be installed and available in PATH.
 func (h *FLACHandler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
 	metaflac := h.getMetaflacPath()
@@ -247,42 +260,55 @@ func (h *FLACHandler) WriteTags(ctx context.Context, filepath string, tags *Audi
 		}
 	}
 
-	// First, remove all existing vorbis comments
-	var stderr bytes.Buffer
+	args := []string{"--remove-all-tags"}
+	args = append(args, h.buildTagArgs(tags)...)
 
-	removeCmd := exec.CommandContext(ctx, metaflac, "--remove-all-tags", filepath)
+	if len(tags.CoverData) > 0 {
+		// --remove is a major operation and cannot be combined with the
+		// shorthand operations above in one invocation - drop any existing
+		// picture block first (best-effort: a file with no picture block
+		// yet is the common, non-error case for --remove --block-type).
+		exec.CommandContext(ctx, metaflac, "--remove", "--block-type=PICTURE", filepath).Run() //nolint:errcheck
 
-	removeCmd.Stderr = &stderr
-	if err := removeCmd.Run(); err != nil {
-		return &ErrWriteFailed{
-			Path:   filepath,
-			Reason: fmt.Sprintf("failed to remove existing tags: %s", stderr.String()),
-		}
-	}
-
-	// Build the list of tags to set
-	tagArgs := h.buildTagArgs(tags)
-
-	if len(tagArgs) > 0 {
-		// Add all new tags
-		args := append(tagArgs, filepath)
-		setCmd := exec.CommandContext(ctx, metaflac, args...)
-
-		stderr.Reset()
-
-		setCmd.Stderr = &stderr
-		if err := setCmd.Run(); err != nil {
+		tmpFile, err := os.CreateTemp("", "flac-cover-*")
+		if err != nil {
 			return &ErrWriteFailed{
 				Path:   filepath,
-				Reason: fmt.Sprintf("failed to set tags: %s", stderr.String()),
+				Reason: fmt.Sprintf("failed to create temp file for cover: %v", err),
 			}
 		}
+
+		tmpPath := tmpFile.Name()
+		defer os.Remove(tmpPath)
+
+		if _, err := tmpFile.Write(tags.CoverData); err != nil {
+			tmpFile.Close()
+
+			return &ErrWriteFailed{
+				Path:   filepath,
+				Reason: fmt.Sprintf("failed to write cover to temp file: %v", err),
+			}
+		}
+
+		tmpFile.Close()
+
+		// Format: --import-picture-from=TYPE|MIME|DESC|WIDTHxHEIGHTxDEPTH/COLORS|FILE
+		// Type 3 = Front Cover, we can use simplified format
+		pictureSpec := logger.JoinStrings("3|", tags.CoverMIME, "|Front Cover||", tmpPath)
+		args = append(args, logger.JoinStrings("--import-picture-from=", pictureSpec))
 	}
 
-	// Handle cover art
-	if len(tags.CoverData) > 0 {
-		if err := h.writeCoverArt(ctx, filepath, tags); err != nil {
-			return err
+	args = append(args, filepath)
+
+	var stderr bytes.Buffer
+
+	cmd := exec.CommandContext(ctx, metaflac, args...)
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return &ErrWriteFailed{
+			Path:   filepath,
+			Reason: fmt.Sprintf("failed to write tags: %s", stderr.String()),
 		}
 	}
 
@@ -365,60 +391,4 @@ func (*FLACHandler) buildTagArgs(tags *AudioTags) []string {
 	}
 
 	return args
-}
-
-// writeCoverArt writes cover art to a FLAC file using metaflac.
-func (h *FLACHandler) writeCoverArt(ctx context.Context, filepath string, tags *AudioTags) error {
-	metaflac := h.getMetaflacPath()
-
-	// Write cover data to a temporary file
-	tmpFile, err := os.CreateTemp("", "flac-cover-*")
-	if err != nil {
-		return &ErrWriteFailed{
-			Path:   filepath,
-			Reason: fmt.Sprintf("failed to create temp file for cover: %v", err),
-		}
-	}
-
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := tmpFile.Write(tags.CoverData); err != nil {
-		tmpFile.Close()
-
-		return &ErrWriteFailed{
-			Path:   filepath,
-			Reason: fmt.Sprintf("failed to write cover to temp file: %v", err),
-		}
-	}
-
-	tmpFile.Close()
-
-	// Remove existing pictures first
-	exec.CommandContext(ctx, metaflac, "--remove", "--block-type=PICTURE", filepath).
-		Run()
-
-		//nolint:errcheck // ignore: might not have pictures
-
-	// Import the new picture
-	// Format: --import-picture-from=TYPE|MIME|DESC|WIDTHxHEIGHTxDEPTH/COLORS|FILE
-	// Type 3 = Front Cover, we can use simplified format
-	pictureSpec := logger.JoinStrings("3|", tags.CoverMIME, "|Front Cover||", tmpPath)
-	importCmd := exec.CommandContext(ctx,
-		metaflac,
-		logger.JoinStrings("--import-picture-from=", pictureSpec),
-		filepath,
-	)
-
-	var stderr bytes.Buffer
-
-	importCmd.Stderr = &stderr
-	if err := importCmd.Run(); err != nil {
-		return &ErrWriteFailed{
-			Path:   filepath,
-			Reason: fmt.Sprintf("failed to import cover art: %s", stderr.String()),
-		}
-	}
-
-	return nil
 }

@@ -471,6 +471,12 @@ func renderGeneralConfigSections(
 				{Name: "UserAgent", Type: "text", Value: configv.UserAgent},
 				{Name: "WebPort", Type: "text", Value: configv.WebPort},
 				{Name: "WebAPIKey", Type: "text", Value: configv.WebAPIKey},
+				{
+					Name:    "",
+					Type:    "custom",
+					Value:   renderGenerateAPIKeyControl(group + "_WebAPIKey"),
+					Options: nil,
+				},
 				{Name: "WebPortalEnabled", Type: "checkbox", Value: configv.WebPortalEnabled},
 			}, group, comments, displayNames),
 
@@ -1655,13 +1661,23 @@ func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents
 	)
 }
 
-func renderDownloaderForm(configv *config.DownloaderConfig) gomponents.Node {
+func renderDownloaderForm(configv *config.DownloaderConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 	group := "downloader_" + configv.Name
 
 	return renderOptimizedArrayItemForm("downloader", configv.Name, "Downloader", configv,
-		renderDownloaderConfigSections(configv, group, comments, displayNames))
+		renderDownloaderConfigSections(configv, group, comments, displayNames, csrfToken))
+}
+
+// downloaderTestFields are the fields HandleTestDownloaderConnection reads,
+// by name suffix within the current row.
+var downloaderTestFields = []connTestField{
+	{Key: "dltype", Suffix: "DlType"},
+	{Key: "hostname", Suffix: "Hostname"},
+	{Key: "port", Suffix: "Port"},
+	{Key: "username", Suffix: "Username"},
+	{Key: "password", Suffix: "Password"},
 }
 
 // renderDownloaderConfigSections organizes downloader fields into logical groups.
@@ -1670,6 +1686,7 @@ func renderDownloaderConfigSections(
 	group string,
 	comments map[string]string,
 	displayNames map[string]string,
+	csrfToken string,
 ) gomponents.Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
 	sanitizedName := strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")
@@ -1683,6 +1700,12 @@ func renderDownloaderConfigSections(
 		renderConfigGroupWithParent("Basic Settings", "basic-downloader-"+configv.Name, true,
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
+				{
+					Name:    "",
+					Type:    "custom",
+					Value:   renderTemplateSelect("Template", downloaderTemplates),
+					Options: nil,
+				},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
 				{
 					Name:  "DlType",
@@ -1699,6 +1722,11 @@ func renderDownloaderConfigSections(
 							"deluge",
 						},
 					}),
+				},
+				{
+					Name:  "",
+					Type:  "custom",
+					Value: renderConnectionTestControl(csrfToken, "/api/admin/downloader/test", downloaderTestFields),
 				},
 				{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
 			}, group, comments, displayNames, accordionId),
@@ -1824,18 +1852,35 @@ func renderDownloaderConfig(configv []config.DownloaderConfig, csrfToken string)
 		csrfToken,
 		options,
 		func(config config.DownloaderConfig, _ string) gomponents.Node {
-			return renderDownloaderForm(&config)
+			return renderDownloaderForm(&config, csrfToken)
 		},
 	)
 }
 
-func renderListsForm(configv *config.ListsConfig) gomponents.Node {
+func renderListsForm(configv *config.ListsConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 	group := "lists_" + configv.Name
 
 	return renderOptimizedArrayItemForm("lists", configv.Name, "List", configv,
-		renderListsConfigSections(configv, group, comments, displayNames))
+		renderListsConfigSections(configv, group, comments, displayNames, csrfToken))
+}
+
+// listsTestFields are the fields HandleTestListConnection reads, by name
+// suffix within the current row - a superset covering every list type with
+// a lightweight connectivity check (see HandleTestListConnection).
+var listsTestFields = []connTestField{
+	{Key: "listtype", Suffix: "ListType"},
+	{Key: "traktusername", Suffix: "TraktUsername"},
+	{Key: "traktlistname", Suffix: "TraktListName"},
+	{Key: "traktlisttype", Suffix: "TraktListType"},
+	{Key: "plexserverurl", Suffix: "PlexServerURL"},
+	{Key: "plextoken", Suffix: "PlexToken"},
+	{Key: "plexusername", Suffix: "PlexUsername"},
+	{Key: "jellyfinserverurl", Suffix: "JellyfinServerURL"},
+	{Key: "jellyfintoken", Suffix: "JellyfinToken"},
+	{Key: "jellyfinusername", Suffix: "JellyfinUsername"},
+	{Key: "imdbcsvfile", Suffix: "IMDBCSVFile"},
 }
 
 // renderListsConfigSections organizes lists fields into logical groups.
@@ -1844,6 +1889,7 @@ func renderListsConfigSections(
 	group string,
 	comments map[string]string,
 	displayNames map[string]string,
+	csrfToken string,
 ) gomponents.Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
 	sanitizedName := strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")
@@ -1857,6 +1903,12 @@ func renderListsConfigSections(
 		renderConfigGroupWithParent("Basic Settings", "basic-lists-"+configv.Name, true,
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
+				{
+					Name:    "",
+					Type:    "custom",
+					Value:   renderTemplateSelect("Template", listTemplates),
+					Options: nil,
+				},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
 				{
 					Name:  "ListType",
@@ -1898,6 +1950,11 @@ func renderListsConfigSections(
 						},
 					}),
 				},
+				{
+					Name:  "",
+					Type:  "custom",
+					Value: renderConnectionTestControl(csrfToken, "/api/admin/lists/test", listsTestFields),
+				},
 				{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
 			}, group, comments, displayNames, accordionId),
 
@@ -1917,6 +1974,12 @@ func renderListsConfigSections(
 					Name:    "ManualConfigFile",
 					Type:    "text",
 					Value:   configv.ManualConfigFile,
+					Options: nil,
+				},
+				{
+					Name:    "SkipEmptySize",
+					Type:    "checkbox",
+					Value:   configv.SkipEmptySize,
 					Options: nil,
 				},
 			},
@@ -2411,18 +2474,27 @@ func renderListsConfig(configv []config.ListsConfig, csrfToken string) gomponent
 		csrfToken,
 		options,
 		func(config config.ListsConfig, _ string) gomponents.Node {
-			return renderListsForm(&config)
+			return renderListsForm(&config, csrfToken)
 		},
 	)
 }
 
-func renderIndexersForm(configv *config.IndexersConfig) gomponents.Node {
+func renderIndexersForm(configv *config.IndexersConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 	group := "indexers_" + configv.Name
 
 	return renderOptimizedArrayItemForm("indexers", configv.Name, "Indexer", configv,
-		renderIndexersConfigSections(configv, group, comments, displayNames))
+		renderIndexersConfigSections(configv, group, comments, displayNames, csrfToken))
+}
+
+// indexerTestFields are the fields HandleTestIndexerConnection reads, by
+// name suffix within the current row.
+var indexerTestFields = []connTestField{
+	{Key: "url", Suffix: "URL"},
+	{Key: "apikey", Suffix: "Apikey"},
+	{Key: "customapi", Suffix: "Customapi"},
+	{Key: "customurl", Suffix: "Customurl"},
 }
 
 // renderIndexersConfigSections organizes indexer fields into logical groups.
@@ -2431,6 +2503,7 @@ func renderIndexersConfigSections(
 	group string,
 	comments map[string]string,
 	displayNames map[string]string,
+	csrfToken string,
 ) gomponents.Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
 	sanitizedName := strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")
@@ -2444,6 +2517,12 @@ func renderIndexersConfigSections(
 		renderConfigGroupWithParent("Basic Settings", "basic-indexers-"+configv.Name, true,
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
+				{
+					Name:    "",
+					Type:    "custom",
+					Value:   renderTemplateSelect("Template", indexerTemplates),
+					Options: nil,
+				},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
 				{
 					Name:  "IndexerType",
@@ -2452,6 +2531,11 @@ func renderIndexersConfigSections(
 					Options: convertMapToSelectOptions(map[string][]string{
 						"options": {"torznab", "newznab", "torrent", "torrentrss"},
 					}),
+				},
+				{
+					Name:  "",
+					Type:  "custom",
+					Value: renderConnectionTestControl(csrfToken, "/api/admin/indexers/test", indexerTestFields),
 				},
 				{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
 			}, group, comments, displayNames, accordionId),
@@ -2637,18 +2721,18 @@ func renderIndexersConfig(configv []config.IndexersConfig, csrfToken string) gom
 		csrfToken,
 		options,
 		func(config config.IndexersConfig, _ string) gomponents.Node {
-			return renderIndexersForm(&config)
+			return renderIndexersForm(&config, csrfToken)
 		},
 	)
 }
 
-func renderPathsForm(configv *config.PathsConfig) gomponents.Node {
+func renderPathsForm(configv *config.PathsConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 	group := "paths_" + configv.Name
 
 	return renderOptimizedArrayItemForm("paths", configv.Name, "Path", configv,
-		renderPathsConfigSections(configv, group, comments, displayNames))
+		renderPathsConfigSections(configv, group, comments, displayNames, csrfToken))
 }
 
 // renderPathsConfigSections organizes path fields into logical groups.
@@ -2657,6 +2741,7 @@ func renderPathsConfigSections(
 	group string,
 	comments map[string]string,
 	displayNames map[string]string,
+	csrfToken string,
 ) gomponents.Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
 	sanitizedName := strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")
@@ -2672,6 +2757,12 @@ func renderPathsConfigSections(
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
 				{Name: "Path", Type: "text", Value: configv.Path, Options: nil},
+				{
+					Name:    "",
+					Type:    "custom",
+					Value:   renderPathCheckControl(csrfToken, group+"_Path"),
+					Options: nil,
+				},
 				{Name: "Upgrade", Type: "checkbox", Value: configv.Upgrade, Options: nil},
 			}, group, comments, displayNames, accordionId),
 
@@ -2852,19 +2943,36 @@ func renderPathsConfig(configv []config.PathsConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.PathsConfig, _ string) gomponents.Node {
-			return renderPathsForm(&config)
+		func(config config.PathsConfig, itemCsrfToken string) gomponents.Node {
+			return renderPathsForm(&config, itemCsrfToken)
 		},
 	)
 }
 
-func renderNotificationForm(configv *config.NotificationConfig) gomponents.Node {
+func renderNotificationForm(configv *config.NotificationConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 	group := "notifications_" + configv.Name
 
 	return renderOptimizedArrayItemForm("notifications", configv.Name, "Notification", configv,
-		renderNotificationConfigSections(configv, group, comments, displayNames))
+		renderNotificationConfigSections(configv, group, comments, displayNames, csrfToken))
+}
+
+// notificationTestFields are the fields HandleTestNotificationConnection
+// reads, by name suffix within the current row.
+var notificationTestFields = []connTestField{
+	{Key: "notificationtype", Suffix: "NotificationType"},
+	{Key: "apikey", Suffix: "Apikey"},
+	{Key: "recipient", Suffix: "Recipient"},
+	{Key: "serverurl", Suffix: "ServerURL"},
+	{Key: "appriseurls", Suffix: "AppriseURLs"},
+	{Key: "outputto", Suffix: "Outputto"},
+	{Key: "smtpserver", Suffix: "SMTPServer"},
+	{Key: "smtpport", Suffix: "SMTPPort"},
+	{Key: "smtpfromemail", Suffix: "SMTPFromEmail"},
+	{Key: "smtptoemail", Suffix: "SMTPToEmail"},
+	{Key: "smtpusername", Suffix: "SMTPUsername"},
+	{Key: "smtppassword", Suffix: "SMTPPassword"},
 }
 
 // renderNotificationConfigSections organizes notification fields into logical groups.
@@ -2873,6 +2981,7 @@ func renderNotificationConfigSections(
 	group string,
 	comments map[string]string,
 	displayNames map[string]string,
+	csrfToken string,
 ) gomponents.Node {
 	// Sanitize name for use in HTML ID (replace spaces and special characters)
 	sanitizedName := strings.ReplaceAll(strings.ReplaceAll(configv.Name, " ", "-"), "_", "-")
@@ -2886,14 +2995,25 @@ func renderNotificationConfigSections(
 		renderConfigGroupWithParent("Basic Settings", "basic-notification-"+configv.Name, true,
 			[]FormFieldDefinition{
 				{Name: "", Type: "removebutton", Value: "", Options: nil},
+				{
+					Name:    "",
+					Type:    "custom",
+					Value:   renderTemplateSelect("Template", notificationTemplates),
+					Options: nil,
+				},
 				{Name: "Name", Type: "text", Value: configv.Name, Options: nil},
 				{
 					Name:  "NotificationType",
 					Type:  "select",
 					Value: configv.NotificationType,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"csv", "pushover", "gotify", "pushbullet", "apprise"},
+						"options": {"csv", "pushover", "gotify", "pushbullet", "apprise", "sendmail"},
 					}),
+				},
+				{
+					Name:  "",
+					Type:  "custom",
+					Value: renderConnectionTestControl(csrfToken, "/api/admin/notifications/test", notificationTestFields),
 				},
 			}, group, comments, displayNames, accordionId),
 
@@ -2912,6 +3032,12 @@ func renderNotificationConfigSections(
 				{Name: "Outputto", Type: "text", Value: configv.Outputto, Options: nil},
 				{Name: "ServerURL", Type: "text", Value: configv.ServerURL, Options: nil},
 				{Name: "AppriseURLs", Type: "text", Value: configv.AppriseURLs, Options: nil},
+				{Name: "SMTPServer", Type: "text", Value: configv.SMTPServer, Options: nil},
+				{Name: "SMTPPort", Type: "text", Value: configv.SMTPPort, Options: nil},
+				{Name: "SMTPFromEmail", Type: "text", Value: configv.SMTPFromEmail, Options: nil},
+				{Name: "SMTPToEmail", Type: "text", Value: configv.SMTPToEmail, Options: nil},
+				{Name: "SMTPUsername", Type: "text", Value: configv.SMTPUsername, Options: nil},
+				{Name: "SMTPPassword", Type: "password", Value: configv.SMTPPassword, Options: nil},
 			},
 			group,
 			comments,
@@ -2941,7 +3067,7 @@ func renderNotificationConfig(
 		csrfToken,
 		options,
 		func(config config.NotificationConfig, _ string) gomponents.Node {
-			return renderNotificationForm(&config)
+			return renderNotificationForm(&config, csrfToken)
 		},
 	)
 }
@@ -3863,6 +3989,8 @@ func renderFormGroup(
 	switch inputType {
 	case "text":
 		iconClass = "fa-solid fa-font"
+	case "password":
+		iconClass = "fa-solid fa-key"
 	case "number":
 		iconClass = "fa-solid fa-hashtag"
 	case "select", "selectarray":
@@ -3882,6 +4010,15 @@ func renderFormGroup(
 	switch inputType {
 	case "removebutton":
 		return createRemoveButton(false)
+	case "custom":
+		// Value carries a pre-built gomponents.Node through the generic
+		// FormFieldDefinition pipeline (e.g. renderPathCheckControl) instead
+		// of a scalar - the caller's col-md-6 wrapper still applies.
+		if node, ok := value.(gomponents.Node); ok {
+			return node
+		}
+
+		return gomponents.Text("")
 	case "selectarray":
 		var optionElements []gomponents.Node
 		if opts, ok := options["options"]; ok {
@@ -4056,6 +4193,8 @@ func renderFormGroup(
 
 	case "text":
 		input = createFormField("text", group+"_"+name, value.(string), "", nil)
+	case "password":
+		input = createFormField("password", group+"_"+name, value.(string), "", nil)
 	case "number":
 		var setvalue string
 		switch val := value.(type) {

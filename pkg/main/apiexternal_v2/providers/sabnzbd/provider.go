@@ -1,9 +1,11 @@
 package sabnzbd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -109,8 +111,6 @@ func NewProvider(host string, port int, apiKey string, useSSL bool) (*Provider, 
 		APIKey:                  apiKey,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -378,7 +378,20 @@ func (p *Provider) makeRequest(ctx context.Context, params url.Values) (*http.Re
 		nil,
 		nil,
 		func(resp *http.Response) error {
+			// base.BaseClient closes resp.Body via a deferred call as soon
+			// as this callback returns - since this function hands the
+			// *http.Response back to its own caller instead of reading it
+			// here, every field access to resp.Body afterward was reading
+			// an already-closed body. Buffer it into a fresh,
+			// independently-closable reader before returning.
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				return readErr
+			}
+
+			resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 			rawResp = resp
+
 			return nil
 		},
 		headers,

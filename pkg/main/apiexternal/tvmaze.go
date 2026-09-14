@@ -133,7 +133,6 @@ func NewTVmazeClient(_ uint8, _ int, disabletls bool, timeoutseconds uint16) {
 		CircuitBreakerThreshold:   5,
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
-		EnableStats:               true,
 		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          general.TvmazeDisableTLSVerify,
 	}
@@ -148,28 +147,21 @@ func NewTVmazeClient(_ uint8, _ int, disabletls bool, timeoutseconds uint16) {
 
 // TestTVmazeConnectivity tests the connectivity to the TVmaze API.
 // Returns status code and error if any.
-func TestTVmazeConnectivity(_ time.Duration) (int, error) {
+func TestTVmazeConnectivity(timeout time.Duration) (int, error) {
 	provider := providers.GetTVMaze()
 	if provider == nil {
 		return 0, logger.ErrNotFound
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	// Test with a simple search; any non-error response proves connectivity.
-	if _, err := provider.SearchSeries(context.Background(), "test", 0); err != nil {
+	if _, err := provider.SearchSeries(ctx, "test", 0); err != nil {
 		return 0, err
 	}
 
 	return 200, nil
-}
-
-// SearchTVmaze searches for TV shows on TVmaze API by name.
-// Returns a slice of shows that match the search query.
-func SearchTVmaze(name string) ([]apiexternal_v2.SeriesSearchResult, error) {
-	if name == "" {
-		return nil, logger.ErrNotFound
-	}
-
-	return providers.GetTVMaze().SearchSeries(context.Background(), name, 0)
 }
 
 // GetTVmazeShowByID gets a TV show from TVmaze API by its TVmaze ID.
@@ -178,7 +170,12 @@ func GetTVmazeShowByID(id int) (*apiexternal_v2.SeriesDetails, error) {
 		return nil, logger.ErrNotFound
 	}
 
-	return providers.GetTVMaze().GetSeriesByID(context.Background(), id)
+	provider := providers.GetTVMaze()
+	if provider == nil {
+		return nil, logger.ErrNotFound
+	}
+
+	return provider.GetSeriesByID(context.Background(), id)
 }
 
 // GetTVmazeShowByTVDBID gets a TV show from TVmaze API by TVDB ID.
@@ -187,7 +184,12 @@ func GetTVmazeShowByTVDBID(tvdbID int) (*apiexternal_v2.SeriesDetails, error) {
 		return nil, logger.ErrNotFound
 	}
 
-	return providers.GetTVMaze().FindSeriesByTVDbID(context.Background(), tvdbID)
+	provider := providers.GetTVMaze()
+	if provider == nil {
+		return nil, logger.ErrNotFound
+	}
+
+	return provider.FindSeriesByTVDbID(context.Background(), tvdbID)
 }
 
 // GetTVmazeShowByIMDBID gets a TV show from TVmaze API by IMDB ID.
@@ -196,23 +198,10 @@ func GetTVmazeShowByIMDBID(imdbID string) (*apiexternal_v2.FindByIMDbResult, err
 		return nil, logger.ErrNotFound
 	}
 
-	return providers.GetTVMaze().FindSeriesByIMDbID(context.Background(), imdbID)
-}
-
-// GetTVmazeEpisodes gets all episodes for a TV show from TVmaze API.
-func GetTVmazeEpisodes(showID int) ([]*apiexternal_v2.Episode, error) {
-	if showID == 0 {
+	provider := providers.GetTVMaze()
+	if provider == nil {
 		return nil, logger.ErrNotFound
 	}
 
-	return providers.GetTVMaze().GetEpisodes(context.Background(), showID)
-}
-
-// GetTVmazeSeasons gets all seasons for a TV show from TVmaze API.
-func GetTVmazeSeasons(showID int) ([]*apiexternal_v2.Season, error) {
-	if showID == 0 {
-		return nil, logger.ErrNotFound
-	}
-
-	return providers.GetTVMaze().GetSeasons(context.Background(), showID)
+	return provider.FindSeriesByIMDbID(context.Background(), imdbID)
 }

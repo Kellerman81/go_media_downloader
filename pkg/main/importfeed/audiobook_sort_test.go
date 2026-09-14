@@ -27,6 +27,10 @@ import (
 // Uses: V:\completed\Audiobook\David Baldacci - Die Sammler, ASIN: B004UW5QSK
 // Run with: go test -v -run TestAudiobookSortWithRuntimeVerification -timeout 120s
 func TestAudiobookSortWithRuntimeVerification(t *testing.T) {
+	if testing.Short() {
+		t.Skip("manual test requiring a real local audiobook folder and live Audnex access")
+	}
+
 	folder := `V:\completed\Audiobook\David Baldacci - Die Sammler`
 	asin := "B004UW5QSK"
 	region := "de" // German audiobook
@@ -120,6 +124,10 @@ func TestAudiobookSortWithRuntimeVerification(t *testing.T) {
 // Uses: V:\completed\Audiobook\David Baldacci - Die Sammler
 // Run with: go test -v -run TestAudiobookSortWithZeroRuntimes
 func TestAudiobookSortWithZeroRuntimes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("manual test requiring a real local audiobook folder and live Audnex access")
+	}
+
 	folder := `V:\completed\Audiobook\David Baldacci - Die Sammler`
 
 	files, err := parser_v2.CollectFilesOnly(folder, parser_v2.AudioExtensions)
@@ -212,6 +220,10 @@ func TestAllRuntimesZero(t *testing.T) {
 //
 // Run with: go test -v -run TestKeinKeksDistanceMatch -timeout 60s
 func TestKeinKeksDistanceMatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("manual test requiring a real local audiobook folder and live Audnex access")
+	}
+
 	folder := `P:\C\Cornelia Funke\Kein Keks fuer Kobolde (B01FUMJRB0)`
 	asin := "B01FUMJRB0"
 	region := "de"

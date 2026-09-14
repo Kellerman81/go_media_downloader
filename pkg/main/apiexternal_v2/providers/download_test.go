@@ -27,7 +27,9 @@ import (
 
 // TestQBittorrentDownload tests qBittorrent download submission
 func TestQBittorrentDownload(t *testing.T) {
-	// t.Skip("Manual test - edit parameters below and remove this skip to run")
+	if testing.Short() {
+		t.Skip("Manual test requiring a live local download-client instance - edit parameters below and run with -short=false to enable")
+	}
 
 	// ========================================
 	// EDIT THESE PARAMETERS
@@ -112,7 +114,9 @@ func TestQBittorrentDownload(t *testing.T) {
 
 // TestDelugeDownload tests Deluge download submission
 func TestDelugeDownload(t *testing.T) {
-	// t.Skip("Manual test - edit parameters below and remove this skip to run")
+	if testing.Short() {
+		t.Skip("Manual test requiring a live local download-client instance - edit parameters below and run with -short=false to enable")
+	}
 
 	// ========================================
 	// EDIT THESE PARAMETERS
@@ -194,7 +198,9 @@ func TestDelugeDownload(t *testing.T) {
 
 // TestTransmissionDownload tests Transmission download submission
 func TestTransmissionDownload(t *testing.T) {
-	// t.Skip("Manual test - edit parameters below and remove this skip to run")
+	if testing.Short() {
+		t.Skip("Manual test requiring a live local download-client instance - edit parameters below and run with -short=false to enable")
+	}
 
 	// ========================================
 	// EDIT THESE PARAMETERS
@@ -359,7 +365,9 @@ func TestRTorrentDownload(t *testing.T) {
 
 // TestSABnzbdDownload tests SABnzbd download submission
 func TestSABnzbdDownload(t *testing.T) {
-	// t.Skip("Manual test - edit parameters below and remove this skip to run")
+	if testing.Short() {
+		t.Skip("Manual test requiring a live local download-client instance - edit parameters below and run with -short=false to enable")
+	}
 
 	// ========================================
 	// EDIT THESE PARAMETERS
@@ -431,7 +439,9 @@ func TestSABnzbdDownload(t *testing.T) {
 
 // TestNZBGetDownload tests NZBGet download submission
 func TestNZBGetDownload(t *testing.T) {
-	// t.Skip("Manual test - edit parameters below and remove this skip to run")
+	if testing.Short() {
+		t.Skip("Manual test requiring a live local download-client instance - edit parameters below and run with -short=false to enable")
+	}
 
 	// ========================================
 	// EDIT THESE PARAMETERS

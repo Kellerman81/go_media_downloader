@@ -36,7 +36,14 @@ func sortIndexersByHealth(indexers []*config.IndexersConfig) {
 		return
 	}
 
+	// Compute each indexer's rate once (it involves a client lookup/lock and
+	// a stats read) instead of up to twice per comparison during the sort.
+	rates := make(map[*config.IndexersConfig]float64, len(indexers))
+	for _, ind := range indexers {
+		rates[ind] = indexerSuccessRate(ind)
+	}
+
 	slices.SortStableFunc(indexers, func(a, b *config.IndexersConfig) int {
-		return cmp.Compare(indexerSuccessRate(b), indexerSuccessRate(a))
+		return cmp.Compare(rates[b], rates[a])
 	})
 }

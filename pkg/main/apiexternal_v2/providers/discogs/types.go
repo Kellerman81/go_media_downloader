@@ -795,20 +795,46 @@ func parseDuration(durStr string) time.Duration {
 	return time.Duration(minutes)*time.Minute + time.Duration(seconds)*time.Second
 }
 
-// parseTrackPosition extracts a flat sequence number from a Discogs position
-// string for use as a sort key.  It is intentionally simple — callers that
-// need per-disc breakdown should use parseDiscTrack instead.
-func parseTrackPosition(pos string, defaultPos int) int {
-	disc, track := parseDiscTrack(pos)
-	if disc == 0 && track == 0 {
-		return defaultPos
+// parseVinylSidePosition parses a vinyl-style position string ("A1", "A-1",
+// or "AA2" for box sets with more than 26 sides) into a disc/track pair,
+// mapping the leading letter run to a disc number (A=1, B=2, ..., Z=26,
+// AA=27, ...) and the trailing digits to the track number. Returns
+// ok=false if pos doesn't start with a letter or has no trailing digits.
+func parseVinylSidePosition(pos string) (disc, track int, ok bool) {
+	i := 0
+	for i < len(pos) && ((pos[i] >= 'A' && pos[i] <= 'Z') || (pos[i] >= 'a' && pos[i] <= 'z')) {
+		i++
+	}
+
+	if i == 0 {
+		return 0, 0, false
+	}
+
+	letters := pos[:i]
+	rest := strings.TrimPrefix(strings.TrimPrefix(pos[i:], "-"), ".")
+
+	if rest == "" {
+		return 0, 0, false
+	}
+
+	track = 0
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			return 0, 0, false
+		}
+
+		track = track*10 + int(c-'0')
 	}
 
 	if track == 0 {
-		return disc // single-number position
+		return 0, 0, false
 	}
 
-	return track // flat track-on-disc; disc info is in TrackNumber/DiscNumber
+	for _, c := range strings.ToUpper(letters) {
+		disc = disc*26 + int(c-'A') + 1
+	}
+
+	return disc, track, true
 }
 
 // parseDiscTrack parses Discogs position strings into (disc, track) pairs.
@@ -818,13 +844,30 @@ func parseTrackPosition(pos string, defaultPos int) int {
 //	"5"     → (0, 5)   single track number, no disc
 //	"1-3"   → (1, 3)   disc 1, track 3
 //	"1.3"   → (1, 3)   alternate separator
-//	"A1"    → (0, 1)   vinyl side letter + track (disc ignored)
-//	"A-1"   → (0, 1)
+//	"A1"    → (1, 1)   vinyl side letter + track: side letter -> disc number
+//	"B1"    → (2, 1)   (A=1, B=2, C=3, ... - see note below)
 //
 // Returns (0, 0) when no numeric content is found.
+//
+// Note on vinyl side letters: a 2-LP release physically has 2 discs (4
+// sides: A/B on disc 1, C/D on disc 2), but this function maps each side
+// letter to its own disc number (A=1, B=2, C=3, D=4) rather than pairing
+// sides into physical discs with continuous track numbering across them.
+// This is a deliberate simplification to guarantee every (disc, track)
+// pair is unique - the previous behavior discarded the side letter
+// entirely, so "A1" and "B1" both parsed to the same (disc, track) key,
+// silently colliding in the DB and losing every side-B-and-later track on
+// import. Getting "true" physical-disc grouping right requires knowing
+// the full tracklist up front to continue track numbering across sides of
+// the same disc, which is a larger, two-pass change - this fix trades
+// exact "Disc 1/Disc 2" labeling fidelity for eliminating the data loss.
 func parseDiscTrack(pos string) (disc, track int) {
 	if pos == "" {
 		return 0, 0
+	}
+
+	if d, t, ok := parseVinylSidePosition(pos); ok {
+		return d, t
 	}
 
 	// Split on the first '-' or '.' that separates disc from track.

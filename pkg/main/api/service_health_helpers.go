@@ -2,15 +2,24 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushover"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sendmail"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
@@ -88,6 +97,7 @@ func performServiceHealthCheck(
 
 		go func() {
 			defer wg.Done()
+			defer logger.HandlePanic()
 
 			record(fn(), true)
 		}()
@@ -124,6 +134,7 @@ func performServiceHealthCheck(
 
 		go func() {
 			defer wg.Done()
+			defer logger.HandlePanic()
 
 			for _, service := range checkIndexerServices(httpTimeout, retries, detailedTest) {
 				record(service, service.Status != "disabled")
@@ -136,6 +147,7 @@ func performServiceHealthCheck(
 
 		go func() {
 			defer wg.Done()
+			defer logger.HandlePanic()
 
 			for _, service := range checkNotificationServices(httpTimeout, retries, detailedTest) {
 				record(service, service.Status != "disabled")
@@ -149,6 +161,7 @@ func performServiceHealthCheck(
 
 		go func() {
 			defer wg.Done()
+			defer logger.HandlePanic()
 
 			for _, service := range checkMediaProviderServices(httpTimeout, retries, detailedTest) {
 				record(service, true)
@@ -159,7 +172,7 @@ func performServiceHealthCheck(
 	wg.Wait()
 
 	// Determine overall status
-	if results.TotalServices > 0 && results.FailedServices >= results.TotalServices/2 {
+	if results.TotalServices > 0 && results.FailedServices*2 >= results.TotalServices {
 		results.OverallStatus = "critical"
 	} else if results.FailedServices > 0 {
 		results.OverallStatus = "warning"
@@ -170,6 +183,24 @@ func performServiceHealthCheck(
 	results.TestDuration = time.Since(startTime)
 
 	return results
+}
+
+// isAuthOrNotFoundError reports whether err represents an HTTP 401/403/404
+// response from the underlying v2 provider client (see
+// apiexternal_v2/base.Client.MakeRequest's "HTTP <code>: ..." error format).
+// These are permanent failures (bad/missing API key, or a dead endpoint) that
+// retrying will not fix, so callers should report them immediately instead of
+// spending the configured retry budget on them.
+func isAuthOrNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := err.Error()
+
+	return strings.Contains(msg, "HTTP 401") ||
+		strings.Contains(msg, "HTTP 403") ||
+		strings.Contains(msg, "HTTP 404")
 }
 
 // checkIMDBService checks IMDB service availability.
@@ -237,10 +268,11 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
-				strings.Contains(err.Error(), "missing ClientID") {
+				strings.Contains(err.Error(), "missing ClientID") ||
+				isAuthOrNotFoundError(err) {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
-				break // Don't retry initialization errors
+				break // Don't retry initialization/auth errors
 			} else {
 				service.Status = "timeout"
 
@@ -373,8 +405,126 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 	return services
 }
 
+// testNotificationConnectivity runs the same real per-provider connectivity
+// check used by the Settings page's "Test Connection" button
+// (connection_check.go's HandleTestNotificationConnection), so the Service
+// Health dashboard reports genuine reachability instead of an assumed status.
+func testNotificationConnectivity(notification config.NotificationConfig, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	switch notification.NotificationType {
+	case "pushover":
+		if notification.Apikey == "" {
+			return errors.New("no API token configured")
+		}
+
+		p := pushover.NewProviderWithConfig(
+			connectionTestClientConfig("pushover"),
+			notification.Apikey,
+			notification.Recipient,
+		)
+		if p == nil {
+			return errors.New("invalid Pushover configuration")
+		}
+
+		return p.TestConnection(ctx)
+
+	case "gotify":
+		if notification.ServerURL == "" || notification.Apikey == "" {
+			return errors.New("missing server URL or token")
+		}
+
+		host, port, useSSL := parseServerURL(notification.ServerURL)
+
+		p := gotify.NewProviderWithConfig(
+			connectionTestClientConfig("gotify"),
+			host,
+			port,
+			notification.Apikey,
+			useSSL,
+		)
+		if p == nil {
+			return errors.New("invalid Gotify configuration")
+		}
+
+		return p.TestConnection(ctx)
+
+	case "pushbullet":
+		if notification.Apikey == "" {
+			return errors.New("no API token configured")
+		}
+
+		p := pushbullet.NewProvider(notification.Apikey)
+		if p == nil {
+			return errors.New("invalid Pushbullet configuration")
+		}
+
+		return p.TestConnection(ctx)
+
+	case "apprise":
+		if notification.ServerURL == "" || notification.AppriseURLs == "" {
+			return errors.New("missing server URL or Apprise URLs")
+		}
+
+		host, port, useSSL := parseServerURL(notification.ServerURL)
+
+		p := apprise.NewProvider(
+			host,
+			port,
+			notification.Apikey,
+			strings.Split(notification.AppriseURLs, ","),
+			useSSL,
+		)
+		if p == nil {
+			return errors.New("invalid Apprise configuration")
+		}
+
+		return p.TestConnection(ctx)
+
+	case "sendmail":
+		if notification.SMTPServer == "" || notification.SMTPFromEmail == "" ||
+			notification.SMTPToEmail == "" {
+			return errors.New("missing SMTP server, from address, or to address")
+		}
+
+		port, _ := strconv.Atoi(notification.SMTPPort)
+		if port == 0 {
+			port = 587
+		}
+
+		p := sendmail.NewProvider(
+			notification.SMTPServer,
+			port,
+			notification.SMTPFromEmail,
+			[]string{notification.SMTPToEmail},
+			notification.SMTPUsername,
+			notification.SMTPPassword,
+		)
+		if p == nil {
+			return errors.New("invalid sendmail configuration")
+		}
+
+		return p.TestConnection(ctx)
+
+	case "csv":
+		if notification.Outputto == "" {
+			return errors.New("no output file path configured")
+		}
+
+		if !checkWritable(filepath.Dir(notification.Outputto)) {
+			return errors.New("output folder is not writable")
+		}
+
+		return nil
+
+	default:
+		return fmt.Errorf("unknown notification type %q", notification.NotificationType)
+	}
+}
+
 // checkNotificationServices checks configured notification services.
-func checkNotificationServices(_ time.Duration, _ int, _ bool) []ServiceInfo {
+func checkNotificationServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 	services := make([]ServiceInfo, 0)
 
 	// Get configured notification services
@@ -382,22 +532,28 @@ func checkNotificationServices(_ time.Duration, _ int, _ bool) []ServiceInfo {
 	if len(notifications) == 0 {
 		// Return empty slice if no notifications configured - no mock data
 		return services
-	} else {
-		// Check real configured notification services
-		for _, notification := range notifications {
-			service := ServiceInfo{
-				Name:    notification.Name,
-				Type:    "Notification",
-				Details: make(map[string]any),
-			}
+	}
 
-			// Basic service availability check (simplified)
-			// In a real implementation, you'd test the actual notification service
-			service.Status = "online" // Assume working for now
-			service.ResponseTime = 100 * time.Millisecond
-
-			services = append(services, service)
+	// Check real configured notification services
+	for _, notification := range notifications {
+		service := ServiceInfo{
+			Name:    notification.Name,
+			Type:    "Notification",
+			Details: make(map[string]any),
 		}
+		service.Details["notification_type"] = notification.NotificationType
+
+		startTime := time.Now()
+
+		if err := testNotificationConnectivity(notification, timeout); err != nil {
+			service.Status = "error"
+			service.ErrorMessage = err.Error()
+		} else {
+			service.Status = "online"
+			service.ResponseTime = time.Since(startTime)
+		}
+
+		services = append(services, service)
 	}
 
 	return services
@@ -420,10 +576,11 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
-				strings.Contains(err.Error(), "missing API key") {
+				strings.Contains(err.Error(), "missing API key") ||
+				isAuthOrNotFoundError(err) {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
-				break // Don't retry initialization errors
+				break // Don't retry initialization/auth errors
 			} else {
 				service.Status = "timeout"
 
@@ -476,10 +633,11 @@ func checkTVmazeService(timeout time.Duration, retries int, _ bool) ServiceInfo 
 		statusCode, err := apiexternal.TestTVmazeConnectivity(timeout)
 		if err != nil {
 			if strings.Contains(err.Error(), "not initialized") ||
-				strings.Contains(err.Error(), "missing API key") {
+				strings.Contains(err.Error(), "missing API key") ||
+				isAuthOrNotFoundError(err) {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
-				break // Don't retry initialization errors
+				break // Don't retry initialization/auth errors
 			}
 
 			service.Status = "timeout"
@@ -533,10 +691,11 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
-				strings.Contains(err.Error(), "missing API key") {
+				strings.Contains(err.Error(), "missing API key") ||
+				isAuthOrNotFoundError(err) {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
-				break // Don't retry initialization errors
+				break // Don't retry initialization/auth errors
 			} else {
 				service.Status = "timeout"
 
@@ -591,10 +750,11 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
-				strings.Contains(err.Error(), "missing API key") {
+				strings.Contains(err.Error(), "missing API key") ||
+				isAuthOrNotFoundError(err) {
 				service.Status = "error"
 				service.ErrorMessage = err.Error()
-				break // Don't retry initialization errors
+				break // Don't retry initialization/auth errors
 			} else {
 				service.Status = "timeout"
 
@@ -811,6 +971,7 @@ func checkMediaProviderServices(timeout time.Duration, retries int, _ bool) []Se
 
 		go func(i int) {
 			defer wg.Done()
+			defer logger.HandlePanic()
 
 			services[i] = probeMediaProvider(probes[i], timeout, retries)
 		}(i)

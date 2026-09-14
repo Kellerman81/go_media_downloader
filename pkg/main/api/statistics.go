@@ -452,6 +452,8 @@ func getStorageStatistics(ctx context.Context) StorageStatistics {
 
 		go func(i int) {
 			defer wg.Done()
+			defer logger.HandlePanic()
+
 			results[i] = walkPath(ctx, jobs[i].path, jobs[i].mediaType)
 		}(i)
 	}

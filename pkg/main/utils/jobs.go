@@ -1558,202 +1558,6 @@ func coalesceStr(values ...string) string {
 	return ""
 }
 
-// matchAndProcessAlbum attempts to match an album to the database and add its files.
-// Returns true if successfully matched and processed.
-// func matchAndProcessAlbum(
-// 	ctx context.Context,
-// 	folder string,
-// 	album *structure_v2.AlbumInfo,
-// 	cfgp *config.MediaTypeConfig,
-// 	data *config.MediaDataConfig,
-// ) bool {
-// 	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
-
-// 	switch cfgp.IsType {
-// 	case config.MediaTypeAudiobook:
-// 		return matchAndProcessAudiobook(ctx, folder, album, cfgp, data, listid)
-// 	case config.MediaTypeMusic:
-// 		return matchAndProcessMusicAlbum(ctx, folder, album, cfgp, data, listid)
-// 	}
-
-// 	return false
-// }
-
-// matchAndProcessAudiobook handles audiobook-specific matching and processing.
-// func matchAndProcessAudiobook(
-// 	ctx context.Context,
-// 	folder string,
-// 	album *structure_v2.AlbumInfo,
-// 	cfgp *config.MediaTypeConfig,
-// 	data *config.MediaDataConfig,
-// 	listid int,
-// ) bool {
-// 	logger.Logtype("debug", 0).
-// 		Str("folder", folder).
-// 		Str("title", album.Title).
-// 		Str("artist", album.Artist).
-// 		Str("asin", album.ASIN).
-// 		Int("listid", listid).
-// 		Bool("addFound", data.AddFound).
-// 		Str("addFoundList", data.AddFoundList).
-// 		Msg("DEBUG: matchAndProcessAudiobook called")
-
-// 	// Try to find ASIN from folder path if not in tags
-// 	if album.ASIN == "" {
-// 		album.ASIN = structure_v2.ParseASINFromPath(folder)
-// 		logger.Logtype("debug", 0).
-// 			Str("folder", folder).
-// 			Str("parsedASIN", album.ASIN).
-// 			Msg("DEBUG: Parsed ASIN from folder path")
-// 	}
-
-// 	// Step 4a: Try to find audiobook in database by title/author
-// 	dbResult, err := database.FindAudiobookByTitleAuthor(album.Title, album.Artist)
-// 	if err == nil && dbResult != nil {
-// 		album.DatabaseID = dbResult.ID
-// 		album.ExpectedTracks = dbResult.ChapterCount
-// 		logger.Logtype("debug", 0).
-// 			Str("folder", folder).
-// 			Uint("databaseID", album.DatabaseID).
-// 			Msg("DEBUG: Found audiobook by title/author")
-// 	} else {
-// 		logger.Logtype("debug", 0).
-// 			Str("folder", folder).
-// 			Str("title", album.Title).
-// 			Str("artist", album.Artist).
-// 			Err(err).
-// 			Msg("DEBUG: FindAudiobookByTitleAuthor failed")
-// 	}
-
-// 	// Try by ASIN if title search failed
-// 	if album.DatabaseID == 0 && album.ASIN != "" {
-// 		dbResult, err = database.FindAudiobookByASIN(album.ASIN)
-// 		if err == nil && dbResult != nil {
-// 			album.DatabaseID = dbResult.ID
-// 			album.ExpectedTracks = dbResult.ChapterCount
-// 			logger.Logtype("debug", 0).
-// 				Str("folder", folder).
-// 				Uint("databaseID", album.DatabaseID).
-// 				Msg("DEBUG: Found audiobook by ASIN")
-// 		} else {
-// 			logger.Logtype("debug", 0).
-// 				Str("folder", folder).
-// 				Str("asin", album.ASIN).
-// 				Err(err).
-// 				Msg("DEBUG: FindAudiobookByASIN failed")
-// 		}
-// 	}
-
-// 	// Step 5a: If not found and addFound is enabled, try to import
-// 	if album.DatabaseID == 0 && data.AddFound && album.ASIN != "" && listid != -1 {
-// 		logger.Logtype("info", 1).
-// 			Str("folder", folder).
-// 			Str("asin", album.ASIN).
-// 			Str("title", album.Title).
-// 			Int("tracks", album.TrackCount).
-// 			Msg("Audiobook not in database - importing via addFound")
-
-// 		dbID, importErr := importfeed.JobImportAudiobooks(ctx, album.ASIN, cfgp, listid, true)
-// 		if importErr == nil && dbID != 0 {
-// 			album.DatabaseID = dbID
-// 			logger.Logtype("debug", 0).
-// 				Str("folder", folder).
-// 				Uint("databaseID", dbID).
-// 				Msg("DEBUG: Successfully imported audiobook")
-// 		} else {
-// 			logger.Logtype("debug", 0).
-// 				Str("folder", folder).
-// 				Str("asin", album.ASIN).
-// 				Err(importErr).
-// 				Msg("DEBUG: JobImportAudiobooks failed")
-// 		}
-// 	} else if album.DatabaseID == 0 {
-// 		logger.Logtype("debug", 0).
-// 			Str("folder", folder).
-// 			Bool("addFound", data.AddFound).
-// 			Str("asin", album.ASIN).
-// 			Int("listid", listid).
-// 			Msg("DEBUG: Skipping import - conditions not met")
-// 	}
-
-// 	// Step 5b: If still not found, skip
-// 	if album.DatabaseID == 0 {
-// 		logger.Logtype("debug", 0).
-// 			Str("folder", folder).
-// 			Str("title", album.Title).
-// 			Str("artist", album.Artist).
-// 			Str("asin", album.ASIN).
-// 			Msg("DEBUG: Audiobook not found in database - skipping")
-// 		return false
-// 	}
-
-// 	logger.Logtype("debug", 0).
-// 		Str("folder", folder).
-// 		Uint("databaseID", album.DatabaseID).
-// 		Int("trackCount", album.TrackCount).
-// 		Msg("DEBUG: About to add files to database")
-
-// 	// Step 6: Add files to database
-// 	return addAudiobookFilesToDatabase(ctx, folder, album, cfgp, listid)
-// }
-
-// matchAndProcessMusicAlbum handles music album-specific matching and processing.
-// func matchAndProcessMusicAlbum(
-// 	ctx context.Context,
-// 	folder string,
-// 	album *structure_v2.AlbumInfo,
-// 	cfgp *config.MediaTypeConfig,
-// 	data *config.MediaDataConfig,
-// 	listid int,
-// ) bool {
-// 	// Step 4a: Try to find album in database by artist/title
-// 	dbResult, err := database.FindAlbumByArtistTitle(album.Artist, album.Title)
-// 	if err == nil && dbResult != nil {
-// 		album.DatabaseID = dbResult.ID
-// 		album.ExpectedTracks = dbResult.TotalTracks
-// 	}
-
-// 	// Get identifier for import (MusicBrainzID or UPC from first track)
-// 	var identifier string
-// 	if len(album.Tracks) > 0 {
-// 		// Try to get MusicBrainzID or UPC from tags
-// 		for _, track := range album.Tracks {
-// 			if track.MusicBrainzID != "" {
-// 				identifier = track.MusicBrainzID
-// 				break
-// 			}
-// 		}
-// 	}
-
-// 	// Step 5a: If not found and addFound is enabled, try to import
-// 	if album.DatabaseID == 0 && data.AddFound && identifier != "" && listid != -1 {
-// 		logger.Logtype("info", 1).
-// 			Str("folder", folder).
-// 			Str("identifier", identifier).
-// 			Str("title", album.Title).
-// 			Int("tracks", album.TrackCount).
-// 			Msg("Album not in database - importing via addFound")
-
-// 		dbID, importErr := importfeed.JobImportAlbums(ctx, identifier, cfgp, listid, true)
-// 		if importErr == nil && dbID != 0 {
-// 			album.DatabaseID = dbID
-// 		}
-// 	}
-
-// 	// Step 5b: If still not found, skip
-// 	if album.DatabaseID == 0 {
-// 		logger.Logtype("debug", 0).
-// 			Str("folder", folder).
-// 			Str("title", album.Title).
-// 			Str("artist", album.Artist).
-// 			Msg("Album not found in database - skipping")
-// 		return false
-// 	}
-
-// 	// Step 6: Add files to database
-// 	return addAlbumFilesToDatabase(ctx, folder, album, cfgp, listid)
-// }
-
 // addAudiobookFilesToDatabase adds audiobook files to the database.
 func addAudiobookFilesToDatabase(
 	ctx context.Context,
@@ -2540,6 +2344,17 @@ func checkmissing(rootctx context.Context, isType uint, listcfg *config.MediaLis
 		&listcfg.Name,
 	)
 
+	// Build a lookup map of file location -> matching file rows once, instead of
+	// letting checkmissingfiles linearly scan the entire arrfiles slice for every
+	// missing path (that was O(missing paths * total files)).
+	filesByLocation := make(map[string][]*syncops.DbstaticOneStringTwoInt, len(arrfiles))
+	for idx := range arrfiles {
+		filesByLocation[arrfiles[idx].Str] = append(
+			filesByLocation[arrfiles[idx].Str],
+			&arrfiles[idx],
+		)
+	}
+
 	var err error
 	for idx := range arr {
 		if err := logger.CheckContextEnded(rootctx); err != nil {
@@ -2550,7 +2365,7 @@ func checkmissing(rootctx context.Context, isType uint, listcfg *config.MediaLis
 			continue
 		}
 
-		if errsub := checkmissingfiles(isType, &arr[idx], arrfiles); errsub != nil {
+		if errsub := checkmissingfiles(isType, &arr[idx], filesByLocation); errsub != nil {
 			err = errsub
 		}
 	}
@@ -2568,13 +2383,19 @@ func checkmissing(rootctx context.Context, isType uint, listcfg *config.MediaLis
 // checkmissingfiles checks for missing files for a given media item.
 // It deletes the file record if missing, and updates the missing flag on the media item if it has no more files.
 // It takes the query to count files for the media item, the table to delete from,
-// the table to update the missing flag, the query to get the file ID and media item ID,
+// the table to update the missing flag, a map of file location -> matching file rows
+// (built once by the caller for O(1) lookups instead of a linear scan per call),
 // and the file location that was found missing.
 func checkmissingfiles(
 	isType uint,
 	row *string,
-	arrfiles []syncops.DbstaticOneStringTwoInt,
+	filesByLocation map[string][]*syncops.DbstaticOneStringTwoInt,
 ) error {
+	entries := filesByLocation[*row]
+	if len(entries) == 0 {
+		return nil
+	}
+
 	subquerycount := mtstrings.GetStringsMap(isType, logger.DBCountFilesByMediaID)
 	deletestmt := logger.JoinStrings(
 		"delete from ",
@@ -2588,23 +2409,19 @@ func checkmissingfiles(
 	)
 
 	var errret error
-	for idx := range arrfiles {
-		if arrfiles[idx].Str != *row {
-			continue
-		}
-
+	for _, entry := range entries {
 		logger.Logtype("info", 1).
 			Str(logger.StrFile, *row).
 			Msg("File was removed")
 
-		err := database.ExecNErr(deletestmt, &arrfiles[idx].Num1)
+		err := database.ExecNErr(deletestmt, &entry.Num1)
 		if err != nil {
 			errret = err
 			continue
 		}
 
-		if database.Getdatarow[uint](false, subquerycount, &arrfiles[idx].Num2) == 0 {
-			database.ExecN(updatestmt, &arrfiles[idx].Num2)
+		if database.Getdatarow[uint](false, subquerycount, &entry.Num2) == 0 {
+			database.ExecN(updatestmt, &entry.Num2)
 		}
 	}
 

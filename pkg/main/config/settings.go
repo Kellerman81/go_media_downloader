@@ -236,8 +236,17 @@ func RangeSettingsMediaLists(media string, fn func(*MediaListsConfig)) {
 		return
 	}
 
-	for _, cfg := range currentSnapshot.Media[media].Lists {
-		fn(&cfg)
+	// media is caller-supplied (e.g. a raw URL path segment in api/series.go's
+	// job dispatcher) and not guaranteed to be a valid key - unlike every
+	// other RangeSettingsX helper here, this one does a two-level lookup, so
+	// a miss would nil-dereference on .Lists instead of just ranging zero times.
+	cfg, ok := currentSnapshot.Media[media]
+	if !ok || cfg == nil {
+		return
+	}
+
+	for _, l := range cfg.Lists {
+		fn(&l)
 	}
 }
 

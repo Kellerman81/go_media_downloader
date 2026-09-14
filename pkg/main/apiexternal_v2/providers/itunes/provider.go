@@ -89,7 +89,13 @@ func (p *Provider) SearchAlbums(
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/search?term=")
 	buf.WriteURL(artist)
-	buf.WriteString(" ")
+	// "+" is the query-string-encoded space (what WriteURL would itself
+	// produce for a lone " "), not a literal space - a raw space here would
+	// still be sitting mid-URL when this is later placed in the HTTP request
+	// line, which requires a space to separate the method/URI/version and so
+	// silently truncates the request there, breaking every search that has
+	// both an artist and an album.
+	buf.WriteString("+")
 	buf.WriteURL(album)
 	buf.WriteString("&entity=album")
 	buf.WriteString("&limit=")

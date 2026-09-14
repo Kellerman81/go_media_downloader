@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,6 +39,16 @@ type Provider struct {
 	redirectURI  string
 	token        *apiexternal_v2.OAuthToken
 	tokenMutex   sync.RWMutex
+	// refreshMu serializes EnsureValidToken's whole check-then-refresh
+	// sequence. tokenMutex alone only guards individual field reads/writes -
+	// without a lock spanning the decision-to-refresh and the refresh call
+	// itself, two goroutines racing an expiring token (plausible: this
+	// provider is shared across concurrent worker-pool operations) could
+	// each read the same soon-to-be-consumed refresh token and both call
+	// RefreshToken concurrently. Trakt's refresh tokens are single-use/
+	// rotating, so one call succeeds and the other fails with invalid_grant
+	// even though the credential was valid moments before.
+	refreshMu sync.Mutex
 }
 
 // NewProviderWithConfig creates a new Trakt provider with custom config.
@@ -138,7 +149,7 @@ func (p *Provider) SearchMovies(
 	query string,
 	year int,
 ) ([]apiexternal_v2.MovieSearchResult, error) {
-	endpoint := fmt.Sprintf("/search/movie?query=%s", query)
+	endpoint := fmt.Sprintf("/search/movie?query=%s", url.QueryEscape(query))
 	if year > 0 {
 		endpoint += fmt.Sprintf("&years=%d", year)
 	}
@@ -168,7 +179,7 @@ func (p *Provider) FindMovieByIMDbID(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
-	endpoint := fmt.Sprintf("/search/imdb/%s?type=movie", imdbID)
+	endpoint := fmt.Sprintf("/search/imdb/%s?type=movie", url.PathEscape(imdbID))
 
 	var response traktSearchResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -257,7 +268,7 @@ func (p *Provider) SearchSeries(
 	query string,
 	year int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
-	endpoint := fmt.Sprintf("/search/show?query=%s", query)
+	endpoint := fmt.Sprintf("/search/show?query=%s", url.QueryEscape(query))
 	if year > 0 {
 		endpoint += fmt.Sprintf("&years=%d", year)
 	}
@@ -290,7 +301,7 @@ func (p *Provider) FindSeriesByIMDbID(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
-	endpoint := fmt.Sprintf("/search/imdb/%s?type=show", imdbID)
+	endpoint := fmt.Sprintf("/search/imdb/%s?type=show", url.PathEscape(imdbID))
 
 	var response traktSearchResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -322,60 +333,6 @@ func (p *Provider) FindSeriesByTVDbID(
 
 	// Get full details using Trakt ID
 	return p.GetSeriesByID(ctx, response[0].Show.IDs.Trakt)
-}
-
-// FindByTraktID finds movies or series by Trakt ID
-//
-// This method searches for both movies and TV series using the Trakt ID.
-// Returns a FindByTraktIDResult containing both movie and series results.
-func (p *Provider) FindByTraktID(
-	ctx context.Context,
-	traktID int,
-) (*apiexternal_v2.FindByTraktIDResult, error) {
-	result := &apiexternal_v2.FindByTraktIDResult{}
-
-	// Try to get as a movie first
-	movieDetails, movieErr := p.GetMovieByID(ctx, traktID)
-	if movieErr == nil && movieDetails != nil {
-		result.MovieResult = &apiexternal_v2.MovieSearchResult{
-			ID:           movieDetails.ID,
-			Title:        movieDetails.Title,
-			Year:         movieDetails.Year,
-			ReleaseDate:  movieDetails.ReleaseDate,
-			Overview:     movieDetails.Overview,
-			VoteAverage:  movieDetails.VoteAverage,
-			ProviderName: "trakt",
-		}
-	}
-
-	// Try to get as a series
-	seriesDetails, seriesErr := p.GetSeriesByID(ctx, traktID)
-	if seriesErr == nil && seriesDetails != nil {
-		result.SeriesResult = &apiexternal_v2.SeriesSearchResult{
-			ID:           seriesDetails.ID,
-			Name:         seriesDetails.Name,
-			FirstAirDate: seriesDetails.FirstAirDate,
-			Overview:     seriesDetails.Overview,
-			VoteAverage:  seriesDetails.VoteAverage,
-			ProviderName: "trakt",
-		}
-	}
-
-	// If both failed, return error
-	if result.MovieResult == nil && result.SeriesResult == nil {
-		return nil, errors.New(
-			logger.JoinStrings(
-				"content not found with Trakt ID ",
-				strconv.Itoa(traktID),
-				": movie error: ",
-				movieErr.Error(),
-				", series error: ",
-				seriesErr.Error(),
-			),
-		)
-	}
-
-	return result, nil
 }
 
 // GetSeriesExternalIDs retrieves external IDs for a series.
@@ -777,22 +734,6 @@ func (p *Provider) GetWatchlist(
 	return results, nil
 }
 
-// GetUserLists retrieves user's lists (requires OAuth).
-func (p *Provider) GetUserLists(
-	ctx context.Context,
-	userID string,
-) ([]apiexternal_v2.MovieSearchResult, error) {
-	endpoint := fmt.Sprintf("/users/%s/lists", userID)
-
-	var response []map[string]any
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
-		return nil, err
-	}
-
-	// Lists would require additional processing
-	return nil, errors.New("list processing not implemented")
-}
-
 // GetTraktUserList retrieves items from a specific Trakt user list
 // This is a provider-specific method not in the base interface.
 func (p *Provider) GetTraktUserList(
@@ -817,8 +758,12 @@ func (p *Provider) GetTraktUserList(
 func (p *Provider) GetTraktSerieAnticipated(
 	ctx context.Context,
 	page int,
+	extraParams string,
 ) ([]traktAnticipatedItem, error) {
 	endpoint := fmt.Sprintf("/shows/anticipated?page=%d&limit=20&extended=full", page)
+	if extraParams != "" {
+		endpoint += "&" + extraParams
+	}
 
 	var response []traktAnticipatedItem
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
@@ -1032,26 +977,17 @@ func (p *Provider) saveTokenToDisk(token *apiexternal_v2.OAuthToken) error {
 // The state parameter should be a random string to prevent CSRF attacks.
 // Store this state and verify it matches when the callback is received.
 func (p *Provider) GetAuthorizationURL(state string) string {
-	params := make(map[string]string)
+	params := url.Values{}
 
-	params["response_type"] = "code"
-	params["client_id"] = p.clientID
+	params.Set("response_type", "code")
+	params.Set("client_id", p.clientID)
+	params.Set("redirect_uri", p.redirectURI)
 
-	params["redirect_uri"] = p.redirectURI
 	if state != "" {
-		params["state"] = state
+		params.Set("state", state)
 	}
 
-	queryString := ""
-	for key, val := range params {
-		if queryString != "" {
-			queryString += "&"
-		}
-
-		queryString += fmt.Sprintf("%s=%s", key, val)
-	}
-
-	return fmt.Sprintf("https://trakt.tv/oauth/authorize?%s", queryString)
+	return "https://trakt.tv/oauth/authorize?" + params.Encode()
 }
 
 // doTokenRequest makes a direct HTTP POST to Trakt's /oauth/token endpoint.
@@ -1304,6 +1240,21 @@ func (p *Provider) EnsureValidToken(ctx context.Context) error {
 		return errors.New("no token available - please authenticate first")
 	}
 
+	if token.IsValid() && !token.NeedsRefresh() {
+		return nil
+	}
+
+	// Serialize the whole check-then-refresh sequence - see refreshMu's doc
+	// comment. Re-check after acquiring the lock in case a racing caller
+	// already refreshed the token while this one was waiting.
+	p.refreshMu.Lock()
+	defer p.refreshMu.Unlock()
+
+	token = p.GetCurrentToken()
+	if token == nil {
+		return errors.New("no token available - please authenticate first")
+	}
+
 	if !token.IsValid() {
 		if token.RefreshToken == "" {
 			return errors.New("token expired and no refresh token available")
@@ -1315,7 +1266,8 @@ func (p *Provider) EnsureValidToken(ctx context.Context) error {
 		return err
 	}
 
-	// Check if token needs refresh soon
+	// Check if token still needs refresh soon (may already have been
+	// refreshed by a racing caller between the first check and this lock).
 	if token.NeedsRefresh() && token.RefreshToken != "" {
 		// Attempt to refresh proactively
 		_, err := p.RefreshToken(ctx, token.RefreshToken)

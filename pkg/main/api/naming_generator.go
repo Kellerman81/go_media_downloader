@@ -1447,14 +1447,6 @@ func getParserFields() []TemplateField {
 			Category:    "Source File",
 		},
 		{
-			Name:        "Source.Size",
-			Type:        "int64",
-			Template:    "{{.Source.Size}}",
-			Description: "File size in bytes",
-			Example:     "1073741824",
-			Category:    "Source File",
-		},
-		{
 			Name:        "Source.Runtime",
 			Type:        "int",
 			Template:    "{{.Source.Runtime}}",
@@ -2431,11 +2423,11 @@ func getNotificationFields() []TemplateField {
 			Category:    "Paths & Locations",
 		},
 		{
-			Name:        "Rootpath",
+			Name:        "Serie.Rootpath",
 			Type:        "string",
-			Template:    "{{.Rootpath}}",
-			Description: "Root media path",
-			Example:     "/media/movies",
+			Template:    "{{.Serie.Rootpath}}",
+			Description: "Root media path (series only)",
+			Example:     "/media/tv/Breaking Bad",
 			Category:    "Paths & Locations",
 		},
 
@@ -2466,15 +2458,6 @@ func getNotificationFields() []TemplateField {
 			Example:     "2024-01-15 14:30:00",
 			Category:    "Dates & Times",
 		},
-		{
-			Name:        "Date",
-			Type:        "string",
-			Template:    "{{.Date}}",
-			Description: "Processing date",
-			Example:     "2024-01-15",
-			Category:    "Dates & Times",
-		},
-
 		// Processing Information
 		{
 			Name:        "ReplacedPrefix",
@@ -2566,14 +2549,6 @@ func getNotificationFields() []TemplateField {
 			Template:    "{{.Source.File}}",
 			Description: "File path",
 			Example:     "/path/to/file.mkv",
-			Category:    "Source File",
-		},
-		{
-			Name:        "Source.Size",
-			Type:        "int64",
-			Template:    "{{.Source.Size}}",
-			Description: "File size in bytes",
-			Example:     "1073741824",
 			Category:    "Source File",
 		},
 		{
@@ -2698,6 +2673,30 @@ func getNotificationFields() []TemplateField {
 			Example:     "Progressive Rock",
 			Category:    "Music - Album",
 		},
+		{
+			Name:        "Dbalbum.ReleaseType",
+			Type:        "string",
+			Template:    "{{.Dbalbum.ReleaseType}}",
+			Description: "Release type (album, ep, single)",
+			Example:     "album",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.Format",
+			Type:        "string",
+			Template:    "{{.Dbalbum.Format}}",
+			Description: "Release format (cd, vinyl, digital)",
+			Example:     "vinyl",
+			Category:    "Music - Album",
+		},
+		{
+			Name:        "Dbalbum.TotalTracks",
+			Type:        "int",
+			Template:    "{{.Dbalbum.TotalTracks}}",
+			Description: "Number of tracks",
+			Example:     "10",
+			Category:    "Music - Album",
+		},
 
 		// ---- Music: Artist (Artist / AlbumArtist) ----
 		{
@@ -2705,6 +2704,14 @@ func getNotificationFields() []TemplateField {
 			Type:        "string",
 			Template:    "{{.Artist.Name}}",
 			Description: "Primary artist name",
+			Example:     "Pink Floyd",
+			Category:    "Music - Artist",
+		},
+		{
+			Name:        "Artist.SortName",
+			Type:        "string",
+			Template:    "{{.Artist.SortName}}",
+			Description: "Artist sort name",
 			Example:     "Pink Floyd",
 			Category:    "Music - Artist",
 		},
@@ -2734,6 +2741,14 @@ func getNotificationFields() []TemplateField {
 			Example:     "4",
 			Category:    "Music - Track",
 		},
+		{
+			Name:        "Dbtrack.DiscNumber",
+			Type:        "uint16",
+			Template:    "{{.Dbtrack.DiscNumber}}",
+			Description: "Disc number",
+			Example:     "1",
+			Category:    "Music - Track",
+		},
 
 		// ---- Book (Dbbook) ----
 		{
@@ -2741,6 +2756,14 @@ func getNotificationFields() []TemplateField {
 			Type:        "string",
 			Template:    "{{.Dbbook.Title}}",
 			Description: "Book title",
+			Example:     "The Hobbit",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.OriginalTitle",
+			Type:        "string",
+			Template:    "{{.Dbbook.OriginalTitle}}",
+			Description: "Original book title",
 			Example:     "The Hobbit",
 			Category:    "Book",
 		},
@@ -2753,11 +2776,27 @@ func getNotificationFields() []TemplateField {
 			Category:    "Book",
 		},
 		{
+			Name:        "Dbbook.ISBN13",
+			Type:        "string",
+			Template:    "{{.Dbbook.ISBN13}}",
+			Description: "ISBN-13 identifier",
+			Example:     "9780261103344",
+			Category:    "Book",
+		},
+		{
 			Name:        "Dbbook.Publisher",
 			Type:        "string",
 			Template:    "{{.Dbbook.Publisher}}",
 			Description: "Publisher",
 			Example:     "George Allen & Unwin",
+			Category:    "Book",
+		},
+		{
+			Name:        "Dbbook.Language",
+			Type:        "string",
+			Template:    "{{.Dbbook.Language}}",
+			Description: "Book language",
+			Example:     "English",
 			Category:    "Book",
 		},
 		{
@@ -2821,11 +2860,51 @@ func getNotificationFields() []TemplateField {
 			Category:    "Audiobook",
 		},
 		{
+			Name:        "Dbaudiobook.ASIN",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.ASIN}}",
+			Description: "Audible ASIN identifier",
+			Example:     "B007978PI2",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.Publisher",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.Publisher}}",
+			Description: "Publisher",
+			Example:     "Recorded Books",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.Language",
+			Type:        "string",
+			Template:    "{{.Dbaudiobook.Language}}",
+			Description: "Audiobook language",
+			Example:     "English",
+			Category:    "Audiobook",
+		},
+		{
+			Name:        "Dbaudiobook.RuntimeMinutes",
+			Type:        "int",
+			Template:    "{{.Dbaudiobook.RuntimeMinutes}}",
+			Description: "Runtime in minutes",
+			Example:     "660",
+			Category:    "Audiobook",
+		},
+		{
 			Name:        "DbaudiobookChapter.Title",
 			Type:        "string",
 			Template:    "{{.DbaudiobookChapter.Title}}",
 			Description: "Chapter title",
 			Example:     "An Unexpected Party",
+			Category:    "Audiobook - Chapter",
+		},
+		{
+			Name:        "DbaudiobookChapter.ChapterNumber",
+			Type:        "uint16",
+			Template:    "{{.DbaudiobookChapter.ChapterNumber}}",
+			Description: "Chapter number",
+			Example:     "1",
 			Category:    "Audiobook - Chapter",
 		},
 	}
@@ -2873,11 +2952,9 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 			validFields["Configuration"] = true
 			validFields["SourcePath"] = true
 			validFields["Targetpath"] = true
-			validFields["Rootpath"] = true
 			validFields["Imdb"] = true
 			validFields["Tvdb"] = true
 			validFields["Time"] = true
-			validFields["Date"] = true
 			validFields["ReplacedPrefix"] = true
 			validFields["Replaced"] = true
 		}

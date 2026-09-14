@@ -34,8 +34,16 @@ const (
 	testTVDBIDBreakingBad = 81189 // Breaking Bad
 )
 
-// loadTestConfig loads API keys from the config.toml file
+// loadTestConfig loads API keys from the config.toml file. This is a
+// manual/local test helper - it depends on a real, credential-filled
+// config.toml existing on disk (originally the developer's own machine),
+// not a hermetic fixture, so it skips rather than fails whenever that
+// environment isn't present.
 func loadTestConfig(t *testing.T) (tmdbKey, traktID, traktSecret, omdbKey, tokenPath string) {
+	if testing.Short() {
+		t.Skip("skipping config.toml-dependent provider test in short mode")
+	}
+
 	// Set config file path if not already set
 	if config.Configfile == "" || config.Configfile == "./config/config.toml" {
 		// Try to find config file in the repository
@@ -45,7 +53,7 @@ func loadTestConfig(t *testing.T) (tmdbKey, traktID, traktSecret, omdbKey, token
 	// Read config file
 	cfg, err := config.Readconfigtoml()
 	if err != nil {
-		t.Fatalf("Failed to read config.toml: %v", err)
+		t.Skipf("config.toml not available at %s (%v) - skipping test", config.Configfile, err)
 	}
 
 	// Extract API keys from config

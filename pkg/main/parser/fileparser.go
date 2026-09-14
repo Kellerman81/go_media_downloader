@@ -104,9 +104,16 @@ type prioritySnapshot struct {
 }
 
 var (
-	prioSnapshot  atomic.Pointer[prioritySnapshot]
+	prioSnapshot atomic.Pointer[prioritySnapshot]
+
+	// mediainfopath/ffprobepath are lazily resolved on first use and read
+	// concurrently from per-file worker-pool goroutines (WorkerPoolParse) -
+	// mediainfoOnce/ffprobeOnce make that resolution safe; the plain
+	// check-then-write on the bare strings used to be an unsynchronized race.
 	mediainfopath string
+	mediainfoOnce sync.Once
 	ffprobepath   string
+	ffprobeOnce   sync.Once
 	arrExtended   = [4]string{
 		"extended",
 		"extended cut",
@@ -454,12 +461,19 @@ func processPatternMatch(
 ) {
 	shorten := pattern.name != "year" || mediatype.Get(cfgp.IsType).ShortenYearPattern()
 	if shorten {
-		if index := strings.Index(m.Str, m.Str[strStart:strEnd]); index == 0 {
-			if matchLen := len(m.Str[strStart:strEnd]); matchLen != len(m.Str) && matchLen < *end {
+		// Use strStart directly - it's already the real position this match
+		// was found at. Re-deriving the position by searching for the
+		// matched text (strings.Index(m.Str, m.Str[strStart:strEnd])) finds
+		// the wrong, earlier occurrence whenever that same text recurs
+		// earlier in the string (e.g. a repeated year like
+		// "SNL.2024.Election.Special.2024.1080p...", where the real match is
+		// the second "2024" but the re-search finds the first).
+		if strStart == 0 {
+			if matchLen := strEnd - strStart; matchLen != len(m.Str) && matchLen < *end {
 				*start = matchLen
 			}
-		} else if index < *end && index > *start {
-			*end = index
+		} else if strStart < *end && strStart > *start {
+			*end = strStart
 		}
 	}
 
@@ -1156,13 +1170,18 @@ func GetPriorityMapQualAudio(
 		}
 	}
 
+	var defaultQuality string
+	if cfgp != nil {
+		defaultQuality = cfgp.DefaultQuality
+	}
+
 	logger.Logtype("debug", 0).
 		Str("audioformat_str", m.AudioFormat).
 		Uint("audioformat_id", m.AudioFormatID).
 		Int("audioformats_count", len(database.DBConnect.GetaudioformatsIn)).
 		Str("quality_name", quality.Name).
 		Bool("use_for_priority_audio_format", quality.UseForPriorityAudioFormat).
-		Str("default_quality", cfgp.DefaultQuality).
+		Str("default_quality", defaultQuality).
 		Msg("GetPriorityMapQualAudio debug")
 
 	var audioformat uint

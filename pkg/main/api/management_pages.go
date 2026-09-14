@@ -1418,8 +1418,20 @@ func performVacuum(_ *gin.Context) (string, string) {
 }
 
 func performFillIMDB(c *gin.Context) (string, string) {
-	// Call the actual IMDB fill function
-	config.GetSettingsGeneral().Jobs["RefreshImdb"](0, c)
+	// Jobs["RefreshImdb"] runs FillImdb() synchronously with no goroutine of
+	// its own (utils/jobs.go) - calling it directly here blocked the request
+	// for the entire fill duration while still claiming "started in
+	// background". Dispatch it like every other job in this file
+	// (HandleJobManagement) so the response returns immediately.
+	fn := config.GetSettingsGeneral().Jobs["RefreshImdb"]
+
+	err := worker.Dispatch("RefreshImdb", func(key uint32, ctx context.Context) error {
+		return fn(key, ctx)
+	}, "Data")
+	if err != nil {
+		return "❌ Failed to start IMDB fill: " + err.Error(), "danger"
+	}
+
 	return "✅ IMDB data population started in background.", "info"
 }
 
@@ -1461,6 +1473,16 @@ func performClearTable(c *gin.Context) (string, string) {
 		return "❌ No table name specified.", "danger"
 	}
 
+	// tableName is concatenated directly into the DELETE below (a table name
+	// can't be bound as a `?` SQL parameter) - the UI only offers a fixed
+	// <select> list, but the server must re-validate it: anything reaching
+	// this handler with an arbitrary tableName could otherwise clear any
+	// table in the schema, not just the intended content tables. Same
+	// allowlist check as apiDBClear (general.go).
+	if database.GetTableDefaults(tableName).Table == "" {
+		return fmt.Sprintf("❌ Unknown table '%s'.", tableName), "danger"
+	}
+
 	// Call the actual clear table function (same as apiDBClear)
 	err := database.ExecNErr("DELETE FROM " + tableName)
 	if err != nil {
@@ -1468,7 +1490,13 @@ func performClearTable(c *gin.Context) (string, string) {
 	}
 
 	// Run vacuum after clearing
-	database.ExecN("VACUUM")
+	if err := database.ExecNErr("VACUUM"); err != nil {
+		return fmt.Sprintf(
+			"⚠️ Table '%s' cleared, but VACUUM failed: %s",
+			tableName,
+			err.Error(),
+		), "warning"
+	}
 
 	return fmt.Sprintf("✅ Table '%s' cleared successfully.", tableName), "success"
 }
@@ -1479,6 +1507,12 @@ func performDeleteRecord(c *gin.Context) (string, string) {
 
 	if tableName == "" || recordID == "" {
 		return "❌ Table name and record ID are required.", "danger"
+	}
+
+	// See performClearTable above for why tableName must be checked
+	// against the allowlist before being concatenated into the query.
+	if database.GetTableDefaults(tableName).Table == "" {
+		return fmt.Sprintf("❌ Unknown table '%s'.", tableName), "danger"
 	}
 
 	// Call the actual delete record function (same as apiDBDelete)
@@ -2188,6 +2222,11 @@ func HandleLogViewer(c *gin.Context) {
 }
 
 // readLastLines reads the last n lines from a file, optionally filtering by log level.
+// tailChunkSize is the initial trailing-chunk size read by readLastLines.
+// Doubled and re-read from further back whenever the current chunk doesn't
+// yield enough matching lines, instead of ever reading the whole file.
+const tailChunkSize = 64 * 1024
+
 func readLastLines(filename string, lineCount int, logLevel string) ([]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -2202,27 +2241,47 @@ func readLastLines(filename string, lineCount int, logLevel string) ([]string, e
 	}
 
 	fileSize := stat.Size()
-	buffer := make([]byte, fileSize)
 
-	// Read file from end
-	_, err = file.ReadAt(buffer, 0)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-
-	// Split into lines
-	lines := strings.Split(string(buffer), "\n")
-
-	// Filter out empty lines
 	var filteredLines []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
+
+	// Read a bounded trailing chunk from EOF instead of the whole file -
+	// grow the window and re-read further back only if the current chunk
+	// doesn't contain enough matching lines yet, up to the whole file.
+	for chunkSize := min(int64(tailChunkSize), fileSize); ; chunkSize *= 2 {
+		if chunkSize > fileSize {
+			chunkSize = fileSize
+		}
+
+		offset := fileSize - chunkSize
+
+		buffer := make([]byte, chunkSize)
+		if _, err := file.ReadAt(buffer, offset); err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+
+		lines := strings.Split(string(buffer), "\n")
+		if offset > 0 && len(lines) > 0 {
+			// The chunk starts mid-file, so its first "line" is really the
+			// tail of a line whose beginning is outside this chunk - drop it
+			// rather than treat a partial line as complete.
+			lines = lines[1:]
+		}
+
+		filteredLines = filteredLines[:0]
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
 			// Apply log level filter if specified
 			if logLevel == "" ||
 				strings.Contains(strings.ToLower(line), strings.ToLower(logLevel)) {
 				filteredLines = append(filteredLines, line)
 			}
+		}
+
+		if len(filteredLines) >= lineCount || offset == 0 {
+			break
 		}
 	}
 

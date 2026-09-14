@@ -137,11 +137,10 @@ func performLogAnalysis(
 	timestampRegex := regexp.MustCompile(`(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})`)
 
 	scanner := bufio.NewScanner(file)
-	lineCount := int64(0)
+	var matchedLines int64
 
-	for scanner.Scan() && lineCount < maxLines {
+	for scanner.Scan() {
 		line := scanner.Text()
-		lineCount++
 
 		// Apply time range filter if specified
 		if useTimeFilter {
@@ -177,6 +176,15 @@ func performLogAnalysis(
 		// Apply log level filter if specified
 		if logLevelRegex != nil && !logLevelRegex.MatchString(line) {
 			continue // Skip this line as it doesn't match the specified log level
+		}
+
+		// maxLines caps the number of *matching* entries, applied after the
+		// time-range/log-level filters above - capping raw physical lines
+		// scanned from the start of an append-ordered log file would stop
+		// before ever reaching recent entries in a large file.
+		matchedLines++
+		if matchedLines > maxLines {
+			break
 		}
 
 		results.TotalEntries++

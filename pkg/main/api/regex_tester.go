@@ -595,6 +595,57 @@ func renderRegexTesterPage(csrfToken string) gomponents.Node {
 	)
 }
 
+// globalScanPatterns are the fixed "global scan" patterns offered by the
+// regex tester. Unlike the config/quality patterns (which are legitimately
+// dynamic, user-defined, and can't be pre-compiled), these are static
+// literals known at compile time - compiling them once here instead of on
+// every HandleRegexTesting call avoids needlessly recompiling all eight on
+// every "Run Tests" click.
+var globalScanPatterns = []struct {
+	name     string
+	pattern  string
+	compiled *regexp.Regexp
+}{
+	{"season", `(?i)(s?(\d{1,4}))(?: )?[ex]`, regexp.MustCompile(`(?i)(s?(\d{1,4}))(?: )?[ex]`)},
+	{
+		"episode",
+		`(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`,
+		regexp.MustCompile(`(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`),
+	},
+	{
+		"identifier",
+		`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex-]\d{1,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`,
+		regexp.MustCompile(
+			`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex-]\d{1,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`,
+		),
+	},
+	{
+		"date",
+		`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`,
+		regexp.MustCompile(`(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`),
+	},
+	{
+		"year",
+		`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`,
+		regexp.MustCompile(`(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`),
+	},
+	{
+		"audio",
+		`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`,
+		regexp.MustCompile(`(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`),
+	},
+	{
+		"imdb",
+		`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`,
+		regexp.MustCompile(`(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`),
+	},
+	{
+		"tvdb",
+		`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`,
+		regexp.MustCompile(`(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`),
+	},
+}
+
 func HandleRegexTesting(ctx *gin.Context) {
 	var response RegexTestResponse
 
@@ -735,39 +786,18 @@ func HandleRegexTesting(ctx *gin.Context) {
 
 	// Test Global Scan Patterns
 	if ctx.PostForm("test_global") == "on" || ctx.PostForm("test_global") == "true" {
-		globalPatterns := []struct {
-			name    string
-			pattern string
-		}{
-			{"season", `(?i)(s?(\d{1,4}))(?: )?[ex]`},
-			{"episode", `(?i)((?:\d{1,4})(?: )?[ex](?: )?(\d{1,3})(?:\b|_|e|$))`},
-			{
-				"identifier",
-				`(?i)((s?\d{1,4}(?:(?:(?: )?-?(?: )?[ex-]\d{1,3})+)|\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`,
-			},
-			{"date", `(?i)(?:\b|_)((\d{2,4}(?:\.|-| |_)\d{1,2}(?:\.|-| |_)\d{1,2}))(?:\b|_)`},
-			{"year", `(?:\b|_)(((?:19\d|20\d)\d))(?:\b|_)`},
-			{"audio", `(?i)(?:\b|_)((dd[0-9\\.]+|dd[p+][0-9\\.]+|dts\W?hd(?:\W?ma)?))(?:\b|_)`},
-			{"imdb", `(?i)(?:\b|_)((tt[0-9]{4,9}))(?:\b|_)`},
-			{"tvdb", `(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`},
-		}
-
-		for _, globalPattern := range globalPatterns {
+		for _, globalPattern := range globalScanPatterns {
 			result := RegexTestResult{
 				Type:    "Global",
 				Name:    globalPattern.name,
 				Pattern: globalPattern.pattern,
 			}
 
-			if compiled, err := regexp.Compile(globalPattern.pattern); err != nil {
-				result.Error = err.Error()
-			} else {
-				matches := compiled.FindStringSubmatch(testString)
+			matches := globalPattern.compiled.FindStringSubmatch(testString)
 
-				result.Match = len(matches) > 0
-				if result.Match && len(matches) > 1 {
-					result.MatchString = strings.Join(matches[1:], ", ")
-				}
+			result.Match = len(matches) > 0
+			if result.Match && len(matches) > 1 {
+				result.MatchString = strings.Join(matches[1:], ", ")
 			}
 
 			response.Results = append(response.Results, result)

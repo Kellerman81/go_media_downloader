@@ -187,7 +187,6 @@ func NewTraktClient(
 		CircuitBreakerThreshold:   5,
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
-		EnableStats:               true,
 		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
@@ -385,6 +384,15 @@ func GetTraktMovie(movieid string) (*TraktMovieExtend, error) {
 			}
 
 			return movie, nil
+		}
+
+		// Unlike the sentinel-only fallthrough this used to have, propagate
+		// the real error (mirrors GetTraktSerie below) - a transient Trakt
+		// error, a malformed ID, or a failed IMDb lookup were all reported
+		// as errNoClient ("no client") even though the client was fully
+		// configured and working, actively misleading troubleshooting.
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -614,91 +622,6 @@ func MergeTraktIntoCollectedEpisodes(showid string, episodes map[string]*Collect
 	}
 }
 
-// UpdateTraktSerieSeasonsAndEpisodes retrieves all seasons and episodes for the given Trakt show ID from the Trakt API.
-// It takes the show ID and database series ID as parameters.
-// It queries the local database for existing episodes to avoid duplicates.
-// For each season, it inserts missing episodes or only fills empty fields in existing ones (does not overwrite TVDB data).
-// Deprecated: Use CollectTvdbSeriesEpisodes + MergeTraktIntoCollectedEpisodes + WriteCollectedEpisodesToDB instead.
-func UpdateTraktSerieSeasonsAndEpisodes(showid string, id *uint) {
-	if showid == "" {
-		return
-	}
-
-	// Use v2 provider if available
-	provider := providers.GetTrakt()
-	if provider == nil {
-		return
-	}
-
-	seriesID, err := strconv.Atoi(showid)
-	if err != nil {
-		return
-	}
-
-	seasons, err := provider.GetAllSeasons(context.Background(), seriesID)
-	if err != nil {
-		return
-	}
-
-	tbl := database.Getrowssize[database.DbstaticTwoString](
-		false,
-		database.QueryDbserieEpisodesCountByDBID,
-		database.QueryDbserieEpisodesGetSeasonEpisodeByDBID,
-		id,
-	)
-
-	for i := range seasons {
-		episodes, err := provider.GetSeasonEpisodes(
-			context.Background(),
-			seriesID,
-			seasons[i].SeasonNumber,
-		)
-		if err != nil {
-			continue
-		}
-
-		for j := range episodes {
-			ep := episodes[j]
-			epi := strconv.Itoa(ep.EpisodeNumber)
-			seas := strconv.Itoa(ep.SeasonNumber)
-			ident := generateIdentifierStringFromInt(&ep.SeasonNumber, &ep.EpisodeNumber)
-
-			if checkdbtwostrings(tbl, ep.SeasonNumber, ep.EpisodeNumber) {
-				// Episode exists - only fill in empty fields (don't overwrite TVDB data)
-				database.ExecN(
-					`UPDATE dbserie_episodes SET
-						title = CASE WHEN title IS NULL OR title = '' THEN ? ELSE title END,
-						first_aired = CASE WHEN first_aired IS NULL OR first_aired = '' THEN ? ELSE first_aired END,
-						overview = CASE WHEN overview IS NULL OR overview = '' THEN ? ELSE overview END,
-						absolute_number = CASE WHEN absolute_number IS NULL OR absolute_number = 0 THEN ? ELSE absolute_number END,
-						updated_at = CURRENT_TIMESTAMP
-					WHERE dbserie_id = ? AND season = ? AND episode = ?`,
-					&ep.Name,
-					&ep.AirDate,
-					&ep.Overview,
-					&ep.AbsoluteNumber,
-					id,
-					&seas,
-					&epi,
-				)
-			} else {
-				// Episode doesn't exist - insert it
-				database.ExecN(
-					"INSERT INTO dbserie_episodes (episode, season, identifier, title, first_aired, overview, absolute_number, dbserie_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-					&epi,
-					&seas,
-					&ident,
-					&ep.Name,
-					&ep.AirDate,
-					&ep.Overview,
-					&ep.AbsoluteNumber,
-					id,
-				)
-			}
-		}
-	}
-}
-
 func Testaddtraktdbepisodes() ([]TraktSerieSeasonEpisodes, error) {
 	// Use v2 provider if available
 	if provider := providers.GetTrakt(); provider != nil {
@@ -773,7 +696,12 @@ func padNumberWithZero(value *int) string {
 // or nil if there is an error.
 func GetTraktSerieSeasonEpisodes(showid, season string) ([]TraktSerieSeasonEpisodes, error) {
 	if showid == "" || season == "" {
-		return nil, errDailyLimit
+		// Was errDailyLimit ("daily limit reached") - a copy/paste mistake
+		// for a plain empty-argument check, actively misleading a user
+		// whose form submitted blank fields into thinking Trakt's rate
+		// limit was hit. Every sibling validation in this file uses
+		// logger.ErrNotFound for the equivalent check.
+		return nil, logger.ErrNotFound
 	}
 
 	// Use v2 provider if available
@@ -907,20 +835,23 @@ func RemoveMovieFromTraktUserList(username, listname, remove string) error {
 		return logger.ErrNotFound
 	}
 
-	// Use v2 provider if available
-	if provider := providers.GetTrakt(); provider != nil {
-		err := provider.RemoveMovieFromTraktUserList(
-			context.Background(),
-			username,
-			listname,
-			remove,
-		)
-		if err == nil {
-			return nil
-		}
+	provider := providers.GetTrakt()
+	if provider == nil {
+		return errClientEmpty
 	}
 
-	return errClientEmpty
+	// Return the real error instead of the generic errClientEmpty sentinel -
+	// this used to discard the actual cause (network blip, expired token,
+	// rate limit), and its two callers in utils/feeds.go don't check the
+	// return value at all, so a failed removal was completely invisible:
+	// the item stays on the user's Trakt list and gets silently
+	// re-evaluated on every subsequent feed run.
+	return provider.RemoveMovieFromTraktUserList(
+		context.Background(),
+		username,
+		listname,
+		remove,
+	)
 }
 
 // RemoveSerieFromTraktUserList removes the specified TV show from the given Trakt user list.
@@ -931,20 +862,19 @@ func RemoveSerieFromTraktUserList(username, listname string, remove int) error {
 		return logger.ErrNotFound
 	}
 
-	// Use v2 provider if available
-	if provider := providers.GetTrakt(); provider != nil {
-		err := provider.RemoveSerieFromTraktUserList(
-			context.Background(),
-			username,
-			listname,
-			remove,
-		)
-		if err == nil {
-			return nil
-		}
+	provider := providers.GetTrakt()
+	if provider == nil {
+		return errClientEmpty
 	}
 
-	return errClientEmpty
+	// See RemoveMovieFromTraktUserList - return the real error instead of
+	// discarding it behind errClientEmpty.
+	return provider.RemoveSerieFromTraktUserList(
+		context.Background(),
+		username,
+		listname,
+		remove,
+	)
 }
 
 // GetTraktSeriePopular retrieves popular TV shows from Trakt, yielding each entry
@@ -1009,27 +939,40 @@ func GetTraktSerieTrending(limit *string, extraParams string) iter.Seq[TraktSeri
 
 // GetTraktSerieAnticipated retrieves anticipated TV shows from Trakt, yielding each TraktSerie
 // directly (the Anticipated wrapper is omitted since callers only need the inner Serie).
-func GetTraktSerieAnticipated(limit *string, extraParams string) iter.Seq[TraktSerie] {
+func GetTraktSerieAnticipated(_ *string, extraParams string) iter.Seq[TraktSerie] {
 	return func(yield func(TraktSerie) bool) {
 		provider := providers.GetTrakt()
 		if provider == nil {
 			return
 		}
 
-		results, err := provider.GetTrendingSeries(context.Background(), 1, extraParams)
+		// Was calling GetTrendingSeries (identical to GetTraktSerieTrending
+		// above) instead of the dedicated anticipated-series endpoint the v2
+		// provider already implements - every series list configured with
+		// source type "anticipated" was silently getting Trending shows
+		// added instead. The v2 method also lacked extraParams support that
+		// its GetTrendingSeries/GetUpcomingMovies siblings already have -
+		// added there too so a configured list's URL/filter params aren't
+		// silently dropped.
+		results, err := provider.GetTraktSerieAnticipated(context.Background(), 1, extraParams)
 		if err != nil || results == nil {
 			return
 		}
 
-		for i := range results.Results {
-			var s TraktSerie
-
-			s.Title = results.Results[i].Name
-			if !results.Results[i].FirstAirDate.IsZero() {
-				s.Year = results.Results[i].FirstAirDate.Year()
+		for i := range results {
+			if results[i].Show == nil {
+				continue
 			}
 
-			s.IDs.Trakt = results.Results[i].ID
+			var s TraktSerie
+
+			s.Title = results[i].Show.Title
+			s.Year = results[i].Show.Year
+			s.IDs.Trakt = results[i].Show.IDs.Trakt
+			s.IDs.Imdb = results[i].Show.IDs.IMDB
+			s.IDs.Tmdb = results[i].Show.IDs.TMDB
+			s.IDs.Tvdb = results[i].Show.IDs.TVDB
+
 			if !yield(s) {
 				return
 			}
@@ -1163,109 +1106,21 @@ func IsTokenExpired() bool {
 	return false
 }
 
-// GetTraktUserListAuth retrieves a Trakt user list with authentication.
-// It takes the username, list name, list type, and optional limit parameters and returns
-// the user list items as an array of TraktUserList structs and an error.
-// Returns ErrNotFound if username, listname or listtype are empty.
-func GetTraktUserListAuth(
-	username, listname, listtype string,
-	_ *string,
-) ([]TraktUserList, error) {
-	if username == "" || listname == "" || listtype == "" {
-		return nil, logger.ErrNotFound
-	}
-
-	// Use v2 provider if available
-	if provider := providers.GetTrakt(); provider != nil {
-		var (
-			items []trakt.TraktUserListItem
-			err   error
-		)
-
-		if listname == "watchlist" {
-			items, err = provider.GetWatchlist(context.Background(), username, listtype)
-		} else {
-			items, err = provider.GetTraktUserList(
-				context.Background(),
-				username,
-				listname,
-				listtype,
-			)
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		// Convert to old format
-		result := make([]TraktUserList, 0, len(items))
-		for i := range items {
-			userListItem := TraktUserList{
-				TraktType: items[i].Type,
-			}
-			if items[i].Movie != nil {
-				userListItem.Movie = TraktMovie{
-					IDs: struct {
-						Slug   string `json:"slug"`
-						Imdb   string `json:"imdb"`
-						Trakt  int    `json:"trakt"`
-						Tmdb   int    `json:"tmdb"`
-						Tvdb   int    `json:"tvdb"`
-						Tvrage int    `json:"tvrage"`
-					}{
-						Slug:  items[i].Movie.IDs.Slug,
-						Imdb:  items[i].Movie.IDs.IMDB,
-						Trakt: items[i].Movie.IDs.Trakt,
-						Tmdb:  items[i].Movie.IDs.TMDB,
-						Tvdb:  items[i].Movie.IDs.TVDB,
-					},
-					Title: items[i].Movie.Title,
-					Year:  items[i].Movie.Year,
-				}
-			}
-
-			if items[i].Show != nil {
-				userListItem.Serie = TraktSerie{
-					IDs: struct {
-						Slug   string `json:"slug"`
-						Imdb   string `json:"imdb"`
-						Trakt  int    `json:"trakt"`
-						Tmdb   int    `json:"tmdb"`
-						Tvdb   int    `json:"tvdb"`
-						Tvrage int    `json:"tvrage"`
-					}{
-						Slug:  items[i].Show.IDs.Slug,
-						Imdb:  items[i].Show.IDs.IMDB,
-						Trakt: items[i].Show.IDs.Trakt,
-						Tmdb:  items[i].Show.IDs.TMDB,
-						Tvdb:  items[i].Show.IDs.TVDB,
-					},
-					Title: items[i].Show.Title,
-					Year:  items[i].Show.Year,
-				}
-			}
-
-			result = append(result, userListItem)
-		}
-
-		return result, nil
-	}
-
-	return nil, errClientEmpty
-}
-
 // TestTraktConnectivity tests the connectivity to the Trakt API
 // Returns status code and error if any.
 func TestTraktConnectivity(
-	_ time.Duration,
+	timeout time.Duration,
 	_ *string,
 ) (int, []TraktMovieTrending, error) {
 	// Use v2 provider if available
 	if provider := providers.GetTrakt(); provider != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		// Test with a simple trending movies request
 		page := 1
 
-		results, err := provider.GetTrendingMovies(context.Background(), page, "")
+		results, err := provider.GetTrendingMovies(ctx, page, "")
 		if err != nil {
 			return 0, nil, err
 		}

@@ -113,6 +113,19 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 	// All admin and manage routes are automatically protected by the middleware
 	routerapi.GET("/admin", apiAdminInterface)
+	routerapi.POST("/admin/paths/check", HandlePathCheck)
+	routerapi.POST("/admin/proxy", HandleAdminAPIProxy)
+	routerapi.POST("/admin/generate-apikey", HandleGenerateAPIKey)
+	routerapi.POST("/admin/indexers/test", HandleTestIndexerConnection)
+	routerapi.POST("/admin/downloader/test", HandleTestDownloaderConnection)
+	routerapi.POST("/admin/notifications/test", HandleTestNotificationConnection)
+	routerapi.POST("/admin/lists/test", HandleTestListConnection)
+	routerapi.GET("/admin/wizard", adminPageSetupWizard)
+	routerapi.GET("/admin/wizard/dismiss", HandleWizardDismiss)
+	routerapi.GET("/admin/wizard/step/:n", HandleWizardStepGet)
+	routerapi.POST("/admin/wizard/step/:n", HandleWizardStepSave)
+	routerapi.POST("/admin/wizard/test/indexer", HandleWizardTestIndexer)
+	routerapi.POST("/admin/wizard/test/downloader", HandleWizardTestDownloader)
 	routerapi.GET("/admin/config/:configtype", adminPageConfig)
 	routerapi.POST("/admin/config/:configtype/update", HandleConfigUpdate)
 	routerapi.GET("/admin/seriesconfig", renderSeriesConfigPage)
@@ -304,6 +317,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 		form := renderDownloaderForm(
 			&config.DownloaderConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
 		)
 
 		var buf strings.Builder
@@ -326,7 +340,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
 
-		form := renderListsForm(&config.ListsConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		form := renderListsForm(
+			&config.ListsConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
+		)
 
 		var buf strings.Builder
 		form.Render(&buf)
@@ -350,6 +367,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 		form := renderIndexersForm(
 			&config.IndexersConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
 		)
 
 		var buf strings.Builder
@@ -372,7 +390,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			formKeys[strings.Split(key, "_")[1]] = true
 		}
 
-		form := renderPathsForm(&config.PathsConfig{Name: "new" + strconv.Itoa(len(formKeys))})
+		form := renderPathsForm(
+			&config.PathsConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
+		)
 
 		var buf strings.Builder
 		form.Render(&buf)
@@ -396,6 +417,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 		form := renderNotificationForm(
 			&config.NotificationConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			getCSRFToken(ctx),
 		)
 
 		var buf strings.Builder
@@ -653,12 +675,18 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 		switch configType {
 		case "path":
 			if cfg := config.GetSettingsPath(configName); cfg != nil {
-				form = renderConfigPreviewReadonly("Path: "+configName, renderPathsForm(cfg))
+				form = renderConfigPreviewReadonly(
+					"Path: "+configName,
+					renderPathsForm(cfg, getCSRFToken(ctx)),
+				)
 			}
 
 		case "list":
 			if cfg := config.GetSettingsList(configName); cfg != nil {
-				form = renderConfigPreviewReadonly("List: "+configName, renderListsForm(cfg))
+				form = renderConfigPreviewReadonly(
+					"List: "+configName,
+					renderListsForm(cfg, getCSRFToken(ctx)),
+				)
 			}
 
 		case "quality":
@@ -679,7 +707,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 		case "indexer":
 			if cfg := config.GetSettingsIndexer(configName); cfg != nil {
-				form = renderConfigPreviewReadonly("Indexer: "+configName, renderIndexersForm(cfg))
+				form = renderConfigPreviewReadonly(
+					"Indexer: "+configName,
+					renderIndexersForm(cfg, getCSRFToken(ctx)),
+				)
 			}
 
 		case "downloader":
@@ -687,7 +718,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 				if cfg.Name == configName {
 					form = renderConfigPreviewReadonly(
 						"Downloader: "+configName,
-						renderDownloaderForm(&cfg),
+						renderDownloaderForm(&cfg, getCSRFToken(ctx)),
 					)
 
 					break
@@ -706,7 +737,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsNotification(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"Notification: "+configName,
-					renderNotificationForm(cfg),
+					renderNotificationForm(cfg, getCSRFToken(ctx)),
 				)
 			}
 		}
@@ -755,8 +786,10 @@ func apiDebugStats(ctx *gin.Context) {
 
 	f, err := os.Create("./temp/heapdump")
 	if err != nil {
-		panic(err)
+		sendBadRequest(ctx, "Failed to create heap dump file: "+err.Error())
+		return
 	}
+	defer f.Close()
 
 	debug.WriteHeapDump(f.Fd())
 
@@ -981,9 +1014,12 @@ func apiFillImdb(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/scheduler/stop [get].
 func apiSchedulerStop(c *gin.Context) {
-	// scheduler.QueueData.Stop()
-	// scheduler.QueueFeeds.Stop()
-	// scheduler.QueueSearch.Stop()
+	// The old scheduler.QueueData/Feeds/Search stop calls this replaced were
+	// commented out, left over from a prior scheduler implementation - this
+	// endpoint did nothing at all while still reporting success. worker's
+	// StopCronWorker is the current implementation's equivalent (already used
+	// the same way in apiDBBackup above).
+	worker.StopCronWorker()
 	sendSuccess(c, StrOK)
 }
 
@@ -995,9 +1031,7 @@ func apiSchedulerStop(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/scheduler/start [get].
 func apiSchedulerStart(c *gin.Context) {
-	// scheduler.QueueData.Start()
-	// scheduler.QueueFeeds.Start()
-	// scheduler.QueueSearch.Start()
+	worker.StartCronWorker()
 	sendSuccess(c, StrOK)
 }
 
@@ -1039,8 +1073,11 @@ func apiDBBackup(ctx *gin.Context) {
 
 	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().
 		Format("20060102_150405")
-	database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
+	err := database.Backup(&backupto, config.GetSettingsGeneral().MaxDatabaseBackups)
 
+	// Workers must always be restarted, whether or not the backup itself
+	// succeeded - otherwise a failed backup would also permanently leave
+	// the app's background workers stopped.
 	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
 		worker.InitWorkerPools(
 			config.GetSettingsGeneral().WorkerSearch,
@@ -1052,7 +1089,7 @@ func apiDBBackup(ctx *gin.Context) {
 		worker.StartCronWorker()
 	}
 
-	sendSuccess(ctx, StrOK)
+	handleDBError(ctx, err, StrOK)
 }
 
 // @Summary      Integrity DB
@@ -1091,9 +1128,22 @@ func apiDBClear(ctx *gin.Context) {
 		return
 	}
 
-	err := database.ExecNErr("DELETE from " + tableName)
+	// tableName is concatenated directly into the DELETE below (a table
+	// name can't be bound as a `?` SQL parameter), so it must be checked
+	// against the same table allowlist the DB browser already uses
+	// (database.GetTableDefaults returns a zero-value QueryParams, with an
+	// empty Table field, for anything not in its known-table switch) -
+	// otherwise any apikey holder could DELETE/VACUUM arbitrary tables.
+	if database.GetTableDefaults(tableName).Table == "" {
+		sendBadRequest(ctx, "Unknown table: "+tableName)
+		return
+	}
 
-	database.ExecN("VACUUM")
+	err := database.ExecNErr("DELETE from " + tableName)
+	if err == nil {
+		err = database.ExecNErr("VACUUM")
+	}
+
 	handleDBError(ctx, err, StrOK)
 }
 
@@ -1114,6 +1164,13 @@ func apiDBDelete(ctx *gin.Context) {
 
 	id, ok := getParamID(ctx, StrID)
 	if !ok {
+		return
+	}
+
+	// See apiDBClear for why tableName must be checked against the
+	// allowlist before being concatenated into the query.
+	if database.GetTableDefaults(tableName).Table == "" {
+		sendBadRequest(ctx, "Unknown table: "+tableName)
 		return
 	}
 
@@ -1206,7 +1263,11 @@ func apiQualityDelete(ctx *gin.Context) {
 		return
 	}
 
-	database.DeleteRow("qualities", logger.FilterByID, id)
+	if _, err := database.DeleteRow("qualities", logger.FilterByID, id); err != nil {
+		sendBadRequest(ctx, "Failed to delete quality: "+err.Error())
+		return
+	}
+
 	database.SetVars()
 
 	data := database.StructscanT[database.Qualities](
@@ -1238,8 +1299,10 @@ func apiQualityUpdate(ctx *gin.Context) {
 		&quality.ID,
 	)
 
+	var writeErr error
+
 	if counter == 0 {
-		database.InsertArray(
+		_, writeErr = database.InsertArray(
 			"qualities",
 			[]string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
 			quality.QualityType,
@@ -1250,7 +1313,7 @@ func apiQualityUpdate(ctx *gin.Context) {
 			quality.UseRegex,
 		)
 	} else {
-		database.UpdateArray(
+		_, writeErr = database.UpdateArray(
 			"qualities",
 			[]string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
 			"id != 0 and id = ?",
@@ -1262,6 +1325,11 @@ func apiQualityUpdate(ctx *gin.Context) {
 			quality.UseRegex,
 			quality.ID,
 		)
+	}
+
+	if writeErr != nil {
+		sendBadRequest(ctx, "Failed to save quality: "+writeErr.Error())
+		return
 	}
 
 	database.SetVars()
@@ -1424,6 +1492,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 		left = right
 	}
 
+	var err error
+
 	switch left {
 	case "general":
 		var getcfg config.GeneralConfig
@@ -1431,7 +1501,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "downloader":
 		var getcfg config.DownloaderConfig
@@ -1439,7 +1509,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case logger.StrImdb:
 		var getcfg config.ImdbConfig
@@ -1447,7 +1517,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "indexer":
 		var getcfg config.IndexersConfig
@@ -1455,7 +1525,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "list":
 		var getcfg config.ListsConfig
@@ -1463,16 +1533,15 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
-	case "serie":
-	case "movie":
+	case "serie", "movie":
 		var getcfg config.MediaTypeConfig
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "notification":
 		var getcfg config.NotificationConfig
@@ -1480,7 +1549,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "path":
 		var getcfg config.PathsConfig
@@ -1488,7 +1557,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "quality":
 		var getcfg config.QualityConfig
@@ -1496,7 +1565,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "regex":
 		var getcfg config.RegexConfig
@@ -1504,7 +1573,7 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "scheduler":
 		var getcfg config.SchedulerConfig
@@ -1512,7 +1581,16 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
-		config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
+
+	default:
+		sendBadRequest(ctx, "Unknown config type: "+left)
+		return
+	}
+
+	if err != nil {
+		sendBadRequest(ctx, "Failed to update config: "+err.Error())
+		return
 	}
 
 	config.WriteCfg()
@@ -1648,15 +1726,24 @@ func apiNamingGenerate(ctx *gin.Context) {
 
 	// defer mediacfg.Close()
 	if cfg.GroupType == logger.StrMovie {
-		movie, _ := database.GetMovies(
+		movie, err := database.GetMovies(
 			database.Querywithargs{Where: logger.FilterByID},
 			cfg.MovieID,
 		)
+		if err != nil {
+			sendBadRequest(ctx, "movie not found")
+			return
+		}
+
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 		s := structure.NewStructure(
 			cfgp,
 			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
 			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath, false, false, 0)
+		if s == nil {
+			sendBadRequest(ctx, "failed to create organizer - check that Structure is enabled for this config")
+			return
+		}
 		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 
@@ -1691,10 +1778,14 @@ func apiNamingGenerate(ctx *gin.Context) {
 			gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m},
 		)
 	} else {
-		series, _ := database.GetSeries(
+		series, err := database.GetSeries(
 			database.Querywithargs{Where: logger.FilterByID},
 			cfg.SerieID,
 		)
+		if err != nil {
+			sendBadRequest(ctx, "series not found")
+			return
+		}
 		// defer logger.ClearVar(&series)
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
 
@@ -1704,6 +1795,10 @@ func apiNamingGenerate(ctx *gin.Context) {
 			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath,
 			false, false, 0,
 		)
+		if s == nil {
+			sendBadRequest(ctx, "failed to create organizer - check that Structure is enabled for this config")
+			return
+		}
 		// defer s.Close()
 		to := filepath.Dir(cfg.FilePath)
 

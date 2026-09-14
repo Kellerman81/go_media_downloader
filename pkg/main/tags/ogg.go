@@ -115,6 +115,18 @@ func (h *OGGHandler) ReadTags(filepath string) (*AudioTags, error) {
 	return tags, nil
 }
 
+// ReadTagsWithCover reads Vorbis Comment tags including embedded cover art.
+// ReadTags (below) already parses METADATA_BLOCK_PICTURE/COVERART
+// unconditionally whenever present - unlike e.g. MP3, which skips cover
+// frames on its normal ReadTags path for speed - so this is a direct alias,
+// added purely to satisfy the CoverTagReader interface. Without it,
+// Manager.ReadCoverData's type assertion on *OGGHandler failed and always
+// returned (nil, ""), so WriteTags on an OGG/Opus file with no explicit new
+// cover silently dropped any cover art the file already had.
+func (h *OGGHandler) ReadTagsWithCover(filepath string) (*AudioTags, error) {
+	return h.ReadTags(filepath)
+}
+
 // readPage reads a single OGG page from the file.
 func (*OGGHandler) readPage(r io.Reader) (*oggPage, error) {
 	// Read capture pattern

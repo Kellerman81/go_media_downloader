@@ -536,9 +536,14 @@ func (p *Parser) ParseMusicAlbumWithTags(dirPath string) (*MusicParseResult, err
 }
 
 func Gettypeids(inval string, qualitytype []database.Qualities) uint {
+	var disableParserStringMatch bool
+	if general := config.GetSettingsGeneral(); general != nil {
+		disableParserStringMatch = general.DisableParserStringMatch
+	}
+
 	for idx := range qualitytype {
 		qual := &qualitytype[idx]
-		if qual.Strings != "" && !config.GetSettingsGeneral().DisableParserStringMatch &&
+		if qual.Strings != "" && !disableParserStringMatch &&
 			logger.SlicesContainsI(qual.StringsLowerSplitted, inval) {
 			if qual.ID != 0 {
 				return qual.ID

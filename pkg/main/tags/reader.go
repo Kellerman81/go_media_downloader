@@ -87,8 +87,8 @@ type TagHandler interface {
 
 // CoverTagReader is an optional interface implemented by handlers that can read
 // cover art separately from text metadata. When a handler implements this,
-// CopyTags will use it to preserve cover art without paying the cost on the
-// normal ReadTags path.
+// ReadCoverData will use it to preserve cover art without paying the cost on
+// the normal ReadTags path.
 type CoverTagReader interface {
 	ReadTagsWithCover(filepath string) (*AudioTags, error)
 }

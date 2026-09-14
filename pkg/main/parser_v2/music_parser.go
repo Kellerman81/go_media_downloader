@@ -225,7 +225,8 @@ func (mp *MusicParser) ParseAlbum(dirPath string, files []string) *MusicParseRes
 	result.Tracks = make([]TrackInfo, 0, len(files))
 
 	discSet := make(map[int]bool)
-	formatSet := make(map[string]bool)
+	formatCounts := make(map[string]int)
+	var formatOrder []string
 
 	for i := range files {
 		ext := filepath.Ext(files[i])
@@ -247,7 +248,13 @@ func (mp *MusicParser) ParseAlbum(dirPath string, files []string) *MusicParseRes
 			discSet[track.DiscNumber] = true
 		}
 
-		formatSet[trackResult.Format] = true
+		if trackResult.Format != "" {
+			if formatCounts[trackResult.Format] == 0 {
+				formatOrder = append(formatOrder, trackResult.Format)
+			}
+
+			formatCounts[trackResult.Format]++
+		}
 	}
 
 	// Sort tracks by disc and track number
@@ -259,13 +266,20 @@ func (mp *MusicParser) ParseAlbum(dirPath string, files []string) *MusicParseRes
 		return result.Tracks[i].TrackNumber < result.Tracks[j].TrackNumber
 	})
 
-	// Determine format (use most common or first found)
-	if len(formatSet) > 0 {
-		for format := range formatSet {
-			result.Format = format
-			result.IsLossless = IsLosslessAudioExtension("." + format)
-			break
+	// Determine format: most common, ties broken by first-encountered order.
+	// formatOrder makes this deterministic - ranging a map here (the
+	// previous approach) picks a random format across runs of the same
+	// on-disk album, since Go intentionally randomizes map iteration order.
+	if len(formatOrder) > 0 {
+		best := formatOrder[0]
+		for _, format := range formatOrder[1:] {
+			if formatCounts[format] > formatCounts[best] {
+				best = format
+			}
 		}
+
+		result.Format = best
+		result.IsLossless = IsLosslessAudioExtension("." + best)
 	}
 
 	// Calculate totals

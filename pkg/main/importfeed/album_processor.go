@@ -676,6 +676,12 @@ func matchAudiobookFolder(
 		)
 	}
 
+	// Same invariant as the music path: without a database row the callers have
+	// nothing to organize against, so this is a failed match, not a success.
+	if album.DatabaseID == 0 {
+		return nil, "no_match", nil
+	}
+
 	// Deferred author discovery from addFound - only runs after track/runtime verification succeeds
 	if addFoundAudiobookEntry != nil && artist != "" && data.AddFound {
 		logger.Logtype("debug", 0).
@@ -1329,6 +1335,21 @@ func matchMusicFolder(
 				)
 			}
 		}
+	}
+
+	// A match with no database row is not a match. Every consumer of a
+	// successful return dereferences album.DatabaseID - removeOldAlbumFiles,
+	// the ParseInfo IDs, and GenerateNamingTemplate's dbid - so returning
+	// success with 0 produces "Matched album via API" followed by
+	// "FillNamingData failed" and "Failed to generate file name".
+	// The wrong_runtime return below is nested under !fallbacksRan, so once
+	// tryMusicFallbacks had already run, a failed distance pass fell straight
+	// through to the success return.
+	if album.DatabaseID == 0 {
+		return nil, "wrong_runtime", buildMusicFailureReport(
+			ctx, preScored, bestCandidates, album.Tracks,
+			int64(album.TotalRuntime/time.Millisecond), isVA, data, folder,
+		)
 	}
 
 	// Deferred artist/series discovery from addFound - only runs after track/runtime verification succeeds
@@ -2020,12 +2041,28 @@ func MatchSingleAudiobookFile(
 	tagData, _ := parser_v2.ReadAudioTags(filePath)
 
 	var tagArtist, tagAlbumArtist, tagAlbum, tagASIN, tagGenre string
+
+	var tagRuntimeMS, tagFileSize int64
+	var tagBitrate, tagSampleRate int
+	var tagRuntime time.Duration
+	var tagQualityProfile string
+
 	if tagData != nil {
 		tagArtist = tagData.Artist
 		tagAlbumArtist = tagData.AlbumArtist
 		tagAlbum = tagData.Album
 		tagASIN = tagData.ASIN
 		tagGenre = tagData.Genre
+		tagRuntimeMS = tagData.RuntimeMS
+		tagRuntime = tagData.Runtime
+		tagBitrate = tagData.Bitrate
+		tagSampleRate = tagData.SampleRate
+		tagFileSize = tagData.FileSize
+		tagQualityProfile = tagData.QualityProfile
+		// PutTrackInfo's destructor zeroes *tagData synchronously (pool.go's
+		// Put calls the destructor unconditionally) - tagData stays non-nil
+		// afterward, so any field read through it below this point would
+		// silently read zero values instead of the real tag data.
 		parser_v2.PutTrackInfo(tagData)
 	}
 
@@ -2192,14 +2229,12 @@ func MatchSingleAudiobookFile(
 		Artist:      artist,
 		Album:       albumTitle,
 	}
-	if tagData != nil {
-		track.RuntimeMS = tagData.RuntimeMS
-		track.Runtime = tagData.Runtime
-		track.Bitrate = tagData.Bitrate
-		track.SampleRate = tagData.SampleRate
-		track.FileSize = tagData.FileSize
-		track.QualityProfile = tagData.QualityProfile
-	}
+	track.RuntimeMS = tagRuntimeMS
+	track.Runtime = tagRuntime
+	track.Bitrate = tagBitrate
+	track.SampleRate = tagSampleRate
+	track.FileSize = tagFileSize
+	track.QualityProfile = tagQualityProfile
 
 	album.Tracks = []parser_v2.TrackInfo{track}
 	album.TotalRuntime = track.Runtime

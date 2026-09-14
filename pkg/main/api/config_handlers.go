@@ -98,7 +98,7 @@ func HandleImdbConfigUpdate(c *gin.Context) {
 
 	builder := &ConfigBuilder{context: c, prefix: "imdb"}
 	builder.SetStringMultiSelectArray(&updatedConfig.Indexedtypes, "Indexedtypes").
-		SetStringArray(&updatedConfig.Indexedlanguages, "Indexedlanguages").
+		SetStringArrayFromForm(&updatedConfig.Indexedlanguages, "Indexedlanguages").
 		SetBool(&updatedConfig.Indexfull, "Indexfull").
 		SetInt(&updatedConfig.ImdbIDSize, "ImdbIDSize").
 		SetInt(&updatedConfig.LoopSize, "LoopSize").
@@ -483,8 +483,22 @@ func HandleSchedulerConfigUpdate(c *gin.Context) {
 // validateSchedulerConfig validates scheduler configuration
 
 // HandleConfigUpdate - consolidated handler for all config update routes.
+// If called with ?backup=1 (the "Backup & Save Configuration" button), it
+// copies the current config.toml to ./backup/ before making any change, so a
+// bad edit can be rolled back manually.
 func HandleConfigUpdate(c *gin.Context) {
 	configType := c.Param("configtype")
+
+	if c.Query("backup") == "1" {
+		if _, err := config.BackupConfig(); err != nil {
+			c.String(
+				http.StatusOK,
+				renderAlert("Backup failed, configuration NOT saved: "+err.Error(), "danger"),
+			)
+
+			return
+		}
+	}
 
 	switch configType {
 	case "general":

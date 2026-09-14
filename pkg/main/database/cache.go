@@ -471,7 +471,7 @@ func (*globalcache) addStaticXStmt(key string, imdb bool) {
 		return
 	}
 
-	stmt := preparestmt(imdb, key)
+	stmt, _ := preparestmt(imdb, key)
 	if stmt != nil {
 		cache.ristrettoStmt.Set(key, stmt, 1) // Static statements never expire
 		cache.ristrettoStmt.Wait()
@@ -487,12 +487,14 @@ func (*globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
 	}
 
 	// Cache miss - prepare statement and cache it
-	stmt := preparestmt(imdb, key)
+	stmt, err := preparestmt(imdb, key)
 	if stmt != nil {
 		cache.ristrettoStmt.Set(key, stmt, 1)
 		cache.ristrettoStmt.Wait()
 	} else {
-		_, err := Getdb(imdb).Preparex(key)
+		// preparestmt already reported why; re-preparing here just to obtain an
+		// error hit the database a second time and leaked the statement on the
+		// (rare) second success.
 		logger.Logtype("error", 1).
 			Str(strQuery, key).
 			Err(err).
@@ -503,15 +505,14 @@ func (*globalcache) getXStmt(key string, imdb bool) *sqlx.Stmt {
 }
 
 // preparestmt prepares a SQL statement using the provided database connection and SQL query key.
-// If an error occurs or the prepared statement is nil, it returns an empty sqlx.Stmt.
-// Otherwise, it returns the prepared statement.
-func preparestmt(imdb bool, key string) *sqlx.Stmt {
+// It returns nil plus the failure reason when the statement could not be prepared.
+func preparestmt(imdb bool, key string) (*sqlx.Stmt, error) {
 	sq, err := Getdb(imdb).Preparex(key)
 	if err != nil || sq == nil {
-		return nil
+		return nil, err
 	}
 
-	return sq
+	return sq, nil
 }
 
 // setStaticRegexp sets a cached regular expression with the given key. If the cached regular expression

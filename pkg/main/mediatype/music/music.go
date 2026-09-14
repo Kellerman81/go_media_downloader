@@ -349,6 +349,7 @@ func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 
 // PerformIDSearch executes a search - music uses query-based search only.
 func (*handler) PerformIDSearch(
+	_ context.Context,
 	_ *config.IndexersConfig,
 	_ *config.QualityConfig,
 	_ *apiexternal_v2.Nzbwithprio,

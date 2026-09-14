@@ -3,6 +3,7 @@ package omdb
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -53,7 +54,7 @@ func (p *Provider) SearchMovies(
 	query string,
 	year int,
 ) ([]apiexternal_v2.MovieSearchResult, error) {
-	endpoint := logger.JoinStrings("/?s=", query, "&type=movie")
+	endpoint := logger.JoinStrings("/?s=", url.QueryEscape(query), "&type=movie")
 	if year > 0 {
 		endpoint += logger.JoinStrings("&y=", strconv.Itoa(year))
 	}
@@ -82,7 +83,7 @@ func (p *Provider) FindMovieByIMDbID(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.FindByIMDbResult, error) {
-	endpoint := logger.JoinStrings("/?i=", imdbID, "&plot=full")
+	endpoint := logger.JoinStrings("/?i=", url.QueryEscape(imdbID), "&plot=full")
 
 	var response omdbDetailsResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -118,7 +119,7 @@ func (p *Provider) SearchSeries(
 	query string,
 	year int,
 ) ([]apiexternal_v2.SeriesSearchResult, error) {
-	endpoint := logger.JoinStrings("/?s=", query, "&type=series")
+	endpoint := logger.JoinStrings("/?s=", url.QueryEscape(query), "&type=series")
 	if year > 0 {
 		endpoint += logger.JoinStrings("&y=", strconv.Itoa(year))
 	}
@@ -152,57 +153,6 @@ func (p *Provider) FindSeriesByIMDbID(
 }
 
 //
-// Episode Methods (Limited OMDB support)
-//
-
-// GetEpisodeDetailsByIMDb retrieves episode details using IMDb ID.
-func (p *Provider) GetEpisodeDetailsByIMDb(
-	ctx context.Context,
-	imdbID string,
-	seasonNumber int,
-	episodeNumber int,
-) (*apiexternal_v2.Episode, error) {
-	endpoint := logger.JoinStrings(
-		"/?i=",
-		imdbID,
-		"&Season=",
-		strconv.Itoa(seasonNumber),
-		"&Episode=",
-		strconv.Itoa(episodeNumber),
-	)
-
-	var response omdbDetailsResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	if response.Response == "False" {
-		return nil, errors.New("episode not found")
-	}
-
-	return convertDetailsToEpisode(&response, seasonNumber, episodeNumber), nil
-}
-
-//
-// Credits (Limited OMDB support)
-//
-
-// GetMovieCreditsByIMDb retrieves basic cast info using IMDb ID.
-func (p *Provider) GetMovieCreditsByIMDb(
-	ctx context.Context,
-	imdbID string,
-) (*apiexternal_v2.Credits, error) {
-	endpoint := logger.JoinStrings("/?i=", imdbID, "&plot=full")
-
-	var response omdbDetailsResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return convertDetailsToCredits(&response), nil
-}
-
-//
 // OMDB-specific convenience methods
 //
 
@@ -211,7 +161,7 @@ func (p *Provider) GetDetailsByIMDb(
 	ctx context.Context,
 	imdbID string,
 ) (*apiexternal_v2.MovieDetails, error) {
-	endpoint := logger.JoinStrings("/?i=", imdbID, "&plot=full")
+	endpoint := logger.JoinStrings("/?i=", url.QueryEscape(imdbID), "&plot=full")
 
 	var response omdbDetailsResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -232,13 +182,13 @@ func (p *Provider) SearchByTitle(
 	year int,
 	mediaType string,
 ) ([]OmdbSearchResult, error) {
-	endpoint := logger.JoinStrings("/?s=", title)
+	endpoint := logger.JoinStrings("/?s=", url.QueryEscape(title))
 	if year > 0 {
 		endpoint += logger.JoinStrings("&y=", strconv.Itoa(year))
 	}
 
 	if mediaType != "" {
-		endpoint += logger.JoinStrings("&type=", mediaType) // movie, series, episode
+		endpoint += logger.JoinStrings("&type=", url.QueryEscape(mediaType)) // movie, series, episode
 	}
 
 	var response omdbSearchResponse

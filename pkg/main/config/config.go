@@ -54,14 +54,29 @@ func Slepping(random bool, seconds int) {
 // new config types.
 func LoadCfgDB(reload bool) error {
 	if _, err := os.Stat(Configfile); errors.Is(err, os.ErrNotExist) {
-		fmt.Println("Config file not found. Creating new config file.") //nolint:forbidigo // logger not initialized yet
+		fmt.Println("Config file not found. Creating a new default config file.") //nolint:forbidigo // logger not initialized yet
 		ClearCfg()
 		WriteCfg()
-		fmt.Println("Config file created. Please edit it and run the application again.") //nolint:forbidigo // logger not initialized yet
-		os.Exit(0)
-	}
 
-	fmt.Println("Config file found. Loading config.") //nolint:forbidigo // logger not initialized yet
+		port, apikey := "9090", "mysecure"
+		if general := GetSettingsGeneral(); general != nil {
+			if general.WebPort != "" {
+				port = general.WebPort
+			}
+
+			if general.WebAPIKey != "" {
+				apikey = general.WebAPIKey
+			}
+		}
+
+		fmt.Println("Starting with the default configuration - nothing is configured yet.") //nolint:forbidigo // logger not initialized yet
+		fmt.Printf(                                                                         //nolint:forbidigo // logger not initialized yet
+			"Open http://localhost:%s/api/admin in your browser (user 'admin', password '%s') and run the Setup Wizard to finish configuring the app.\n",
+			port, apikey,
+		)
+	} else {
+		fmt.Println("Config file found. Loading config.") //nolint:forbidigo // logger not initialized yet
+	}
 
 	// Load all settings first (this acquires and releases the config lock)
 	return Loadallsettings(reload)
@@ -110,112 +125,6 @@ func Readconfigtoml() (*MainConfig, error) {
 	}
 
 	return &config, nil
-}
-
-// ClearSettings initializes and resets global configuration maps for various application components.
-// It creates empty maps for downloaders, indexers, lists, media types, notifications,
-// paths, quality settings, regex, and schedulers, preparing them to be populated with
-// configuration data from the TOML configuration file.
-func ClearSettings(reload bool, snapshot *ConfigSnapshot, tomlConfig *MainConfig) {
-	snapshot.Downloader = make(map[string]*DownloaderConfig, len(tomlConfig.Downloader))
-	snapshot.Indexer = make(map[string]*IndexersConfig, len(tomlConfig.Indexers))
-	snapshot.List = make(map[string]*ListsConfig, len(tomlConfig.Lists))
-	snapshot.Media = make(map[string]*MediaTypeConfig)
-	snapshot.Notification = make(map[string]*NotificationConfig, len(tomlConfig.Notification))
-	snapshot.Path = make(map[string]*PathsConfig, len(tomlConfig.Paths))
-	snapshot.Quality = make(map[string]*QualityConfig, len(tomlConfig.Quality))
-
-	snapshot.Regex = make(map[string]*RegexConfig, len(tomlConfig.Regex))
-	if !reload {
-		snapshot.Scheduler = make(map[string]*SchedulerConfig, len(tomlConfig.Scheduler))
-	}
-}
-
-// Getconfigtoml populates global configuration settings from the cached TOML configuration.
-// It sets default values, initializes various configuration maps, and processes configuration
-// for different components such as general settings, downloaders, indexers, lists, media types,
-// notifications, paths, quality, regex, and schedulers. This function prepares the application's
-// configuration by linking and transforming configuration data from the parsed TOML file.
-func Getconfigtoml(reload bool, snapshot *ConfigSnapshot, tomlConfig *MainConfig) {
-	snapshot.cachetoml = *tomlConfig
-
-	snapshot.General = &snapshot.cachetoml.General
-	if snapshot.General.CacheDuration == 0 {
-		snapshot.General.CacheDuration = 12
-	}
-
-	snapshot.General.CacheDuration2 = 2 * snapshot.General.CacheDuration
-
-	if snapshot.General.UserAgent == "" {
-		snapshot.General.UserAgent = "go-media-downloader/2.0"
-	}
-
-	if len(snapshot.General.MovieMetaSourcePriority) == 0 {
-		snapshot.General.MovieMetaSourcePriority = []string{"imdb", "tmdb", "omdb", "trakt"}
-	}
-
-	snapshot.Imdb = &snapshot.cachetoml.Imdbindexer
-
-	setupSimpleConfigMaps(snapshot)
-	setupPathConfigs(snapshot)
-	setupRegexConfigs(snapshot)
-	setupSchedulerConfigs(reload, snapshot)
-	setupQualityConfigs(snapshot)
-
-	for idx := range snapshot.cachetoml.Media.Movies {
-		setupMediaTypeConfig(
-			&snapshot.cachetoml.Media.Movies[idx],
-			"movie_",
-			MediaTypeMovie,
-			snapshot,
-		)
-		setupMediaConfigLists(&snapshot.cachetoml.Media.Movies[idx], snapshot)
-
-		snapshot.Media["movie_"+snapshot.cachetoml.Media.Movies[idx].Name] = &snapshot.cachetoml.Media.Movies[idx]
-	}
-
-	for idx := range snapshot.cachetoml.Media.Series {
-		setupMediaTypeConfig(
-			&snapshot.cachetoml.Media.Series[idx],
-			"serie_",
-			MediaTypeSeries,
-			snapshot,
-		)
-		setupMediaConfigLists(&snapshot.cachetoml.Media.Series[idx], snapshot)
-
-		snapshot.Media["serie_"+snapshot.cachetoml.Media.Series[idx].Name] = &snapshot.cachetoml.Media.Series[idx]
-	}
-
-	for idx := range snapshot.cachetoml.Media.Books {
-		setupMediaTypeConfig(&snapshot.cachetoml.Media.Books[idx], "book_", MediaTypeBook, snapshot)
-		setupMediaConfigLists(&snapshot.cachetoml.Media.Books[idx], snapshot)
-
-		snapshot.Media["book_"+snapshot.cachetoml.Media.Books[idx].Name] = &snapshot.cachetoml.Media.Books[idx]
-	}
-
-	for idx := range snapshot.cachetoml.Media.AudioBooks {
-		setupMediaTypeConfig(
-			&snapshot.cachetoml.Media.AudioBooks[idx],
-			"audiobook_",
-			MediaTypeAudiobook,
-			snapshot,
-		)
-		setupMediaConfigLists(&snapshot.cachetoml.Media.AudioBooks[idx], snapshot)
-
-		snapshot.Media["audiobook_"+snapshot.cachetoml.Media.AudioBooks[idx].Name] = &snapshot.cachetoml.Media.AudioBooks[idx]
-	}
-
-	for idx := range snapshot.cachetoml.Media.Music {
-		setupMediaTypeConfig(
-			&snapshot.cachetoml.Media.Music[idx],
-			"music_",
-			MediaTypeMusic,
-			snapshot,
-		)
-		setupMediaConfigLists(&snapshot.cachetoml.Media.Music[idx], snapshot)
-
-		snapshot.Media["music_"+snapshot.cachetoml.Media.Music[idx].Name] = &snapshot.cachetoml.Media.Music[idx]
-	}
 }
 
 // setupMediaTypeConfig initializes common configuration for a media type config.
@@ -308,139 +217,6 @@ func setupMediaListConfig(
 func setupMediaConfigLists(mediaConfig *MediaTypeConfig, snapshot *ConfigSnapshot) {
 	for idxsub := range mediaConfig.Lists {
 		setupMediaListConfig(&mediaConfig.Lists[idxsub], mediaConfig, idxsub, snapshot)
-	}
-}
-
-// setupSimpleConfigMaps sets up basic configuration mappings.
-func setupSimpleConfigMaps(snapshot *ConfigSnapshot) {
-	// Setup Downloader configs
-	for idx := range snapshot.cachetoml.Downloader {
-		snapshot.Downloader[snapshot.cachetoml.Downloader[idx].Name] = &snapshot.cachetoml.Downloader[idx]
-	}
-
-	// Setup Indexer configs with additional string conversion
-	for idx := range snapshot.cachetoml.Indexers {
-		snapshot.cachetoml.Indexers[idx].MaxEntriesStr = logger.IntToString(
-			snapshot.cachetoml.Indexers[idx].MaxEntries,
-		)
-		snapshot.Indexer[snapshot.cachetoml.Indexers[idx].Name] = &snapshot.cachetoml.Indexers[idx]
-	}
-
-	// Setup Lists configs with length calculations
-	for idx := range snapshot.cachetoml.Lists {
-		snapshot.cachetoml.Lists[idx].ExcludegenreLen = len(
-			snapshot.cachetoml.Lists[idx].Excludegenre,
-		)
-		snapshot.cachetoml.Lists[idx].IncludegenreLen = len(
-			snapshot.cachetoml.Lists[idx].Includegenre,
-		)
-		snapshot.List[snapshot.cachetoml.Lists[idx].Name] = &snapshot.cachetoml.Lists[idx]
-	}
-
-	// Setup Notification configs
-	for idx := range snapshot.cachetoml.Notification {
-		snapshot.Notification[snapshot.cachetoml.Notification[idx].Name] = &snapshot.cachetoml.Notification[idx]
-	}
-
-	// Setup Regex configs with length calculations
-	for idx := range snapshot.cachetoml.Regex {
-		snapshot.cachetoml.Regex[idx].RejectedLen = len(snapshot.cachetoml.Regex[idx].Rejected)
-		snapshot.cachetoml.Regex[idx].RequiredLen = len(snapshot.cachetoml.Regex[idx].Required)
-		snapshot.Regex[snapshot.cachetoml.Regex[idx].Name] = &snapshot.cachetoml.Regex[idx]
-	}
-}
-
-// setupPathConfigs sets up Path configurations with complex length calculations.
-func setupPathConfigs(snapshot *ConfigSnapshot) {
-	for idx := range snapshot.cachetoml.Paths {
-		snapshot.cachetoml.Paths[idx].AllowedLanguagesLen = len(
-			snapshot.cachetoml.Paths[idx].AllowedLanguages,
-		)
-		snapshot.cachetoml.Paths[idx].AllowedOtherExtensionsLen = len(
-			snapshot.cachetoml.Paths[idx].AllowedOtherExtensions,
-		)
-		snapshot.cachetoml.Paths[idx].AllowedOtherExtensionsNoRenameLen = len(
-			snapshot.cachetoml.Paths[idx].AllowedOtherExtensionsNoRename,
-		)
-		snapshot.cachetoml.Paths[idx].AllowedVideoExtensionsLen = len(
-			snapshot.cachetoml.Paths[idx].AllowedVideoExtensions,
-		)
-		snapshot.cachetoml.Paths[idx].AllowedVideoExtensionsNoRenameLen = len(
-			snapshot.cachetoml.Paths[idx].AllowedVideoExtensionsNoRename,
-		)
-		snapshot.cachetoml.Paths[idx].BlockedLen = len(snapshot.cachetoml.Paths[idx].Blocked)
-		snapshot.cachetoml.Paths[idx].DisallowedLen = len(snapshot.cachetoml.Paths[idx].Disallowed)
-		snapshot.cachetoml.Paths[idx].MaxSizeByte = int64(
-			snapshot.cachetoml.Paths[idx].MaxSize,
-		) * 1024 * 1024
-		snapshot.cachetoml.Paths[idx].MinSizeByte = int64(
-			snapshot.cachetoml.Paths[idx].MinSize,
-		) * 1024 * 1024
-		snapshot.cachetoml.Paths[idx].MinVideoSizeByte = int64(
-			snapshot.cachetoml.Paths[idx].MinVideoSize,
-		) * 1024 * 1024
-		snapshot.Path[snapshot.cachetoml.Paths[idx].Name] = &snapshot.cachetoml.Paths[idx]
-	}
-}
-
-// setupRegexConfigs sets up Regex configurations with length calculations.
-func setupRegexConfigs(snapshot *ConfigSnapshot) {
-	for idx := range snapshot.cachetoml.Regex {
-		snapshot.cachetoml.Regex[idx].RejectedLen = len(snapshot.cachetoml.Regex[idx].Rejected)
-		snapshot.cachetoml.Regex[idx].RequiredLen = len(snapshot.cachetoml.Regex[idx].Required)
-		snapshot.Regex[snapshot.cachetoml.Regex[idx].Name] = &snapshot.cachetoml.Regex[idx]
-	}
-}
-
-// setupSchedulerConfigs sets up scheduler configurations conditionally.
-func setupSchedulerConfigs(reload bool, snapshot *ConfigSnapshot) {
-	if reload {
-		return
-	}
-
-	for idx := range snapshot.cachetoml.Scheduler {
-		snapshot.Scheduler[snapshot.cachetoml.Scheduler[idx].Name] = &snapshot.cachetoml.Scheduler[idx]
-	}
-}
-
-// setupQualityConfigs sets up Quality configurations with nested indexer setup.
-func setupQualityConfigs(snapshot *ConfigSnapshot) {
-	for idx := range snapshot.cachetoml.Quality {
-		snapshot.cachetoml.Quality[idx].IndexerCfg = make(
-			[]*IndexersConfig,
-			len(snapshot.cachetoml.Quality[idx].Indexer),
-		)
-		for idx2 := range snapshot.cachetoml.Quality[idx].Indexer {
-			snapshot.cachetoml.Quality[idx].Indexer[idx2].CfgDownloader = snapshot.Downloader[snapshot.cachetoml.Quality[idx].Indexer[idx2].TemplateDownloader]
-			snapshot.cachetoml.Quality[idx].Indexer[idx2].CfgIndexer = snapshot.Indexer[snapshot.cachetoml.Quality[idx].Indexer[idx2].TemplateIndexer]
-			snapshot.cachetoml.Quality[idx].IndexerCfg[idx2] = snapshot.Indexer[snapshot.cachetoml.Quality[idx].Indexer[idx2].TemplateIndexer]
-			snapshot.cachetoml.Quality[idx].Indexer[idx2].CfgPath = snapshot.Path[snapshot.cachetoml.Quality[idx].Indexer[idx2].TemplatePathNzb]
-			snapshot.cachetoml.Quality[idx].Indexer[idx2].CfgRegex = snapshot.Regex[snapshot.cachetoml.Quality[idx].Indexer[idx2].TemplateRegex]
-		}
-
-		snapshot.cachetoml.Quality[idx].IndexerLen = len(snapshot.cachetoml.Quality[idx].Indexer)
-		snapshot.cachetoml.Quality[idx].QualityReorderLen = len(
-			snapshot.cachetoml.Quality[idx].QualityReorder,
-		)
-		snapshot.cachetoml.Quality[idx].TitleStripPrefixForSearchLen = len(
-			snapshot.cachetoml.Quality[idx].TitleStripPrefixForSearch,
-		)
-		snapshot.cachetoml.Quality[idx].TitleStripSuffixForSearchLen = len(
-			snapshot.cachetoml.Quality[idx].TitleStripSuffixForSearch,
-		)
-		snapshot.cachetoml.Quality[idx].WantedAudioLen = len(
-			snapshot.cachetoml.Quality[idx].WantedAudio,
-		)
-		snapshot.cachetoml.Quality[idx].WantedCodecLen = len(
-			snapshot.cachetoml.Quality[idx].WantedCodec,
-		)
-		snapshot.cachetoml.Quality[idx].WantedQualityLen = len(
-			snapshot.cachetoml.Quality[idx].WantedQuality,
-		)
-		snapshot.cachetoml.Quality[idx].WantedResolutionLen = len(
-			snapshot.cachetoml.Quality[idx].WantedResolution,
-		)
-		snapshot.Quality[snapshot.cachetoml.Quality[idx].Name] = &snapshot.cachetoml.Quality[idx]
 	}
 }
 
@@ -1119,6 +895,15 @@ func deleteTomlEntry(toml *MainConfig, name string) {
 // config maps. It handles entries for all major configuration categories like
 // general, downloader, indexer etc.
 func DeleteCfgEntry(name string) error {
+	// Acquire config lock BEFORE opening database to maintain consistent lock
+	// ordering - UpdateCfgEntry/UpdateCfgEntryAny already do this; without it,
+	// a concurrent update and delete (e.g. two requests to the external
+	// config API) can race, each reading the same pre-change snapshot and
+	// then overwriting the other's write to Configfile/configSnapshot with
+	// its own, silently discarding whichever change lost the race.
+	mu.Lock()
+	defer mu.Unlock()
+
 	// Get current snapshot
 	currentSnapshot := getCurrentConfig()
 	if currentSnapshot == nil {
@@ -1179,6 +964,13 @@ func GetToml() MainConfig {
 // resetting all config maps to empty maps, and reinitializing default settings.
 // It wipes the existing config and starts fresh with defaults.
 func ClearCfg() {
+	// Same lock-ordering reasoning as UpdateCfgEntry/DeleteCfgEntry: this
+	// unconditionally replaces the entire snapshot with hardcoded defaults,
+	// so racing it against a concurrent UpdateCfgEntry/DeleteCfgEntry could
+	// have either one silently clobber the other depending on timing.
+	mu.Lock()
+	defer mu.Unlock()
+
 	defaultConfig := &MainConfig{
 		General: GeneralConfig{
 			LogLevel:       "Info",
@@ -1337,25 +1129,27 @@ func WriteCfg() {
 	}
 }
 
-// WriteCfgToml writes the cached TOML configuration to the configuration file.
-// It marshals the cached configuration and writes it to disk, then refreshes
-// the configuration cache. Returns any error encountered during the process.
-func WriteCfgToml() error {
-	settings := getCurrentConfig()
-	if settings == nil {
-		return logger.ErrNotFound
+// BackupConfig copies the current config.toml to ./backup/ with a timestamp
+// suffix, before some write is about to replace it - a manual, opt-in safety
+// net separate from the app's regular database backups. Returns the backup
+// file path.
+func BackupConfig() (string, error) {
+	if err := os.MkdirAll("./backup", 0o755); err != nil {
+		return "", err
 	}
 
-	cnt, err := toml.Marshal(&settings.cachetoml)
+	src, err := os.ReadFile(Configfile)
 	if err != nil {
-		logger.Logtype("error", 1).Err(err).Msg("Error loading config")
-	} else {
-		err = os.WriteFile(Configfile, cnt, 0o777)
+		return "", err
 	}
 
-	Getconfigtoml(true, settings, &settings.cachetoml)
+	dest := "./backup/config.toml." + time.Now().Format("20060102_150405")
 
-	return err
+	if err := os.WriteFile(dest, src, 0o600); err != nil {
+		return "", err
+	}
+
+	return dest, nil
 }
 
 // GetMainConfig assembles and returns a complete MainConfig structure.

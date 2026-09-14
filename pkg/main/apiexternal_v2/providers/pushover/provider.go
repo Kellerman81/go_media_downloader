@@ -35,6 +35,21 @@ func NewProviderWithConfig(config base.ClientConfig, apiToken, userKey string) *
 		config.BaseURL = "https://api.pushover.net/1"
 	}
 
+	// Every sibling provider constructor defaults these when zero - without
+	// it, a zero-value base.ClientConfig{} here silently produces an HTTP
+	// client with an unbounded timeout and no rate limiting at all.
+	if config.Timeout == 0 {
+		config.Timeout = 30 * time.Second
+	}
+
+	if config.RateLimitCalls == 0 {
+		config.RateLimitCalls = 10
+	}
+
+	if config.RateLimitSeconds == 0 {
+		config.RateLimitSeconds = 1
+	}
+
 	return &Provider{
 		BaseClient: base.NewBaseClient(config),
 		apiToken:   apiToken,

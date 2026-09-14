@@ -280,6 +280,34 @@ func createSubmitButton(text, target, endpoint, csrfToken string) gomponents.Nod
 	)
 }
 
+// createBackupSubmitButton creates a submit button that first copies the
+// current config.toml to ./backup/ (see config.BackupConfig) before applying
+// the same save the plain submit button would. Posts to the same endpoint
+// with ?backup=1, which HandleConfigUpdate checks for.
+func createBackupSubmitButton(text, target, endpoint, csrfToken string) gomponents.Node {
+	return html.Button(
+		html.Class(ClassBtnSecondary+" btn-lg shadow-sm ms-3"),
+		html.Style(
+			"background: linear-gradient(135deg, #6f42c1 0%, #4b2e83 100%); border: none; transition: all 0.3s ease; padding: 0.75rem 2rem; color: #fff;",
+		),
+		html.I(html.Class("fa-solid fa-shield-halved me-2")),
+		gomponents.Text(text),
+		html.Type("submit"),
+		hx.Target(target),
+		hx.Swap("innerHTML"),
+		hx.Post(endpoint+"?backup=1"),
+		hx.Headers(createHTMXHeaders(csrfToken)),
+		gomponents.Attr(
+			"onmouseover",
+			"this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(111, 66, 193, 0.4)'",
+		),
+		gomponents.Attr(
+			"onmouseout",
+			"this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.1)'",
+		),
+	)
+}
+
 // createResetButton creates a standardized reset button.
 func createResetButton(text string) gomponents.Node {
 	return html.Button(
@@ -325,8 +353,9 @@ func createFormSubmitGroup(text, target, endpoint, csrfToken string) gomponents.
 			gomponents.Text("Configuration Actions"),
 		),
 		html.Div(
-			html.Class("d-flex justify-content-center align-items-center"),
+			html.Class("d-flex justify-content-center align-items-center flex-wrap gap-0"),
 			createSubmitButton(text, target, endpoint, csrfToken),
+			createBackupSubmitButton("Backup & Save Configuration", target, endpoint, csrfToken),
 			createResetButton("Reset"),
 		),
 	)

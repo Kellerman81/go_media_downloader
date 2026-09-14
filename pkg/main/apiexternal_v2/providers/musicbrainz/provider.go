@@ -220,7 +220,7 @@ func (p *Provider) GetReleaseByBarcode(
 ) (*apiexternal_v2.ReleaseDetails, error) {
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/release?query=barcode%3A")
-	buf.WriteString(barcode)
+	buf.WriteURL(barcode)
 	buf.WriteString("&limit=1&fmt=json")
 
 	endpoint := buf.String()

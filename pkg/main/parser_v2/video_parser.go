@@ -87,10 +87,14 @@ func (vp *VideoParser) SetStrictMode(strict bool) {
 
 // Video pattern strings as constants so they can be used as cache keys.
 const (
-	reVideoYear              = `(?:[\(\[]|\s|\.|_)((?:19|20)\d{2})(?:[\)\]]|\s|\.|_|$)`
-	reVideoIMDB              = `(?i)(?:imdb[:\s-]?)?tt\d{7,8}`
-	reVideoTVDB              = `(?i)tvdb[\s-]?(\d+)`
-	reVideoSeasonEpisode     = `(?i)(?:s|season\s?)(\d{1,2})[\s._-]*(?:e|episode\s?|x)(\d{1,3})(?:-?(?:e|x)?(\d{1,3}))?|(\d{1,2})x(\d{2,3})`
+	reVideoYear = `(?:[\(\[]|\s|\.|_)((?:19|20)\d{2})(?:[\)\]]|\s|\.|_|$)`
+	reVideoIMDB = `(?i)(?:imdb[:\s-]?)?tt\d{7,8}`
+	reVideoTVDB = `(?i)tvdb[\s-]?(\d+)`
+	// The bare NxNN alternative needs a non-digit on its left: without it,
+	// "Movie.1920x1080" matched "20x108" and parsed as season 20 episode 108.
+	// (?:^|[^0-9]) adds no capture group, so the group indices used by
+	// extractEpisodeInfo stay the same.
+	reVideoSeasonEpisode     = `(?i)(?:s|season\s?)(\d{1,2})[\s._-]*(?:e|episode\s?|x)(\d{1,3})(?:-?(?:e|x)?(\d{1,3}))?|(?:^|[^0-9])(\d{1,2})x(\d{2,3})`
 	reVideoSeasonEpisodeAlt  = `(?i)season\s*(\d{1,2})\s*episode\s*(\d{1,3})`
 	reVideoSeasonEpisodeDate = `(\d{2,4})[\s._-](\d{2})[\s._-](\d{2})`
 	reVideoEpisodeOnly       = `(?i)(?:e|ep|episode\s?)(\d{1,3})`
@@ -572,9 +576,19 @@ func parseFileToParseInfo(
 	// Parse using VideoParser
 	vp := NewVideoParserWithPatternStore(ps)
 
-	// Get extension and base name
+	// Get extension and base name - only strip if it's a valid video
+	// extension, matching Parse() above. This is also called with a folder
+	// name (not a real filename) via ParseFileP's usefolder path
+	// (filepath.Base(filepath.Dir(videofile))), where filepath.Ext would
+	// otherwise grab trailing dotted content (e.g. ".x264-GROUP" or a bare
+	// year like ".2020") and strip real title/year/codec data before the
+	// rest of this function ever sees it.
 	ext := filepath.Ext(filename)
-	name := strings.TrimSuffix(filename, ext)
+
+	name := filename
+	if IsVideoExtension(ext) {
+		name = strings.TrimSuffix(filename, ext)
+	}
 
 	// Replace common separators with spaces for parsing
 	cleanName := strings.ReplaceAll(name, ".", " ")

@@ -177,77 +177,87 @@ func TestStringRemoveAllRunes(t *testing.T) {
 	}
 }
 
+// cfgpWithPath builds a minimal *config.MediaTypeConfig whose DataMap has a
+// single entry pointing at the given storage path, for exercising
+// computeRootpath without depending on any real, loaded config snapshot.
+func cfgpWithPath(path string) *config.MediaTypeConfig {
+	return &config.MediaTypeConfig{
+		DataMap: map[int]*config.MediaDataConfig{
+			0: {CfgPath: &config.PathsConfig{Path: path}},
+		},
+	}
+}
+
 func TestUpdateRootpath(t *testing.T) {
-	testing.Init()
 	tests := []struct {
-		name     string
-		file     string
-		objtype  string
-		objid    uint
-		cfgp     *config.MediaTypeConfig
-		expected string
+		name       string
+		file       string
+		cfgp       *config.MediaTypeConfig
+		expected   string
+		expectedOk bool
 	}{
 		{
-			name:    "No matching path in config",
-			file:    "/some/random/path/file.txt",
-			objtype: "media",
-			objid:   1,
-			cfgp:    &config.MediaTypeConfig{},
+			name:       "No matching path in config",
+			file:       "/some/random/path/file.txt",
+			cfgp:       &config.MediaTypeConfig{},
+			expectedOk: false,
 		},
 		{
-			name:     "Single level directory match",
-			file:     "/media/photos/vacation.jpg",
-			objtype:  "photos",
-			objid:    2,
-			cfgp:     config.GetSettingsMedia("movie_EN"),
-			expected: "/media/photos",
+			// The file sits directly in the configured path with no
+			// subfolder between them, so there is no "first folder" to
+			// extract - computeRootpath falls back to joining the bare
+			// filename back onto the config path.
+			name:       "File directly in configured path (no subfolder)",
+			file:       "/media/photos/vacation.jpg",
+			cfgp:       cfgpWithPath("/media/photos"),
+			expected:   "/media/photos/vacation.jpg",
+			expectedOk: true,
 		},
 		{
-			name:     "Nested directory match",
-			file:     "/content/videos/2023/summer/video.mp4",
-			objtype:  "videos",
-			objid:    3,
-			cfgp:     config.GetSettingsMedia("movie_EN"),
-			expected: "/content/videos",
+			// Only the first subfolder below the configured path becomes
+			// the rootpath - "summer" is dropped, matching getrootpath's
+			// documented "first folder only" behavior.
+			name:       "Nested directory match keeps only the first subfolder",
+			file:       "/content/videos/2023/summer/video.mp4",
+			cfgp:       cfgpWithPath("/content/videos"),
+			expected:   "/content/videos/2023",
+			expectedOk: true,
 		},
 		{
-			name:     "Windows style paths",
-			file:     "C:\\Users\\Media\\Pictures\\photo.jpg",
-			objtype:  "pictures",
-			objid:    4,
-			cfgp:     config.GetSettingsMedia("movie_EN"),
-			expected: "C:\\Users\\Media\\Pictures",
+			// filepath.Join always uses this OS's separator ("/" on Linux,
+			// where these tests run) regardless of the input path's own
+			// separator style, so a Windows-style config path ends up with
+			// a mixed-separator result here - this documents that
+			// platform-dependent behavior rather than asserting a
+			// Windows-only outcome.
+			name:       "Windows style paths (joined with this OS's separator)",
+			file:       "C:\\Users\\Media\\Pictures\\photo.jpg",
+			cfgp:       cfgpWithPath("C:\\Users\\Media\\Pictures"),
+			expected:   "C:\\Users\\Media\\Pictures/photo.jpg",
+			expectedOk: true,
 		},
 		{
-			name:     "Multiple config entries",
-			file:     "/data/music/album/song.mp3",
-			objtype:  "music",
-			objid:    5,
-			cfgp:     config.GetSettingsMedia("movie_EN"),
-			expected: "/data/music",
+			name: "Multiple config entries - only one path matches",
+			file: "/data/music/album/song.mp3",
+			cfgp: &config.MediaTypeConfig{
+				DataMap: map[int]*config.MediaDataConfig{
+					0: {CfgPath: &config.PathsConfig{Path: "/data/books"}},
+					1: {CfgPath: &config.PathsConfig{Path: "/data/music"}},
+				},
+			},
+			expected:   "/data/music/album",
+			expectedOk: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var capturedPath string
-			var capturedID uint
-
-			// database.ExecMock = func(query string, args ...any) {
-			// 	capturedPath = *args[0].(*string)
-			// 	capturedID = *args[1].(*uint)
-			// }
-			// defer func() { database.ExecMock = nil }()
-
-			// UpdateRootpath(tt.file, tt.objtype, &tt.objid, tt.cfgp)
-
-			if tt.expected != "" {
-				if capturedPath != tt.expected {
-					t.Errorf("Expected rootpath %s, got %s", tt.expected, capturedPath)
-				}
-				if capturedID != tt.objid {
-					t.Errorf("Expected objid %d, got %d", tt.objid, capturedID)
-				}
+			got, ok := computeRootpath(tt.file, tt.cfgp)
+			if ok != tt.expectedOk {
+				t.Fatalf("computeRootpath() ok = %v, want %v", ok, tt.expectedOk)
+			}
+			if ok && got != tt.expected {
+				t.Errorf("computeRootpath() = %q, want %q", got, tt.expected)
 			}
 		})
 	}

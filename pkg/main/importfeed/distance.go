@@ -1458,13 +1458,20 @@ func selectBestAudiobookMatches(
 		dist float64
 	}
 
+	// Mirrors selectBestAlbumMatches's exactTrackHardCap: without a ceiling
+	// here, an audiobook with 0 matching author/title but the same chapter
+	// count would always pass (d ≈ 1.0), letting a completely unrelated book
+	// become a candidate - and bestCandidates[0] downstream (album_processor.go)
+	// is read before the later distance/recommendation re-gate runs.
+	const exactChapterHardCap = 0.75
+
 	var candidates []scored
 	for _, m := range matches {
 		d := audiobookMatchDistance(m, title, author, fileCount)
 		isExact := m.ChapterCount == fileCount
 
 		isAllowedMissing := data != nil && data.AllowMissingTracks && m.ChapterCount >= fileCount
-		if isExact || isAllowedMissing || d <= matchDistanceThreshold {
+		if ((isExact || isAllowedMissing) && d <= exactChapterHardCap) || d <= matchDistanceThreshold {
 			candidates = append(candidates, scored{m, d})
 		}
 	}

@@ -71,8 +71,6 @@ func TestGotifyNotification(t *testing.T) {
 		Timeout:                 30 * time.Second,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -150,8 +148,6 @@ func TestPushoverNotification(t *testing.T) {
 		CircuitBreakerThreshold:   3,
 		CircuitBreakerTimeout:     30 * time.Second,
 		CircuitBreakerHalfOpenMax: 1,
-		EnableStats:               true,
-		StatsDBTable:              "api_client_stats",
 		UserAgent:                 "go-media-downloader/2.0",
 		MaxRetries:                3,
 		RetryBackoff:              2 * time.Second,

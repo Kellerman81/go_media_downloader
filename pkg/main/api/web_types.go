@@ -48,19 +48,3 @@ type DataTablesRequest struct {
 type Mdata struct {
 	Mdata any `json:"aaData"`
 }
-
-// FilterFieldDef defines a filter field configuration.
-type FilterFieldDef struct {
-	Field        string
-	Label        string
-	Type         string // text, number, select
-	Placeholder  string
-	Options      []string // for select type
-	OptionLabels []string // labels for select options
-}
-
-// FilterMapping defines how filters are mapped to database queries.
-type FilterMapping struct {
-	Column   string
-	Operator string // LIKE, =, >=, <=, etc.
-}

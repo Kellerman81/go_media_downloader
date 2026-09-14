@@ -36,11 +36,14 @@ func SendToDeluge(
 				"move_completed_path": moveafterpath,
 			},
 		})
-		if err == nil {
-			return nil
-		}
 
-		// Fall through to legacy client on error
+		// The "legacy client" this used to fall through to on error is long
+		// gone (commented out below) - returning nil regardless of err made
+		// every add-torrent failure (auth, connection refused, invalid
+		// magnet, disk full, timeout) look like a successful download to
+		// every caller, silently recording history/notifications for a
+		// download that was never actually queued.
+		return err
 	}
 
 	// cl := delugeclient.NewV2(delugeclient.Settings{
@@ -74,5 +77,5 @@ func SendToDeluge(
 	// 		AddPaused:         &addpaused,
 	// 	})
 	// }
-	return nil
+	return errNoClient
 }

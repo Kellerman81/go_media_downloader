@@ -51,13 +51,21 @@ func refreshSeriesWrapper(ctx context.Context, cfgp *config.MediaTypeConfig, dat
 // that single series, passing the config, a limit of 1 row, a query
 // to select the series data, and the series ID as a query arg.
 func RefreshSerie(cfgp *config.MediaTypeConfig, id *string) error {
+	// The listname subquery prefers the series row that actually has episode
+	// files attached, so a series duplicated across sibling lists deterministically
+	// resolves to the list it's really in instead of an arbitrary row order.
+	// Falls back to the lowest id when none of the duplicate rows have files.
 	return refreshseries(
 		context.Background(),
 		cfgp,
 		database.GetrowsN[database.DbstaticTwoStringOneRInt](
 			false,
 			1,
-			"select seriename, (Select listname from series where dbserie_id=dbseries.id limit 1), thetvdb_id from dbseries where id = ?",
+			"select seriename, "+
+				"(select listname from series where dbserie_id=dbseries.id "+
+				"order by (exists(select 1 from serie_episode_files where serie_episode_files.serie_id = series.id)) desc, id asc "+
+				"limit 1), "+
+				"thetvdb_id from dbseries where id = ?",
 			id,
 		),
 		false, // single manual refresh does a full scrape

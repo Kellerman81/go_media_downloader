@@ -18,54 +18,12 @@ var (
 
 	// invalidRuntimes is a sorted slice for binary search.
 	// This is more memory efficient than a map for small sets.
-	invalidRuntimes = []int{1, 2, 3, 4, 60, 90, 120}
+	// Only genuinely-impossible junk/placeholder minute counts belong here -
+	// 60/90/120 used to be included too, but those are extremely common real
+	// movie/TV runtimes, and their presence here silently blocked legitimate
+	// runtime updates (see shouldUpdateRuntime/shouldUpdateSerieRuntime).
+	invalidRuntimes = []int{1, 2, 3, 4}
 )
-
-// checkaddmovietitlewoslug adds a movie title to the dbmovie_titles table if it does not already exist.
-// It takes the title string, movie ID uint, region string, current movie titles slice, and cache setting.
-// It returns nothing.
-// It checks if the title already exists for that movie ID, slugifies the title,
-// inserts into dbmovie_titles if it does not exist, and updates the cache if enabled.
-func checkaddmovietitlewoslug(
-	checkid *int,
-	dbmovieid *uint,
-	title *string,
-	region *string,
-	titles []database.DbstaticTwoString,
-	useMediaCache bool,
-) {
-	if title == nil || *title == "" || database.GetDBStaticTwoStringIdx1(titles, *title) != -1 {
-		return
-	}
-
-	database.Scanrowsdyn(
-		false,
-		"select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE",
-		checkid,
-		dbmovieid,
-		title,
-	)
-
-	if *checkid != 0 {
-		return
-	}
-
-	slug := logger.StringToSlugCachedP(title)
-	database.ExecN(
-		"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
-		title,
-		&slug,
-		dbmovieid,
-		region,
-	)
-
-	if useMediaCache {
-		database.AppendCacheTwoString(
-			logger.CacheTitlesMovie,
-			syncops.DbstaticTwoStringOneInt{Num: *dbmovieid, Str1: *title, Str2: slug},
-		)
-	}
-}
 
 // isValidRuntime checks if a runtime value is valid (not in the invalid list).
 // Uses binary search on sorted slice for O(log n) performance with less memory than map.
@@ -76,21 +34,19 @@ func isValidRuntime(runtime int) bool {
 
 // shouldUpdateRuntime determines if runtime should be updated based on current and new values.
 func shouldUpdateRuntime(currentRuntime, newRuntime int, overwrite bool) bool {
-	if newRuntime == 0 {
+	// A junk/placeholder newRuntime must never be accepted, whether this is
+	// populating an empty value or overwriting an existing one - the old
+	// `return currentRuntime == 0` fallback below bypassed this check
+	// entirely on first population, letting junk values through unfiltered.
+	if newRuntime == 0 || !isValidRuntime(newRuntime) {
 		return false
 	}
 
-	// Always update if overwrite is true and new runtime is valid
-	if overwrite && isValidRuntime(newRuntime) {
+	if currentRuntime == 0 {
 		return true
 	}
 
-	// Update if current runtime is invalid and new runtime is valid
-	if !isValidRuntime(currentRuntime) && isValidRuntime(newRuntime) {
-		return true
-	}
-
-	return currentRuntime == 0
+	return overwrite || !isValidRuntime(currentRuntime)
 }
 
 // buildCommaSeparated efficiently builds a comma-separated string from a slice.
@@ -448,29 +404,25 @@ func Getmoviemetadata(
 			&dbmovie.ID,
 		)
 
-		var checkid int
-
 		// Collect the allowed title languages once for the whole run.
 		allowedLangs := collectTitleLanguages()
 
-		// Process IMDb alternate titles
-		if generalSettings.MovieAlternateTitleMetaSourceImdb && dbmovie.ImdbID != "" &&
-			errImdb == nil {
-			processImdbAlternateTitles(dbmovie, titles, &checkid, allowedLangs)
-		}
+		hasImdb := generalSettings.MovieAlternateTitleMetaSourceImdb && dbmovie.ImdbID != "" &&
+			errImdb == nil
+		hasTmdb := generalSettings.MovieAlternateTitleMetaSourceTmdb &&
+			dbmovie.MoviedbID != 0 && errTmdb == nil
+		hasTrakt := generalSettings.MovieAlternateTitleMetaSourceTrakt && dbmovie.ImdbID != "" &&
+			errTrakt == nil
 
-		// Process TMDb alternate titles
-		if generalSettings.MovieAlternateTitleMetaSourceTmdb &&
-			dbmovie.MoviedbID != 0 &&
-			errTmdb == nil {
-			processTmdbAlternateTitles(dbmovie, titles, &checkid, allowedLangs)
-		}
-
-		// Process Trakt alternate titles
-		if generalSettings.MovieAlternateTitleMetaSourceTrakt && dbmovie.ImdbID != "" &&
-			errTrakt == nil {
-			processTraktAlternateTitles(dbmovie, titles, &checkid, allowedLangs)
-		}
+		processMovieAlternateTitles(
+			dbmovie,
+			titles,
+			allowedLangs,
+			hasImdb,
+			hasTmdb,
+			hasTrakt,
+			generalSettings.UseMediaCache,
+		)
 	}
 
 	if dbmovieadded {
@@ -535,30 +487,106 @@ func Getmoviemetatitles(movie *database.Dbmovie, cfgp *config.MediaTypeConfig) {
 		&movie.ID,
 	)
 
-	var checkid int
-
 	// Collect the allowed title languages once for the whole run.
 	allowedLangs := collectTitleLanguages()
 
+	processMovieAlternateTitles(
+		movie,
+		titles,
+		allowedLangs,
+		hasImdb,
+		hasTmdb,
+		hasTrakt,
+		gs.UseMediaCache,
+	)
+}
+
+// processMovieAlternateTitles collects alternate titles for movie from every
+// enabled source (imdb_akas, TMDb, Trakt) in memory and inserts all newly
+// discovered ones in a single batched transaction, instead of running a
+// per-title existence check plus an insert-if-missing round trip (imdb_akas
+// alone can carry dozens to hundreds of rows for a single movie). Shared by
+// Getmoviemetatitles and Getmoviemetadata so both call sites get the same
+// batching behavior.
+func processMovieAlternateTitles(
+	movie *database.Dbmovie,
+	titles []database.DbstaticTwoString,
+	allowedLangs []string,
+	hasImdb, hasTmdb, hasTrakt bool,
+	useMediaCache bool,
+) {
+	if !hasImdb && !hasTmdb && !hasTrakt {
+		return
+	}
+
+	// seen mirrors the per-title "does it already exist" check the old code
+	// ran against the live table (COLLATE NOCASE) for every single title: it
+	// starts out with the titles already in the DB and grows as candidates
+	// are staged below, so a title proposed twice - by the same source or by
+	// two different sources - is only staged once, in the same source order
+	// as before (imdb, then tmdb, then trakt).
+	seen := make(map[string]struct{}, len(titles)+8)
+	for i := range titles {
+		seen[strings.ToLower(titles[i].Str1)] = struct{}{}
+	}
+
+	var batch []batchedInsert
+
+	var cacheAdds []syncops.DbstaticTwoStringOneInt
+
+	addAlternateTitle := func(title, slug, region string) {
+		key := strings.ToLower(title)
+		if _, ok := seen[key]; ok {
+			return
+		}
+
+		seen[key] = struct{}{}
+
+		if slug == "" {
+			slug = logger.StringToSlugCached(title)
+		}
+
+		batch = append(batch, batchedInsert{
+			query: "Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
+			args:  []any{title, slug, movie.ID, region},
+		})
+
+		if useMediaCache {
+			cacheAdds = append(cacheAdds, syncops.DbstaticTwoStringOneInt{
+				Num:  movie.ID,
+				Str1: title,
+				Str2: slug,
+			})
+		}
+	}
+
 	if hasImdb {
-		processImdbAlternateTitles(movie, titles, &checkid, allowedLangs)
+		collectImdbAlternateTitles(movie, titles, allowedLangs, addAlternateTitle)
 	}
 
 	if hasTmdb {
-		processTmdbAlternateTitles(movie, titles, &checkid, allowedLangs)
+		collectTmdbAlternateTitles(movie, titles, allowedLangs, addAlternateTitle)
 	}
 
 	if hasTrakt {
-		processTraktAlternateTitles(movie, titles, &checkid, allowedLangs)
+		collectTraktAlternateTitles(movie, titles, allowedLangs, addAlternateTitle)
+	}
+
+	runBatchedInserts(batch)
+
+	for i := range cacheAdds {
+		database.AppendCacheTwoString(logger.CacheTitlesMovie, cacheAdds[i])
 	}
 }
 
-// processImdbAlternateTitles processes alternate titles from IMDb.
-func processImdbAlternateTitles(
+// collectImdbAlternateTitles gathers alternate titles for movie from IMDb and
+// stages each one accepted by ShouldProcessTitle via addAlternateTitle,
+// instead of checking-then-inserting them into the DB one at a time.
+func collectImdbAlternateTitles(
 	movie *database.Dbmovie,
 	titles []database.DbstaticTwoString,
-	checkid *int,
 	allowedLangs []string,
+	addAlternateTitle func(title, slug, region string),
 ) {
 	movie.ImdbID = logger.AddImdbPrefix(movie.ImdbID)
 
@@ -573,37 +601,29 @@ func processImdbAlternateTitles(
 		return
 	}
 
-	// Cache config lookup outside loop
-	useMediaCache := config.GetSettingsGeneral().UseMediaCache
-
 	for idx := range arr {
 		aka := &arr[idx]
 		if !ShouldProcessTitle(aka.Str1, aka.Str2, titles, allowedLangs) {
 			continue
 		}
 
-		if aka.Str3 == "" {
-			aka.Str3 = logger.StringToSlugCached(aka.Str2)
-		}
-
-		insertMovieTitle(checkid, &movie.ID, &aka.Str2, &aka.Str3, &aka.Str1, useMediaCache)
+		addAlternateTitle(aka.Str2, aka.Str3, aka.Str1)
 	}
 }
 
-// processTmdbAlternateTitles processes alternate titles from TMDb.
-func processTmdbAlternateTitles(
+// collectTmdbAlternateTitles gathers alternate titles for movie from TMDb and
+// stages each one accepted by ShouldProcessTitle via addAlternateTitle,
+// instead of checking-then-inserting them into the DB one at a time.
+func collectTmdbAlternateTitles(
 	movie *database.Dbmovie,
 	titles []database.DbstaticTwoString,
-	checkid *int,
 	allowedLangs []string,
+	addAlternateTitle func(title, slug, region string),
 ) {
 	tbl, err := apiexternal.GetTmdbMovieTitles(movie.MoviedbID)
 	if err != nil || len(tbl.Titles) == 0 {
 		return
 	}
-
-	// Cache config lookup outside loop
-	useMediaCache := config.GetSettingsGeneral().UseMediaCache
 
 	for idx := range tbl.Titles {
 		title := &tbl.Titles[idx]
@@ -611,31 +631,23 @@ func processTmdbAlternateTitles(
 			continue
 		}
 
-		checkaddmovietitlewoslug(
-			checkid,
-			&movie.ID,
-			&title.Title,
-			&title.Iso31661,
-			titles,
-			useMediaCache,
-		)
+		addAlternateTitle(title.Title, "", title.Iso31661)
 	}
 }
 
-// processTraktAlternateTitles processes alternate titles from Trakt.
-func processTraktAlternateTitles(
+// collectTraktAlternateTitles gathers alternate titles for movie from Trakt
+// and stages each one accepted by ShouldProcessTitle via addAlternateTitle,
+// instead of checking-then-inserting them into the DB one at a time.
+func collectTraktAlternateTitles(
 	movie *database.Dbmovie,
 	titles []database.DbstaticTwoString,
-	checkid *int,
 	allowedLangs []string,
+	addAlternateTitle func(title, slug, region string),
 ) {
 	arr := apiexternal.GetTraktMovieAliases(movie.ImdbID)
 	if len(arr) == 0 {
 		return
 	}
-
-	// Cache config lookup outside loop
-	useMediaCache := config.GetSettingsGeneral().UseMediaCache
 
 	for idx := range arr {
 		alias := &arr[idx]
@@ -643,14 +655,7 @@ func processTraktAlternateTitles(
 			continue
 		}
 
-		checkaddmovietitlewoslug(
-			checkid,
-			&movie.ID,
-			&alias.Title,
-			&alias.Country,
-			titles,
-			useMediaCache,
-		)
+		addAlternateTitle(alias.Title, "", alias.Country)
 	}
 }
 
@@ -676,46 +681,6 @@ func collectTitleLanguages() []string {
 	})
 
 	return langs
-}
-
-// insertMovieTitle inserts a movie title into the database.
-// Accepts useMediaCache parameter to avoid repeated config lookups in loops.
-func insertMovieTitle(
-	checkid *int,
-	movieID *uint,
-	title, slug, region *string,
-	useMediaCache bool,
-) {
-	database.Scanrowsdyn(
-		false,
-		"select count() from dbmovie_titles where dbmovie_id = ? and title = ? COLLATE NOCASE",
-		checkid,
-		movieID,
-		title,
-	)
-
-	if *checkid != 0 {
-		return
-	}
-
-	database.ExecN(
-		"Insert into dbmovie_titles (title, slug, dbmovie_id, region) values (?, ?, ?, ?)",
-		title,
-		slug,
-		movieID,
-		region,
-	)
-
-	if useMediaCache {
-		database.AppendCacheTwoString(
-			logger.CacheTitlesMovie,
-			syncops.DbstaticTwoStringOneInt{
-				Num:  *movieID,
-				Str1: *title,
-				Str2: *slug,
-			},
-		)
-	}
 }
 
 // serieGetMetadataTmdb queries TheMovieDB API to get metadata for the given serie.

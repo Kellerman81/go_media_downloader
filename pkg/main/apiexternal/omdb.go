@@ -82,7 +82,6 @@ func NewOmdbClient(
 		CircuitBreakerThreshold:   5,
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
-		EnableStats:               true,
 		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
@@ -196,11 +195,14 @@ func SearchOmdbMovie(title, yearin string) (*OmDBMovieSearchGlobal, error) {
 
 // TestOMDBConnectivity tests the connectivity to the OMDB API
 // Returns status code and error if any.
-func TestOMDBConnectivity(_ time.Duration) (int, error) {
+func TestOMDBConnectivity(timeout time.Duration) (int, error) {
 	// Use v2 provider if available
 	if provider := providers.GetOMDB(); provider != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
 		// Test with a simple search
-		_, err := provider.SearchByTitle(context.Background(), "test", 0, "")
+		_, err := provider.SearchByTitle(ctx, "test", 0, "")
 		if err != nil {
 			return 0, err
 		}

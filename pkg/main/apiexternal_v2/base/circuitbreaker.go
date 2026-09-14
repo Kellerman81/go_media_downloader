@@ -98,7 +98,12 @@ func (cb *CircuitBreaker) CanMakeRequest() bool {
 		// Check if timeout has elapsed
 		if time.Since(cb.lastFailureTime) > cb.config.Timeout {
 			cb.state = StateHalfOpen
-			cb.halfOpenAttempts = 0
+			// Count this transitioning request against the half-open budget
+			// too, matching the StateHalfOpen branch below - otherwise the
+			// probe request that triggers Open->HalfOpen isn't counted, and
+			// HalfOpenMax lets one extra request through beyond the configured
+			// limit before the next call would correctly start blocking.
+			cb.halfOpenAttempts = 1
 			cb.halfOpenSuccess = 0
 			return true
 		}

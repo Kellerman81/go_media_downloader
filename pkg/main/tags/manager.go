@@ -57,21 +57,6 @@ func (m *Manager) RegisterHandler(handler TagHandler) {
 	}
 }
 
-// GetHandler returns the handler for a given file extension.
-// Returns nil if no handler is registered for the format.
-func (m *Manager) GetHandler(ext string) TagHandler {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	for i := range len(ext) {
-		if ext[i] >= 'A' && ext[i] <= 'Z' {
-			return m.handlers[strings.ToLower(ext)]
-		}
-	}
-
-	return m.handlers[ext]
-}
-
 // SupportedFormats returns a list of all supported file extensions.
 func (m *Manager) SupportedFormats() []string {
 	m.mu.RLock()
@@ -131,159 +116,46 @@ func (m *Manager) WriteTags(ctx context.Context, path string, tags *AudioTags) e
 	return handler.WriteTags(ctx, path, tags)
 }
 
-// CopyTags copies tags from a source file to a destination file.
-// Both files must be in supported formats (can be different formats).
-// Cover art is preserved: if the source handler implements CoverTagReader,
-// ReadTagsWithCover is used; otherwise ReadTags is used as fallback.
-func (m *Manager) CopyTags(ctx context.Context, srcPath, dstPath string) error {
-	ext := logger.FileExt(srcPath)
+// ReadCoverData returns the embedded cover art already present in the file
+// at path, if any, using ReadTagsWithCover when the format's handler
+// supports it. Returns (nil, "") if the format has no cover-reading
+// support (e.g. OGG/Opus currently) or the file has no embedded cover.
+//
+// Callers that write new tags onto an already-tagged file without an
+// explicit replacement cover (e.g. structure.TagAlbumFiles when no new
+// cover was fetched for the album) must call this first and carry the
+// result into AudioTags.CoverData/CoverMIME - WriteTags's underlying
+// libraries can drop the existing embedded cover on save otherwise
+// (confirmed for MP3: id3v2's ParseFrames option, used here to avoid
+// loading cover bytes on writes that don't need them, discards frames not
+// in its list entirely rather than round-tripping them unmodified).
+func (m *Manager) ReadCoverData(path string) ([]byte, string) {
+	ext := logger.FileExt(path)
 
 	m.mu.RLock()
-
 	handler, ok := m.handlers[ext]
 	m.mu.RUnlock()
 
 	if !ok {
-		return &ErrUnsupportedFormat{Format: ext}
+		return nil, ""
 	}
 
-	var (
-		t   *AudioTags
-		err error
-	)
-
-	if cr, ok := handler.(CoverTagReader); ok {
-		t, err = cr.ReadTagsWithCover(srcPath)
-	} else {
-		t, err = handler.ReadTags(srcPath)
+	cr, ok := handler.(CoverTagReader)
+	if !ok {
+		return nil, ""
 	}
 
-	if err != nil {
-		return err
+	t, err := cr.ReadTagsWithCover(path)
+	if err != nil || t == nil {
+		return nil, ""
 	}
 
-	return m.WriteTags(ctx, dstPath, t)
+	return t.CoverData, t.CoverMIME
 }
 
-// MergeTags merges source tags into destination tags.
-// Only non-empty fields from src are copied to dst.
-func MergeTags(dst, src *AudioTags) {
-	if src.Title != "" {
-		dst.Title = src.Title
-	}
-
-	if src.Artist != "" {
-		dst.Artist = src.Artist
-	}
-
-	if src.Album != "" {
-		dst.Album = src.Album
-	}
-
-	if src.AlbumArtist != "" {
-		dst.AlbumArtist = src.AlbumArtist
-	}
-
-	if src.Genre != "" {
-		dst.Genre = src.Genre
-	}
-
-	if src.Year > 0 {
-		dst.Year = src.Year
-	}
-
-	if src.TrackNumber > 0 {
-		dst.TrackNumber = src.TrackNumber
-	}
-
-	if src.TotalTracks > 0 {
-		dst.TotalTracks = src.TotalTracks
-	}
-
-	if src.DiscNumber > 0 {
-		dst.DiscNumber = src.DiscNumber
-	}
-
-	if src.TotalDiscs > 0 {
-		dst.TotalDiscs = src.TotalDiscs
-	}
-
-	if src.Comment != "" {
-		dst.Comment = src.Comment
-	}
-
-	if src.Composer != "" {
-		dst.Composer = src.Composer
-	}
-
-	if src.Conductor != "" {
-		dst.Conductor = src.Conductor
-	}
-
-	if src.Label != "" {
-		dst.Label = src.Label
-	}
-
-	if src.CatalogNum != "" {
-		dst.CatalogNum = src.CatalogNum
-	}
-
-	if src.ISRC != "" {
-		dst.ISRC = src.ISRC
-	}
-
-	if src.Lyrics != "" {
-		dst.Lyrics = src.Lyrics
-	}
-
-	if src.Copyright != "" {
-		dst.Copyright = src.Copyright
-	}
-
-	if src.MBRecordingID != "" {
-		dst.MBRecordingID = src.MBRecordingID
-	}
-
-	if src.MBReleaseID != "" {
-		dst.MBReleaseID = src.MBReleaseID
-	}
-
-	if src.MBReleaseGroupID != "" {
-		dst.MBReleaseGroupID = src.MBReleaseGroupID
-	}
-
-	if src.MBArtistID != "" {
-		dst.MBArtistID = src.MBArtistID
-	}
-
-	if src.MBAlbumArtistID != "" {
-		dst.MBAlbumArtistID = src.MBAlbumArtistID
-	}
-
-	if src.AcoustID != "" {
-		dst.AcoustID = src.AcoustID
-	}
-
-	if src.ReplayGainTrack != 0 {
-		dst.ReplayGainTrack = src.ReplayGainTrack
-	}
-
-	if src.ReplayGainTrackPeak != 0 {
-		dst.ReplayGainTrackPeak = src.ReplayGainTrackPeak
-	}
-
-	if src.ReplayGainAlbum != 0 {
-		dst.ReplayGainAlbum = src.ReplayGainAlbum
-	}
-
-	if src.ReplayGainAlbumPeak != 0 {
-		dst.ReplayGainAlbumPeak = src.ReplayGainAlbumPeak
-	}
-
-	if len(src.CoverData) > 0 {
-		dst.CoverData = src.CoverData
-		dst.CoverMIME = src.CoverMIME
-	}
+// ReadCoverData is a convenience function that uses the default manager.
+func ReadCoverData(path string) ([]byte, string) {
+	return DefaultManager.ReadCoverData(path)
 }
 
 // DefaultManager is a package-level manager instance for convenience.

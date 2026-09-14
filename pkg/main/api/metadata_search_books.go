@@ -25,9 +25,10 @@ import (
 // BookMetadataSearchPage renders the book metadata search page.
 func BookMetadataSearchPage(c *gin.Context) {
 	bookLists := getMediaListsByType("book")
+	qualityProfiles := getQualityProfileNames()
 	csrfToken := getCSRFToken(c)
 
-	content := bookMetadataSearchContent(bookLists, csrfToken)
+	content := bookMetadataSearchContent(bookLists, qualityProfiles, csrfToken)
 
 	pageNode := page(
 		"Book Metadata Search",
@@ -47,9 +48,10 @@ func BookMetadataSearchPage(c *gin.Context) {
 // AudiobookMetadataSearchPage renders the audiobook metadata search page.
 func AudiobookMetadataSearchPage(c *gin.Context) {
 	audiobookLists := getMediaListsByType("audiobook")
+	qualityProfiles := getQualityProfileNames()
 	csrfToken := getCSRFToken(c)
 
-	content := audiobookMetadataSearchContent(audiobookLists, csrfToken)
+	content := audiobookMetadataSearchContent(audiobookLists, qualityProfiles, csrfToken)
 
 	pageNode := page(
 		"Audiobook Metadata Search",
@@ -111,7 +113,10 @@ func bookProviderOptions() ([]string, []string) {
 }
 
 // bookMetadataSearchContent renders the 3-mode "Add Books" page.
-func bookMetadataSearchContent(mediaConfigs []string, csrfToken string) gomponents.Node {
+func bookMetadataSearchContent(
+	mediaConfigs, qualityProfiles []string,
+	csrfToken string,
+) gomponents.Node {
 	provVals, provLabels := bookProviderOptions()
 
 	return html.Div(
@@ -150,6 +155,7 @@ func bookMetadataSearchContent(mediaConfigs []string, csrfToken string) gomponen
 				musicTab("bk1", "fas fa-book", "Single Book", true),
 				musicTab("bk2", "fas fa-user-plus", "Full Author", false),
 				musicTab("bk3", "fas fa-list-check", "Selected Books", false),
+				musicTab("bk4", "fas fa-edit", "Manual Entry", false),
 			),
 
 			html.Div(
@@ -241,6 +247,44 @@ func bookMetadataSearchContent(mediaConfigs []string, csrfToken string) gomponen
 					),
 					html.Div(html.ID("bk3_results"), html.Class("mt-3")),
 				),
+
+				musicTabPane("bk4", false,
+					musicCardWrap("Add a book manually",
+						"Add a book with no provider match by entering its details directly.",
+						html.Div(
+							html.Class("row g-3 align-items-end"),
+							musicInputCol("bk4_title", "Title", "Enter book title...", 4, true),
+							musicInputCol("bk4_year", "Year", "YYYY", 2, false),
+							musicInputCol("bk4_author", "Author", "Enter author...", 3, false),
+							musicListSelectCol("bk4_list", mediaConfigs, 3),
+						),
+						html.Div(
+							html.Class("row g-3 align-items-end mt-1"),
+							musicInputCol("bk4_isbn", "ISBN", "ISBN-13 or ISBN-10", 3, false),
+							musicInputCol("bk4_publisher", "Publisher", "Enter publisher...", 3, false),
+							optionsSelectCol(
+								"bk4_quality_profile",
+								"Quality Profile",
+								qualityProfiles,
+								qualityProfiles,
+								3,
+							),
+							html.Div(html.Class("col-md-3 d-grid"),
+								html.Button(
+									html.Type("button"),
+									html.Class("btn btn-secondary"),
+									gomponents.Attr("onclick", "bookAddManual()"),
+									html.I(
+										html.Class("fas fa-plus me-1"),
+										gomponents.Attr("aria-hidden", "true"),
+									),
+									gomponents.Text("Add Book Manually"),
+								),
+							),
+						),
+					),
+					html.Div(html.ID("bk4_results"), html.Class("mt-3")),
+				),
 			),
 
 			bookSearchScript(),
@@ -249,7 +293,10 @@ func bookMetadataSearchContent(mediaConfigs []string, csrfToken string) gomponen
 }
 
 // audiobookMetadataSearchContent renders the 3-mode "Add Audiobooks" page.
-func audiobookMetadataSearchContent(mediaConfigs []string, csrfToken string) gomponents.Node {
+func audiobookMetadataSearchContent(
+	mediaConfigs, qualityProfiles []string,
+	csrfToken string,
+) gomponents.Node {
 	regionVals := []string{"de", "us", "uk", "fr"}
 	regionLabels := []string{"Audible.de", "Audible.com", "Audible.co.uk", "Audible.fr"}
 
@@ -289,6 +336,7 @@ func audiobookMetadataSearchContent(mediaConfigs []string, csrfToken string) gom
 				musicTab("ab1", "fas fa-headphones", "Single Audiobook", true),
 				musicTab("ab2", "fas fa-user-plus", "Full Author", false),
 				musicTab("ab3", "fas fa-list-check", "Selected Audiobooks", false),
+				musicTab("ab4", "fas fa-edit", "Manual Entry", false),
 			),
 
 			html.Div(
@@ -385,6 +433,44 @@ func audiobookMetadataSearchContent(mediaConfigs []string, csrfToken string) gom
 						),
 					),
 					html.Div(html.ID("ab3_results"), html.Class("mt-3")),
+				),
+
+				musicTabPane("ab4", false,
+					musicCardWrap("Add an audiobook manually",
+						"Add an audiobook with no provider match by entering its details directly.",
+						html.Div(
+							html.Class("row g-3 align-items-end"),
+							musicInputCol("ab4_title", "Title", "Enter audiobook title...", 4, true),
+							musicInputCol("ab4_author", "Author", "Enter author...", 3, false),
+							musicInputCol("ab4_narrator", "Narrator", "Enter narrator...", 3, false),
+							musicListSelectCol("ab4_list", mediaConfigs, 2),
+						),
+						html.Div(
+							html.Class("row g-3 align-items-end mt-1"),
+							musicInputCol("ab4_asin", "ASIN", "Audible ASIN", 3, false),
+							musicInputCol("ab4_runtime", "Runtime (minutes)", "e.g. 480", 2, false),
+							optionsSelectCol(
+								"ab4_quality_profile",
+								"Quality Profile",
+								qualityProfiles,
+								qualityProfiles,
+								3,
+							),
+							html.Div(html.Class("col-md-4 d-grid"),
+								html.Button(
+									html.Type("button"),
+									html.Class("btn btn-secondary"),
+									gomponents.Attr("onclick", "audiobookAddManual()"),
+									html.I(
+										html.Class("fas fa-plus me-1"),
+										gomponents.Attr("aria-hidden", "true"),
+									),
+									gomponents.Text("Add Audiobook Manually"),
+								),
+							),
+						),
+					),
+					html.Div(html.ID("ab4_results"), html.Class("mt-3")),
 				),
 			),
 
@@ -888,18 +974,7 @@ func findBookCfgpAndListID(listName string) (*config.MediaTypeConfig, int) {
 		return nil, -1
 	}
 
-	for i := range allMedia.Books {
-		cfgp := config.GetSettingsMedia("book_" + allMedia.Books[i].Name)
-		if cfgp == nil {
-			continue
-		}
-
-		if listid, ok := cfgp.ListsMapIdx[listName]; ok {
-			return cfgp, listid
-		}
-	}
-
-	return nil, -1
+	return findCfgpAndListID(listName, "book_", allMedia.Books)
 }
 
 // findAudiobookCfgpAndListID resolves an audiobook list name to its config and index.
@@ -909,18 +984,7 @@ func findAudiobookCfgpAndListID(listName string) (*config.MediaTypeConfig, int) 
 		return nil, -1
 	}
 
-	for i := range allMedia.AudioBooks {
-		cfgp := config.GetSettingsMedia("audiobook_" + allMedia.AudioBooks[i].Name)
-		if cfgp == nil {
-			continue
-		}
-
-		if listid, ok := cfgp.ListsMapIdx[listName]; ok {
-			return cfgp, listid
-		}
-	}
-
-	return nil, -1
+	return findCfgpAndListID(listName, "audiobook_", allMedia.AudioBooks)
 }
 
 // AddBookToDatabase handles adding a book from metadata sources to the database.
@@ -1048,14 +1112,35 @@ func AddBookToDatabase(c *gin.Context) {
 		return
 	}
 
+	// Resolve the wanted quality for this list, mirroring AddSeriesToDatabase:
+	// an explicitly selected profile wins; otherwise fall back to the list's
+	// quality template, then the media group default - unlike leaving this
+	// column always empty, which was inconsistent with the series flow.
+	bookCfgp, bookListID := findBookCfgpAndListID(listName)
+
+	qualityProfile := c.PostForm("book_quality_profile")
+	if qualityProfile == "" && bookCfgp != nil && bookListID >= 0 {
+		qualityProfile = bookCfgp.Lists[bookListID].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = bookCfgp.TemplateQuality
+		}
+	}
+
 	// Add to books table
-	database.ExecN(
-		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, '', 0, 0, 0, ?, ?)",
+	if err := database.ExecNErr(
+		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
 		dbBookID,
 		listName,
+		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		// ExecN (the fire-and-forget variant previously used here) has no
+		// return value - a write failure here was reported to the user as
+		// success even though the book was never linked into the list.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Book added successfully to " + listName})
 }
@@ -1156,14 +1241,29 @@ func AddAudiobookToDatabase(c *gin.Context) {
 		return
 	}
 
+	// Resolve the wanted quality for this list, mirroring AddSeriesToDatabase.
+	audiobookCfgp, audiobookListID := findAudiobookCfgpAndListID(listName)
+
+	qualityProfile := c.PostForm("audiobook_quality_profile")
+	if qualityProfile == "" && audiobookCfgp != nil && audiobookListID >= 0 {
+		qualityProfile = audiobookCfgp.Lists[audiobookListID].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = audiobookCfgp.TemplateQuality
+		}
+	}
+
 	// Add to audiobooks table
-	database.ExecN(
-		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, '', 0, 0, 0, ?, ?)",
+	if err := database.ExecNErr(
+		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
 		dbAudiobookID,
 		listName,
+		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added successfully to " + listName})
 }
@@ -1202,6 +1302,12 @@ func AddBookManual(c *gin.Context) {
 
 	nowTime := time.Now()
 
+	// Link (or create) the author entry before the book insert so its id can
+	// be stored directly, matching how the search-based add flows link
+	// authors - previously this field was hardcoded to 0 and the submitted
+	// author name was only logged, never actually persisted anywhere.
+	dbauthorID := importfeed.AddOrGetAuthor(author)
+
 	newID, err := database.ExecNid(
 		"INSERT INTO dbbooks (title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		title,
@@ -1218,7 +1324,7 @@ func AddBookManual(c *gin.Context) {
 		"",
 		"",
 		"",
-		0,
+		dbauthorID,
 		0,
 		"",
 		0.0,
@@ -1234,19 +1340,29 @@ func AddBookManual(c *gin.Context) {
 		return
 	}
 
-	// Create author entry if provided
-	if author != "" {
-		// For now, just log it - proper implementation would create dbauthor entry
-		logger.Logtype("info", 0).Str("author", author).Msg("Author provided for manual book entry")
+	// Resolve the wanted quality for this list, matching AddBookToDatabase -
+	// previously this was hardcoded to '' for manual entries.
+	bookCfgp, bookListID := findBookCfgpAndListID(listName)
+
+	qualityProfile := c.PostForm("manualBook_quality_profile")
+	if qualityProfile == "" && bookCfgp != nil && bookListID >= 0 {
+		qualityProfile = bookCfgp.Lists[bookListID].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = bookCfgp.TemplateQuality
+		}
 	}
 
-	database.ExecN(
-		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, '', 0, 0, 0, ?, ?)",
+	if err := database.ExecNErr(
+		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
 		int(newID),
 		listName,
+		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Book added manually to " + listName})
 }
@@ -1329,21 +1445,62 @@ func AddAudiobookManual(c *gin.Context) {
 		return
 	}
 
-	// Log author/narrator for reference
-	if author != "" || narrator != "" {
-		logger.Logtype("info", 0).
-			Str("author", author).
-			Str("narrator", narrator).
-			Msg("Author/narrator provided for manual audiobook entry")
+	// Link (or create) the author/narrator via the junction tables, matching
+	// the real search-based import pipeline (importfeed.addAudiobookDetailToDatabase)
+	// - previously these fields were only logged, never actually persisted.
+	dbaudiobookID := uint(newID) //nolint:gosec // safe: value within target type range
+
+	if author != "" {
+		if authorID := importfeed.AddOrGetAuthor(author); authorID > 0 {
+			if err := database.ExecNErr(
+				`INSERT INTO dbaudiobook_authors (dbaudiobook_id, dbauthor_id, role, position) VALUES (?, ?, 'author', 0)`,
+				&dbaudiobookID, &authorID,
+			); err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Str("author", author).
+					Msg("Failed to link author to manual audiobook entry")
+			}
+		}
 	}
 
-	database.ExecN(
-		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, '', 0, 0, 0, ?, ?)",
+	if narrator != "" {
+		if narratorID := importfeed.AddOrGetNarrator(narrator); narratorID > 0 {
+			if err := database.ExecNErr(
+				`INSERT INTO dbaudiobook_narrators (dbaudiobook_id, dbnarrator_id, position) VALUES (?, ?, 0)`,
+				&dbaudiobookID, &narratorID,
+			); err != nil {
+				logger.Logtype("error", 0).
+					Err(err).
+					Str("narrator", narrator).
+					Msg("Failed to link narrator to manual audiobook entry")
+			}
+		}
+	}
+
+	// Resolve the wanted quality for this list, matching AddAudiobookToDatabase -
+	// previously this was hardcoded to '' for manual entries.
+	audiobookCfgp, audiobookListID := findAudiobookCfgpAndListID(listName)
+
+	qualityProfile := c.PostForm("manualAudiobook_quality_profile")
+	if qualityProfile == "" && audiobookCfgp != nil && audiobookListID >= 0 {
+		qualityProfile = audiobookCfgp.Lists[audiobookListID].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = audiobookCfgp.TemplateQuality
+		}
+	}
+
+	if err := database.ExecNErr(
+		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
 		int(newID),
 		listName,
+		qualityProfile,
 		nowTime,
 		nowTime,
-	)
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added manually to " + listName})
 }
@@ -1382,6 +1539,35 @@ function bookAddAuthor(){
 		bkPost('/api/admin/add/book/author',p).then(function(r){return r.json();}).then(function(d){
 			if(d.success){ showToaster('success',d.success); } else { showToaster('error',d.error||'Failed'); }
 		}).catch(function(){ showToaster('error','Failed to queue'); });
+	});
+}
+
+function bookAddManual(){
+	var title=bkVal('bk4_title'), list=bkVal('bk4_list');
+	if(!title){ showToaster('warning','Enter a title'); return; }
+	if(!list){ showToaster('warning','Select a list'); return; }
+	var btn=document.querySelector('[onclick="bookAddManual()"]');
+	var orig=btn?btn.innerHTML:'';
+	if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...'; }
+	var p=new URLSearchParams();
+	p.append('manualBook_title',title);
+	p.append('manualBook_year',bkVal('bk4_year'));
+	p.append('manualBook_author',bkVal('bk4_author'));
+	p.append('manualBook_list',list);
+	p.append('manualBook_isbn',bkVal('bk4_isbn'));
+	p.append('manualBook_publisher',bkVal('bk4_publisher'));
+	p.append('manualBook_quality_profile',bkVal('bk4_quality_profile'));
+	bkPost('/api/admin/add/book/manual',p).then(function(r){return r.json();}).then(function(d){
+		if(d.success){
+			showToaster('success',d.success);
+			document.getElementById('bk4_title').value='';
+			document.getElementById('bk4_year').value='';
+			document.getElementById('bk4_author').value='';
+			document.getElementById('bk4_isbn').value='';
+			document.getElementById('bk4_publisher').value='';
+		} else { showToaster('error',d.error||'Failed to add book'); }
+	}).catch(function(){ showToaster('error','Failed to add book'); }).finally(function(){
+		if(btn){ btn.disabled=false; btn.innerHTML=orig; }
 	});
 }
 
@@ -1474,6 +1660,35 @@ function audiobookAddAuthor(){
 		abPost('/api/admin/add/audiobook/author',p).then(function(r){return r.json();}).then(function(d){
 			if(d.success){ showToaster('success',d.success); } else { showToaster('error',d.error||'Failed'); }
 		}).catch(function(){ showToaster('error','Failed to queue'); });
+	});
+}
+
+function audiobookAddManual(){
+	var title=abVal('ab4_title'), list=abVal('ab4_list');
+	if(!title){ showToaster('warning','Enter a title'); return; }
+	if(!list){ showToaster('warning','Select a list'); return; }
+	var btn=document.querySelector('[onclick="audiobookAddManual()"]');
+	var orig=btn?btn.innerHTML:'';
+	if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...'; }
+	var p=new URLSearchParams();
+	p.append('manualAudiobook_title',title);
+	p.append('manualAudiobook_author',abVal('ab4_author'));
+	p.append('manualAudiobook_narrator',abVal('ab4_narrator'));
+	p.append('manualAudiobook_list',list);
+	p.append('manualAudiobook_asin',abVal('ab4_asin'));
+	p.append('manualAudiobook_runtime',abVal('ab4_runtime'));
+	p.append('manualAudiobook_quality_profile',abVal('ab4_quality_profile'));
+	abPost('/api/admin/add/audiobook/manual',p).then(function(r){return r.json();}).then(function(d){
+		if(d.success){
+			showToaster('success',d.success);
+			document.getElementById('ab4_title').value='';
+			document.getElementById('ab4_author').value='';
+			document.getElementById('ab4_narrator').value='';
+			document.getElementById('ab4_asin').value='';
+			document.getElementById('ab4_runtime').value='';
+		} else { showToaster('error',d.error||'Failed to add audiobook'); }
+	}).catch(function(){ showToaster('error','Failed to add audiobook'); }).finally(function(){
+		if(btn){ btn.disabled=false; btn.innerHTML=orig; }
 	});
 }
 

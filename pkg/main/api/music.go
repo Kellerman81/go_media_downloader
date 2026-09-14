@@ -155,9 +155,15 @@ func apiMusicDelete(ctx *gin.Context) {
 	}
 
 	// Delete album files first
-	database.ExecN("DELETE FROM album_files WHERE album_id = ?", &id)
+	if err := database.ExecNErr("DELETE FROM album_files WHERE album_id = ?", &id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete album files: " + err.Error()})
+		return
+	}
 	// Delete the album
-	database.ExecN("DELETE FROM albums WHERE id = ?", &id)
+	if err := database.ExecNErr("DELETE FROM albums WHERE id = ?", &id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete album: " + err.Error()})
+		return
+	}
 
 	ctx.JSON(http.StatusOK, gin.H{"success": true})
 }
@@ -210,134 +216,12 @@ func apiArtistsList(ctx *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/music/job/{job} [get].
 func apiMusicAllJobs(c *gin.Context) {
-	jobParam := c.Param(StrJobLower)
-	if !validateJobParam(jobParam, allowedjobsmusicstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
-		return
-	}
-
-	returnval := "Job " + jobParam + " started"
-
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, "music") {
-			return nil
-		}
-
-		cfgpstr := media.NamePrefix
-
-		switch c.Param(StrJobLower) {
-		case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-			worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"Data",
-			)
-
-		case logger.StrSearchMissingFull,
-			logger.StrSearchMissingInc,
-			logger.StrSearchUpgradeFull,
-			logger.StrSearchUpgradeInc,
-			logger.StrSearchMissingFullTitle,
-			logger.StrSearchMissingIncTitle,
-			logger.StrSearchUpgradeFullTitle,
-			logger.StrSearchUpgradeIncTitle:
-			worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"Search",
-			)
-
-		case logger.StrRss:
-			worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"RSS",
-			)
-
-		case logger.StrFeeds,
-			logger.StrCheckMissing,
-			logger.StrCheckMissingFlag,
-			logger.StrReachedFlag:
-			var err error
-			for idxi := range media.Lists {
-				if !media.Lists[idxi].Enabled {
-					continue
-				}
-
-				if media.Lists[idxi].CfgList == nil {
-					continue
-				}
-
-				if !config.GetSettingsList(media.Lists[idxi].TemplateList).Enabled {
-					continue
-				}
-
-				listname := media.Lists[idxi].Name
-
-				queueName := "Data"
-				if c.Param(StrJobLower) == logger.StrFeeds {
-					queueName = "Feeds"
-				}
-
-				if errsub := worker.Dispatch(
-					c.Param(StrJobLower)+"_"+cfgpstr+"_"+listname,
-					func(key uint32, ctx context.Context) error {
-						return utils.SingleJobs(
-							ctx,
-							c.Param(StrJobLower),
-							cfgpstr,
-							listname,
-							true,
-							key,
-						)
-					},
-					queueName,
-				); errsub != nil {
-					err = errsub
-				}
-			}
-
-			return err
-
-		case "refresh":
-			return worker.Dispatch(
-				"refresh_music",
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
-				},
-				"Feeds",
-			)
-
-		case "refreshinc":
-			return worker.Dispatch(
-				"refreshinc_music",
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
-				},
-				"Feeds",
-			)
-
-		case "":
-			return nil
-		default:
-			return worker.Dispatch(
-				c.Param(StrJobLower)+"_"+cfgpstr,
-				func(key uint32, ctx context.Context) error {
-					return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-				},
-				"Data",
-			)
-		}
-
-		return nil
+	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
+		TypeName:    "music",
+		NamePrefix:  "music",
+		Plural:      "music",
+		AllowedJobs: allowedjobsmusicstr,
 	})
-	sendSuccess(c, returnval)
 }
 
 // @Summary      Start Music Jobs
@@ -351,146 +235,12 @@ func apiMusicAllJobs(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/music/job/{job}/{name} [get].
 func apiMusicJobs(c *gin.Context) {
-	jobParam := c.Param(StrJobLower)
-	if !validateJobParam(jobParam, allowedjobsmusicstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
-		return
-	}
-
-	returnval := "Job " + jobParam + " started"
-	cfgpstr := "music_" + c.Param("name")
-
-	switch c.Param(StrJobLower) {
-	case "data", logger.StrDataFull, logger.StrStructure, logger.StrClearHistory:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_music_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"Data",
-		)
-
-	case logger.StrSearchMissingFull,
-		logger.StrSearchMissingInc,
-		logger.StrSearchUpgradeFull,
-		logger.StrSearchUpgradeInc,
-		logger.StrSearchMissingFullTitle,
-		logger.StrSearchMissingIncTitle,
-		logger.StrSearchUpgradeFullTitle,
-		logger.StrSearchUpgradeIncTitle:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_music_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"Search",
-		)
-
-	case logger.StrRss:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_music_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"RSS",
-		)
-
-	case logger.StrFeeds,
-		logger.StrCheckMissing,
-		logger.StrCheckMissingFlag,
-		logger.StrReachedFlag:
-		config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-			if !strings.HasPrefix(media.NamePrefix, "music") {
-				return nil
-			}
-
-			if strings.EqualFold(media.Name, c.Param("name")) {
-				for idxlist := range media.Lists {
-					if !media.Lists[idxlist].Enabled {
-						continue
-					}
-
-					if media.Lists[idxlist].CfgList == nil {
-						continue
-					}
-
-					if !config.GetSettingsList(media.Lists[idxlist].TemplateList).Enabled {
-						continue
-					}
-
-					listname := media.Lists[idxlist].Name
-					if c.Param(StrJobLower) == logger.StrFeeds {
-						worker.Dispatch(
-							c.Param(StrJobLower)+"_music_"+media.Name+"_"+media.Lists[idxlist].Name,
-							func(key uint32, ctx context.Context) error {
-								return utils.SingleJobs(
-									ctx,
-									c.Param(StrJobLower),
-									cfgpstr,
-									listname,
-									true,
-									key,
-								)
-							},
-							"Feeds",
-						)
-					}
-
-					if c.Param(StrJobLower) == logger.StrCheckMissing ||
-						c.Param(StrJobLower) == logger.StrCheckMissingFlag ||
-						c.Param(StrJobLower) == logger.StrReachedFlag {
-						worker.Dispatch(
-							c.Param(StrJobLower)+"_music_"+media.Name+"_"+media.Lists[idxlist].Name,
-							func(key uint32, ctx context.Context) error {
-								return utils.SingleJobs(
-									ctx,
-									c.Param(StrJobLower),
-									cfgpstr,
-									listname,
-									true,
-									key,
-								)
-							},
-							"Data",
-						)
-					}
-				}
-			}
-
-			return nil
-		})
-
-	case "refresh":
-		worker.Dispatch(
-			"refresh_music_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
-			},
-			"Feeds",
-		)
-
-	case "refreshinc":
-		worker.Dispatch(
-			"refreshinc_music_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
-			},
-			"Feeds",
-		)
-
-	case "":
-		break
-	default:
-		worker.Dispatch(
-			c.Param(StrJobLower)+"_music_"+c.Param("name"),
-			func(key uint32, ctx context.Context) error {
-				return utils.SingleJobs(ctx, c.Param(StrJobLower), cfgpstr, "", true, key)
-			},
-			"Data",
-		)
-	}
-
-	sendSuccess(c, returnval)
+	dispatchMediaJob(c, mediaJobDispatchConfig{
+		TypeName:    "music",
+		NamePrefix:  "music",
+		Plural:      "music",
+		AllowedJobs: allowedjobsmusicstr,
+	})
 }
 
 // @Summary      RSS Search Music List
@@ -544,8 +294,8 @@ func apiMusicSearchList(c *gin.Context) {
 // @Router       /api/music/search/history/clear/{name} [get].
 func apiMusicClearHistoryName(c *gin.Context) {
 	name := c.Param("name")
-	database.ExecN("DELETE FROM album_histories WHERE listname = ?", &name)
-	sendSuccess(c, "History cleared for "+name)
+	err := database.ExecNErr("DELETE FROM album_histories WHERE listname = ?", &name)
+	handleDBError(c, err, "History cleared for "+name)
 }
 
 // @Summary      Clear Music History by ID
@@ -562,8 +312,8 @@ func apiMusicClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	database.ExecN("DELETE FROM album_histories WHERE id = ?", &id)
-	sendSuccess(c, "History entry cleared")
+	err := database.ExecNErr("DELETE FROM album_histories WHERE id = ?", &id)
+	handleDBError(c, err, "History entry cleared")
 }
 
 // @Summary      Search Missing Albums by Artist
@@ -777,6 +527,9 @@ func apiMusicFeedsDate(c *gin.Context) {
 
 	cfgpstr := "music_" + mediaName
 
+	// dispatched also doubles as "a response was already sent inside the
+	// closure" - see apiBooksFeedsDate (books.go) for why every early-return
+	// path below must set it.
 	var dispatched bool
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
@@ -794,13 +547,19 @@ func apiMusicFeedsDate(c *gin.Context) {
 			}
 
 			if !media.Lists[idxlist].Enabled || media.Lists[idxlist].CfgList == nil {
+				dispatched = true
+
 				sendBadRequest(c, "list "+listName+" is disabled or not configured")
+
 				return nil
 			}
 
 			overrideURL, err := buildChartDateURL(media.Lists[idxlist].CfgList, dateStr)
 			if err != nil {
+				dispatched = true
+
 				sendBadRequest(c, err.Error())
+
 				return nil
 			}
 

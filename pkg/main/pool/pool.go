@@ -18,108 +18,125 @@ var (
 	ErrTimeout          = errors.New("operation timed out")
 )
 
-// PoolStats provides observability metrics for pool operations.
+// PoolStats provides observability metrics for pool operations. All counters
+// are atomic.Int64 (rather than plain int64 with free-function atomic.*
+// calls) so the struct is correctly 8-byte aligned on 32-bit platforms too -
+// a plain int64 field only gets the alignment guarantee required by
+// atomic.AddInt64/LoadInt64 on 32-bit ARM/x86 when it happens to be first in
+// the struct, which was not guaranteed here. Because atomic.Int64 embeds a
+// noCopy guard, PoolStats itself must never be copied by value - use
+// Snapshot() to get a plain, freely-copyable point-in-time snapshot instead.
 type PoolStats struct {
 	// Basic pool metrics
-	Gets        int64 // Total Get() calls
-	Puts        int64 // Total Put() calls
-	Creates     int64 // Total NewObj() calls
-	Hits        int64 // Get() calls that reused existing objects
-	Misses      int64 // Get() calls that created new objects
-	Rejects     int64 // Put() calls rejected by destructor
-	Fails       int64 // Put() calls that failed (pool full)
-	MaxSize     int   // Maximum pool capacity
-	CurrentSize int64 // Current number of objects in pool
+	Gets        atomic.Int64 // Total Get() calls
+	Puts        atomic.Int64 // Total Put() calls
+	Creates     atomic.Int64 // Total NewObj() calls
+	Hits        atomic.Int64 // Get() calls that reused existing objects
+	Misses      atomic.Int64 // Get() calls that created new objects
+	Rejects     atomic.Int64 // Put() calls rejected by destructor
+	Fails       atomic.Int64 // Put() calls that failed (pool full)
+	MaxSize     int          // Maximum pool capacity (set once under Poolobj.mu, not atomic)
+	CurrentSize atomic.Int64 // Current number of objects in pool
 
 	// Performance metrics
-	TotalGetTime    int64 // Total time spent in Get() operations (nanoseconds)
-	TotalPutTime    int64 // Total time spent in Put() operations (nanoseconds)
-	TotalCreateTime int64 // Total time spent in NewObj() operations (nanoseconds)
+	TotalGetTime    atomic.Int64 // Total time spent in Get() operations (nanoseconds)
+	TotalPutTime    atomic.Int64 // Total time spent in Put() operations (nanoseconds)
+	TotalCreateTime atomic.Int64 // Total time spent in NewObj() operations (nanoseconds)
 }
 
-// Copy returns a copy of the current stats to avoid race conditions.
-func (s *PoolStats) Copy() PoolStats {
-	return PoolStats{
-		Gets:            atomic.LoadInt64(&s.Gets),
-		Puts:            atomic.LoadInt64(&s.Puts),
-		Creates:         atomic.LoadInt64(&s.Creates),
-		Hits:            atomic.LoadInt64(&s.Hits),
-		Misses:          atomic.LoadInt64(&s.Misses),
-		Rejects:         atomic.LoadInt64(&s.Rejects),
-		Fails:           atomic.LoadInt64(&s.Fails),
+// PoolStatsSnapshot is a point-in-time, plain-int64 copy of PoolStats - safe
+// to pass around and copy by value (unlike PoolStats itself).
+type PoolStatsSnapshot struct {
+	Gets            int64
+	Puts            int64
+	Creates         int64
+	Hits            int64
+	Misses          int64
+	Rejects         int64
+	Fails           int64
+	MaxSize         int
+	CurrentSize     int64
+	TotalGetTime    int64
+	TotalPutTime    int64
+	TotalCreateTime int64
+}
+
+// Snapshot returns a copy of the current stats to avoid race conditions.
+func (s *PoolStats) Snapshot() PoolStatsSnapshot {
+	return PoolStatsSnapshot{
+		Gets:            s.Gets.Load(),
+		Puts:            s.Puts.Load(),
+		Creates:         s.Creates.Load(),
+		Hits:            s.Hits.Load(),
+		Misses:          s.Misses.Load(),
+		Rejects:         s.Rejects.Load(),
+		Fails:           s.Fails.Load(),
 		MaxSize:         s.MaxSize,
-		CurrentSize:     atomic.LoadInt64(&s.CurrentSize),
-		TotalGetTime:    atomic.LoadInt64(&s.TotalGetTime),
-		TotalPutTime:    atomic.LoadInt64(&s.TotalPutTime),
-		TotalCreateTime: atomic.LoadInt64(&s.TotalCreateTime),
+		CurrentSize:     s.CurrentSize.Load(),
+		TotalGetTime:    s.TotalGetTime.Load(),
+		TotalPutTime:    s.TotalPutTime.Load(),
+		TotalCreateTime: s.TotalCreateTime.Load(),
 	}
 }
 
 // HitRate returns the cache hit rate as a percentage (0.0-1.0).
-func (s *PoolStats) HitRate() float64 {
-	total := atomic.LoadInt64(&s.Gets)
-	if total == 0 {
+func (s PoolStatsSnapshot) HitRate() float64 {
+	if s.Gets == 0 {
 		return 0.0
 	}
 
-	return float64(atomic.LoadInt64(&s.Hits)) / float64(total)
+	return float64(s.Hits) / float64(s.Gets)
 }
 
 // AverageGetTime returns the average time for Get() operations in nanoseconds.
-func (s *PoolStats) AverageGetTime() time.Duration {
-	gets := atomic.LoadInt64(&s.Gets)
-	if gets == 0 {
+func (s PoolStatsSnapshot) AverageGetTime() time.Duration {
+	if s.Gets == 0 {
 		return 0
 	}
 
-	totalTime := atomic.LoadInt64(&s.TotalGetTime)
-
-	return time.Duration(totalTime / gets)
+	return time.Duration(s.TotalGetTime / s.Gets)
 }
 
 // AveragePutTime returns the average time for Put() operations in nanoseconds.
-func (s *PoolStats) AveragePutTime() time.Duration {
-	puts := atomic.LoadInt64(&s.Puts)
-	if puts == 0 {
+func (s PoolStatsSnapshot) AveragePutTime() time.Duration {
+	if s.Puts == 0 {
 		return 0
 	}
 
-	totalTime := atomic.LoadInt64(&s.TotalPutTime)
-
-	return time.Duration(totalTime / puts)
+	return time.Duration(s.TotalPutTime / s.Puts)
 }
 
 // AverageCreateTime returns the average time for NewObj() operations in nanoseconds.
-func (s *PoolStats) AverageCreateTime() time.Duration {
-	creates := atomic.LoadInt64(&s.Creates)
-	if creates == 0 {
+func (s PoolStatsSnapshot) AverageCreateTime() time.Duration {
+	if s.Creates == 0 {
 		return 0
 	}
 
-	totalTime := atomic.LoadInt64(&s.TotalCreateTime)
-
-	return time.Duration(totalTime / creates)
+	return time.Duration(s.TotalCreateTime / s.Creates)
 }
 
 // String provides a human-readable representation of pool statistics.
 func (s *PoolStats) String() string {
-	stats := s.Copy()
+	return s.Snapshot().String()
+}
 
+// String provides a human-readable representation of a pool statistics snapshot.
+func (s PoolStatsSnapshot) String() string {
 	return fmt.Sprintf(
 		"Pool Stats: Gets=%d, Puts=%d, Creates=%d, Hits=%d (%.1f%%), Misses=%d, Rejects=%d, Fails=%d, CurrentSize=%d/%d, AvgGetTime=%v, AvgPutTime=%v, AvgCreateTime=%v",
-		stats.Gets,
-		stats.Puts,
-		stats.Creates,
-		stats.Hits,
-		stats.HitRate()*100,
-		stats.Misses,
-		stats.Rejects,
-		stats.Fails,
-		stats.CurrentSize,
-		stats.MaxSize,
-		stats.AverageGetTime(),
-		stats.AveragePutTime(),
-		stats.AverageCreateTime(),
+		s.Gets,
+		s.Puts,
+		s.Creates,
+		s.Hits,
+		s.HitRate()*100,
+		s.Misses,
+		s.Rejects,
+		s.Fails,
+		s.CurrentSize,
+		s.MaxSize,
+		s.AverageGetTime(),
+		s.AveragePutTime(),
+		s.AverageCreateTime(),
 	)
 }
 
@@ -145,10 +162,10 @@ type Poolobj[t any] struct {
 func (p *Poolobj[t]) Get() *t {
 	start := time.Now()
 	defer func() {
-		atomic.AddInt64(&p.stats.TotalGetTime, int64(time.Since(start)))
+		p.stats.TotalGetTime.Add(int64(time.Since(start)))
 	}()
 
-	atomic.AddInt64(&p.stats.Gets, 1)
+	p.stats.Gets.Add(1)
 
 	if p.closed.Load() == 1 {
 		return nil
@@ -156,12 +173,12 @@ func (p *Poolobj[t]) Get() *t {
 
 	select {
 	case obj := <-p.objs:
-		atomic.AddInt64(&p.stats.Hits, 1)
-		atomic.AddInt64(&p.stats.CurrentSize, -1)
+		p.stats.Hits.Add(1)
+		p.stats.CurrentSize.Add(-1)
 		return obj
 
 	default:
-		atomic.AddInt64(&p.stats.Misses, 1)
+		p.stats.Misses.Add(1)
 		return p.NewObj()
 	}
 }
@@ -171,10 +188,10 @@ func (p *Poolobj[t]) Get() *t {
 func (p *Poolobj[t]) GetWithContext(ctx context.Context) (*t, error) {
 	start := time.Now()
 	defer func() {
-		atomic.AddInt64(&p.stats.TotalGetTime, int64(time.Since(start)))
+		p.stats.TotalGetTime.Add(int64(time.Since(start)))
 	}()
 
-	atomic.AddInt64(&p.stats.Gets, 1)
+	p.stats.Gets.Add(1)
 
 	if p.closed.Load() == 1 {
 		return nil, ErrPoolClosed
@@ -182,14 +199,14 @@ func (p *Poolobj[t]) GetWithContext(ctx context.Context) (*t, error) {
 
 	select {
 	case obj := <-p.objs:
-		atomic.AddInt64(&p.stats.Hits, 1)
-		atomic.AddInt64(&p.stats.CurrentSize, -1)
+		p.stats.Hits.Add(1)
+		p.stats.CurrentSize.Add(-1)
 		return obj, nil
 
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
-		atomic.AddInt64(&p.stats.Misses, 1)
+		p.stats.Misses.Add(1)
 		return p.NewObj(), nil
 	}
 }
@@ -208,10 +225,10 @@ func (p *Poolobj[t]) GetWithTimeout(timeout time.Duration) (*t, error) {
 func (p *Poolobj[t]) NewObj() *t {
 	start := time.Now()
 	defer func() {
-		atomic.AddInt64(&p.stats.TotalCreateTime, int64(time.Since(start)))
+		p.stats.TotalCreateTime.Add(int64(time.Since(start)))
 	}()
 
-	atomic.AddInt64(&p.stats.Creates, 1)
+	p.stats.Creates.Add(1)
 
 	var bo t
 	if p.constructor != nil {
@@ -234,10 +251,10 @@ func (p *Poolobj[t]) Put(bo *t) bool {
 func (p *Poolobj[t]) PutWithError(bo *t) error {
 	start := time.Now()
 	defer func() {
-		atomic.AddInt64(&p.stats.TotalPutTime, int64(time.Since(start)))
+		p.stats.TotalPutTime.Add(int64(time.Since(start)))
 	}()
 
-	atomic.AddInt64(&p.stats.Puts, 1)
+	p.stats.Puts.Add(1)
 
 	if bo == nil {
 		return ErrNilObject
@@ -250,7 +267,7 @@ func (p *Poolobj[t]) PutWithError(bo *t) error {
 	// Call destructor if provided
 	if p.destructor != nil {
 		if p.destructor(bo) {
-			atomic.AddInt64(&p.stats.Rejects, 1)
+			p.stats.Rejects.Add(1)
 			return ErrInvalidOperation
 		}
 	}
@@ -258,11 +275,11 @@ func (p *Poolobj[t]) PutWithError(bo *t) error {
 	// Try to put object back in pool using non-blocking send
 	select {
 	case p.objs <- bo:
-		atomic.AddInt64(&p.stats.CurrentSize, 1)
+		p.stats.CurrentSize.Add(1)
 		return nil
 
 	default:
-		atomic.AddInt64(&p.stats.Fails, 1)
+		p.stats.Fails.Add(1)
 		return ErrPoolFull
 	}
 }
@@ -272,10 +289,10 @@ func (p *Poolobj[t]) PutWithError(bo *t) error {
 func (p *Poolobj[t]) PutWithContext(ctx context.Context, bo *t) error {
 	start := time.Now()
 	defer func() {
-		atomic.AddInt64(&p.stats.TotalPutTime, int64(time.Since(start)))
+		p.stats.TotalPutTime.Add(int64(time.Since(start)))
 	}()
 
-	atomic.AddInt64(&p.stats.Puts, 1)
+	p.stats.Puts.Add(1)
 
 	if bo == nil {
 		return ErrNilObject
@@ -288,7 +305,7 @@ func (p *Poolobj[t]) PutWithContext(ctx context.Context, bo *t) error {
 	// Call destructor if provided
 	if p.destructor != nil {
 		if p.destructor(bo) {
-			atomic.AddInt64(&p.stats.Rejects, 1)
+			p.stats.Rejects.Add(1)
 			return ErrInvalidOperation
 		}
 	}
@@ -296,7 +313,7 @@ func (p *Poolobj[t]) PutWithContext(ctx context.Context, bo *t) error {
 	// Try to put object back in pool
 	select {
 	case p.objs <- bo:
-		atomic.AddInt64(&p.stats.CurrentSize, 1)
+		p.stats.CurrentSize.Add(1)
 		return nil
 
 	case <-ctx.Done():
@@ -358,7 +375,7 @@ func NewPool[t any](
 // Len returns the current number of objects in the pool.
 // This provides visibility into pool utilization.
 func (p *Poolobj[t]) Len() int {
-	return int(atomic.LoadInt64(&p.stats.CurrentSize))
+	return int(p.stats.CurrentSize.Load())
 }
 
 // Cap returns the maximum capacity of the pool.
@@ -368,10 +385,10 @@ func (p *Poolobj[t]) Cap() int {
 	return p.maxSize
 }
 
-// Stats returns a copy of the current pool statistics.
+// Stats returns a snapshot of the current pool statistics.
 // This provides comprehensive observability into pool performance.
-func (p *Poolobj[t]) Stats() PoolStats {
-	return p.stats.Copy()
+func (p *Poolobj[t]) Stats() PoolStatsSnapshot {
+	return p.stats.Snapshot()
 }
 
 // IsHealthy returns true if the pool is in a healthy state.
@@ -381,7 +398,7 @@ func (p *Poolobj[t]) IsHealthy() bool {
 		return false
 	}
 
-	stats := p.stats.Copy()
+	stats := p.stats.Snapshot()
 	// Consider the pool healthy if we have a reasonable hit rate (>= 10%)
 	// or if we haven't had enough operations to judge yet
 	if stats.Gets < 10 {
@@ -415,7 +432,7 @@ func (p *Poolobj[t]) Close() int {
 		case <-p.objs:
 			drained++
 
-			atomic.AddInt64(&p.stats.CurrentSize, -1)
+			p.stats.CurrentSize.Add(-1)
 
 		default:
 			return drained
@@ -440,7 +457,7 @@ func (p *Poolobj[t]) Drain() int {
 		case <-p.objs:
 			drained++
 
-			atomic.AddInt64(&p.stats.CurrentSize, -1)
+			p.stats.CurrentSize.Add(-1)
 
 		default:
 			return drained
@@ -462,7 +479,7 @@ func (p *Poolobj[t]) Reset() {
 	for {
 		select {
 		case <-p.objs:
-			atomic.AddInt64(&p.stats.CurrentSize, -1)
+			p.stats.CurrentSize.Add(-1)
 		default:
 			goto resetStats
 		}
@@ -470,18 +487,18 @@ func (p *Poolobj[t]) Reset() {
 
 resetStats:
 	// Reset all statistics
-	atomic.StoreInt64(&p.stats.Gets, 0)
+	p.stats.Gets.Store(0)
 
-	atomic.StoreInt64(&p.stats.Puts, 0)
-	atomic.StoreInt64(&p.stats.Creates, 0)
-	atomic.StoreInt64(&p.stats.Hits, 0)
-	atomic.StoreInt64(&p.stats.Misses, 0)
-	atomic.StoreInt64(&p.stats.Rejects, 0)
-	atomic.StoreInt64(&p.stats.Fails, 0)
-	atomic.StoreInt64(&p.stats.CurrentSize, 0)
-	atomic.StoreInt64(&p.stats.TotalGetTime, 0)
-	atomic.StoreInt64(&p.stats.TotalPutTime, 0)
-	atomic.StoreInt64(&p.stats.TotalCreateTime, 0)
+	p.stats.Puts.Store(0)
+	p.stats.Creates.Store(0)
+	p.stats.Hits.Store(0)
+	p.stats.Misses.Store(0)
+	p.stats.Rejects.Store(0)
+	p.stats.Fails.Store(0)
+	p.stats.CurrentSize.Store(0)
+	p.stats.TotalGetTime.Store(0)
+	p.stats.TotalPutTime.Store(0)
+	p.stats.TotalCreateTime.Store(0)
 }
 
 // UtilizationPercent returns the current pool utilization as a percentage (0.0-1.0).
@@ -663,7 +680,11 @@ func (s *SizedWaitGroup) WaitWithTimeout(timeout time.Duration) error {
 // Close resets the SizedWaitGroup to its initial state, allowing it to be reused.
 // Note: This should only be called after Wait() has completed to avoid goroutine leaks.
 func (s *SizedWaitGroup) Close() {
-	*s = SizedWaitGroup{}
+	// Resetting to the zero value would leave current nil and Size 0 - any
+	// subsequent Add() would then block forever sending on a nil channel,
+	// contradicting this method's own "allowing it to be reused" contract.
+	// Reinitialize with the original size instead of zeroing it away.
+	*s = NewSizedGroup(s.Size)
 }
 
 // Stats returns a copy of the current statistics.

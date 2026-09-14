@@ -306,6 +306,14 @@ func (s *Scraper) createEpisode(_ context.Context, release *SceneRelease) error 
 		return fmt.Errorf("invalid date for scene: %s", release.Title)
 	}
 
+	// Matches htmlxpath/csrfapi's guard: the existing-row lookup below keys
+	// on (dbserie_id, identifier, title), so a blank title would make every
+	// release on the same date collide into one DB row, each silently
+	// overwriting the last one's overview/scraper_url.
+	if release.Title == "" {
+		return fmt.Errorf("title is empty for release id %d", release.ID)
+	}
+
 	// Create episode identifier from date (remove first 2 characters like PowerShell script)
 	dateStr := release.DateReleased.Format("2006-01-02")
 	identifier := dateStr[2:] // Remove "20" prefix

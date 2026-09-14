@@ -115,8 +115,6 @@ func NewProvider(config ProviderConfig) *Provider {
 		RateLimitPer24h:         rateLimitPer24h,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -134,8 +132,6 @@ func NewProvider(config ProviderConfig) *Provider {
 		RateLimitPer24h:         rateLimitPer24h,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -585,8 +581,14 @@ func (p *Provider) MakeSearchRequest(
 	rawParams string,
 	ind *config.IndexersConfig, qual *config.QualityConfig,
 ) ([]apiexternal_v2.Nzbwithprio, error) {
-	// Add JSON output parameter if configured
+	// Add JSON output parameter if configured. Both current call sites pass
+	// params == nil, and .Set on a nil url.Values (a map) panics - guard it
+	// instead of relying on every future caller to pass a non-nil map.
 	if p.outputAsJSON {
+		if params == nil {
+			params = url.Values{}
+		}
+
 		params.Set("o", "json")
 	}
 
@@ -623,8 +625,13 @@ func (p *Provider) makeRSSRequest(
 	tillid string,
 	ind *config.IndexersConfig, qual *config.QualityConfig,
 ) ([]apiexternal_v2.Nzbwithprio, error) {
-	// Add JSON output parameter if configured
+	// Add JSON output parameter if configured. See MakeSearchRequest - the
+	// call site passes params == nil, and .Set on a nil url.Values panics.
 	if p.outputAsJSON {
+		if params == nil {
+			params = url.Values{}
+		}
+
 		params.Set("o", "json")
 	}
 

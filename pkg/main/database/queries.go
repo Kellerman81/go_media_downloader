@@ -524,7 +524,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbserie_episodes":
 		q.Table = "dbserie_episodes LEFT JOIN dbseries ON dbserie_episodes.dbserie_id = dbseries.id"
-		q.DefaultColumns = "dbserie_episodes.id as id,dbserie_episodes.created_at as created_at,dbserie_episodes.updated_at as updated_at,dbserie_episodes.episode as episode,dbserie_episodes.season as season,dbserie_episodes.identifier as identifier,dbserie_episodes.title as title,dbserie_episodes.first_aired as first_aired,dbserie_episodes.overview as overview,dbserie_episodes.poster as poster,dbserie_episodes.scraper_id as scraper_id,dbserie_episodes.scraper_url as scraper_url,dbserie_episodes.runtime as runtime,dbserie_episodes.dbserie_id as dbserie_id,dbseries.seriename as series_name"
+		q.DefaultColumns = "dbserie_episodes.id as id,dbserie_episodes.created_at as created_at,dbserie_episodes.updated_at as updated_at,dbserie_episodes.episode as episode,dbserie_episodes.season as season,dbserie_episodes.identifier as identifier,dbserie_episodes.title as title,dbserie_episodes.first_aired as first_aired,dbserie_episodes.overview as overview,dbserie_episodes.poster as poster,dbserie_episodes.scraper_id as scraper_id,dbserie_episodes.scraper_url as scraper_url,dbserie_episodes.runtime as runtime,dbserie_episodes.absolute_episode as absolute_episode,dbserie_episodes.dbserie_id as dbserie_id,dbseries.seriename as series_name"
 		q.DefaultQuery = " where dbserie_episodes.id like ? or dbserie_episodes.episode like ? or dbserie_episodes.season like ? or dbserie_episodes.dbserie_id like ? or dbserie_episodes.title like ? or dbserie_episodes.identifier like ?"
 		q.DefaultQueryParamCount = 6
 		q.DefaultOrderBy = " order by dbserie_episodes.id desc"
@@ -540,7 +540,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "series":
 		q.Table = "series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id"
-		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,series.quality_profile as quality_profile,series.aliases as aliases,dbseries.seriename as series_name"
+		q.DefaultColumns = "series.id as id,series.created_at as created_at,series.updated_at as updated_at,series.listname as listname,series.rootpath as rootpath,series.dbserie_id as dbserie_id,series.dont_upgrade as dont_upgrade,series.dont_search as dont_search,series.search_specials as search_specials,series.ignore_runtime as ignore_runtime,series.quality_profile as quality_profile,series.aliases as aliases,dbseries.seriename as series_name"
 		q.DefaultQuery = " where series.id like ? or series.listname like ? or series.rootpath like ? or series.dbserie_id like ?"
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by series.id desc"
@@ -548,7 +548,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "serie_episodes":
 		q.Table = "serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id"
-		q.DefaultColumns = "serie_episodes.id as id,serie_episodes.created_at as created_at,serie_episodes.updated_at as updated_at,serie_episodes.lastscan as lastscan,serie_episodes.blacklisted as blacklisted,serie_episodes.quality_reached as quality_reached,serie_episodes.quality_profile as quality_profile,serie_episodes.missing as missing,serie_episodes.dont_upgrade as dont_upgrade,serie_episodes.dont_search as dont_search,serie_episodes.dbserie_episode_id as dbserie_episode_id,serie_episodes.serie_id as serie_id,serie_episodes.dbserie_id as dbserie_id,dbserie_episodes.title as episode_title"
+		q.DefaultColumns = "serie_episodes.id as id,serie_episodes.created_at as created_at,serie_episodes.updated_at as updated_at,serie_episodes.lastscan as lastscan,serie_episodes.blacklisted as blacklisted,serie_episodes.quality_reached as quality_reached,serie_episodes.quality_profile as quality_profile,serie_episodes.missing as missing,serie_episodes.dont_upgrade as dont_upgrade,serie_episodes.dont_search as dont_search,serie_episodes.ignore_runtime as ignore_runtime,serie_episodes.dbserie_episode_id as dbserie_episode_id,serie_episodes.serie_id as serie_id,serie_episodes.dbserie_id as dbserie_id,dbserie_episodes.title as episode_title"
 		q.DefaultQuery = " where serie_episodes.id like ? or serie_episodes.quality_profile like ? or serie_episodes.dbserie_episode_id like ? or serie_episodes.serie_id like ? or serie_episodes.dbserie_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by serie_episodes.id desc"
@@ -629,7 +629,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbauthors":
 		q.Table = "dbauthors"
-		q.DefaultColumns = "id,created_at,updated_at,name,aliases,bio,birth_date,death_date,goodreads_id,openlibrary_id,website,image_url"
+		q.DefaultColumns = "id,created_at,updated_at,name,slug,aliases,bio,birth_date,death_date,goodreads_id,openlibrary_id,website,image_url"
 		q.DefaultQuery = " where id like ? or name like ? or goodreads_id like ? or openlibrary_id like ?"
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by id desc"
@@ -637,7 +637,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "books":
 		q.Table = "books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id"
-		q.DefaultColumns = "books.id as id,books.created_at as created_at,books.updated_at as updated_at,books.blacklisted as blacklisted,books.quality_reached as quality_reached,books.quality_profile as quality_profile,books.missing as missing,books.dont_upgrade as dont_upgrade,books.dont_search as dont_search,books.listname as listname,books.rootpath as rootpath,books.dbbook_id as dbbook_id,books.book_series_id as book_series_id,books.author_id as author_id,dbbooks.title as book_title"
+		q.DefaultColumns = "books.id as id,books.created_at as created_at,books.updated_at as updated_at,books.lastscan as lastscan,books.blacklisted as blacklisted,books.quality_reached as quality_reached,books.quality_profile as quality_profile,books.missing as missing,books.dont_upgrade as dont_upgrade,books.dont_search as dont_search,books.listname as listname,books.rootpath as rootpath,books.dbbook_id as dbbook_id,books.book_series_id as book_series_id,books.author_id as author_id,dbbooks.title as book_title"
 		q.DefaultQuery = " where books.id like ? or books.quality_profile like ? or books.listname like ? or books.rootpath like ? or books.dbbook_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by books.id desc"
@@ -654,7 +654,7 @@ func GetTableDefaults(table string) QueryParams {
 	// Audiobooks section
 	case "dbaudiobooks":
 		q.Table = "dbaudiobooks"
-		q.DefaultColumns = "id,created_at,updated_at,title,asin,audible_id,runtime_minutes,chapter_count,release_date,publisher,language,abridged,cover_url,sample_url,average_rating,ratings_count,year,slug,dbbook_id,description"
+		q.DefaultColumns = "id,created_at,updated_at,title,asin,audible_id,runtime_minutes,chapter_count,release_date,publisher,language,abridged,cover_url,sample_url,average_rating,ratings_count,year,slug,dbbook_id,description,series_name,series_position"
 		q.DefaultQuery = " where id like ? or title like ? or asin like ? or audible_id like ? or slug like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by id desc"
@@ -670,7 +670,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "audiobooks":
 		q.Table = "audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id"
-		q.DefaultColumns = "audiobooks.id as id,audiobooks.created_at as created_at,audiobooks.updated_at as updated_at,audiobooks.blacklisted as blacklisted,audiobooks.quality_reached as quality_reached,audiobooks.quality_profile as quality_profile,audiobooks.missing as missing,audiobooks.dont_upgrade as dont_upgrade,audiobooks.dont_search as dont_search,audiobooks.listname as listname,audiobooks.rootpath as rootpath,audiobooks.dbaudiobook_id as dbaudiobook_id,audiobooks.author_id as author_id,audiobooks.book_series_id as book_series_id,dbaudiobooks.title as audiobook_title"
+		q.DefaultColumns = "audiobooks.id as id,audiobooks.created_at as created_at,audiobooks.updated_at as updated_at,audiobooks.lastscan as lastscan,audiobooks.blacklisted as blacklisted,audiobooks.quality_reached as quality_reached,audiobooks.quality_profile as quality_profile,audiobooks.missing as missing,audiobooks.dont_upgrade as dont_upgrade,audiobooks.dont_search as dont_search,audiobooks.listname as listname,audiobooks.rootpath as rootpath,audiobooks.dbaudiobook_id as dbaudiobook_id,audiobooks.author_id as author_id,audiobooks.book_series_id as book_series_id,dbaudiobooks.title as audiobook_title"
 		q.DefaultQuery = " where audiobooks.id like ? or audiobooks.quality_profile like ? or audiobooks.listname like ? or audiobooks.rootpath like ? or audiobooks.dbaudiobook_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by audiobooks.id desc"
@@ -687,7 +687,7 @@ func GetTableDefaults(table string) QueryParams {
 	// Music section
 	case "dbalbums":
 		q.Table = "dbalbums"
-		q.DefaultColumns = "id,created_at,updated_at,title,musicbrainz_release_group_id,musicbrainz_release_id,discogs_master_id,discogs_release_id,spotify_id,upc,release_date,release_type,format,label,country,total_tracks,total_runtime_ms,genres,styles,cover_url,year,slug"
+		q.DefaultColumns = "id,created_at,updated_at,title,musicbrainz_release_group_id,musicbrainz_release_id,discogs_master_id,discogs_release_id,spotify_id,upc,release_date,release_type,format,label,country,total_tracks,total_runtime_ms,genres,styles,cover_url,year,slug,series_name,deezer_id,theaudiodb_id,itunes_id"
 		q.DefaultQuery = " where id like ? or title like ? or musicbrainz_release_id like ? or discogs_release_id like ? or spotify_id like ? or upc like ? or slug like ?"
 		q.DefaultQueryParamCount = 7
 		q.DefaultOrderBy = " order by id desc"
@@ -695,7 +695,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbartists":
 		q.Table = "dbartists"
-		q.DefaultColumns = "id,created_at,updated_at,name,sort_name,musicbrainz_id,discogs_id,spotify_id,artist_type,country,begin_date,end_date,disambiguation,bio,image_url,genres"
+		q.DefaultColumns = "id,created_at,updated_at,name,slug,sort_name,musicbrainz_id,discogs_id,spotify_id,artist_type,country,begin_date,end_date,disambiguation,bio,image_url,genres"
 		q.DefaultQuery = " where id like ? or name like ? or musicbrainz_id like ? or discogs_id like ? or spotify_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by id desc"
@@ -703,7 +703,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "albums":
 		q.Table = "albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id"
-		q.DefaultColumns = "albums.id as id,albums.created_at as created_at,albums.updated_at as updated_at,albums.blacklisted as blacklisted,albums.quality_reached as quality_reached,albums.quality_profile as quality_profile,albums.missing as missing,albums.dont_upgrade as dont_upgrade,albums.dont_search as dont_search,albums.listname as listname,albums.rootpath as rootpath,albums.dbalbum_id as dbalbum_id,albums.artist_id as artist_id,dbalbums.title as album_title"
+		q.DefaultColumns = "albums.id as id,albums.created_at as created_at,albums.updated_at as updated_at,albums.lastscan as lastscan,albums.blacklisted as blacklisted,albums.quality_reached as quality_reached,albums.quality_profile as quality_profile,albums.missing as missing,albums.dont_upgrade as dont_upgrade,albums.dont_search as dont_search,albums.listname as listname,albums.rootpath as rootpath,albums.dbalbum_id as dbalbum_id,albums.artist_id as artist_id,dbalbums.title as album_title"
 		q.DefaultQuery = " where albums.id like ? or albums.quality_profile like ? or albums.listname like ? or albums.rootpath like ? or albums.dbalbum_id like ?"
 		q.DefaultQueryParamCount = 5
 		q.DefaultOrderBy = " order by albums.id desc"
@@ -711,7 +711,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "album_files":
 		q.Table = "album_files LEFT JOIN dbalbums ON album_files.dbalbum_id = dbalbums.id"
-		q.DefaultColumns = "album_files.id as id,album_files.created_at as created_at,album_files.updated_at as updated_at,album_files.location as location,album_files.filename as filename,album_files.extension as extension,album_files.format as format,album_files.quality_profile as quality_profile,album_files.album_id as album_id,album_files.dbalbum_id as dbalbum_id,album_files.dbtrack_id as dbtrack_id,album_files.file_size as file_size,album_files.bitrate as bitrate,album_files.sample_rate as sample_rate,album_files.bit_depth as bit_depth,album_files.runtime_ms as runtime_ms,album_files.disc_number as disc_number,album_files.track_number as track_number,dbalbums.title as album_title"
+		q.DefaultColumns = "album_files.id as id,album_files.created_at as created_at,album_files.updated_at as updated_at,album_files.location as location,album_files.filename as filename,album_files.extension as extension,album_files.format as format,album_files.quality_profile as quality_profile,album_files.album_id as album_id,album_files.dbalbum_id as dbalbum_id,album_files.dbtrack_id as dbtrack_id,album_files.file_size as file_size,album_files.bitrate as bitrate,album_files.sample_rate as sample_rate,album_files.bit_depth as bit_depth,album_files.runtime_ms as runtime_ms,album_files.disc_number as disc_number,album_files.track_number as track_number,album_files.acoustid as acoustid,dbalbums.title as album_title"
 		q.DefaultQuery = " where album_files.id like ? or album_files.location like ? or album_files.filename like ? or album_files.format like ? or album_files.album_id like ? or album_files.dbalbum_id like ?"
 		q.DefaultQueryParamCount = 6
 		q.DefaultOrderBy = " order by album_files.id desc"
@@ -743,7 +743,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbbook_series":
 		q.Table = "dbbook_series"
-		q.DefaultColumns = "id,created_at,updated_at,name,description,goodreads_id,openlibrary_id"
+		q.DefaultColumns = "id,created_at,updated_at,name,slug,description,goodreads_id,openlibrary_id"
 		q.DefaultQuery = " where id like ? or name like ? or goodreads_id like ? or openlibrary_id like ?"
 		q.DefaultQueryParamCount = 4
 		q.DefaultOrderBy = " order by id desc"
@@ -839,7 +839,7 @@ func GetTableDefaults(table string) QueryParams {
 
 	case "dbartist_aliases":
 		q.Table = "dbartist_aliases LEFT JOIN dbartists ON dbartist_aliases.dbartist_id = dbartists.id"
-		q.DefaultColumns = "dbartist_aliases.id as id,dbartist_aliases.created_at as created_at,dbartist_aliases.updated_at as updated_at,dbartist_aliases.alias as alias,dbartist_aliases.locale as locale,dbartist_aliases.alias_type as alias_type,dbartist_aliases.is_primary as is_primary,dbartist_aliases.dbartist_id as dbartist_id,dbartists.name as artist_name"
+		q.DefaultColumns = "dbartist_aliases.id as id,dbartist_aliases.created_at as created_at,dbartist_aliases.updated_at as updated_at,dbartist_aliases.alias as alias,dbartist_aliases.slug as slug,dbartist_aliases.locale as locale,dbartist_aliases.alias_type as alias_type,dbartist_aliases.is_primary as is_primary,dbartist_aliases.dbartist_id as dbartist_id,dbartists.name as artist_name"
 		q.DefaultQuery = " where dbartist_aliases.id like ? or dbartist_aliases.alias like ? or dbartist_aliases.dbartist_id like ?"
 		q.DefaultQueryParamCount = 3
 		q.DefaultOrderBy = " order by dbartist_aliases.dbartist_id, dbartist_aliases.is_primary desc"
@@ -907,11 +907,19 @@ func GetTableDefaults(table string) QueryParams {
 
 // GetAllTableNames returns all user-created table names from the main database,
 // sorted alphabetically. Used to populate the Database sidebar dropdown.
+// GetAllTableNames returns every browsable table name for the admin database
+// browser's table-select dropdown. Excludes migration bookkeeping
+// (schema_migrations) and tables that exist in the schema but have no
+// GetTableDefaults case and no application code reading/writing them
+// (stat, storage_usage_history, http_request_statistics,
+// indexer_performance_statistics - dead leftovers from earlier migrations) -
+// without this exclusion those choices 404 in adminPageDatabase since
+// GetTableDefaults returns a zero-value QueryParams for them.
 func GetAllTableNames() []string {
 	return GetrowsN[string](
 		false,
 		0,
-		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'stat', 'storage_usage_history', 'http_request_statistics', 'indexer_performance_statistics') ORDER BY name",
 	)
 }
 
@@ -1194,7 +1202,7 @@ func QueryResultSerieEpisodes(qu Querywithargs, args ...any) []ResultSerieEpisod
 
 	qu.Table = "serie_episodes"
 
-	qu.defaultcolumns = `dbserie_episodes.id as dbserie_episode_id,dbserie_episodes.created_at,dbserie_episodes.updated_at,dbserie_episodes.episode,dbserie_episodes.season,dbserie_episodes.identifier,dbserie_episodes.title,dbserie_episodes.first_aired,dbserie_episodes.overview,dbserie_episodes.poster,dbserie_episodes.dbserie_id,dbserie_episodes.runtime,series.listname,series.rootpath,serie_episodes.lastscan,serie_episodes.blacklisted,serie_episodes.quality_reached,serie_episodes.quality_profile,serie_episodes.missing,serie_episodes.id as id`
+	qu.defaultcolumns = `dbserie_episodes.id as dbserie_episode_id,dbserie_episodes.created_at,dbserie_episodes.updated_at,dbserie_episodes.episode,dbserie_episodes.season,dbserie_episodes.identifier,dbserie_episodes.title,dbserie_episodes.first_aired,dbserie_episodes.overview,dbserie_episodes.poster,dbserie_episodes.scraper_id,dbserie_episodes.scraper_url,dbserie_episodes.dbserie_id,dbserie_episodes.runtime,series.listname,series.rootpath,serie_episodes.lastscan,serie_episodes.blacklisted,serie_episodes.quality_reached,serie_episodes.quality_profile,serie_episodes.missing,serie_episodes.id as id`
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}

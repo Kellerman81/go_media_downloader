@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -383,7 +384,7 @@ func addBookToDatabase(
 			continue
 		}
 
-		authorID := addOrGetAuthor(author)
+		authorID := AddOrGetAuthor(author)
 		if authorID > 0 {
 			// Check if relationship already exists
 			var existingRelation uint
@@ -406,7 +407,7 @@ func addBookToDatabase(
 		found := slices.Contains(book.Authors, authorName)
 
 		if !found {
-			authorID := addOrGetAuthor(authorName)
+			authorID := AddOrGetAuthor(authorName)
 			if authorID > 0 {
 				var existingRelation uint
 				database.Scanrowsdyn(false,
@@ -449,6 +450,10 @@ func addBookToDatabase(
 	// For anthologies (4+ authors): skip creating new tracking entries entirely.
 	var trackedAuthorID uint
 
+	if listid == -1 {
+		return logger.ErrListnameEmpty
+	}
+
 	isMultiAuthor := len(book.Authors) > 1
 	isCompilation := len(book.Authors) > 3
 	listName := cfgp.Lists[listid].Name
@@ -459,14 +464,11 @@ func addBookToDatabase(
 				continue
 			}
 
-			var dbauthorID uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbauthors WHERE name = ?",
-				&dbauthorID,
-				&author,
-			)
-
+			// Reuse AddOrGetAuthor's case-insensitive/slug-fallback lookup -
+			// a plain "name = ?" match here can silently miss the row just
+			// confirmed to exist above (AddOrGetAuthor, line ~386) whenever
+			// this author string's casing differs from what's stored.
+			dbauthorID := AddOrGetAuthor(author)
 			if dbauthorID == 0 {
 				continue
 			}
@@ -481,9 +483,15 @@ func addBookToDatabase(
 				&listName,
 			)
 
-			// Determine if this is the primary author we want to track
-			isPrimary := idx == 0 || !isMultiAuthor ||
-				(authorName != "" && strings.EqualFold(author, authorName))
+			// Determine if this is the primary author we want to track.
+			// When authorName names a specific author, only that author is
+			// primary - idx==0 must NOT also qualify, or an unrelated
+			// first-listed co-author would incorrectly get tracked too
+			// (contradicting "primary gets books, secondary get none" below).
+			isPrimary := idx == 0 || !isMultiAuthor
+			if authorName != "" {
+				isPrimary = strings.EqualFold(author, authorName)
+			}
 
 			trackMode := "books"
 			if isMultiAuthor && !isPrimary {
@@ -516,13 +524,7 @@ func addBookToDatabase(
 
 	// For anthologies or if authorName wasn't found above, find/create tracking entry for authorName only.
 	if authorName != "" && trackedAuthorID == 0 {
-		var dbauthorID uint
-		database.Scanrowsdyn(
-			false,
-			"SELECT id FROM dbauthors WHERE name = ?",
-			&dbauthorID,
-			&authorName,
-		)
+		dbauthorID := AddOrGetAuthor(authorName)
 
 		if dbauthorID > 0 {
 			var existingTrackedID uint
@@ -648,12 +650,24 @@ func JobImportDBAudiobook(
 	return err
 }
 
+// audibleProviderMu serializes getOrCreateAudibleProvider's check-then-create
+// sequence. providers.GetAudible/SetAudible are each individually locked, but
+// without a lock spanning both, two concurrent first-uses of the same region
+// (this runs per-audiobook from a worker pool, see JobImportDBAudiobook) could
+// each construct their own provider with its own rate limiter, momentarily
+// exceeding the intended request rate to Audible - the same bug class already
+// fixed via sync.OnceValue for the single-instance providers above.
+var audibleProviderMu sync.Mutex
+
 // getOrCreateAudibleProvider returns an Audible provider for the specified region.
 // It creates and registers a new provider if one doesn't exist for the region.
 func getOrCreateAudibleProvider(region string) *audible.Provider {
 	if region == "" {
 		region = "us"
 	}
+
+	audibleProviderMu.Lock()
+	defer audibleProviderMu.Unlock()
 
 	// Try to get existing provider
 	provider := providers.GetAudible(region)
@@ -1221,9 +1235,9 @@ func importSingleAudiobook(
 	return logger.ErrNotFound
 }
 
-// addOrGetAuthor finds an existing author by name or creates a new one.
+// AddOrGetAuthor finds an existing author by name or creates a new one.
 // Returns the author ID.
-func addOrGetAuthor(authorName string) uint {
+func AddOrGetAuthor(authorName string) uint {
 	if authorName == "" {
 		return 0
 	}
@@ -1258,9 +1272,9 @@ func addOrGetAuthor(authorName string) uint {
 	return logger.Int64ToUint(result)
 }
 
-// addOrGetNarrator finds an existing narrator by name or creates a new one.
+// AddOrGetNarrator finds an existing narrator by name or creates a new one.
 // Returns the narrator ID.
-func addOrGetNarrator(narratorName string) uint {
+func AddOrGetNarrator(narratorName string) uint {
 	if narratorName == "" {
 		return 0
 	}
@@ -1430,7 +1444,7 @@ func addAudiobookDetailToDatabase(
 			continue
 		}
 
-		authorID := addOrGetAuthor(authorName)
+		authorID := AddOrGetAuthor(authorName)
 		if authorID > 0 {
 			var existingRelation uint
 			database.Scanrowsdyn(false,
@@ -1453,7 +1467,7 @@ func addAudiobookDetailToDatabase(
 			continue
 		}
 
-		narratorID := addOrGetNarrator(narratorName)
+		narratorID := AddOrGetNarrator(narratorName)
 		if narratorID > 0 {
 			var existingRelation uint
 			database.Scanrowsdyn(
@@ -1474,7 +1488,12 @@ func addAudiobookDetailToDatabase(
 		}
 	}
 
-	// Add chapters to the database
+	// Add chapters to the database.
+	// Gather the existence checks up front - ExecNTx below holds the write
+	// lock for the whole transaction, and a read helper called from inside it
+	// would deadlock on that same lock.
+	missingChapters := make([]int, 0, len(chapters))
+
 	for i := range chapters {
 		var existingChapter uint
 		database.Scanrowsdyn(false,
@@ -1482,10 +1501,19 @@ func addAudiobookDetailToDatabase(
 			&existingChapter, &dbaudiobookID, &chapters[i].ChapterNumber)
 
 		if existingChapter == 0 {
+			missingChapters = append(missingChapters, i)
+		}
+	}
+
+	// One transaction for all missing-chapter inserts of this audiobook -
+	// per-statement implicit transactions pay a full fsync each, and this loop
+	// can run tens to hundreds of times for a single audiobook import.
+	_ = database.ExecNTx(func(exec func(querystring string, args ...any) error) error {
+		for _, i := range missingChapters {
 			// Calculate end_time_ms as start_time_ms + runtime_ms
 			endTimeMs := chapters[i].StartOffsetMs + chapters[i].LengthMs
 
-			_, _ = database.ExecNid(
+			_ = exec(
 				`INSERT INTO dbaudiobook_chapters (dbaudiobook_id, title, chapter_number, position, start_time_ms, end_time_ms, runtime_ms)
 				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 				&dbaudiobookID,
@@ -1497,7 +1525,9 @@ func addAudiobookDetailToDatabase(
 				&chapters[i].LengthMs,
 			)
 		}
-	}
+
+		return nil
+	})
 
 	// Add main title to titles table
 	mainSlug := logger.StringToSlugCached(details.Title)
@@ -1540,6 +1570,10 @@ func addAudiobookDetailToDatabase(
 	// For anthologies (4+ authors): skip creating new tracking entries entirely.
 	var trackedAuthorID uint
 
+	if listid == -1 {
+		return logger.ErrListnameEmpty
+	}
+
 	isMultiAuthor := len(details.Authors) > 1
 	isCompilation := len(details.Authors) > 3
 	listName2 := cfgp.Lists[listid].Name
@@ -1550,14 +1584,11 @@ func addAudiobookDetailToDatabase(
 				continue
 			}
 
-			var dbauthorID uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM dbauthors WHERE name = ?",
-				&dbauthorID,
-				&authorName,
-			)
-
+			// Reuse AddOrGetAuthor's case-insensitive/slug-fallback lookup -
+			// a plain "name = ?" match here can silently miss the row just
+			// confirmed to exist above (AddOrGetAuthor, line ~1433) whenever
+			// this author string's casing differs from what's stored.
+			dbauthorID := AddOrGetAuthor(authorName)
 			if dbauthorID == 0 {
 				continue
 			}
@@ -1606,13 +1637,7 @@ func addAudiobookDetailToDatabase(
 
 	// For anthologies or if primary wasn't found, find existing tracking entry for first author
 	if trackedAuthorID == 0 && len(details.Authors) > 0 && details.Authors[0] != "" {
-		var dbauthorID uint
-		database.Scanrowsdyn(
-			false,
-			"SELECT id FROM dbauthors WHERE name = ?",
-			&dbauthorID,
-			&details.Authors[0],
-		)
+		dbauthorID := AddOrGetAuthor(details.Authors[0])
 
 		if dbauthorID > 0 {
 			database.Scanrowsdyn(
@@ -1787,7 +1812,7 @@ func addAudiobookFromBookToDatabase(
 			continue
 		}
 
-		authorID := addOrGetAuthor(authorName)
+		authorID := AddOrGetAuthor(authorName)
 		if authorID > 0 {
 			var existingRelation uint
 			database.Scanrowsdyn(false,
@@ -1821,6 +1846,10 @@ func addAudiobookFromBookToDatabase(
 				&dbaudiobookID, &fullTitle, &fullSlug,
 			)
 		}
+	}
+
+	if listid == -1 {
+		return logger.ErrListnameEmpty
 	}
 
 	// Check if tracked audiobook already exists

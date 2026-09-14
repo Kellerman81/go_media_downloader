@@ -77,12 +77,15 @@ func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 		return nil, errors.New("start_url is required")
 	}
 
+	// Default the same way NewScraper (the episode variant) does, instead of
+	// hard-erroring - there's no functional reason for movie scraping to be
+	// stricter than episode scraping for the exact same config fields.
 	if cfg.CSRFCookieName == "" {
-		return nil, errors.New("csrf_cookie_name is required")
+		cfg.CSRFCookieName = "_csrf"
 	}
 
 	if cfg.CSRFHeaderName == "" {
-		return nil, errors.New("csrf_header_name is required")
+		cfg.CSRFHeaderName = "csrf-token"
 	}
 
 	if cfg.APIURLPattern == "" {

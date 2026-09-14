@@ -47,7 +47,7 @@ func (*MP3Handler) SupportedFormats() []string {
 }
 
 // ReadTagsWithCover reads ID3v2 tags including embedded cover art (APIC).
-// Use this only when cover art is needed (e.g. CopyTags); prefer ReadTags
+// Use this only when cover art is needed (e.g. ReadCoverData); prefer ReadTags
 // for metadata-only access since loading cover art is expensive.
 func (h *MP3Handler) ReadTagsWithCover(filepath string) (*AudioTags, error) {
 	tag, err := id3v2.Open(filepath, id3v2.Options{Parse: true})
@@ -74,7 +74,7 @@ func (h *MP3Handler) ReadTagsWithCover(filepath string) (*AudioTags, error) {
 // ReadTags reads ID3v2 tags from an MP3 file, skipping embedded cover art.
 // Cover art (APIC) is intentionally omitted — it can be several MB per file
 // and is not needed for the matching / enrichment hot-path.
-// Use ReadTagsWithCover when cover art must be preserved (e.g. CopyTags).
+// Use ReadTagsWithCover when cover art must be preserved (e.g. ReadCoverData).
 func (h *MP3Handler) ReadTags(filepath string) (*AudioTags, error) {
 	tag, err := id3v2.Open(filepath, id3v2.Options{Parse: true, ParseFrames: mp3ReadFrames})
 	if err != nil {

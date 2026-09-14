@@ -316,7 +316,7 @@ func extractArchive(ctx context.Context, archivePath, extractPath string) error 
 	// covers every archive type. Skipped when the primary already was 7-Zip.
 	if err != nil && errors.Is(err, exec.ErrNotFound) {
 		if szCmd, szArgs := sevenZipUnpackCommand(archivePath, extractPath); szCmd != command {
-			logger.Logtype("warning", 1).
+			logger.Logtype("warn", 1).
 				Str(logger.StrFile, archivePath).
 				Str("missing", command).
 				Str("fallback", szCmd).

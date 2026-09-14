@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -14,11 +15,84 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/downloader"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
 )
+
+// maxConcurrentEpisodeSearches bounds how many per-episode MediaSearch calls
+// run at once for a single full-series or single-season search request (see
+// searchEpisodesConcurrently). Each MediaSearch call fans out to every
+// configured indexer and waits for the slowest one, so running episodes
+// fully sequentially made a full-season search (e.g. 24 episodes) take 24
+// sequential indexer round-trips. A small, bounded worker count captures
+// most of the wall-clock win without driving materially more concurrent
+// load at the shared indexer rate limiters/circuit breakers than the rest
+// of the app already does.
+const maxConcurrentEpisodeSearches = 4
+
+// searchEpisodesConcurrently runs a MediaSearch for each of the given episode
+// IDs with bounded concurrency (at most maxConcurrentEpisodeSearches at a
+// time), downloading any accepted results per episode. Used by both
+// apiSeriesSearch (all episodes) and apiSeriesSearchSeason (one season).
+//
+// Each goroutine gets its own *searcher.ConfigSearcher via
+// searcher.NewSearcher, which is pooled (sync.Pool-backed) and freshly reset
+// per Get - so concurrent use here is exactly the pool's intended usage
+// pattern, not a hazard. Every episode is still searched exactly once;
+// errors matching logger.ErrDisabled are skipped silently (not logged, not
+// returned) same as before; any other search error is logged and stored -
+// mirroring the old sequential loop's "err = errsub" (last one wins), except
+// under concurrency "last" means last to finish rather than last by episode
+// order.
+func searchEpisodesConcurrently(
+	ctx context.Context,
+	media *config.MediaTypeConfig,
+	episodes []uint,
+) error {
+	wg := pool.NewSizedGroup(maxConcurrentEpisodeSearches)
+
+	var (
+		mu      sync.Mutex
+		lasterr error
+	)
+
+	for idxepisode := range episodes {
+		episodeID := episodes[idxepisode]
+
+		wg.Add()
+
+		go func() {
+			defer wg.Done()
+
+			results := searcher.NewSearcher(media, nil, "", nil)
+			defer results.Close()
+
+			errsub := results.MediaSearch(ctx, media, episodeID, true, false, false)
+			if errsub != nil {
+				if !errors.Is(errsub, logger.ErrDisabled) {
+					logger.Logtype("error", 2).
+						Any(logger.StrID, &episodeID).
+						Str("typ", logger.StrSeries).
+						Err(errsub).
+						Msg("Search Failed")
+
+					mu.Lock()
+					lasterr = errsub
+					mu.Unlock()
+				}
+			} else if len(results.Accepted) >= 1 {
+				results.Download()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	return lasterr
+}
 
 func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 	routerseries.Use(checkauth)
@@ -258,7 +332,11 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
 	query := buildQueryWithWhere(params, querybydbserieid)
 
-	rows := database.Getdatarow[uint](false, "select count() from series where dbserie_id = ?", &id)
+	rows := database.Getdatarow[uint](
+		false,
+		"select count() from dbserie_episodes where dbserie_id = ?",
+		&id,
+	)
 	data := database.QueryDbserieEpisodes(query, id)
 
 	sendJSONResponse(
@@ -365,7 +443,7 @@ const allowedjobsseriesstr = "rss,rssseasons,rssseasonsall,data,datafull,checkmi
 func apiseriesAllJobs(c *gin.Context) {
 	jobParam := c.Param(StrJobLower)
 	if !validateJobParam(jobParam, allowedjobsseriesstr) {
-		sendJSONError(c, http.StatusNoContent, "Job "+jobParam+" not allowed!")
+		sendJSONError(c, http.StatusBadRequest, "Job "+jobParam+" not allowed!")
 		return
 	}
 
@@ -1031,22 +1109,45 @@ func updateEpisode(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/series/refresh/{id} [get].
 func apirefreshSerie(c *gin.Context) {
+	id, ok := getParamID(c, StrID)
+	if !ok {
+		return
+	}
+
+	// Find this series' list so we pick the series config that actually owns
+	// it - mirrors apirefreshMovie (movies.go): there may be several series
+	// configs, and picking the first one found would fail (or silently
+	// refresh under the wrong config) when the series belongs to a
+	// different config's list.
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM series WHERE dbserie_id = ? LIMIT 1",
+		&id,
+	)
+
 	var cfgp *config.MediaTypeConfig
 	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if media.NamePrefix[:5] != logger.StrMovie {
-			cfgp = media
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+			return false
+		}
+
+		if cfgp == nil {
+			cfgp = media // fall back to the first series config
+		}
+
+		if listname != "" && media.GetMediaListsEntryListID(listname) != -1 {
+			cfgp = media // this config owns the series' list
 			return true
 		}
 
 		return false
 	})
 
-	id, ok := getParamID(c, StrID)
-	if !ok {
-		return
-	}
-
-	worker.Dispatch("Refresh Single Serie", func(_ uint32, _ context.Context) error {
+	// Include the id in the dispatch name - worker.Dispatch rejects a
+	// submission sharing a name with one already queued, so a bare
+	// "Refresh Single Serie" name would silently drop a concurrent request
+	// for a different series.
+	worker.Dispatch("Refresh Single Serie_"+id, func(_ uint32, _ context.Context) error {
 		return utils.RefreshSerie(cfgp, &id)
 	}, "Feeds")
 	sendSuccess(c, StrStarted)
@@ -1060,18 +1161,21 @@ func apirefreshSerie(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/series/all/refreshall [get].
 func apirefreshSeries(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if media.NamePrefix[:5] != logger.StrMovie {
-			cfgp = media
-			return true
+	// Must dispatch a job per matching config, not just the first one found -
+	// see apirefreshMovies (movies.go) for the same fix applied to movies.
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+			return nil
 		}
 
-		return false
+		cfgpstr := media.NamePrefix
+
+		worker.Dispatch(logger.StrRefreshSeries+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refresh", cfgpstr, "", false, key)
+		}, "Feeds")
+
+		return nil
 	})
-	worker.Dispatch(logger.StrRefreshSeries, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
 
@@ -1083,18 +1187,20 @@ func apirefreshSeries(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/series/all/refresh [get].
 func apirefreshSeriesInc(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if media.NamePrefix[:5] != logger.StrMovie {
-			cfgp = media
-			return true
+	// See apirefreshSeries above - must dispatch a job per matching config.
+	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
+		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+			return nil
 		}
 
-		return false
+		cfgpstr := media.NamePrefix
+
+		worker.Dispatch(logger.StrRefreshSeriesInc+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+			return utils.SingleJobs(ctx, "refreshinc", cfgpstr, "", false, key)
+		}, "Feeds")
+
+		return nil
 	})
-	worker.Dispatch(logger.StrRefreshSeriesInc, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
 	sendSuccess(c, StrStarted)
 }
 
@@ -1114,8 +1220,10 @@ func apiSeriesSearch(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
@@ -1137,42 +1245,13 @@ func apiSeriesSearch(c *gin.Context) {
 							&serie.ID,
 						)
 
-						var err error
-						for idxepisode := range episodes {
-							results := searcher.NewSearcher(media, nil, "", nil)
-
-							errsub := results.MediaSearch(
-								ctx,
-								media,
-								episodes[idxepisode],
-								true,
-								false,
-								false,
-							)
-							if errsub != nil {
-								if !errors.Is(errsub, logger.ErrDisabled) {
-									logger.Logtype("error", 2).
-										Any(logger.StrID, &episodes[idxepisode]).
-										Str("typ", logger.StrSeries).
-										Err(errsub).
-										Msg("Search Failed")
-
-									err = errsub
-								}
-							} else {
-								if len(results.Accepted) >= 1 {
-									results.Download()
-								}
-							}
-
-							results.Close()
-						}
-
-						return err
+						return searchEpisodesConcurrently(ctx, media, episodes)
 					},
 					"Search",
 				)
 				sendSuccess(c, StrStarted)
+
+				found = true
 
 				return nil
 			}
@@ -1180,7 +1259,10 @@ func apiSeriesSearch(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a series (one season)
@@ -1200,9 +1282,10 @@ func apiSeriesSearchSeason(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
-	var episodes []uint
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
@@ -1217,7 +1300,7 @@ func apiSeriesSearchSeason(c *gin.Context) {
 					func(_ uint32, ctx context.Context) error {
 						a := c.Param("season")
 
-						episodes = database.GetrowsN[uint](
+						episodes := database.GetrowsN[uint](
 							false,
 							database.Getdatarow[uint](
 								false,
@@ -1230,44 +1313,13 @@ func apiSeriesSearchSeason(c *gin.Context) {
 							c.Param("season"),
 						)
 
-						var err error
-						for idxepisode := range episodes {
-							results := searcher.NewSearcher(media, nil, "", nil)
-
-							errsub := results.MediaSearch(
-								ctx,
-								media,
-								episodes[idxepisode],
-								true,
-								false,
-								false,
-							)
-							if errsub != nil {
-								if !errors.Is(errsub, logger.ErrDisabled) {
-									logger.Logtype("error", 2).
-										Any(logger.StrID, &episodes[idxepisode]).
-										Str("typ", logger.StrSeries).
-										Err(errsub).
-										Msg("Search Failed")
-
-									err = errsub
-								}
-							} else {
-								if len(results.Accepted) >= 1 {
-									results.Download()
-								}
-							}
-
-							results.Close()
-						}
-
-						episodes = nil
-
-						return err
+						return searchEpisodesConcurrently(ctx, media, episodes)
 					},
 					"Search",
 				)
 				sendSuccess(c, StrStarted)
+
+				found = true
 
 				return nil
 			}
@@ -1275,7 +1327,10 @@ func apiSeriesSearchSeason(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a series (any season - one search call)
@@ -1294,8 +1349,10 @@ func apiSeriesSearchRSS(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
@@ -1316,13 +1373,18 @@ func apiSeriesSearchRSS(c *gin.Context) {
 				)
 				sendSuccess(c, StrStarted)
 
+				found = true
+
 				return nil
 			}
 		}
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a series (any season - one search call)
@@ -1340,13 +1402,17 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				found = true
+
 				searchresults, err := searcher.SearchSerieRSSSeasonSingle(
 					&serie.ID,
 					"",
@@ -1375,7 +1441,10 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a series (one season - one search call)
@@ -1395,8 +1464,11 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 	)
 	// defer logger.ClearVar(&serie)
 	season := c.Param("season")
+
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
@@ -1423,13 +1495,18 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 				)
 				sendSuccess(c, StrStarted)
 
+				found = true
+
 				return nil
 			}
 		}
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a episode
@@ -1449,8 +1526,10 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
 	// defer logger.ClearVar(&serie)
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
@@ -1486,13 +1565,18 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 				)
 				sendSuccess(c, StrStarted)
 
+				found = true
+
 				return nil
 			}
 		}
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Search a episode (list ok, nok)
@@ -1525,13 +1609,17 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 		}
 	}
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
 		for idxlist := range media.Lists {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
+				found = true
+
 				ctx := context.Background()
 				searchresults := searcher.NewSearcher(media, nil, "", nil)
 
@@ -1559,7 +1647,10 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Series RSS (list ok, nok)
@@ -1571,12 +1662,16 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 // @Failure      401     {object}  Jsonerror
 // @Router       /api/series/rss/search/list/{group} [get].
 func apiSeriesRssSearchList(c *gin.Context) {
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
 		if strings.EqualFold(media.Name, c.Param("group")) {
+			found = true
+
 			templatequality := media.TemplateQuality
 			ctx := context.Background()
 			searchresults := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, nil)
@@ -1606,7 +1701,10 @@ func apiSeriesRssSearchList(c *gin.Context) {
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Download a episode (manual)
@@ -1638,8 +1736,10 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 
 	// defer logger.ClearVar(&nzb)
 
+	found := false
+
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrSerie) {
 			return nil
 		}
 
@@ -1647,13 +1747,19 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 			if strings.EqualFold(media.Lists[idxlist].Name, serie.Listname) {
 				downloader.DownloadSeriesEpisode(media, &nzb)
 				sendSuccess(c, StrStarted)
+
+				found = true
+
 				return nil
 			}
 		}
 
 		return nil
 	})
-	sendJSONError(c, http.StatusNoContent, StrNothingDone)
+
+	if !found {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+	}
 }
 
 // @Summary      Clear History (Full List)
@@ -1665,7 +1771,13 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 // @Failure      401     {object}  Jsonerror
 // @Router       /api/series/search/history/clear/{name} [get].
 func apiSeriesClearHistoryName(c *gin.Context) {
-	utils.SingleJobs(c, logger.StrClearHistory, "serie_"+c.Param("name"), "", true, 0)
+	// See apimoviesClearHistoryName (movies.go) - this ran synchronously on
+	// the request goroutine while claiming "started" like an async job.
+	cfgpstr := "serie_" + c.Param("name")
+
+	worker.Dispatch(logger.StrClearHistory+"_"+cfgpstr, func(key uint32, ctx context.Context) error {
+		return utils.SingleJobs(ctx, logger.StrClearHistory, cfgpstr, "", true, key)
+	}, "Data")
 	sendSuccess(c, StrStarted)
 }
 

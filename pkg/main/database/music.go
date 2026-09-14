@@ -871,15 +871,14 @@ func GetAlbumByRootpath(rootpath string) (*Album, error) {
 	}
 
 	var ab Album
-	Scanrowsdyn(
-		false,
+	GetdatarowArgs(
 		"SELECT id, dbalbum_id, listname, rootpath, quality_profile FROM albums WHERE rootpath = ? LIMIT 1",
+		&rootpath,
 		&ab.ID,
 		&ab.DbalbumID,
 		&ab.Listname,
 		&ab.Rootpath,
 		&ab.QualityProfile,
-		&rootpath,
 	)
 
 	if ab.ID == 0 {

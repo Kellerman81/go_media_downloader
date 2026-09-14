@@ -100,7 +100,6 @@ func NewTvdbClient(seconds uint8, calls int, disabletls bool, timeoutseconds uin
 		CircuitBreakerThreshold:   5,
 		CircuitBreakerTimeout:     60 * time.Second,
 		CircuitBreakerHalfOpenMax: 2,
-		EnableStats:               true,
 		UserAgent:                 config.GetSettingsGeneral().UserAgent,
 		DisableTLSVerify:          disabletls,
 	}
@@ -166,37 +165,42 @@ func GetTvdbSeries(id int, _ string) (*TheTVDBSeries, error) {
 // CollectTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
 // TheTVDB API and returns them as a map keyed by "season-episode" for easy merging.
 // This function does NOT write to the database - use WriteCollectedEpisodesToDB for that.
-func CollectTvdbSeriesEpisodes(id int, _ string) map[string]*CollectedEpisode {
+// It returns an error if the TVDB provider is unavailable or the fetch fails, so
+// callers can distinguish a series that genuinely has zero TVDB episodes from a
+// failed fetch (e.g. TVDB down or unreachable) instead of silently under-collecting.
+func CollectTvdbSeriesEpisodes(id int, _ string) (map[string]*CollectedEpisode, error) {
 	episodes := make(map[string]*CollectedEpisode)
 
-	// Use v2 provider if available
-	if provider := providers.GetTVDB(); provider != nil {
-		apiEpisodes, err := provider.GetAllEpisodes(context.Background(), id)
-		if err != nil {
-			logger.Logtype("error", 1).
-				Int("series_id", id).
-				Err(err).
-				Msg("Error getting episodes from v2 provider")
+	provider := providers.GetTVDB()
+	if provider == nil {
+		return episodes, errClientEmpty
+	}
 
-			return episodes
-		}
+	apiEpisodes, err := provider.GetAllEpisodes(context.Background(), id)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Int("series_id", id).
+			Err(err).
+			Msg("Error getting episodes from v2 provider")
 
-		for i := range apiEpisodes {
-			ep := apiEpisodes[i]
+		return episodes, err
+	}
 
-			episodes[strconv.Itoa(ep.SeasonNumber)+"-"+strconv.Itoa(ep.EpisodeNumber)] = &CollectedEpisode{
-				Season:         ep.SeasonNumber,
-				Episode:        ep.EpisodeNumber,
-				AbsoluteNumber: ep.AbsoluteNumber,
-				Title:          ep.Name,
-				FirstAired:     ep.AirDate,
-				Overview:       ep.Overview,
-				Poster:         ep.StillPath,
-			}
+	for i := range apiEpisodes {
+		ep := apiEpisodes[i]
+
+		episodes[strconv.Itoa(ep.SeasonNumber)+"-"+strconv.Itoa(ep.EpisodeNumber)] = &CollectedEpisode{
+			Season:         ep.SeasonNumber,
+			Episode:        ep.EpisodeNumber,
+			AbsoluteNumber: ep.AbsoluteNumber,
+			Title:          ep.Name,
+			FirstAired:     ep.AirDate,
+			Overview:       ep.Overview,
+			Poster:         ep.StillPath,
 		}
 	}
 
-	return episodes
+	return episodes, nil
 }
 
 // WriteCollectedEpisodesToDB writes the collected episodes to the database.
@@ -251,15 +255,6 @@ func WriteCollectedEpisodesToDB(episodes map[string]*CollectedEpisode, dbid *uin
 	}
 }
 
-// UpdateTvdbSeriesEpisodes retrieves all episodes for the given TV series ID from
-// TheTVDB API and writes them to the database. This is a convenience function that
-// combines CollectTvdbSeriesEpisodes and WriteCollectedEpisodesToDB.
-// Deprecated: Use CollectTvdbSeriesEpisodes + MergeTraktIntoCollectedEpisodes + WriteCollectedEpisodesToDB instead.
-func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
-	episodes := CollectTvdbSeriesEpisodes(id, language)
-	WriteCollectedEpisodesToDB(episodes, dbid)
-}
-
 // TestTVDBConnectivity tests the connectivity to the TVDB API by performing a
 // real search, which returns HTTP 200 for a healthy, authenticated API. The
 // previous probe (a lookup of series ID 1) returned HTTP 404 because that record
@@ -267,13 +262,16 @@ func UpdateTvdbSeriesEpisodes(id int, language string, dbid *uint) {
 // which is not a valid "reachable" signal. A search exercises the real endpoint
 // and only succeeds when the service is genuinely working.
 // Returns status code 200 on success, or an error.
-func TestTVDBConnectivity(_ time.Duration) (int, error) {
+func TestTVDBConnectivity(timeout time.Duration) (int, error) {
 	provider := providers.GetTVDB()
 	if provider == nil {
 		return 400, errClientEmpty
 	}
 
-	if _, err := provider.SearchSeries(context.Background(), "test", 0); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if _, err := provider.SearchSeries(ctx, "test", 0); err != nil {
 		return 0, err
 	}
 

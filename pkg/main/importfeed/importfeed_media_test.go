@@ -193,6 +193,10 @@ func TestImportAudiobooksByAuthor_DanBrown(t *testing.T) {
 // TestImportAndMergeAudiobook_SingleBook tests the full merge process for a single audiobook.
 // This simulates what importAudiobooksByAuthor does but for a single known ASIN.
 func TestImportAndMergeAudiobook_SingleBook(t *testing.T) {
+	if testing.Short() {
+		t.Skip("manual test hitting live Audible/Audnex APIs with a hardcoded ASIN that can go stale")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 

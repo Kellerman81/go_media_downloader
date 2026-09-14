@@ -238,6 +238,7 @@ func dashboardQuickActions() gomponents.Node {
 	}
 
 	actions := []action{
+		{"fas fa-wand-magic-sparkles", "Setup Wizard", "/api/admin/wizard"},
 		{"fas fa-magnifying-glass-arrow-right", "Search & Download", "/api/admin/searchdownload"},
 		{"fas fa-film", "Add Movies", "/api/admin/metadata-search/movies"},
 		{"fas fa-tv", "Add Series", "/api/admin/metadata-search/series"},

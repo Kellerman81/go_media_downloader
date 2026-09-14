@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -71,10 +72,31 @@ func parsePaginationParams(ctx *gin.Context) PaginationParams {
 	}
 
 	if queryParam, ok := ctx.GetQuery(StrOrder); ok && queryParam != "" {
-		params.Order = queryParam
+		if isSafeOrderClause(queryParam) {
+			params.Order = queryParam
+		}
 	}
 
 	return params
+}
+
+// orderClauseRegex allowlists a plain `ORDER BY` fragment: one or more
+// column names (optionally dotted, e.g. "dbmovies.title"), each optionally
+// followed by ASC/DESC, comma-separated. Column names can't be bound as SQL
+// parameters (`?` only binds values), and every caller of
+// parsePaginationParams concatenates params.Order directly into a raw SQL
+// string - without this allowlist, a caller with nothing more than a valid
+// apikey could inject arbitrary SQL through the ?order= query parameter
+// (blind/boolean-based injection via subqueries, or a DoS via an expensive
+// Cartesian-product subquery).
+var orderClauseRegex = regexp.MustCompile(
+	`(?i)^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?(\s+(asc|desc))?(\s*,\s*[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?(\s+(asc|desc))?)*$`,
+)
+
+// isSafeOrderClause reports whether s is safe to concatenate directly into
+// an `ORDER BY` SQL clause - see orderClauseRegex.
+func isSafeOrderClause(s string) bool {
+	return orderClauseRegex.MatchString(strings.TrimSpace(s))
 }
 
 // buildQuery creates a database query with pagination.
@@ -241,6 +263,31 @@ func buildChartDateURL(cfg *config.ListsConfig, dateStr string) (string, error) 
 	}
 
 	return strings.ReplaceAll(cfg.ChartDateURLPattern, "{date}", dateValue), nil
+}
+
+// findCfgpAndListID resolves a list name to its media config and list index,
+// scanning entries (one media type's config slice, e.g.
+// config.GetSettingsMediaAll().Books) and looking each one up under
+// prefix+entries[i].Name. Shared by findSeriesCfgpAndListID,
+// findBookCfgpAndListID, findAudiobookCfgpAndListID and
+// findMusicCfgpAndListID, which differ only in which media-type slice and
+// name prefix they pass in.
+func findCfgpAndListID(
+	listName, prefix string,
+	entries []config.MediaTypeConfig,
+) (*config.MediaTypeConfig, int) {
+	for i := range entries {
+		cfgp := config.GetSettingsMedia(prefix + entries[i].Name)
+		if cfgp == nil {
+			continue
+		}
+
+		if listid, ok := cfgp.ListsMapIdx[listName]; ok {
+			return cfgp, listid
+		}
+	}
+
+	return nil, -1
 }
 
 // getCSRFToken extracts CSRF token from gin context if available.

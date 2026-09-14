@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -200,7 +201,8 @@ func (c *rlHTTPClient) checkLimiter(ctx context.Context, allow bool) (bool, erro
 }
 
 // checkresperror checks the HTTP response status code and returns an error if the response indicates an error condition.
-// If the response status code is not http.StatusOK, it calls addwait to handle the error and returns logger.ErrToWait.
+// If the response status code is not http.StatusOK, it calls addwait to handle the error and returns an error
+// wrapping logger.ErrToWait that preserves the real HTTP status code.
 // If the response Content-Type header is "text/html" and checkhtml is true, it returns logger.ErrNotAllowed.
 // Otherwise, it returns nil.
 func (c *rlHTTPClient) checkresperror(
@@ -210,7 +212,7 @@ func (c *rlHTTPClient) checkresperror(
 ) error {
 	if resp.StatusCode != http.StatusOK {
 		if c.addwait(req, resp) {
-			return logger.ErrToWait
+			return fmt.Errorf("HTTP %d: %w", resp.StatusCode, logger.ErrToWait)
 		}
 
 		return errors.New("http status error " + resp.Status)

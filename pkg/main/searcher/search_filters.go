@@ -181,11 +181,13 @@ func (s *ConfigSearcher) validateSize(entry *apiexternal_v2.Nzbwithprio) bool {
 	}
 
 	skipemptysize := s.Quality.QualityIndexerByQualityAndTemplateSkipEmpty(entry.NZB.Indexer)
-	if !skipemptysize && len(s.Quality.Indexer) > 0 {
-		if ok := config.TestSettingsList(entry.NZB.Indexer.Name); ok {
-			skipemptysize = s.Quality.Indexer[0].SkipEmptySize
-		} else if entry.NZB.Indexer.Getlistbyindexer() != nil {
-			skipemptysize = s.Quality.Indexer[0].SkipEmptySize
+	if !skipemptysize {
+		// A custom RSS-list search builds a synthetic indexer whose name is
+		// the list's own name (never a real quality-profile TemplateIndexer
+		// value, so the lookup above always misses) - resolve the list's own
+		// SkipEmptySize instead of borrowing an unrelated indexer's setting.
+		if listcfg := entry.NZB.Indexer.Getlistbyindexer(); listcfg != nil {
+			skipemptysize = listcfg.SkipEmptySize
 		}
 	}
 
@@ -701,10 +703,6 @@ func (s *ConfigSearcher) checkepisode(sourceentry, entry *apiexternal_v2.Nzbwith
 	if sourceentry == nil {
 		s.logdenied("no sourceentry", entry)
 		return true
-	}
-
-	if s.searchActionType == logger.StrRss && sourceentry.Info.Identifier == "" {
-		return false
 	}
 
 	if sourceentry.Info.Identifier == "" {

@@ -361,6 +361,7 @@ func (*handler) SetEntryTempID(entry *apiexternal_v2.Nzbwithprio) {
 
 // PerformIDSearch executes a search by IMDB ID.
 func (*handler) PerformIDSearch(
+	ctx context.Context,
 	indcfg *config.IndexersConfig,
 	quality *config.QualityConfig,
 	entry *apiexternal_v2.Nzbwithprio,
@@ -372,7 +373,7 @@ func (*handler) PerformIDSearch(
 	}
 
 	_, _, err := apiexternal.QueryNewznabMovieImdb(
-		indcfg, quality, logger.Trim(entry.Info.Imdb, 't'), cats, raw,
+		ctx, indcfg, quality, logger.Trim(entry.Info.Imdb, 't'), cats, raw,
 	)
 
 	return err

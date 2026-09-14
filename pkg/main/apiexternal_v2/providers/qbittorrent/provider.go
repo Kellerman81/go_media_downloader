@@ -1,6 +1,7 @@
 package qbittorrent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -26,9 +28,14 @@ import (
 // Provider implements the DownloadProvider interface for qBittorrent.
 type Provider struct {
 	*base.BaseClient
-	baseURL       string
-	username      string
-	password      string
+	baseURL  string
+	username string
+	password string
+	// authMu guards authenticated - Provider instances are cached singletons
+	// in providers/registry.go, reused across every concurrent operation
+	// against a given qBittorrent instance for the app's lifetime, so this
+	// flag is read/written from multiple goroutines.
+	authMu        sync.Mutex
 	authenticated bool
 	cookieJar     http.CookieJar
 }
@@ -55,8 +62,6 @@ func NewProvider(host string, port int, username, password string, useSSL bool) 
 		Password:                password,
 		CircuitBreakerThreshold: 5,
 		CircuitBreakerTimeout:   60 * time.Second,
-		EnableStats:             true,
-		StatsDBTable:            "api_client_stats",
 		MaxRetries:              3,
 		RetryBackoff:            2 * time.Second,
 	}
@@ -333,6 +338,9 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 // Helper methods
 
 func (p *Provider) ensureAuthenticated(ctx context.Context) error {
+	p.authMu.Lock()
+	defer p.authMu.Unlock()
+
 	if p.authenticated {
 		return nil
 	}
@@ -385,13 +393,38 @@ func (p *Provider) makeRequest(
 		body,
 		nil,
 		func(resp *http.Response) error {
-			rawResp = resp
+			rawResp = bufferResponseBody(resp)
 			return nil
 		},
 		headers,
 	)
 
+	p.checkSessionExpired(err)
+
 	return rawResp, err
+}
+
+// checkSessionExpired clears the cached authenticated flag when the session
+// cookie has expired (qBittorrent returns 403 once the WebUI session times
+// out). Without this, authenticated stayed true forever once set - after
+// the first idle period longer than the session timeout, every subsequent
+// operation against this cached, process-lifetime Provider singleton would
+// fail permanently instead of re-authenticating on the next call.
+//
+// base.MakeRequestWithHeaders only invokes the targetfunc callback (where
+// makeRequest/makeFormRequest capture the *http.Response) on success
+// (status < 400) - for a 4xx/5xx it returns a formatted error and never
+// surfaces the response object at all, so checking a status code on a
+// response is not an option here; the formatted error text is the only
+// available signal.
+func (p *Provider) checkSessionExpired(err error) {
+	if err == nil || !strings.Contains(err.Error(), "HTTP 403") {
+		return
+	}
+
+	p.authMu.Lock()
+	p.authenticated = false
+	p.authMu.Unlock()
 }
 
 func (p *Provider) makeFormRequest(
@@ -416,13 +449,39 @@ func (p *Provider) makeFormRequest(
 		strings.NewReader(formData.Encode()),
 		nil,
 		func(resp *http.Response) error {
-			rawResp = resp
+			rawResp = bufferResponseBody(resp)
 			return nil
 		},
 		headers,
 	)
 
+	// Don't clear authenticated for the /auth/login request itself - ensureAuthenticated
+	// already interprets its own status code/body directly.
+	if endpoint != "/auth/login" {
+		p.checkSessionExpired(err)
+	}
+
 	return rawResp, err
+}
+
+// bufferResponseBody reads resp.Body into memory and replaces it with a
+// fresh, independently-closable reader over the buffered bytes. The
+// base.BaseClient request functions close resp.Body via a deferred call as
+// soon as the callback passed to them returns - since makeRequest/
+// makeFormRequest hand the *http.Response back to their own caller instead
+// of reading it inside that callback, every field access to resp.Body
+// afterward was reading an already-closed body. On a read failure, the
+// original (still-open, since we haven't returned yet) response is
+// returned unchanged so the caller's own error handling still applies.
+func bufferResponseBody(resp *http.Response) *http.Response {
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp
+	}
+
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	return resp
 }
 
 //

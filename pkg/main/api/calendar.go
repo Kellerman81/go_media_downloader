@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
@@ -119,11 +118,6 @@ func CalendarPageHandler(c *gin.Context) {
 					gomponents.Text("Export to Calendar (iCal)"),
 				),
 			),
-		),
-
-		// API key for search functionality
-		html.Script(
-			gomponents.Raw(`window.calendarApiKey = "`+config.GetSettingsGeneral().WebAPIKey+`";`),
 		),
 
 		// Calendar modals and scripts
@@ -255,9 +249,9 @@ func getMovieCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 		FROM movies m
 		INNER JOIN dbmovies dm ON dm.id = m.dbmovie_id
 		LEFT JOIN movie_files mf ON mf.movie_id = m.id
-		WHERE dm.release_date BETWEEN ? AND ?
+		WHERE dm.release_date >= ? AND dm.release_date < ?
 		ORDER BY dm.release_date ASC
-	`, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
 
 	for _, movie := range movieData {
 		var (
@@ -351,9 +345,9 @@ func getSeriesCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 		INNER JOIN dbseries ds ON ds.id = s.dbserie_id
 		INNER JOIN dbserie_episodes dse ON dse.id = se.dbserie_episode_id
 		LEFT JOIN serie_episode_files sef ON sef.serie_episode_id = se.id
-		WHERE dse.first_aired BETWEEN ? AND ?
+		WHERE dse.first_aired >= ? AND dse.first_aired < ?
 		ORDER BY dse.first_aired ASC
-	`, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
 
 	for _, series := range seriesData {
 		if series.FirstAired == nil {
@@ -437,9 +431,9 @@ func getAlbumCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 		FROM albums a
 		INNER JOIN dbalbums da ON da.id = a.dbalbum_id
 		LEFT JOIN album_files af ON af.album_id = a.id
-		WHERE da.release_date BETWEEN ? AND ?
+		WHERE da.release_date >= ? AND da.release_date < ?
 		ORDER BY da.release_date ASC
-	`, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
 
 	for _, album := range albumData {
 		if album.ReleaseDate == nil {
@@ -502,9 +496,9 @@ func getAudiobookCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 		FROM audiobooks ab
 		INNER JOIN dbaudiobooks dab ON dab.id = ab.dbaudiobook_id
 		LEFT JOIN audiobook_files abf ON abf.audiobook_id = ab.id
-		WHERE dab.release_date BETWEEN ? AND ?
+		WHERE dab.release_date >= ? AND dab.release_date < ?
 		ORDER BY dab.release_date ASC
-	`, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
 
 	for _, audiobook := range audiobookData {
 		if audiobook.ReleaseDate == nil {

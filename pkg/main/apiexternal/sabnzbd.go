@@ -23,10 +23,13 @@ func SendToSabnzbd(
 		defer cancel()
 
 		err := provider.AddNZB(ctx, urlv, category, priority)
-		if err == nil {
-			return nil
-		}
-		// Fall through to legacy client on error
+
+		// The "legacy client" this used to fall through to on error is long
+		// gone (commented out below) - returning nil regardless of err made
+		// every add-NZB failure look like a successful download to every
+		// caller, silently recording history/notifications for a download
+		// that was never actually queued.
+		return err
 	}
 	// s, err := sabnzbd.New(sabnzbd.Addr(server), sabnzbd.ApikeyAuth(apikey))
 	// if err != nil {
@@ -50,5 +53,5 @@ func SendToSabnzbd(
 	// if err != nil {
 	// 	return err
 	// }
-	return nil
+	return errNoClient
 }

@@ -475,6 +475,7 @@ func (m *SyncOpsManager) startWriter() {
 
 	go func() {
 		defer m.writerActive.Store(false)
+		defer logger.HandlePanic()
 
 		for {
 			select {
@@ -491,10 +492,32 @@ func (m *SyncOpsManager) startWriter() {
 				}
 
 			case op := <-m.opQueue:
-				sendResult(op.ResultCh, m.processOperation(op))
+				sendResult(op.ResultCh, m.processOperationRecovered(op))
 			}
 		}
 	}()
+}
+
+// processOperationRecovered runs processOperation with panic recovery scoped
+// to this single operation, so a panic inside caller-supplied code (e.g. an
+// OpFunc.Fn or a DeleteFunc/DeleteFuncExpires filter) fails just that one
+// operation instead of taking down the writer goroutine - which would stall
+// every future QueueOperation call across the app - or the whole process
+// (an unrecovered panic in any goroutine terminates the entire program).
+func (m *SyncOpsManager) processOperationRecovered(op SyncOperation) (success bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Logtype("error", 1).
+				Str("RECOVER", logger.Stack()).
+				Any("vap", r).
+				Str("optype", string(op.OpType)).
+				Msg("recovered from panic while processing a sync operation")
+
+			success = false
+		}
+	}()
+
+	return m.processOperation(op)
 }
 
 // sendResult delivers an operation result without ever blocking the writer.

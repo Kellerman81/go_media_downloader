@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
@@ -486,19 +485,19 @@ func wantedPagination(key, search string, page, totalPages int) gomponents.Node 
 }
 
 // wantedScript wires the per-row search buttons to the existing search endpoints.
+// Requests go through the session-authenticated admin proxy (admin_proxy.go,
+// window.gmdApiProxyFetch) rather than embedding the real WebAPIKey in this
+// page - see admin_proxy.go's package doc for why.
 func wantedScript() gomponents.Node {
-	apikey := config.GetSettingsGeneral().WebAPIKey
-
 	return html.Script(gomponents.Raw(`
 		(function() {
-			var apikey = '` + apikey + `';
 			function endpointFor(media, id) {
 				switch (media) {
-					case 'movie':     return '/api/movies/search/list/' + id + '?apikey=' + encodeURIComponent(apikey) + '&searchByTitle=false&download=true';
-					case 'episode':   return '/api/series/episodes/search/list/' + id + '?apikey=' + encodeURIComponent(apikey) + '&download=true';
-					case 'album':     return '/api/music/search/list/' + id + '?apikey=' + encodeURIComponent(apikey);
-					case 'book':      return '/api/books/search/list/' + id + '?apikey=' + encodeURIComponent(apikey);
-					case 'audiobook': return '/api/audiobooks/search/list/' + id + '?apikey=' + encodeURIComponent(apikey);
+					case 'movie':     return '/api/movies/search/list/' + id + '?searchByTitle=false&download=true';
+					case 'episode':   return '/api/series/episodes/search/list/' + id + '?download=true';
+					case 'album':     return '/api/music/search/list/' + id;
+					case 'book':      return '/api/books/search/list/' + id;
+					case 'audiobook': return '/api/audiobooks/search/list/' + id;
 				}
 				return null;
 			}
@@ -510,7 +509,7 @@ func wantedScript() gomponents.Node {
 				var original = btn.innerHTML;
 				btn.disabled = true;
 				btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Searching...';
-				fetch(url, { method: 'GET', headers: { 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '' } })
+				gmdApiProxyFetch(url)
 					.then(function(r){ return r.json().catch(function(){ return {}; }); })
 					.then(function(data){
 						var accepted = (data && data.accepted) ? data.accepted.length : 0;

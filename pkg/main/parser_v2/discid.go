@@ -57,8 +57,21 @@ func CalculateDiscID(files []string) (string, error) {
 		})
 	}
 
-	// Sort by track number when tags provide it; otherwise keep file order.
-	if entries[0].trackNum > 0 {
+	// Sort by track number only when EVERY entry has one - checking just
+	// entries[0] let a single untagged/zero TrackNumber elsewhere in the set
+	// (a common real-world case for imperfect rips) sort as track "0" ahead
+	// of everything else, corrupting the cumulative offsets below with no
+	// error surfaced. Otherwise keep file order, as intended.
+	allTagged := true
+
+	for i := range entries {
+		if entries[i].trackNum <= 0 {
+			allTagged = false
+			break
+		}
+	}
+
+	if allTagged {
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].trackNum < entries[j].trackNum
 		})
