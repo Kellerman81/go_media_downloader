@@ -1,13 +1,11 @@
 # Media Downloader
 Media Manager similar to Radarr and Sonarr written in go
-First version! Bugs included
 
-Main goal of project: Support multiple configurations for Series/Movies in one. Also do some additional checks and reduce memory footprint. API Only currently - no Interface
+Main goal of project: Support multiple configurations for Series/Movies in one. Also do some additional checks and reduce memory footprint.
 
-Inspirations: Radarr/Sonarr and Flexget
+Inspirations: Radarr/Sonarr and Flexget and beets
 
 ## Table of Contents
-* [Breaking Change](#breaking-change)
 * [Features](#features)
   * [Supported](#supported)
     * [Feed Sources](#feed-sources)
@@ -26,30 +24,21 @@ Inspirations: Radarr/Sonarr and Flexget
 * [History](#history)
 * [References](#references)
 
-## Breaking Change
-
-- Moved Databases to databases subfolder!
-- Moved config.toml to config subfolder
-- Moved logs to logs subfolder
-- added first webinterface (admin only - crashes sometimes - not many data validity checks)
-- Webinterface v1 removed
-- Webinterface V2 Login (/): User: admin  -  Password: <WebApiKey from config>
-- IMDB List Url not supported any more
 ## Features
 
 - Get Feeds of wanted media (Movies: Imdb Public Lists, Series: Local Wanted file --series.toml--)
-- Get Metadata from IMDB, TMDB, OMDB, Trakt, TheTVDB
+- Get Metadata from IMDB, TMDB, OMDB, Trakt, TheTVDB...
 - Local Imdb Cache
-- Missing/Upgradeble monitoring of Episode/Movie
+- Missing/Upgradeble monitoring of Episode/Movie/Music/Book/Audiobook
 - Search Newznab/Tornab Indexers
 - Download nzb to directory, to Nzbget and torrent/magnet to deluge (others might follow)
 - Parse files/nzbs
 - Structure releases and delete lower quality files/nzbs
-- Send Notification after Download start and/or Download finish (currently csv or pushover)
+- Send Notification after Download start and/or Download finish
 - Scheduler interval based (every x Minutes, Hours, Days) and/or cron based
 - Api to start jobs, list/add/edit/delete movies/series/episodes, other actions. For API Call examples look at the Powershell examples in the api example file and at the Swagger Documentation
 - External Api Limiter to reduce the chance of getting blocked
-- toml Config for inital config and reconfiguration since there is no webinterface currently
+- toml Config for inital config and reconfiguration
 
 ### Supported
 #### Feed Sources
@@ -119,6 +108,9 @@ Inspirations: Radarr/Sonarr and Flexget
 
 - Series - You can configure multiple series groups and each group can contain multiple feeds and folders
 - Movies - You can configure multiple movie groups and each group can contain multiple feeds and folders
+- Music - You can configure multiple music groups and each group can contain multiple feeds and folders
+- Book - You can configure multiple book groups and each group can contain multiple feeds and folders
+- Audiobook - You can configure multiple audiobook groups and each group can contain multiple feeds and folders
 
 #### General
 
@@ -129,7 +121,7 @@ Inspirations: Radarr/Sonarr and Flexget
 - Configure your Qualities and their priorities (use parse/quality api to test this) including wanted and Defaults
 - Use FProbe or mediainfo to get Media Information (dimensions, runtime, audio language)
 - Currently completly API and Scheduler controlled
-- Webinterface V2 can be accessed by /api/admin - Username admin - Password is the WebApiKey   -  BUT: It is in Development Backup Config and Database before using - it could break
+- Webinterface V2 can be accessed by / - Username admin - Password is the WebApiKey   -  BUT: It is in Development Backup Config and Database before using - it could break
 
 ### Under Consideration
 
@@ -192,7 +184,7 @@ https://go-media-downloader.readme.io/
 
 ## After first Start - Trakt Authorize
 
-- (This part is optional and only needed if you want to get private trakt lists)
+- (This part is optional and only needed if you want to get private trakt lists if you have a premium account)
 - Create a Application within Trakt: https://trakt.tv/oauth/applications - redirect url needs to be: http://localhost:9090
 - Write down ClientID and Secret
 - Put ClientID and Secret into the config.toml
@@ -271,3 +263,4 @@ For a list of the used Go Modules please look into the go.mod File in pkg/main a
 - Currently it may happen that new series won't be searched - use /api/series/search/id/123 endpoint in that case once  after that it will update
 - currently movies/series in different languages need to be in diffent root folders - ex. /share/Movies_EN and ..Movies_FR
 - If a movie or episode isn't imported after download you might need to disable the runtime check
+- it can happen that an updated episode file doesnt remove the old file
