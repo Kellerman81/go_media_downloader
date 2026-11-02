@@ -54,8 +54,10 @@ FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.authors="Kellerman81 <Kellerman81@gmail.com>"
 
-# Install runtime dependencies
-RUN apt-get update && \
+# Install runtime dependencies. unrar is only in Debian's non-free component,
+# which bookworm-slim doesn't enable by default.
+RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
         mediainfo \
