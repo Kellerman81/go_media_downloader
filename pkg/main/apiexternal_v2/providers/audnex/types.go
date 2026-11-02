@@ -7,7 +7,20 @@ import (
 	"github.com/goccy/go-json"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 )
+
+// parseAudnexDate parses Audnex release dates, which are ISO timestamps
+// ("2021-01-26T00:00:00.000Z"), falling back to a plain date.
+func parseAudnexDate(s string) (time.Time, bool) {
+	for _, layout := range [...]string{time.RFC3339Nano, time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+
+	return time.Time{}, false
+}
 
 // flexibleFloat handles JSON values that can be either a number or a string.
 type flexibleFloat float64
@@ -179,19 +192,20 @@ type audnexAuthorSearchResult struct {
 
 func convertBookToDetails(book *audnexBookResponse) *apiexternal_v2.AudiobookDetails {
 	details := &apiexternal_v2.AudiobookDetails{
-		ID:           book.ASIN,
-		ASIN:         book.ASIN,
-		Title:        book.Title,
-		Subtitle:     book.Subtitle,
-		Description:  book.Description,
-		Summary:      book.Summary,
-		CoverURL:     book.Image,
-		Duration:     time.Duration(book.RuntimeMinutes) * time.Minute,
-		Language:     book.Language,
-		Publisher:    book.Publisher,
-		ISBN:         book.ISBN,
-		Rating:       float64(book.Rating),
-		ProviderType: apiexternal_v2.ProviderAudnex,
+		ID:             book.ASIN,
+		ASIN:           book.ASIN,
+		Title:          book.Title,
+		Subtitle:       book.Subtitle,
+		Description:    audible.CleanDescription(book.Description),
+		Summary:        audible.CleanDescription(book.Summary),
+		CoverURL:       book.Image,
+		Duration:       time.Duration(book.RuntimeMinutes) * time.Minute,
+		RuntimeMinutes: book.RuntimeMinutes,
+		Language:       book.Language,
+		Publisher:      book.Publisher,
+		ISBN:           book.ISBN,
+		Rating:         float64(book.Rating),
+		ProviderType:   apiexternal_v2.ProviderAudnex,
 	}
 
 	// Authors
@@ -229,6 +243,7 @@ func convertBookToDetails(book *audnexBookResponse) *apiexternal_v2.AudiobookDet
 	// Series
 	if len(book.Series) > 0 {
 		details.Series = book.Series[0].Name
+		details.SeriesName = book.Series[0].Name
 		details.SeriesASIN = book.Series[0].ASIN
 		details.SeriesPosition = book.Series[0].Position
 	}
@@ -245,7 +260,7 @@ func convertBookToDetails(book *audnexBookResponse) *apiexternal_v2.AudiobookDet
 
 	// Release date
 	if book.ReleaseDate != "" {
-		if t, err := time.Parse("2006-01-02", book.ReleaseDate); err == nil {
+		if t, ok := parseAudnexDate(book.ReleaseDate); ok {
 			details.ReleaseDate = t
 			details.ReleaseYear = t.Year()
 		}
@@ -287,12 +302,13 @@ func convertAuthorBooks(books []audnexBookItem) []apiexternal_v2.AudiobookSearch
 
 	for i := range books {
 		result := apiexternal_v2.AudiobookSearchResult{
-			ID:           books[i].ASIN,
-			Title:        books[i].Title,
-			Subtitle:     books[i].Subtitle,
-			CoverURL:     books[i].Image,
-			Duration:     time.Duration(books[i].RuntimeMinutes) * time.Minute,
-			ProviderType: apiexternal_v2.ProviderAudnex,
+			ID:             books[i].ASIN,
+			Title:          books[i].Title,
+			Subtitle:       books[i].Subtitle,
+			CoverURL:       books[i].Image,
+			Duration:       time.Duration(books[i].RuntimeMinutes) * time.Minute,
+			RuntimeMinutes: books[i].RuntimeMinutes,
+			ProviderType:   apiexternal_v2.ProviderAudnex,
 		}
 
 		// Authors
@@ -323,7 +339,7 @@ func convertAuthorBooks(books []audnexBookItem) []apiexternal_v2.AudiobookSearch
 
 		// Release year
 		if books[i].ReleaseDate != "" {
-			if t, err := time.Parse("2006-01-02", books[i].ReleaseDate); err == nil {
+			if t, ok := parseAudnexDate(books[i].ReleaseDate); ok {
 				result.ReleaseYear = t.Year()
 			}
 		}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -69,6 +68,28 @@ func (p *Provider) refreshToken(ctx context.Context) error {
 	return nil
 }
 
+// getWithLanguage sends a GET with the v2 API's Accept-Language header when a
+// language is given.
+func (p *Provider) getWithLanguage(
+	ctx context.Context,
+	endpoint, language string,
+	target any,
+) error {
+	if language == "" {
+		return p.MakeRequest(ctx, "GET", endpoint, nil, target, nil)
+	}
+
+	return p.MakeRequestWithHeaders(
+		ctx,
+		"GET",
+		endpoint,
+		nil,
+		target,
+		nil,
+		map[string]string{"Accept-Language": language},
+	)
+}
+
 //
 // Movie Methods (TVDB is primarily for TV, limited movie support)
 //
@@ -117,14 +138,16 @@ func (p *Provider) SearchSeries(
 }
 
 // GetSeriesByID retrieves detailed series information by TVDB ID.
+// language (e.g. "de") selects the translation; empty uses TVDB's default.
 func (p *Provider) GetSeriesByID(
 	ctx context.Context,
 	id int,
+	language string,
 ) (*apiexternal_v2.SeriesDetails, error) {
 	endpoint := fmt.Sprintf("/series/%d", id)
 
 	var response tvdbV2SeriesResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+	if err := p.getWithLanguage(ctx, endpoint, language, &response); err != nil {
 		return nil, err
 	}
 
@@ -144,7 +167,7 @@ func (p *Provider) FindSeriesByTVDbID(
 	ctx context.Context,
 	tvdbID int,
 ) (*apiexternal_v2.SeriesDetails, error) {
-	return p.GetSeriesByID(ctx, tvdbID)
+	return p.GetSeriesByID(ctx, tvdbID, "")
 }
 
 // GetSeriesExternalIDs retrieves external IDs for a series.
@@ -170,42 +193,6 @@ func (p *Provider) GetSeriesExternalIDs(
 // Episode Methods
 //
 
-// GetSeasonDetails retrieves detailed information about a season.
-func (p *Provider) GetSeasonDetails(
-	ctx context.Context,
-	seriesID int,
-	seasonNumber int,
-) (*apiexternal_v2.Season, error) {
-	// Use the paginated fetch (GetAllEpisodes) instead of a single
-	// unpaginated page - a single page only covers the first ~100 episodes,
-	// so any season only reachable on page 2+ (common for long-running
-	// shows) would incorrectly report "not found" even though it exists.
-	allEpisodes, err := p.GetAllEpisodes(ctx, seriesID)
-	if err != nil {
-		return nil, err
-	}
-
-	episodeCount := 0
-
-	for i := range allEpisodes {
-		if allEpisodes[i].SeasonNumber == seasonNumber {
-			episodeCount++
-		}
-	}
-
-	if episodeCount == 0 {
-		return nil, errors.New(
-			logger.JoinStrings("season ", strconv.Itoa(seasonNumber), " not found"),
-		)
-	}
-
-	return &apiexternal_v2.Season{
-		ID:           seriesID*1000 + seasonNumber, // Generate ID
-		SeasonNumber: seasonNumber,
-		EpisodeCount: episodeCount,
-	}, nil
-}
-
 // GetEpisodeDetails retrieves detailed information about an episode.
 func (p *Provider) GetEpisodeDetails(
 	ctx context.Context,
@@ -213,8 +200,8 @@ func (p *Provider) GetEpisodeDetails(
 	seasonNumber int,
 	episodeNumber int,
 ) (*apiexternal_v2.Episode, error) {
-	// See GetSeasonDetails - use the paginated fetch, not a single page.
-	allEpisodes, err := p.GetAllEpisodes(ctx, seriesID)
+	// Paginated fetch: a single page only covers the first ~100 episodes.
+	allEpisodes, err := p.GetAllEpisodes(ctx, seriesID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -239,9 +226,11 @@ func (p *Provider) GetEpisodeDetails(
 
 // GetAllEpisodes retrieves ALL episodes for a series, handling pagination.
 // TVDB API returns ~100 episodes per page, so we need to fetch all pages.
+// language works as in GetSeriesByID.
 func (p *Provider) GetAllEpisodes(
 	ctx context.Context,
 	seriesID int,
+	language string,
 ) ([]apiexternal_v2.Episode, error) {
 	allEpisodes := make([]apiexternal_v2.Episode, 0, 200) // Pre-allocate for typical series
 	page := 1
@@ -250,7 +239,7 @@ func (p *Provider) GetAllEpisodes(
 		endpoint := fmt.Sprintf("/series/%d/episodes?page=%d", seriesID, page)
 
 		var response tvdbV2EpisodesResponse
-		if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+		if err := p.getWithLanguage(ctx, endpoint, language, &response); err != nil {
 			return nil, err
 		}
 

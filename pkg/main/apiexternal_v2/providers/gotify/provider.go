@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -47,7 +46,13 @@ func NewProviderWithConfig(
 		scheme = "https"
 	}
 
-	baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
+	// host may carry a reverse-proxy sub-path ("example.com/gotify").
+	hostOnly, subPath, _ := strings.Cut(host, "/")
+
+	baseURL := fmt.Sprintf("%s://%s:%d", scheme, hostOnly, port)
+	if subPath = strings.Trim(subPath, "/"); subPath != "" {
+		baseURL += "/" + subPath
+	}
 
 	config.BaseURL = baseURL
 
@@ -124,16 +129,11 @@ func (p *Provider) SendNotification(
 		return nil, errors.New(logger.JoinStrings("failed to marshal message: ", err.Error()))
 	}
 
-	// Make request
-	endpoint := "/message"
-	params := url.Values{
-		"token": {useToken},
-	}
-
-	// Build full endpoint with query parameters (for custom baseURL support)
-	fullEndpoint := endpoint + "?" + params.Encode()
+	// The token goes in the X-Gotify-Key header rather than ?token= so it
+	// never ends up in logged URLs.
+	fullEndpoint := "/message"
 	if useBaseURL != p.baseURL {
-		fullEndpoint = useBaseURL + fullEndpoint
+		fullEndpoint = strings.TrimRight(useBaseURL, "/") + fullEndpoint
 	}
 
 	// Use BaseClient's MakeRequest with custom response handler
@@ -183,13 +183,15 @@ func (p *Provider) SendNotification(
 
 			return nil
 		},
-		map[string]string{"Content-Type": "application/json"},
+		map[string]string{"Content-Type": "application/json", "X-Gotify-Key": useToken},
 	)
 
 	return &notifResponse, err
 }
 
-// TestConnection validates the Gotify credentials and connectivity.
+// TestConnection checks that the Gotify server is reachable. Application
+// tokens are only accepted by POST /message, so the token itself is validated
+// only when a notification is sent.
 func (p *Provider) TestConnection(ctx context.Context) error {
 	// Get server version to test connectivity
 	endpoint := "/version"

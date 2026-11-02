@@ -13,7 +13,9 @@ import (
 //
 // Returns ok=false when the extension isn't handled or parsing fails, letting the
 // caller fall back to ffprobe.
-func NativeDuration(path string) (time.Duration, bool) {
+func NativeDuration(path string) (d time.Duration, ok bool) {
+	defer recoverRead(path, nil)
+
 	switch logger.FileExt(path) {
 	case ".mp3":
 		d, err := mp3Duration(path)

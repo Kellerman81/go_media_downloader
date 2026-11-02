@@ -539,7 +539,7 @@ func SearchMusicMetadata(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	results, err := musicSearchAlbums(ctx, provider, artist, title, 25)
+	results, fellBack, err := musicSearchAlbums(ctx, provider, artist, title, 25)
 	if err != nil {
 		logger.Logtype("error", 0).
 			Err(err).
@@ -551,11 +551,27 @@ func SearchMusicMetadata(c *gin.Context) {
 	}
 
 	if len(results) == 0 {
-		renderMusicAlert(c, "No albums found.", "warning")
+		msg := "No albums found."
+		if fellBack {
+			msg = "No albums found (" + musicProviderLabel(provider) + " is not configured; MusicBrainz was searched instead)."
+		}
+
+		renderMusicAlert(c, msg, "warning")
+
 		return
 	}
 
-	nodes := make([]gomponents.Node, 0, len(results)+1)
+	nodes := make([]gomponents.Node, 0, len(results)+2)
+
+	if fellBack {
+		nodes = append(nodes, html.Div(
+			html.Class("alert alert-info py-2 mb-2"),
+			gomponents.Textf(
+				"%s is not configured — these results come from MusicBrainz instead.",
+				musicProviderLabel(provider),
+			),
+		))
+	}
 
 	nodes = append(
 		nodes,
@@ -861,7 +877,7 @@ func AddArtistAlbumsFiltered(c *gin.Context) {
 	types, formats := parseFilters(c)
 	artistCopy := artist
 
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"add_artist_"+artist.Name+"_"+listName,
 		func(_ uint32, jobctx context.Context) error {
 			releases, err := musicArtistReleases(jobctx, provider, &artistCopy, 200)
@@ -903,7 +919,10 @@ func AddArtistAlbumsFiltered(c *gin.Context) {
 			return nil
 		},
 		"Data",
-	)
+	); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": fmt.Sprintf(
@@ -1029,7 +1048,7 @@ func AddSelectedAlbums(c *gin.Context) {
 
 	releasesCopy := releases
 
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"add_selected_"+listName,
 		func(_ uint32, jobctx context.Context) error {
 			added := 0
@@ -1056,7 +1075,10 @@ func AddSelectedAlbums(c *gin.Context) {
 			return nil
 		},
 		"Data",
-	)
+	); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": fmt.Sprintf(
@@ -1085,7 +1107,7 @@ func SearchMusicSeriesMetadata(c *gin.Context) {
 	defer cancel()
 
 	// Series/compilation discovery is MusicBrainz-based.
-	results, err := musicSearchAlbums(ctx, provMusicBrainz, "", seriesName, 25)
+	results, _, err := musicSearchAlbums(ctx, provMusicBrainz, "", seriesName, 25)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Str("series", seriesName).Msg("series search failed")
 		renderMusicAlert(c, "Search failed: "+err.Error(), "danger")
@@ -1145,7 +1167,7 @@ func DiscoverSeriesAlbumsByName(c *gin.Context) {
 	}
 
 	nameCopy := seriesName
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"import_series_"+seriesName+"_"+listName,
 		func(_ uint32, ctx context.Context) error {
 			err := importfeed.JobImportDBAlbum(
@@ -1164,7 +1186,10 @@ func DiscoverSeriesAlbumsByName(c *gin.Context) {
 			return nil
 		},
 		"Data",
-	)
+	); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": fmt.Sprintf(
@@ -1196,6 +1221,13 @@ func renderMusicHTML(c *gin.Context, node gomponents.Node) {
 // musicSearchScript returns the client-side logic for all four music search modes.
 func musicSearchScript() gomponents.Node {
 	return html.Script(gomponents.Raw(`
+// confirmAction puts its message into innerHTML; series names come from providers.
+function musicEscape(v) {
+	return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) {
+		return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+	});
+}
+
 function musicCsrf() {
 	var el = document.getElementById('music_csrf');
 	return el ? el.value : '';
@@ -1298,7 +1330,7 @@ document.addEventListener('click', function(e) {
 	if (artistBtn) {
 		var list2 = musicVal('m2_list');
 		if (!list2) { showToaster('warning', 'Select a list first'); return; }
-		confirmAction('Add artist', 'Add all matching albums by this artist to "' + list2 + '"? This runs in the background.', function() {
+		confirmAction('Add artist', 'Add all matching albums by this artist to "' + musicEscape(list2) + '"? This runs in the background.', function() {
 			var p = new URLSearchParams();
 			p.append('provider', musicVal('m2_provider'));
 			p.append('music_list', list2);
@@ -1352,7 +1384,7 @@ document.addEventListener('click', function(e) {
 			try { selected.push(JSON.parse(c.getAttribute('data-release'))); } catch(err) {}
 		});
 		if (selected.length === 0) { showToaster('warning', 'Select at least one album'); return; }
-		confirmAction('Add selected', 'Add ' + selected.length + ' selected album(s) to "' + list4 + '"? This runs in the background.', function() {
+		confirmAction('Add selected', 'Add ' + selected.length + ' selected album(s) to "' + musicEscape(list4) + '"? This runs in the background.', function() {
 			var p = new URLSearchParams();
 			p.append('music_list', list4);
 			p.append('releases', JSON.stringify(selected));
@@ -1372,7 +1404,7 @@ document.addEventListener('click', function(e) {
 		var sName = impBtn.getAttribute('data-series-name');
 		var sList = impBtn.getAttribute('data-series-list') || musicVal('series_list');
 		if (!sList) { showToaster('warning', 'Select a list first'); return; }
-		confirmAction('Import series', 'Import all "' + sName + '" albums into "' + sList + '"? This runs in the background.', function() {
+		confirmAction('Import series', 'Import all "' + musicEscape(sName) + '" albums into "' + musicEscape(sList) + '"? This runs in the background.', function() {
 			var p = new URLSearchParams();
 			p.append('series_name', sName);
 			p.append('series_list', sList);

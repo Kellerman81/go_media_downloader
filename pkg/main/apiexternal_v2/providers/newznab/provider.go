@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -31,16 +32,10 @@ type ProviderConfig struct {
 	IndexerName       string // Name of the indexer (for logging and identification)
 	BaseURL           string
 	APIKey            string
-	Categories        []string
 	OutputAsJSON      bool
 	TimeoutSeconds    uint16
 	CustomAPI         string // Custom API parameter name (default: "apikey")
 	CustomURL         string // Custom API URL path (default: "/api")
-	CustomRSSURL      string // Custom RSS URL path (default: "/rss")
-	CustomRSSCategory string // Custom RSS category parameter (default: "&t=")
-	MaxAge            uint16 // Maximum age of releases in days
-	MaxEntries        uint16 // Maximum number of entries per request
-	AddQuotesForTitle bool   // Add quotes around title queries
 	LimiterCalls      int    // Number of API calls allowed within LimiterSeconds (default: 200)
 	LimiterSeconds    uint8  // Time window in seconds for rate limiting (default: 3600)
 	LimiterCallsDaily int    // Maximum number of API calls allowed per day (default: 2000)
@@ -50,19 +45,13 @@ type ProviderConfig struct {
 // Provider implements the IndexerProvider interface for Newznab/Torznab.
 type Provider struct {
 	*base.BaseClient
-	DownloadClient    *base.BaseClient // Separate client for tracking download statistics
-	baseURL           string
-	apiKey            string
-	categories        []string
-	isTorznab         bool
-	outputAsJSON      bool   // When true, request and parse JSON responses instead of XML
-	customAPI         string // Custom API parameter name (if not "apikey")
-	customURL         string // Custom API URL path (if not "/api")
-	customRSSURL      string // Custom RSS URL path (if not "/rss")
-	customRSSCategory string // Custom RSS category parameter (if not "&t=")
-	maxAge            uint16 // Maximum age of releases in days
-	maxEntries        uint16 // Maximum number of entries per request
-	addQuotesForTitle bool   // Add quotes around title queries
+	DownloadClient *base.BaseClient // Separate client for tracking download statistics
+	baseURL        string
+	apiKey         string
+	isTorznab      bool
+	outputAsJSON   bool   // When true, request and parse JSON responses instead of XML
+	customAPI      string // Custom API parameter name (if not "apikey")
+	customURL      string // Custom API URL path (if not "/api")
 
 	// SupportedCategories contains all category IDs (including subcategories) reported by the
 	// indexer's caps endpoint. Populated once during NewProvider and used for resolution inference.
@@ -70,6 +59,13 @@ type Provider struct {
 }
 
 var ErrBroke = errors.New("broke")
+
+// ErrIndexerAPI wraps an error document returned by the indexer.
+var ErrIndexerAPI = errors.New("indexer returned error")
+
+// indexerQuotaBlock matches the base client's block for a
+// "Request limit reached" HTTP 400 when no retry time is given.
+const indexerQuotaBlock = 3 * time.Hour
 
 // NewProvider creates a new Newznab indexer provider
 //
@@ -137,19 +133,13 @@ func NewProvider(config ProviderConfig) *Provider {
 	}
 
 	p := &Provider{
-		BaseClient:        base.NewBaseClient(clientConfig),
-		DownloadClient:    base.NewBaseClient(downloadClientConfig),
-		baseURL:           config.BaseURL,
-		apiKey:            config.APIKey,
-		categories:        config.Categories,
-		outputAsJSON:      config.OutputAsJSON,
-		customAPI:         config.CustomAPI,
-		customURL:         config.CustomURL,
-		customRSSURL:      config.CustomRSSURL,
-		customRSSCategory: config.CustomRSSCategory,
-		maxAge:            config.MaxAge,
-		maxEntries:        config.MaxEntries,
-		addQuotesForTitle: config.AddQuotesForTitle,
+		BaseClient:     base.NewBaseClient(clientConfig),
+		DownloadClient: base.NewBaseClient(downloadClientConfig),
+		baseURL:        config.BaseURL,
+		apiKey:         config.APIKey,
+		outputAsJSON:   config.OutputAsJSON,
+		customAPI:      config.CustomAPI,
+		customURL:      config.CustomURL,
 		isTorznab: logger.ContainsI(config.BaseURL, "torznab") ||
 			logger.ContainsI(config.BaseURL, "torrent"),
 	}
@@ -183,275 +173,30 @@ func (p *Provider) GetProviderName() string {
 	return "newznab"
 }
 
-// Search performs a generic search.
-func (p *Provider) Search(
-	ctx context.Context,
-	request apiexternal_v2.IndexerSearchRequest,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	// Build the query string directly into a pooled buffer to avoid url.Values
-	// allocations (each Set call allocates a []string{value}).
-	buf := logger.PlAddBuffer.Get()
-	defer logger.PlAddBuffer.Put(buf)
-
-	var intBuf [20]byte // stack buffer for integer → ASCII conversion
-
-	writeParam := func(key, value string) {
-		if buf.Len() > 0 {
-			buf.WriteByte('&')
-		}
-
-		buf.WriteString(url.QueryEscape(key))
-		buf.WriteByte('=')
-		buf.WriteString(url.QueryEscape(value))
-	}
-
-	writeSafe := func(key, value string) { // use when value is known URL-safe
-		if buf.Len() > 0 {
-			buf.WriteByte('&')
-		}
-
-		buf.WriteString(key)
-		buf.WriteByte('=')
-		buf.WriteString(value)
-	}
-
-	writeInt := func(key string, n int) {
-		if buf.Len() > 0 {
-			buf.WriteByte('&')
-		}
-
-		buf.WriteString(key)
-		buf.WriteByte('=')
-		buf.Write(strconv.AppendInt(intBuf[:0], int64(n), 10))
-	}
-
-	// API key
-	apiKeyParam := "apikey"
-	if p.customAPI != "" {
-		apiKeyParam = p.customAPI
-	}
-
-	writeParam(apiKeyParam, p.apiKey)
-
-	// Determine search type
-	searchType := "search"
-	if request.SearchType != "" {
-		searchType = request.SearchType
-	}
-
-	if request.IMDBID != "" {
-		searchType = "movie"
-
-		writeSafe("imdbid", request.IMDBID) // tt + digits, always URL-safe
-	} else if request.TVDBID > 0 {
-		searchType = "tvsearch"
-
-		writeInt("tvdbid", request.TVDBID)
-	}
-
-	writeSafe("t", searchType) // "search"/"movie"/"tvsearch" always URL-safe
-
-	if request.Query != "" {
-		query := request.Query
-		if p.addQuotesForTitle {
-			query = `"` + query + `"`
-		}
-
-		writeParam("q", query)
-	}
-
-	if request.Season != "" {
-		writeSafe("season", request.Season)
-	}
-
-	if request.Episode != "" {
-		writeSafe("ep", request.Episode)
-	}
-
-	if len(request.Categories) > 0 {
-		writeSafe("cat", logger.JoinStringsSep(request.Categories, ","))
-	} else if len(p.categories) > 0 {
-		writeSafe("cat", logger.JoinStringsSep(p.categories, ","))
-	}
-
-	limit := request.Limit
-	if limit == 0 && p.maxEntries > 0 {
-		limit = int(p.maxEntries)
-	}
-
-	if limit > 0 {
-		writeInt("limit", limit)
-	}
-
-	if request.Offset > 0 {
-		writeInt("offset", request.Offset)
-	}
-
-	maxAge := request.MaxAge
-	if maxAge == 0 && p.maxAge > 0 {
-		maxAge = int(p.maxAge)
-	}
-
-	if maxAge > 0 {
-		writeInt("maxage", maxAge)
-	}
-
-	writeSafe("dl", "1")
-
-	// Collect additional raw params from options; append them after the built query.
-	for k, v := range request.Options {
-		if k == "_raw_params" || k == "AdditionalQueryParams" {
-			buf.WriteString(v) // already has "&" prefix
-		} else {
-			writeParam(k, v)
-		}
-	}
-
-	// Pass nil url.Values (encodes to "") so MakeSearchRequest appends our
-	// pre-built query directly after "?".
-	return p.MakeSearchRequest(ctx, nil, buf.String(), ind, qual)
-}
-
-// SearchMovies searches for movies by title and year.
-func (p *Provider) SearchMovies(
-	ctx context.Context,
-	query string,
-	_ int,
-	additionalParams string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	req := apiexternal_v2.IndexerSearchRequest{
-		Query:      query,
-		SearchType: "movie",
-		Categories: p.categories,
-	}
-
-	// Add AdditionalQueryParams if provided
-	if additionalParams != "" {
-		if req.Options == nil {
-			req.Options = make(map[string]string)
-		}
-
-		req.Options["AdditionalQueryParams"] = additionalParams
-	}
-
-	return p.Search(ctx, req, ind, qual)
-}
-
-// SearchTV searches for TV shows.
-func (p *Provider) SearchTV(
-	ctx context.Context,
-	query string,
-	season, episode int,
-	additionalParams string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	req := apiexternal_v2.IndexerSearchRequest{
-		Query:      query,
-		SearchType: "tvsearch",
-		Categories: p.categories,
-	}
-	if season > 0 {
-		req.Season = strconv.Itoa(season)
-	}
-
-	if episode > 0 {
-		req.Episode = strconv.Itoa(episode)
-	}
-
-	// Add AdditionalQueryParams if provided
-	if additionalParams != "" {
-		if req.Options == nil {
-			req.Options = make(map[string]string)
-		}
-
-		req.Options["AdditionalQueryParams"] = additionalParams
-	}
-
-	return p.Search(ctx, req, ind, qual)
-}
-
-// SearchByIMDB searches by IMDB ID.
-func (p *Provider) SearchByIMDB(
-	ctx context.Context,
-	imdbID string,
-	additionalParams string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	req := apiexternal_v2.IndexerSearchRequest{
-		IMDBID:     imdbID,
-		SearchType: "movie",
-		Categories: p.categories,
-	}
-
-	// Add AdditionalQueryParams if provided
-	if additionalParams != "" {
-		if req.Options == nil {
-			req.Options = make(map[string]string)
-		}
-
-		req.Options["AdditionalQueryParams"] = additionalParams
-	}
-
-	return p.Search(ctx, req, ind, qual)
-}
-
-// SearchByTVDB searches by TVDB ID.
-func (p *Provider) SearchByTVDB(
-	ctx context.Context,
-	tvdbID int,
-	season, episode int,
-	additionalParams string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	req := apiexternal_v2.IndexerSearchRequest{
-		TVDBID:     tvdbID,
-		SearchType: "tvsearch",
-		Categories: p.categories,
-	}
-	if season > 0 {
-		req.Season = strconv.Itoa(season)
-	}
-
-	if episode > 0 {
-		req.Episode = strconv.Itoa(episode)
-	}
-
-	// Add AdditionalQueryParams if provided
-	if additionalParams != "" {
-		if req.Options == nil {
-			req.Options = make(map[string]string)
-		}
-
-		req.Options["AdditionalQueryParams"] = additionalParams
-	}
-
-	return p.Search(ctx, req, ind, qual)
-}
-
 // GetCapabilities retrieves indexer capabilities.
 func (p *Provider) GetCapabilities(
 	ctx context.Context,
 ) (*apiexternal_v2.IndexerCapabilities, error) {
-	params := url.Values{
-		"apikey": {p.apiKey},
-		"t":      {"caps"},
-	}
-
-	endpoint := "/api?" + params.Encode()
-
-	// Use BaseClient's MakeRequest with custom XML decoder
 	var caps newznabCaps
 
 	err := p.MakeRequest(
 		ctx,
 		"GET",
-		endpoint,
+		p.capsURL(),
 		nil,
 		nil,
 		func(resp *http.Response) error {
-			if decodeErr := xml.NewDecoder(resp.Body).Decode(&caps); decodeErr != nil {
+			body, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				return readErr
+			}
+
+			if decodeErr := xml.Unmarshal(body, &caps); decodeErr != nil {
+				var apiErr newznabXMLError
+				if xml.Unmarshal(body, &apiErr) == nil {
+					return p.indexerError(apiErr.Code, apiErr.Description)
+				}
+
 				return decodeErr
 			}
 
@@ -465,207 +210,58 @@ func (p *Provider) GetCapabilities(
 	return convertCapabilities(&caps), nil
 }
 
-// GetRSSFeed retrieves RSS feed.
-// additionalParams can be used to pass AdditionalQueryParams from quality config.
-func (p *Provider) GetRSSFeed(
-	ctx context.Context,
-	categories []string,
-	limit int,
-	additionalParams string,
-	tillid string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	buf := logger.PlAddBuffer.Get()
-	defer logger.PlAddBuffer.Put(buf)
-
-	var intBuf [20]byte
-
-	writeSafe := func(key, value string) {
-		if buf.Len() > 0 {
-			buf.WriteByte('&')
-		}
-
-		buf.WriteString(key)
-		buf.WriteByte('=')
-		buf.WriteString(value)
-	}
-
-	writeParam := func(key, value string) {
-		if buf.Len() > 0 {
-			buf.WriteByte('&')
-		}
-
-		buf.WriteString(url.QueryEscape(key))
-		buf.WriteByte('=')
-		buf.WriteString(url.QueryEscape(value))
-	}
-
-	writeInt := func(key string, n int) {
-		if buf.Len() > 0 {
-			buf.WriteByte('&')
-		}
-
-		buf.WriteString(key)
-		buf.WriteByte('=')
-		buf.Write(strconv.AppendInt(intBuf[:0], int64(n), 10))
-	}
-
-	// API key
+// CustomEndpoint returns an indexer's API endpoint with its API key
+// parameter added, unless the endpoint already carries it or no key is set.
+// customURL may be a path ("/newznab/api") or a full URL, optionally with its
+// own query string; empty means "/api". customAPI names the key parameter
+// (default "apikey"). Shared by capsURL and the legacy search URL builder
+// (apiexternal.buildURLNew) so both read the setting the same way.
+func CustomEndpoint(customURL, customAPI, apiKey string) string {
 	apiKeyParam := "apikey"
-	if p.customAPI != "" {
-		apiKeyParam = p.customAPI
+	if customAPI != "" {
+		apiKeyParam = customAPI
 	}
 
-	writeParam(apiKeyParam, p.apiKey)
-
-	// RSS category parameter (default "t"); trim surrounding & and = if present
-	categoryParam := "t"
-	if p.customRSSCategory != "" {
-		categoryParam = strings.TrimPrefix(p.customRSSCategory, "&")
-		categoryParam = strings.TrimSuffix(categoryParam, "=")
+	endpoint := "/api"
+	if customURL != "" {
+		endpoint = customURL
 	}
 
-	writeSafe(categoryParam, "search")
-
-	// Categories
-	if len(categories) > 0 {
-		writeSafe("cat", logger.JoinStringsSep(categories, ","))
-	} else if len(p.categories) > 0 {
-		writeSafe("cat", logger.JoinStringsSep(p.categories, ","))
+	if apiKey == "" || strings.Contains(endpoint, apiKeyParam+"=") {
+		return endpoint
 	}
 
-	// Limit
-	if limit == 0 && p.maxEntries > 0 {
-		limit = int(p.maxEntries)
+	sep := "?"
+	if strings.Contains(endpoint, "?") {
+		sep = "&"
 	}
 
-	if limit > 0 {
-		writeInt("limit", limit)
+	return logger.JoinStrings(
+		endpoint,
+		sep,
+		url.QueryEscape(apiKeyParam),
+		"=",
+		url.QueryEscape(apiKey),
+	)
+}
+
+// capsURL builds the t=caps URL for the configured endpoint, see
+// CustomEndpoint.
+func (p *Provider) capsURL() string {
+	endpoint := CustomEndpoint(p.customURL, p.customAPI, p.apiKey)
+
+	sep := "?"
+	if strings.Contains(endpoint, "?") {
+		sep = "&"
 	}
 
-	// Max age
-	if p.maxAge > 0 {
-		writeInt("maxage", int(p.maxAge))
-	}
-
-	// tillid
-	if tillid != "" {
-		writeSafe("tillid", tillid)
-	}
-
-	writeSafe("dl", "1")
-
-	if p.outputAsJSON {
-		writeSafe("o", "json")
-	}
-
-	// Append raw additional params (already have & prefix)
-	if additionalParams != "" {
-		buf.WriteString(additionalParams)
-	}
-
-	return p.makeRSSRequest(ctx, nil, buf.String(), tillid, ind, qual)
+	return logger.JoinStrings(endpoint, sep, "t=caps")
 }
 
 // TestConnection validates connectivity.
 func (p *Provider) TestConnection(ctx context.Context) error {
 	_, err := p.GetCapabilities(ctx)
 	return err
-}
-
-// Helper methods
-
-func (p *Provider) MakeSearchRequest(
-	ctx context.Context,
-	params url.Values,
-	rawParams string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	// Add JSON output parameter if configured. Both current call sites pass
-	// params == nil, and .Set on a nil url.Values (a map) panics - guard it
-	// instead of relying on every future caller to pass a non-nil map.
-	if p.outputAsJSON {
-		if params == nil {
-			params = url.Values{}
-		}
-
-		params.Set("o", "json")
-	}
-
-	// Build URL following the old buildurlnew logic with custom URL support
-	var requestURL string
-	if p.customURL != "" {
-		// Use custom URL path if configured
-		requestURL = logger.JoinStrings(p.baseURL, p.customURL, "?", params.Encode())
-	} else {
-		// Default to /api
-		requestURL = logger.JoinStrings(p.baseURL, "/api?", params.Encode())
-	}
-
-	// Append raw additional query params if provided (from AdditionalQueryParams)
-	// These are already formatted with & prefix like "&extended=1&maxsize=1572864000"
-	if rawParams != "" {
-		requestURL += rawParams
-	}
-
-	// Use shared request execution and parsing logic (no tillid for regular searches)
-	arr, err := p.ExecuteRequest(ctx, requestURL, "", ind, qual)
-	if errors.Is(err, ErrBroke) {
-		return arr, nil
-	}
-
-	return arr, err
-}
-
-// makeRSSRequest makes an RSS feed request with custom RSS URL support.
-func (p *Provider) makeRSSRequest(
-	ctx context.Context,
-	params url.Values,
-	rawParams string,
-	tillid string,
-	ind *config.IndexersConfig, qual *config.QualityConfig,
-) ([]apiexternal_v2.Nzbwithprio, error) {
-	// Add JSON output parameter if configured. See MakeSearchRequest - the
-	// call site passes params == nil, and .Set on a nil url.Values panics.
-	if p.outputAsJSON {
-		if params == nil {
-			params = url.Values{}
-		}
-
-		params.Set("o", "json")
-	}
-
-	// Build URL following the old buildurlnew logic with custom RSS URL support
-	var requestURL string
-	if p.customRSSURL != "" {
-		// Use custom RSS URL path if configured
-		// Can be either a relative path or an absolute URL
-		if strings.HasPrefix(p.customRSSURL, "http://") ||
-			strings.HasPrefix(p.customRSSURL, "https://") {
-			// Absolute URL
-			requestURL = logger.JoinStrings(p.customRSSURL, "?", params.Encode())
-		} else {
-			// Relative path
-			requestURL = logger.JoinStrings(p.baseURL, p.customRSSURL, "?", params.Encode())
-		}
-	} else {
-		// Default to /rss
-		requestURL = logger.JoinStrings(p.baseURL, "/rss?", params.Encode())
-	}
-
-	// Append raw additional query params if provided (from AdditionalQueryParams)
-	// These are already formatted with & prefix like "&extended=1&maxsize=1572864000"
-	if rawParams != "" {
-		requestURL += rawParams
-	}
-
-	// Make the HTTP request and parse response (reuse existing parsing logic)
-	arr, err := p.ExecuteRequest(ctx, requestURL, tillid, ind, qual)
-	if errors.Is(err, ErrBroke) {
-		return arr, nil
-	}
-
-	return arr, err
 }
 
 // ExecuteRequest performs the HTTP request and parses the response.
@@ -808,6 +404,26 @@ func (p *Provider) parseXMLResponse(
 			case "category":
 				lastfield = 5
 
+			case "error":
+				// A Newznab error document arrives with HTTP 200; without this
+				// a bad API key or exhausted quota looked like "no results".
+				if inItem {
+					break
+				}
+
+				var code, description string
+
+				for idx := range t.Attr {
+					switch t.Attr[idx].Name.Local {
+					case "code":
+						code = t.Attr[idx].Value
+					case "description":
+						description = t.Attr[idx].Value
+					}
+				}
+
+				return nil, p.indexerError(code, description)
+
 			case "enclosure", "source":
 				// Extract attributes directly from enclosure/source elements
 				if !inItem {
@@ -863,7 +479,7 @@ func (p *Provider) parseXMLResponse(
 				switch t.Attr[nameidx].Value {
 				case "imdb", "imdbid":
 					if currentNZB.IMDBID == "" {
-						currentNZB.IMDBID = t.Attr[valueidx].Value
+						currentNZB.IMDBID = normalizeImdbID(t.Attr[valueidx].Value)
 					}
 
 				case "tvdbid":
@@ -887,9 +503,10 @@ func (p *Provider) parseXMLResponse(
 					}
 
 				case "category":
-					if currentNZB.Category == "" {
-						currentNZB.Category = t.Attr[valueidx].Value
-					}
+					currentNZB.Category = moreSpecificCategory(
+						currentNZB.Category,
+						t.Attr[valueidx].Value,
+					)
 
 				case "size", "length":
 					if currentNZB.Size != 0 {
@@ -956,10 +573,8 @@ func (p *Provider) parseXMLResponse(
 					currentNZB.Size = size
 				}
 
-			case 5: // category
-				if currentNZB.Category == "" {
-					currentNZB.Category = data
-				}
+			case 5: // category - usually "Movies > HD"; only a numeric ID is usable
+				currentNZB.Category = moreSpecificCategory(currentNZB.Category, data)
 			}
 
 		case xml.EndElement:
@@ -1012,11 +627,18 @@ func (p *Provider) parseJSONResponse(
 		return nil, errors.New(logger.JoinStrings("failed to read response body: ", err.Error()))
 	}
 
+	var apiErr jsonErrorDoc
+	if json.Unmarshal(bodyBytes, &apiErr) == nil {
+		if code, description, ok := apiErr.details(); ok {
+			return nil, p.indexerError(code, description)
+		}
+	}
+
 	// Try format 1 first (nested channel structure)
 	var format1 searchResponseJSON1
 	if err := json.Unmarshal(bodyBytes, &format1); err == nil {
 		if len(format1.Channel.Item) > 0 {
-			return p.convertJSON1Items(format1.Channel.Item, tillid), nil
+			return p.convertJSON1Items(format1.Channel.Item, tillid)
 		}
 	}
 
@@ -1032,14 +654,14 @@ func (p *Provider) parseJSONResponse(
 		return []apiexternal_v2.Nzbwithprio{}, nil
 	}
 
-	return p.convertJSON2Items(format2.Item, tillid), nil
+	return p.convertJSON2Items(format2.Item, tillid)
 }
 
 // convertJSON1Items converts JSON format 1 items to Nzbwithprio.
 func (p *Provider) convertJSON1Items(
 	items []json1Item,
 	tillid string,
-) []apiexternal_v2.Nzbwithprio {
+) ([]apiexternal_v2.Nzbwithprio, error) {
 	results := make([]apiexternal_v2.Nzbwithprio, 0, len(items))
 
 	for i := range items {
@@ -1082,7 +704,7 @@ func (p *Provider) convertJSON1Items(
 		for j := range items[i].Attributes {
 			switch items[i].Attributes[j].Attribute.Name {
 			case "imdb", "imdbid":
-				nzb.IMDBID = items[i].Attributes[j].Attribute.Value
+				nzb.IMDBID = normalizeImdbID(items[i].Attributes[j].Attribute.Value)
 			case "tvdbid":
 				if id, err := strconv.Atoi(items[i].Attributes[j].Attribute.Value); err == nil {
 					nzb.TVDBID = id
@@ -1093,9 +715,10 @@ func (p *Provider) convertJSON1Items(
 			case "episode":
 				nzb.Episode = items[i].Attributes[j].Attribute.Value
 			case "category":
-				if nzb.Category == "" {
-					nzb.Category = items[i].Attributes[j].Attribute.Value
-				}
+				nzb.Category = moreSpecificCategory(
+					nzb.Category,
+					items[i].Attributes[j].Attribute.Value,
+				)
 			}
 		}
 
@@ -1106,7 +729,7 @@ func (p *Provider) convertJSON1Items(
 				Int("new_entries", len(results)).
 				Msg("Reached tillid entry in JSON - stopping parsing")
 
-			return results
+			return results, ErrBroke
 		}
 
 		results = append(results, apiexternal_v2.Nzbwithprio{
@@ -1115,14 +738,14 @@ func (p *Provider) convertJSON1Items(
 		})
 	}
 
-	return results
+	return results, nil
 }
 
 // convertJSON2Items converts JSON format 2 items to Nzbwithprio.
 func (p *Provider) convertJSON2Items(
 	items []json2Item,
 	tillid string,
-) []apiexternal_v2.Nzbwithprio {
+) ([]apiexternal_v2.Nzbwithprio, error) {
 	results := make([]apiexternal_v2.Nzbwithprio, 0, len(items))
 
 	for i := range items {
@@ -1181,7 +804,7 @@ func (p *Provider) convertJSON2Items(
 				Int("new_entries", len(results)).
 				Msg("Reached tillid entry in JSON format 2 - stopping parsing")
 
-			return results
+			return results, ErrBroke
 		}
 
 		results = append(results, apiexternal_v2.Nzbwithprio{
@@ -1190,7 +813,7 @@ func (p *Provider) convertJSON2Items(
 		})
 	}
 
-	return results
+	return results, nil
 }
 
 // processAttributeForNzb processes a custom Newznab attribute and populates the NZB fields.
@@ -1200,7 +823,7 @@ func (*Provider) processAttributeForNzb(
 ) {
 	switch name {
 	case "imdb", "imdbid":
-		nzb.IMDBID = value
+		nzb.IMDBID = normalizeImdbID(value)
 	case "tvdbid":
 		if id, err := strconv.Atoi(value); err == nil {
 			nzb.TVDBID = id
@@ -1211,9 +834,7 @@ func (*Provider) processAttributeForNzb(
 	case "episode":
 		nzb.Episode = value
 	case "category":
-		if nzb.Category == "" {
-			nzb.Category = value
-		}
+		nzb.Category = moreSpecificCategory(nzb.Category, value)
 
 	case "size":
 		if nzb.Size != 0 {
@@ -1225,6 +846,74 @@ func (*Provider) processAttributeForNzb(
 			nzb.Size = size
 		}
 	}
+}
+
+// moreSpecificCategory picks the category to keep for an item. Items list the
+// parent (2000) and the sub-category (2040), and some send the display text
+// ("Movies > HD"); consumers such as searcher.resolutionFromCategory only
+// understand numeric sub-categories, so a numeric non-x000 ID wins.
+func moreSpecificCategory(current, candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if !isDigits(candidate) {
+		return current
+	}
+
+	if !isDigits(current) {
+		return candidate
+	}
+
+	if strings.HasSuffix(current, "000") && !strings.HasSuffix(candidate, "000") {
+		return candidate
+	}
+
+	return current
+}
+
+// normalizeImdbID adds the "tt" prefix indexers omit (imdb="0133093"); the
+// searcher only treats "tt"-prefixed IDs as IMDb IDs. All-zero placeholders
+// mean "unknown".
+func normalizeImdbID(value string) string {
+	value = strings.TrimSpace(value)
+	if !isDigits(value) {
+		return value
+	}
+
+	if strings.Trim(value, "0") == "" {
+		return ""
+	}
+
+	return logger.AddImdbPrefix(value)
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// indexerError converts a Newznab error document into an error and, for
+// quota errors (500 request limit, 501 download limit), blocks the client the
+// same way an HTTP 429 would.
+func (p *Provider) indexerError(code, description string) error {
+	if code == "500" || code == "501" || logger.ContainsI(description, "limit reached") {
+		p.MarkServerRateLimited(description, indexerQuotaBlock)
+	}
+
+	return fmt.Errorf("%w: code %s: %s", ErrIndexerAPI, code, description)
+}
+
+type newznabXMLError struct {
+	XMLName     xml.Name `xml:"error"`
+	Code        string   `xml:"code,attr"`
+	Description string   `xml:"description,attr"`
 }
 
 type newznabCaps struct {

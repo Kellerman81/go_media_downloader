@@ -1,5 +1,7 @@
 package newznab
 
+import "github.com/goccy/go-json"
+
 //
 // JSON Response Types - Supporting multiple JSON formats from different Newznab implementations
 //
@@ -69,4 +71,66 @@ type enclosureField struct {
 type attributeField struct {
 	Name  string `json:"_name"`
 	Value string `json:"_value"`
+}
+
+// jsonErrorDoc covers the JSON error shapes indexers send with HTTP 200:
+// {"error":{"code":..,"description":..}}, the same nested in "@attributes",
+// and a bare {"code":..,"description":..}.
+type jsonErrorDoc struct {
+	Error       *jsonErrorBody `json:"error"`
+	Attributes  *jsonErrorBody `json:"@attributes"`
+	Code        flexString     `json:"code"`
+	Description string         `json:"description"`
+}
+
+type jsonErrorBody struct {
+	Code        flexString     `json:"code"`
+	Description string         `json:"description"`
+	Attributes  *jsonErrorBody `json:"@attributes"`
+}
+
+func (d *jsonErrorDoc) details() (code, description string, ok bool) {
+	for _, b := range []*jsonErrorBody{d.Error, d.Attributes} {
+		if b == nil {
+			continue
+		}
+
+		if b.Attributes != nil {
+			b = b.Attributes
+		}
+
+		if b.Code != "" || b.Description != "" {
+			return string(b.Code), b.Description, true
+		}
+	}
+
+	if d.Code != "" && d.Description != "" {
+		return string(d.Code), d.Description, true
+	}
+
+	return "", "", false
+}
+
+// flexString accepts a JSON string or number.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+
+		*f = flexString(s)
+
+		return nil
+	}
+
+	if string(b) == "null" {
+		return nil
+	}
+
+	*f = flexString(b)
+
+	return nil
 }

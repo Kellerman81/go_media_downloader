@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -19,6 +19,8 @@ import (
 var (
 	errDownloaderTemplateNotFound = errors.New("downloader template not found")
 	errUnknownDownloader          = errors.New("unknown downloader")
+	errNoQualityIndexer           = errors.New("quality config missing or has no indexers")
+	errNoDownloadClient           = errors.New("download client not registered")
 )
 
 type downloadertype struct {
@@ -59,9 +61,23 @@ type downloadertype struct {
 //
 // The function sets up all necessary configuration before delegating to the specific
 // downloader implementation (SABnzbd, NZBGet, etc.) for the actual download operation.
-func (d *downloadertype) downloadNzb() {
+func (d *downloadertype) downloadNzb() error {
+	if d.Quality == nil || len(d.Quality.Indexer) == 0 {
+		logger.Logtype("error", 0).
+			Err(errNoQualityIndexer).
+			Str("nzb", d.Nzb.NZB.Title).
+			Msg("Error get Nzb Config")
+		return errNoQualityIndexer
+	}
+
+	var nzbIndexer string
+	if d.Nzb.NZB.Indexer != nil {
+		nzbIndexer = d.Nzb.NZB.Indexer.Name
+	}
+
 	for idx := range d.Quality.Indexer {
-		if !strings.EqualFold(d.Quality.Indexer[idx].TemplateIndexer, d.Nzb.NZB.Indexer.Name) {
+		if nzbIndexer == "" ||
+			!strings.EqualFold(d.Quality.Indexer[idx].TemplateIndexer, nzbIndexer) {
 			continue
 		}
 
@@ -100,14 +116,14 @@ func (d *downloadertype) downloadNzb() {
 			logger.Logtype("error", 0).
 				Err(logger.ErrPathTemplateNotFound).
 				Msg("Error get Nzb Config")
-			return
+			return logger.ErrPathTemplateNotFound
 		}
 
 		if d.Quality.Indexer[0].CfgDownloader == nil {
 			logger.Logtype("error", 0).
 				Err(errDownloaderTemplateNotFound).
 				Msg("Error get Nzb Config")
-			return
+			return errDownloaderTemplateNotFound
 		}
 
 		logger.Logtype("debug", 1).
@@ -119,11 +135,6 @@ func (d *downloadertype) downloadNzb() {
 		d.TargetCfg = d.Quality.Indexer[0].CfgPath
 		d.Downloader = d.Quality.Indexer[0].TemplateDownloader
 		d.DownloaderCfg = d.Quality.Indexer[0].CfgDownloader
-	}
-
-	if config.GetSettingsGeneral().UseHistoryCache {
-		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryTitle, d.Nzb.NZB.Title)
-		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryURL, d.Nzb.NZB.DownloadURL)
 	}
 
 	d.Targetfile = d.getdownloadtargetfolder()
@@ -155,24 +166,51 @@ func (d *downloadertype) downloadNzb() {
 		logger.Logtype("error", 0).
 			Err(errUnknownDownloader).
 			Msg("Download")
-		return
+		return errUnknownDownloader
 	}
 
 	if err != nil {
 		logger.Logtype("error", 0).
 			Err(err).
 			Msg("Download")
-		return
+		return err
+	}
+
+	// Only cache the release once the client accepted it - caching before the
+	// add made a failed add skip the release forever.
+	if config.GetSettingsGeneral().UseHistoryCache {
+		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryTitle, d.Nzb.NZB.Title)
+		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryURL, d.Nzb.NZB.DownloadURL)
 	}
 
 	d.notify()
 
-	d.downloadNzbType(d.Cfgp.IsType)
+	d.downloadNzbType(d.Cfgp.IsType, d.savePath())
+
+	return nil
 }
 
-func (d *downloadertype) downloadNzbType(isType uint) {
+// savePath returns where the client actually saves the download: torrent
+// clients use DelugeDlTo (when set) rather than the path template.
+func (d *downloadertype) savePath() string {
+	switch d.DownloaderCfg.DlType {
+	case "transmission", "rtorrent", "qbittorrent", "deluge":
+		if d.DownloaderCfg.DelugeDlTo != "" {
+			return d.DownloaderCfg.DelugeDlTo
+		}
+	}
+
+	return d.TargetCfg.Path
+}
+
+func (d *downloadertype) downloadNzbType(isType uint, savePath string) {
 	if handler := mediatype.Get(isType); handler != nil {
-		handler.RecordDownloadHistory(d.Nzb, d.TargetCfg.Path)
+		if err := handler.RecordDownloadHistory(d.Nzb, savePath); err != nil {
+			logger.Logtype("error", 0).
+				Err(err).
+				Str("nzb", d.Nzb.NZB.Title).
+				Msg("Error recording download history")
+		}
 	}
 }
 
@@ -261,91 +299,22 @@ func (d *downloadertype) notify() {
 		switch cfgnot.NotificationType {
 		case "csv":
 			scanner.AppendCsv(cfgnot.Outputto, messagetext)
-		case "pushover":
+		case "pushover", "gotify", "pushbullet", "apprise":
 			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
 			if bl {
 				continue
 			}
 
-			err = apiexternal.SendPushoverMessage(
-				cfgnot.Name,
-				cfgnot.Apikey,
-				messagetext,
-				messageTitle,
-				cfgnot.Recipient,
-			)
+			err = providers.SendNotification(cfgnot, messagetext, messageTitle)
 			if err != nil {
 				logger.Logtype("error", 0).
 					Err(err).
-					Msg("Error sending pushover")
+					Str("type", cfgnot.NotificationType).
+					Msg("Error sending notification")
 			} else {
 				logger.Logtype("info", 0).
-					Msg("Pushover message sent")
-			}
-
-		case "gotify":
-			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
-			if bl {
-				continue
-			}
-
-			err = apiexternal.SendGotifyMessage(
-				cfgnot.Name,
-				cfgnot.ServerURL,
-				cfgnot.Apikey,
-				messagetext,
-				messageTitle,
-			)
-			if err != nil {
-				logger.Logtype("error", 0).
-					Err(err).
-					Msg("Error sending Gotify notification")
-			} else {
-				logger.Logtype("info", 0).
-					Msg("Gotify message sent")
-			}
-
-		case "pushbullet":
-			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
-			if bl {
-				continue
-			}
-
-			err = apiexternal.SendPushbulletMessage(
-				cfgnot.Name,
-				cfgnot.Apikey,
-				messagetext,
-				messageTitle,
-			)
-			if err != nil {
-				logger.Logtype("error", 0).
-					Err(err).
-					Msg("Error sending Pushbullet notification")
-			} else {
-				logger.Logtype("info", 0).
-					Msg("Pushbullet message sent")
-			}
-
-		case "apprise":
-			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
-			if bl {
-				continue
-			}
-
-			err = apiexternal.SendAppriseMessage(
-				cfgnot.Name,
-				cfgnot.ServerURL,
-				messagetext,
-				messageTitle,
-				cfgnot.AppriseURLs,
-			)
-			if err != nil {
-				logger.Logtype("error", 0).
-					Err(err).
-					Msg("Error sending Apprise notification")
-			} else {
-				logger.Logtype("info", 0).
-					Msg("Apprise message sent")
+					Str("type", cfgnot.NotificationType).
+					Msg("Notification sent")
 			}
 		}
 	}
@@ -362,7 +331,7 @@ func (d *downloadertype) downloadByDrone() error {
 
 	urlv := logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL)
 
-	return apiexternal.DownloadNZB(filename, d.TargetCfg.Path, urlv, d.IndexerCfg)
+	return providers.EnsureIndexer(d.IndexerCfg).Download(context.Background(), urlv, d.TargetCfg.Path, filename)
 }
 
 // downloadByNzbget downloads the NZB file using the NZBGet downloader.
@@ -385,6 +354,7 @@ func (d *downloadertype) downloadByNzbget() error {
 		context.Background(),
 		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
 		d.Category,
+		d.Targetfile,
 		d.DownloaderCfg.Priority,
 		d.DownloaderCfg.AddPaused,
 	)
@@ -392,14 +362,18 @@ func (d *downloadertype) downloadByNzbget() error {
 	return err
 }
 
-// downloadBySabnzbd downloads the NZB file using the Sabnzbd downloader.
-// It constructs the Sabnzbd options based on the downloader configuration,
-// downloads the NZB file using the Sabnzbd API, and returns any error.
+// downloadBySabnzbd sends the NZB URL to SABnzbd.
 func (d *downloadertype) downloadBySabnzbd() error {
-	return apiexternal.SendToSabnzbd(
-		d.DownloaderCfg.Name,
-		d.DownloaderCfg.Hostname,
-		d.DownloaderCfg.Password,
+	provider := providers.GetSABnzbd(d.DownloaderCfg.Name)
+	if provider == nil {
+		return errNoDownloadClient
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return provider.AddNZBNamed(
+		ctx,
 		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
 		d.Category,
 		d.Targetfile,
@@ -407,71 +381,70 @@ func (d *downloadertype) downloadBySabnzbd() error {
 	)
 }
 
-// downloadByRTorrent downloads the torrent file using the rTorrent downloader.
-// It sends the torrent URL to the rTorrent API based on the downloader
-// configuration and returns any error.
+// downloadByRTorrent sends the torrent URL to rTorrent.
 func (d *downloadertype) downloadByRTorrent() error {
-	return apiexternal.SendToRtorrent(
-		d.DownloaderCfg.Name,
-		d.DownloaderCfg.Hostname,
-		false,
-		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
-		d.DownloaderCfg.DelugeDlTo,
-		d.Targetfile,
-	)
+	return addTorrent(d, providers.GetRTorrent(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
+		SavePath: d.DownloaderCfg.DelugeDlTo,
+	})
 }
 
-// downloadByTransmission downloads the torrent file using the Transmission
-// downloader. It sends the torrent URL to the Transmission API based on
-// the downloader configuration and returns any error.
+// downloadByTransmission sends the torrent URL to Transmission.
 func (d *downloadertype) downloadByTransmission() error {
-	return apiexternal.SendToTransmission(
-		d.DownloaderCfg.Name,
-		d.DownloaderCfg.Hostname,
-		d.DownloaderCfg.Username,
-		d.DownloaderCfg.Password,
-		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
-		d.DownloaderCfg.DelugeDlTo,
-		d.DownloaderCfg.AddPaused,
-	)
+	return addTorrent(d, providers.GetTransmission(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
+		SavePath: d.DownloaderCfg.DelugeDlTo,
+		Paused:   d.DownloaderCfg.AddPaused,
+		Priority: d.DownloaderCfg.Priority,
+	})
 }
 
-// downloadByDeluge downloads the torrent file using the Deluge downloader.
-// It sends the torrent URL to the Deluge API based on the downloader
-// configuration and returns any error.
+// downloadByDeluge sends the torrent URL to Deluge. A non-empty category is
+// applied as label when Deluge's Label plugin is enabled.
 func (d *downloadertype) downloadByDeluge() error {
-	return apiexternal.SendToDeluge(
-		d.DownloaderCfg.Name,
-		d.DownloaderCfg.Hostname,
-		d.DownloaderCfg.Port,
-		d.DownloaderCfg.Username,
-		d.DownloaderCfg.Password,
-		logger.Checkhtmlentities(
-			d.Nzb.NZB.DownloadURL,
-		),
-		d.DownloaderCfg.DelugeDlTo,
-		d.DownloaderCfg.DelugeMoveAfter,
-		d.DownloaderCfg.DelugeMoveTo,
-		d.DownloaderCfg.AddPaused,
-	)
+	options := map[string]string{"move_completed": strconv.FormatBool(d.DownloaderCfg.DelugeMoveAfter)}
+	// Like download_location, an empty move_completed_path would replace
+	// Deluge's own default with "".
+	if d.DownloaderCfg.DelugeMoveTo != "" {
+		options["move_completed_path"] = d.DownloaderCfg.DelugeMoveTo
+	}
+
+	return addTorrent(d, providers.GetDeluge(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
+		SavePath: d.DownloaderCfg.DelugeDlTo,
+		Paused:   d.DownloaderCfg.AddPaused,
+		Options:  options,
+		Label:    d.Category,
+	})
 }
 
-// downloadByQBittorrent downloads the torrent file using the qBittorrent
-// downloader. It sends the torrent URL to the qBittorrent API based on
-// the downloader configuration and returns any error.
+// downloadByQBittorrent sends the torrent URL to qBittorrent.
 func (d *downloadertype) downloadByQBittorrent() error {
-	return apiexternal.SendToQBittorrent(
-		d.DownloaderCfg.Name,
-		d.DownloaderCfg.Hostname,
-		strconv.Itoa(d.DownloaderCfg.Port),
-		d.DownloaderCfg.Username,
-		d.DownloaderCfg.Password,
-		logger.Checkhtmlentities(
-			d.Nzb.NZB.DownloadURL,
-		),
-		d.DownloaderCfg.DelugeDlTo,
-		strconv.FormatBool(d.DownloaderCfg.AddPaused),
-	)
+	return addTorrent(d, providers.GetQBittorrent(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
+		SavePath: d.DownloaderCfg.DelugeDlTo,
+		Category: d.Category,
+		Paused:   d.DownloaderCfg.AddPaused,
+	})
+}
+
+// torrentAdder is the add call the torrent download clients share.
+type torrentAdder interface {
+	AddTorrent(ctx context.Context, req apiexternal_v2.TorrentAddRequest) (*apiexternal_v2.TorrentAddResponse, error)
+}
+
+// addTorrent sends the release's torrent URL with req's settings to client.
+func addTorrent[T any, P interface {
+	*T
+	torrentAdder
+}](d *downloadertype, client P, req apiexternal_v2.TorrentAddRequest) error {
+	if client == nil {
+		return errNoDownloadClient
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req.URL = logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL)
+	_, err := client.AddTorrent(ctx, req)
+
+	return err
 }
 
 // newDownloader initializes a new downloadertype struct.
@@ -487,7 +460,7 @@ func newDownloader(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio
 
 // DownloadMovie initializes a downloader, gets the movie and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) error {
 	d := newDownloader(cfgp, nzb)
 
 	err := d.Movie.GetMoviesByIDP(&nzb.NzbmovieID)
@@ -497,7 +470,7 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Dbmovie.GetDbmovieByIDP(&d.Movie.DbmovieID)
@@ -507,16 +480,16 @@ func DownloadMovie(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbmovieID)
-	d.downloadNzb()
+	return d.downloadNzb()
 }
 
 // DownloadSeriesEpisode initializes a downloader, gets the episode and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) error {
 	d := newDownloader(cfgp, nzb)
 
 	err := d.Serieepisode.GetSerieEpisodesByIDP(&nzb.NzbepisodeID)
@@ -526,7 +499,7 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzb
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Dbserie.GetDbserieByIDP(&d.Serieepisode.DbserieID)
@@ -536,7 +509,7 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzb
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Dbserieepisode.GetDbserieEpisodesByIDP(&d.Serieepisode.DbserieEpisodeID)
@@ -546,7 +519,7 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzb
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Serie.GetSerieByIDP(&d.Serieepisode.SerieID)
@@ -556,16 +529,16 @@ func DownloadSeriesEpisode(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzb
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbepisodeID)
-	d.downloadNzb()
+	return d.downloadNzb()
 }
 
 // DownloadBook initializes a downloader, gets the book and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadBook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+func DownloadBook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) error {
 	d := newDownloader(cfgp, nzb)
 
 	err := d.Book.GetBooksByIDP(&nzb.NzbbookID)
@@ -575,7 +548,7 @@ func DownloadBook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio)
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Dbbook.GetDbbookByIDP(&d.Book.DbbookID)
@@ -585,16 +558,16 @@ func DownloadBook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio)
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbbookID)
-	d.downloadNzb()
+	return d.downloadNzb()
 }
 
 // DownloadAudiobook initializes a downloader, gets the audiobook and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadAudiobook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+func DownloadAudiobook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) error {
 	d := newDownloader(cfgp, nzb)
 
 	err := d.Audiobook.GetAudiobooksByIDP(&nzb.NzbaudiobookID)
@@ -604,7 +577,7 @@ func DownloadAudiobook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwith
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Dbaudiobook.GetDbaudiobookByIDP(&d.Audiobook.DbaudiobookID)
@@ -614,16 +587,16 @@ func DownloadAudiobook(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwith
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbaudiobookID)
-	d.downloadNzb()
+	return d.downloadNzb()
 }
 
 // DownloadAlbum initializes a downloader, gets the album and related database
 // objects by ID, sets the quality config, and calls the download method.
-func DownloadAlbum(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) {
+func DownloadAlbum(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio) error {
 	d := newDownloader(cfgp, nzb)
 
 	err := d.Album.GetAlbumsByIDP(&nzb.NzbalbumID)
@@ -633,7 +606,7 @@ func DownloadAlbum(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	err = d.Dbalbum.GetDbalbumByIDP(&d.Album.DbalbumID)
@@ -643,9 +616,9 @@ func DownloadAlbum(cfgp *config.MediaTypeConfig, nzb *apiexternal_v2.Nzbwithprio
 			Err(err).
 			Msg("not found")
 
-		return
+		return err
 	}
 
 	d.Quality = database.GetMediaQualityConfig(cfgp, &nzb.NzbalbumID)
-	d.downloadNzb()
+	return d.downloadNzb()
 }

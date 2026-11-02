@@ -46,14 +46,6 @@ const (
 const (
 	ParseFailedIDs             = "parse failed ids"
 	FilterByID                 = "id = ?"
-	StrRefreshMovies           = "Refresh Movies"
-	StrRefreshMoviesInc        = "Refresh Movies Incremental"
-	StrRefreshSeries           = "Refresh Series"
-	StrRefreshSeriesInc        = "Refresh Series Incremental"
-	StrRefreshAudiobooks       = "Refresh Audiobooks"
-	StrRefreshAudiobooksInc    = "Refresh Audiobooks Incremental"
-	StrRefreshMusic            = "Refresh Music"
-	StrRefreshMusicInc         = "Refresh Music Incremental"
 	StrDebug                   = "debug"
 	StrDate                    = "date"
 	StrSearchMissingInc        = "searchmissinginc"
@@ -417,9 +409,9 @@ var (
 		'ä':  "ae",
 		'ö':  "oe",
 		'ü':  "ue",
-		'Ä':  "Ae",
-		'Ö':  "Oe",
-		'Ü':  "Ue",
+		'Ä':  "ae",
+		'Ö':  "oe",
+		'Ü':  "ue",
 		'ß':  "ss",
 	}
 	// diacriticsmap is a mapping of diacritical characters to their ASCII equivalent replacements.
@@ -480,7 +472,13 @@ func initializePools() {
 				b.Reset()
 			}
 		}, func(b *AddBuffer) bool {
+			// Don't keep a buffer that once held a huge payload pinned in the pool.
+			if b.Cap() > 1<<20 {
+				return true
+			}
+
 			b.Reset()
+
 			return false
 		})
 		PLArrAny.Init(200, 5, func(a *Arrany) { a.Arr = make([]any, 0, 20) }, func(a *Arrany) bool {
@@ -851,8 +849,29 @@ func stringToSlugBuffer(ret *AddBuffer, instr string) {
 				ret.WriteByte('-')
 
 				lastrune = '-'
-			} else if lastrune != '-' || tb[position] != StrDash {
-				ret.WriteString(tb[position])
+			} else {
+				// Transliterations are ASCII but may hold capitals, spaces or
+				// punctuation ("Ri ", "E"): apply the same rules as ASCII input
+				// so the result stays a lowercase, hyphenated slug.
+				tr := tb[position]
+				for i := range len(tr) {
+					c := rune(tr[i])
+					if 'A' <= c && c <= 'Z' {
+						c += 'a' - 'A'
+					}
+
+					if c < 256 && subRuneSet[c] {
+						if lastrune != '-' || c != '-' {
+							ret.WriteByte(byte(c))
+
+							lastrune = c
+						}
+					} else if lastrune != '-' {
+						ret.WriteByte('-')
+
+						lastrune = '-'
+					}
+				}
 			}
 		}
 	}
@@ -1688,61 +1707,6 @@ func StringReplaceWithP(s *string, r, t byte) {
 	}
 
 	*s = buf.String()
-}
-
-// StringReplaceWithStr replaces all occurrences of the string r in s with the string t.
-// It returns a new string with the replacements.
-func StringReplaceWithStr(s, r, t string) string {
-	if s == "" || r == "" {
-		return s
-	}
-
-	if !strings.Contains(s, r) {
-		return s
-	}
-
-	// Compute number of replacements.
-	n := strings.Count(s, r)
-	if n == 0 {
-		return s // avoid allocation
-	}
-
-	// Apply replacements to buffer.
-	initializePools()
-
-	buf := PlAddBuffer.Get()
-	defer PlAddBuffer.Put(buf)
-
-	start := 0
-
-	lenr := len(r)
-	for i := range n {
-		j := start
-		if lenr == 0 {
-			if i > 0 {
-				_, wid := utf8.DecodeRuneInString(s[start:])
-
-				j += wid
-			}
-		} else {
-			idx := strings.Index(s[start:], r)
-			if idx == -1 {
-				// This shouldn't happen given our Count check, but handle gracefully
-				break
-			}
-
-			j = start + idx
-		}
-
-		buf.WriteString(s[start:j])
-		buf.WriteString(t)
-
-		start = j + lenr
-	}
-
-	buf.WriteString(s[start:])
-
-	return buf.String()
 }
 
 // CheckContextEnded checks if the provided context has been canceled or has expired.

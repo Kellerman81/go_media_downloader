@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -141,6 +142,43 @@ type traktPopularItem struct {
 	Show           *TraktShow  `json:"show,omitempty"`
 }
 
+// UnmarshalJSON accepts both item shapes: trending/anticipated wrap the
+// object ({"watchers":..,"movie":{..}}) while popular returns it bare.
+func (it *traktPopularItem) UnmarshalJSON(b []byte) error {
+	type wrapped traktPopularItem
+
+	var w wrapped
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+
+	*it = traktPopularItem(w)
+	if it.Movie != nil || it.Show != nil {
+		return nil
+	}
+
+	// The endpoint decides whether a bare object is a movie or a show; the
+	// converters read only the one they need.
+	var movie TraktMovie
+	if err := json.Unmarshal(b, &movie); err != nil {
+		return err
+	}
+
+	if movie.IDs.Trakt == 0 && movie.Title == "" {
+		return nil
+	}
+
+	var show TraktShow
+	if err := json.Unmarshal(b, &show); err != nil {
+		return err
+	}
+
+	it.Movie = &movie
+	it.Show = &show
+
+	return nil
+}
+
 type traktCastMember struct {
 	Character string      `json:"character"`
 	Person    traktPerson `json:"person"`
@@ -226,6 +264,8 @@ func convertSearchToSeriesResults(
 				Overview:     traktResults[i].Show.Overview,
 				VoteAverage:  traktResults[i].Show.Rating,
 				ProviderName: provider,
+				TVDbID:       traktResults[i].Show.IDs.TVDB,
+				IMDbID:       traktResults[i].Show.IDs.IMDB,
 			})
 		}
 	}
@@ -369,6 +409,8 @@ func convertPopularSeries(
 				Overview:     items[i].Show.Overview,
 				VoteAverage:  items[i].Show.Rating,
 				ProviderName: "trakt",
+				TVDbID:       items[i].Show.IDs.TVDB,
+				IMDbID:       items[i].Show.IDs.IMDB,
 			})
 		}
 	}

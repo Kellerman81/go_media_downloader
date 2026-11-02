@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,73 @@ import (
 	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
 )
+
+// feedParsingTypes lists the selectable feed types. The select posts the
+// label (convertSelectOptionsToMap keeps labels only), so feedTypeValue maps
+// it back to the ListType value.
+var feedParsingTypes = []SelectOption{
+	{Value: "imdbcsv", Label: "IMDB CSV - Import from IMDB CSV list"},
+	{Value: "imdbfile", Label: "IMDB File - Import from local IMDB file"},
+	{
+		Value: "traktpublicmovielist",
+		Label: "Trakt Public Movie List - User's public movie list",
+	},
+	{Value: "traktmoviepopular", Label: "Trakt Popular Movies - Currently popular movies"},
+	{Value: "tmdbmoviepopular", Label: "TMDB Popular Movies - Currently popular movies"},
+	{
+		Value: "traktmovieanticipated",
+		Label: "Trakt Anticipated Movies - Most anticipated movies",
+	},
+	{Value: "tmdbmovieupcoming", Label: "TMDB Upcoming Movies"},
+	{Value: "traktmovietrending", Label: "Trakt Trending Movies - Currently trending movies"},
+	{Value: "tmdbmovietrending", Label: "TMDB Trending Movies - Currently trending movies"},
+	{Value: "tmdbmoviediscover", Label: "TMDB Movie Discovery - Discover movies by criteria"},
+	{Value: "tmdblist", Label: "TMDB List - Import from TMDB list"},
+	{Value: "seriesconfig", Label: "Series Config File - Import from series configuration"},
+	{
+		Value: "traktpublicshowlist",
+		Label: "Trakt Public Series List - User's public series list",
+	},
+	{Value: "traktseriepopular", Label: "Trakt Popular Series - Currently popular series"},
+	{Value: "tmdbseriepopular", Label: "TMDB Popular Series - Currently popular series"},
+	{
+		Value: "traktserieanticipated",
+		Label: "Trakt Anticipated Series - Most anticipated series",
+	},
+	{Value: "traktserietrending", Label: "Trakt Trending Series - Currently trending series"},
+	{Value: "tmdbserietrending", Label: "TMDB Trending Series - Currently trending series"},
+	{Value: "tmdbshowdiscover", Label: "TMDB Series Discovery - Discover series by criteria"},
+	{Value: "tmdbshowlist", Label: "TMDB Series List - Import from TMDB series list"},
+	{Value: "newznabrss", Label: "Newznab RSS - Import from RSS feed"},
+	{Value: "plexwatchlist", Label: "Plex Watchlist - Import from a Plex Watchlist"},
+	{
+		Value: "jellyfinwatchlist",
+		Label: "Jellyfin Watchlist - Import from a Jellyfin Watchlist",
+	},
+	{Value: "moviescraper", Label: "Movie Scraper - Scrape Movies from an API or Website"},
+	{
+		Value: "audiobookconfig",
+		Label: "Audiobook Config File - Import from audiobook configuration",
+	},
+	{Value: "bookconfig", Label: "Book Config File - Import from book configuration"},
+	{Value: "musicconfig", Label: "Music Config File - Import from music/album configuration"},
+	{Value: "musiccharts", Label: "Music Charts"},
+	{Value: "lastfmtopartists", Label: "Last.fm Top Artists"},
+	{Value: "bookbestsellers", Label: "Book Bestsellers"},
+	{Value: "irc", Label: "IRC Announce Channel"},
+}
+
+// feedTypeValue resolves a posted feed type (label or value) to its ListType.
+func feedTypeValue(posted string) string {
+	for _, ft := range feedParsingTypes {
+		v, _ := ft.Value.(string)
+		if strings.EqualFold(ft.Label, posted) || strings.EqualFold(v, posted) {
+			return v
+		}
+	}
+
+	return posted
+}
 
 // ================================================================================
 // FEED PARSING PAGE
@@ -61,55 +129,6 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 	logger.Logtype("debug", 0).
 		Any("mediaToLists", mediaToLists).
 		Msg("Media to lists mapping created")
-
-	// Create better feed type descriptions
-	feedTypes := []SelectOption{
-		{Value: "imdbcsv", Label: "IMDB CSV - Import from IMDB CSV list"},
-		{Value: "imdbfile", Label: "IMDB File - Import from local IMDB file"},
-		{
-			Value: "traktpublicmovielist",
-			Label: "Trakt Public Movie List - User's public movie list",
-		},
-		{Value: "traktmoviepopular", Label: "Trakt Popular Movies - Currently popular movies"},
-		{Value: "tmdbmoviepopular", Label: "TMDB Popular Movies - Currently popular movies"},
-		{
-			Value: "traktmovieanticipated",
-			Label: "Trakt Anticipated Movies - Most anticipated movies",
-		},
-		{Value: "tmdbmovieupcoming", Label: "TMDB Upcoming Movies"},
-		{Value: "traktmovietrending", Label: "Trakt Trending Movies - Currently trending movies"},
-		{Value: "tmdbmovietrending", Label: "TMDB Trending Movies - Currently trending movies"},
-		{Value: "tmdbmoviediscover", Label: "TMDB Movie Discovery - Discover movies by criteria"},
-		{Value: "tmdblist", Label: "TMDB List - Import from TMDB list"},
-		{Value: "seriesconfig", Label: "Series Config File - Import from series configuration"},
-		{
-			Value: "traktpublicshowlist",
-			Label: "Trakt Public Series List - User's public series list",
-		},
-		{Value: "traktseriepopular", Label: "Trakt Popular Series - Currently popular series"},
-		{Value: "tmdbseriepopular", Label: "TMDB Popular Series - Currently popular series"},
-		{
-			Value: "traktserieanticipated",
-			Label: "Trakt Anticipated Series - Most anticipated series",
-		},
-		{Value: "traktserietrending", Label: "Trakt Trending Series - Currently trending series"},
-		{Value: "tmdbserietrending", Label: "TMDB Trending Series - Currently trending series"},
-		{Value: "tmdbshowdiscover", Label: "TMDB Series Discovery - Discover series by criteria"},
-		{Value: "tmdbshowlist", Label: "TMDB Series List - Import from TMDB series list"},
-		{Value: "newznabrss", Label: "Newznab RSS - Import from RSS feed"},
-		{Value: "plexwatchlist", Label: "Plex Watchlist - Import from a Plex Watchlist"},
-		{
-			Value: "jellyfinwatchlist",
-			Label: "Jellyfin Watchlist - Import from a Jellyfin Watchlist",
-		},
-		{Value: "moviescraper", Label: "Movie Scraper - Scrape Movies from an API or Website"},
-		{
-			Value: "audiobookconfig",
-			Label: "Audiobook Config File - Import from audiobook configuration",
-		},
-		{Value: "bookconfig", Label: "Book Config File - Import from book configuration"},
-		{Value: "musicconfig", Label: "Music Config File - Import from music/album configuration"},
-	}
 
 	return html.Div(
 		html.Class("config-section-enhanced"),
@@ -168,7 +187,7 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 							"FeedType": "Type of feed to parse",
 						}, map[string]string{
 							"FeedType": "Feed Type",
-						}, "FeedType", "select", "imdb", convertSelectOptionsToMap(feedTypes),
+						}, "FeedType", "select", "imdb", convertSelectOptionsToMap(feedParsingTypes),
 						),
 					),
 				),
@@ -196,9 +215,9 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 						}),
 
 						renderFormGroup("feed", map[string]string{
-							"DryRun": "Parse feeds without adding to database (preview only)",
+							"DryRun": "Also list entries the import would skip (already known or rejected by the list filters). This page only previews - nothing is added to the database.",
 						}, map[string]string{
-							"DryRun": "Dry Run (Preview Only)",
+							"DryRun": "Show All Entries",
 						}, "DryRun", "checkbox", true, nil),
 
 						renderFormGroup("feed", map[string]string{
@@ -416,9 +435,9 @@ func renderFeedParsingPage(csrfToken string) gomponents.Node {
 					html.Div(
 						html.Class("tip-item"),
 						html.I(html.Class("fas fa-eye tip-icon")),
-						html.Strong(gomponents.Text("Dry Run: ")),
+						html.Strong(gomponents.Text("Show All Entries: ")),
 						gomponents.Text(
-							"When enabled, shows what would be parsed without adding to your database. Useful for testing feeds before import.",
+							"Feed parsing here is always a preview. When enabled, entries the import job would skip are listed too; when disabled, only the entries the import would pick up are shown.",
 						),
 					),
 				),
@@ -476,7 +495,8 @@ func HandleFeedLists(c *gin.Context) {
 	result.WriteString(`<option value="">-- Select a list --</option>`)
 
 	for _, list := range lists {
-		fmt.Fprintf(&result, `<option value="%s">%s</option>`, list, list)
+		escaped := stdhtml.EscapeString(list)
+		fmt.Fprintf(&result, `<option value="%s">%s</option>`, escaped, escaped)
 	}
 
 	c.String(http.StatusOK, result.String())
@@ -545,14 +565,26 @@ func HandleFeedParsing(c *gin.Context) {
 	// Get available lists for each media config
 	var tempListConfig *config.MediaListsConfig
 	for i := range mediaTypeConfig.Lists {
-		if mediaTypeConfig.Lists[i].Name == req.ListName {
+		if strings.EqualFold(mediaTypeConfig.Lists[i].Name, req.ListName) {
 			tempListConfig = &mediaTypeConfig.Lists[i]
+			break
 		}
 	}
 
-	// Create a temporary list configuration based on the feed type and source
-	if tempListConfig == nil {
-		c.String(http.StatusOK, renderAlert("Unsupported feed type: "+req.FeedType, "warning"))
+	if tempListConfig == nil || tempListConfig.CfgList == nil {
+		c.String(http.StatusOK, renderAlert("List not found: "+req.ListName, "warning"))
+		return
+	}
+
+	// utils.Feeds dispatches on the list's configured type; a different
+	// selected feed type would otherwise be silently ignored.
+	if feedType := feedTypeValue(req.FeedType); !strings.EqualFold(tempListConfig.CfgList.ListType, feedType) {
+		c.String(http.StatusOK, renderAlert(
+			fmt.Sprintf("List %q is configured as feed type %q, not %q", req.ListName,
+				tempListConfig.CfgList.ListType, feedType),
+			"warning",
+		))
+
 		return
 	}
 
@@ -624,7 +656,7 @@ func renderFeedParsingResults(result map[string]any) string {
 					html.Td(gomponents.Text(listName)),
 				),
 				html.Tr(
-					html.Td(gomponents.Text("Dry Run:")),
+					html.Td(gomponents.Text("Show All Entries:")),
 					html.Td(gomponents.Text(fmt.Sprintf("%t", dryRun))),
 				),
 				html.Tr(
@@ -646,6 +678,11 @@ func renderFeedParsingResults(result map[string]any) string {
 		feedComponents []gomponents.Node
 	)
 
+	displayCap := 20
+	if limit > 0 {
+		displayCap = limit
+	}
+
 	// renderManual lists []config.ManualConfig entries (series/book/audiobook/music).
 	// TVDB IDs are only meaningful for series, so they are shown only there.
 	renderManual := func(label string, items []config.ManualConfig, withTVDB bool) {
@@ -659,7 +696,7 @@ func renderFeedParsingResults(result map[string]any) string {
 			html.H6(gomponents.Text(fmt.Sprintf("%s (%d)", label, count))),
 		)
 
-		maxDisplay := min(count, 20)
+		maxDisplay := min(count, displayCap)
 
 		listItems := make([]gomponents.Node, 0, maxDisplay+1)
 		for i := range maxDisplay {
@@ -671,9 +708,9 @@ func renderFeedParsingResults(result map[string]any) string {
 			listItems = append(listItems, html.Li(gomponents.Text(text)))
 		}
 
-		if count > 20 {
+		if count > displayCap {
 			listItems = append(listItems, html.Li(
-				html.Em(gomponents.Text(fmt.Sprintf("... and %d more", count-20))),
+				html.Em(gomponents.Text(fmt.Sprintf("... and %d more", count-displayCap))),
 			))
 		}
 
@@ -691,16 +728,16 @@ func renderFeedParsingResults(result map[string]any) string {
 				html.H6(gomponents.Text(fmt.Sprintf("Movies (%d)", count))),
 			)
 
-			maxDisplay := min(count, 20)
+			maxDisplay := min(count, displayCap)
 
 			movieItems := make([]gomponents.Node, 0, maxDisplay+1)
 			for i := range maxDisplay {
 				movieItems = append(movieItems, html.Li(html.Code(gomponents.Text(movies[i]))))
 			}
 
-			if count > 20 {
+			if count > displayCap {
 				movieItems = append(movieItems, html.Li(
-					html.Em(gomponents.Text(fmt.Sprintf("... and %d more movies", count-20))),
+					html.Em(gomponents.Text(fmt.Sprintf("... and %d more movies", count-displayCap))),
 				))
 			}
 

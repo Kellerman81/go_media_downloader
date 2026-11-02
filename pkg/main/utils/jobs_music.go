@@ -64,22 +64,18 @@ func refreshmusic(ctx context.Context, cfgp *config.MediaTypeConfig, arr []strin
 
 // getrefreshalbumlistid looks up the list ID for the given MusicBrainz release ID and media config.
 func getrefreshalbumlistid(mbid *string, cfgp *config.MediaTypeConfig) int {
+	// An empty id would match any album with an empty upc.
+	if mbid == nil || *mbid == "" {
+		return -1
+	}
+
 	listname := database.Getdatarow[string](
 		false,
 		"SELECT a.listname FROM albums a JOIN dbalbums db ON a.dbalbum_id = db.id WHERE db.musicbrainz_release_id = ? OR db.upc = ?",
 		mbid,
 		mbid,
 	)
-	if listname == "" {
-		return -1
-	}
-
-	k, ok := cfgp.ListsMapIdx[listname]
-	if !ok {
-		return -1
-	}
-
-	return k
+	return cfgp.GetMediaListsEntryListID(listname)
 }
 
 // RefreshAlbum refreshes the data for a single album by its database ID.
@@ -90,7 +86,7 @@ func RefreshAlbum(cfgp *config.MediaTypeConfig, id *string) error {
 		database.GetrowsN[string](
 			false,
 			1,
-			"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.id = ?",
+			"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.id = ? and dbalbums.musicbrainz_release_id != ''",
 			id,
 		),
 	)
@@ -244,9 +240,15 @@ func RetagArtistAlbums(ctx context.Context, cfgp *config.MediaTypeConfig, artist
 
 // RetagAllAlbums re-writes audio tags for all albums that have files.
 func RetagAllAlbums(ctx context.Context, cfgp *config.MediaTypeConfig) error {
+	if cfgp.ListsLen == 0 {
+		return nil
+	}
+
+	// Scoped to this config's lists: the retag uses this config's settings.
 	ids := database.Getrowssize[uint](false,
-		"SELECT count(DISTINCT dbalbum_id) FROM album_files",
-		"SELECT DISTINCT dbalbum_id FROM album_files")
+		"SELECT count(DISTINCT f.dbalbum_id) FROM album_files f JOIN albums a ON a.id = f.album_id WHERE a.listname IN (?"+cfgp.ListsQu+")",
+		"SELECT DISTINCT f.dbalbum_id FROM album_files f JOIN albums a ON a.id = f.album_id WHERE a.listname IN (?"+cfgp.ListsQu+")",
+		configListArgs(cfgp)...)
 
 	var lastErr error
 	for i := range ids {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -38,10 +39,19 @@ type Provider struct {
 	authMu        sync.Mutex
 	authenticated bool
 	cookieJar     http.CookieJar
+	// proxied is set when a urlBase puts the WebUI behind a reverse proxy.
+	proxied bool
 }
 
-// NewProvider creates a new qBittorrent download provider.
-func NewProvider(host string, port int, username, password string, useSSL bool) (*Provider, error) {
+// NewProvider creates a new qBittorrent download provider. urlBase is an
+// optional reverse-proxy sub-path ("/qbittorrent") in front of /api/v2.
+func NewProvider(
+	host string,
+	port int,
+	username, password string,
+	useSSL bool,
+	urlBase string,
+) (*Provider, error) {
 	scheme := "http"
 	if useSSL {
 		scheme = "https"
@@ -51,7 +61,7 @@ func NewProvider(host string, port int, username, password string, useSSL bool) 
 		port = 8080 // Default qBittorrent port
 	}
 
-	baseURL := fmt.Sprintf("%s://%s:%d/api/v2", scheme, host, port)
+	baseURL := fmt.Sprintf("%s://%s:%d%s/api/v2", scheme, host, port, strings.TrimSuffix(urlBase, "/"))
 
 	config := base.ClientConfig{
 		Name:                    "qbittorrent",
@@ -82,6 +92,7 @@ func NewProvider(host string, port int, username, password string, useSSL bool) 
 		username:   username,
 		password:   password,
 		cookieJar:  cookieJar,
+		proxied:    strings.Trim(urlBase, "/") != "",
 	}, nil
 }
 
@@ -104,10 +115,18 @@ func (p *Provider) AddTorrent(
 		return nil, err
 	}
 
+	// qBittorrent 5 renamed the "paused" add parameter to "stopped"; older
+	// versions ignore the unknown one, so both are sent.
 	formData := url.Values{
-		"savepath": {request.SavePath},
 		"category": {request.Category},
 		"paused":   {strconv.FormatBool(request.Paused)},
+		"stopped":  {strconv.FormatBool(request.Paused)},
+	}
+
+	// An empty savepath is omitted so qBittorrent applies its default (or
+	// the category's) save path.
+	if request.SavePath != "" {
+		formData.Set("savepath", request.SavePath)
 	}
 
 	if request.URL != "" {
@@ -122,13 +141,41 @@ func (p *Provider) AddTorrent(
 		formData.Set(k, v)
 	}
 
-	resp, err := p.makeFormRequest(ctx, "/torrents/add", formData)
+	hash := strings.ToLower(base.InfoHashFromURL(request.URL))
+
+	var (
+		resp *http.Response
+		err  error
+	)
+
+	if len(request.TorrentData) > 0 {
+		// A raw .torrent can only be sent as a multipart file part.
+		body, berr := multipartBody(formData, request.TorrentData)
+		if berr != nil {
+			return nil, berr
+		}
+
+		resp, err = p.doWithReauth(ctx, http.MethodPost, "/torrents/add", body)
+	} else {
+		resp, err = p.makeFormRequest(ctx, "/torrents/add", formData)
+	}
+
 	if err != nil {
+		// qBittorrent 5 answers an add of a torrent it already has with 409.
+		if strings.Contains(err.Error(), "HTTP 409") {
+			return &apiexternal_v2.TorrentAddResponse{
+				Success:  true,
+				Hash:     hash,
+				Message:  "torrent already added",
+				Provider: "qbittorrent",
+			}, nil
+		}
+
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 {
 		body, _ := io.ReadAll(resp.Body)
 
 		return &apiexternal_v2.TorrentAddResponse{
@@ -138,8 +185,20 @@ func (p *Provider) AddTorrent(
 		}, errors.New(logger.JoinStrings("failed to add torrent: HTTP ", strconv.Itoa(resp.StatusCode)))
 	}
 
+	// qBittorrent (WebAPI v2 before 5.x) rejects an add - invalid URL or
+	// torrent, unreachable link - with HTTP 200 and the body "Fails.".
+	body, _ := io.ReadAll(resp.Body)
+	if strings.EqualFold(strings.TrimSpace(string(body)), "Fails.") {
+		return &apiexternal_v2.TorrentAddResponse{
+			Success:  false,
+			Provider: "qbittorrent",
+			Error:    "qBittorrent rejected the torrent",
+		}, errors.New("failed to add torrent: qBittorrent rejected it (invalid torrent/URL)")
+	}
+
 	return &apiexternal_v2.TorrentAddResponse{
 		Success:  true,
+		Hash:     hash,
 		Provider: "qbittorrent",
 	}, nil
 }
@@ -153,7 +212,7 @@ func (p *Provider) GetTorrentInfo(
 		return nil, err
 	}
 
-	resp, err := p.makeRequest(ctx, "GET", "/torrents/info?hashes="+hash, nil)
+	resp, err := p.makeRequest(ctx, http.MethodGet, "/torrents/info?hashes="+url.QueryEscape(hash))
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +244,7 @@ func (p *Provider) ListTorrents(
 		endpoint += "?filter=" + filter
 	}
 
-	resp, err := p.makeRequest(ctx, "GET", endpoint, nil)
+	resp, err := p.makeRequest(ctx, http.MethodGet, endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -216,12 +275,17 @@ func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 	formData := url.Values{"hashes": {hash}}
 
 	resp, err := p.makeFormRequest(ctx, "/torrents/pause", formData)
+	if err != nil && strings.Contains(err.Error(), "HTTP 404") {
+		// qBittorrent 5 renamed pause/resume to stop/start.
+		resp, err = p.makeFormRequest(ctx, "/torrents/stop", formData)
+	}
+
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 {
 		return errors.New(
 			logger.JoinStrings("failed to pause torrent: HTTP ", strconv.Itoa(resp.StatusCode)),
 		)
@@ -239,12 +303,17 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 	formData := url.Values{"hashes": {hash}}
 
 	resp, err := p.makeFormRequest(ctx, "/torrents/resume", formData)
+	if err != nil && strings.Contains(err.Error(), "HTTP 404") {
+		// qBittorrent 5 renamed pause/resume to stop/start.
+		resp, err = p.makeFormRequest(ctx, "/torrents/start", formData)
+	}
+
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 {
 		return errors.New(
 			logger.JoinStrings("failed to resume torrent: HTTP ", strconv.Itoa(resp.StatusCode)),
 		)
@@ -270,7 +339,7 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 {
 		return errors.New(
 			logger.JoinStrings("failed to remove torrent: HTTP ", strconv.Itoa(resp.StatusCode)),
 		)
@@ -285,7 +354,7 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 		return nil, err
 	}
 
-	resp, err := p.makeRequest(ctx, "GET", "/transfer/info", nil)
+	resp, err := p.makeRequest(ctx, http.MethodGet, "/transfer/info")
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +366,7 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 	}
 
 	// Get version
-	versionResp, err := p.makeRequest(ctx, "GET", "/app/version", nil)
+	versionResp, err := p.makeRequest(ctx, http.MethodGet, "/app/version")
 	if err != nil {
 		return nil, err
 	}
@@ -320,13 +389,13 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := p.makeRequest(ctx, "GET", "/app/version", nil)
+	resp, err := p.makeRequest(ctx, http.MethodGet, "/app/version")
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 {
 		return errors.New(
 			logger.JoinStrings("qBittorrent test failed: HTTP ", strconv.Itoa(resp.StatusCode)),
 		)
@@ -356,7 +425,7 @@ func (p *Provider) ensureAuthenticated(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 {
 		return errors.New(
 			logger.JoinStrings("authentication failed: HTTP ", strconv.Itoa(resp.StatusCode)),
 		)
@@ -375,56 +444,8 @@ func (p *Provider) ensureAuthenticated(ctx context.Context) error {
 func (p *Provider) makeRequest(
 	ctx context.Context,
 	method, endpoint string,
-	body io.Reader,
 ) (*http.Response, error) {
-	// Custom headers for qBittorrent CSRF protection
-	headers := map[string]string{
-		"Referer": p.baseURL,
-		"Origin":  p.baseURL,
-	}
-
-	// Use BaseClient with custom response handler to return the raw response
-	var rawResp *http.Response
-
-	err := p.MakeRequestWithHeaders(
-		ctx,
-		method,
-		endpoint,
-		body,
-		nil,
-		func(resp *http.Response) error {
-			rawResp = bufferResponseBody(resp)
-			return nil
-		},
-		headers,
-	)
-
-	p.checkSessionExpired(err)
-
-	return rawResp, err
-}
-
-// checkSessionExpired clears the cached authenticated flag when the session
-// cookie has expired (qBittorrent returns 403 once the WebUI session times
-// out). Without this, authenticated stayed true forever once set - after
-// the first idle period longer than the session timeout, every subsequent
-// operation against this cached, process-lifetime Provider singleton would
-// fail permanently instead of re-authenticating on the next call.
-//
-// base.MakeRequestWithHeaders only invokes the targetfunc callback (where
-// makeRequest/makeFormRequest capture the *http.Response) on success
-// (status < 400) - for a 4xx/5xx it returns a formatted error and never
-// surfaces the response object at all, so checking a status code on a
-// response is not an option here; the formatted error text is the only
-// available signal.
-func (p *Provider) checkSessionExpired(err error) {
-	if err == nil || !strings.Contains(err.Error(), "HTTP 403") {
-		return
-	}
-
-	p.authMu.Lock()
-	p.authenticated = false
-	p.authMu.Unlock()
+	return p.doWithReauth(ctx, method, endpoint, nil)
 }
 
 func (p *Provider) makeFormRequest(
@@ -432,36 +453,136 @@ func (p *Provider) makeFormRequest(
 	endpoint string,
 	formData url.Values,
 ) (*http.Response, error) {
-	// Custom headers for qBittorrent CSRF protection and form data
-	headers := map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-		"Referer":      p.baseURL,
-		"Origin":       p.baseURL,
+	return p.doWithReauth(ctx, http.MethodPost, endpoint, &requestBody{
+		data:        []byte(formData.Encode()),
+		contentType: "application/x-www-form-urlencoded",
+	})
+}
+
+// requestBody is a buffered request body, so doWithReauth can re-send it
+// after a re-login.
+type requestBody struct {
+	data        []byte
+	contentType string
+}
+
+// multipartBody encodes fields plus torrentData as the "torrents" file part
+// of a multipart/form-data body.
+func multipartBody(fields url.Values, torrentData []byte) (*requestBody, error) {
+	var buf bytes.Buffer
+
+	mw := multipart.NewWriter(&buf)
+
+	for k, vs := range fields {
+		for _, v := range vs {
+			if err := mw.WriteField(k, v); err != nil {
+				return nil, fmt.Errorf("building multipart body: %w", err)
+			}
+		}
 	}
 
-	// Use BaseClient with custom response handler to return the raw response
-	var rawResp *http.Response
+	fw, err := mw.CreateFormFile("torrents", "upload.torrent")
+	if err != nil {
+		return nil, fmt.Errorf("building multipart body: %w", err)
+	}
 
-	err := p.MakeRequestWithHeaders(
+	if _, err := fw.Write(torrentData); err != nil {
+		return nil, fmt.Errorf("building multipart body: %w", err)
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, fmt.Errorf("building multipart body: %w", err)
+	}
+
+	return &requestBody{data: buf.Bytes(), contentType: mw.FormDataContentType()}, nil
+}
+
+// doWithReauth sends a request and, when qBittorrent answers 403 because the
+// WebUI session cookie expired, logs in again and re-sends it once. The 403
+// is rejected before anything is processed, so re-sending a POST (e.g. an
+// add) cannot duplicate it.
+func (p *Provider) doWithReauth(
+	ctx context.Context,
+	method, endpoint string,
+	reqBody *requestBody,
+) (*http.Response, error) {
+	resp, forbidden, err := p.send(ctx, method, endpoint, reqBody)
+	if err != nil || !forbidden {
+		return resp, err
+	}
+
+	// ensureAuthenticated interprets the login response itself.
+	if endpoint == "/auth/login" {
+		return resp, nil
+	}
+
+	p.authMu.Lock()
+	p.authenticated = false
+	p.authMu.Unlock()
+
+	if err := p.ensureAuthenticated(ctx); err != nil {
+		return nil, err
+	}
+
+	resp, forbidden, err = p.send(ctx, method, endpoint, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	if forbidden {
+		return nil, errors.New(
+			logger.JoinStrings("[qbittorrent] HTTP 403 on ", endpoint, " after re-login"),
+		)
+	}
+
+	return resp, nil
+}
+
+// send performs one request with qBittorrent's CSRF headers; forbidden
+// reports an HTTP 403, which is handed back instead of being an error so the
+// caller can re-authenticate. A nil reqBody sends no body.
+func (p *Provider) send(
+	ctx context.Context,
+	method, endpoint string,
+	reqBody *requestBody,
+) (resp *http.Response, forbidden bool, err error) {
+	// qBittorrent rejects an Origin/Referer whose host differs from the Host
+	// it receives, which behind a reverse proxy it usually does; requests
+	// without either header pass its CSRF check.
+	headers := map[string]string{}
+	if !p.proxied {
+		headers["Referer"] = p.baseURL
+		headers["Origin"] = p.baseURL
+	}
+
+	var body io.Reader
+	if reqBody != nil {
+		headers["Content-Type"] = reqBody.contentType
+		body = bytes.NewReader(reqBody.data)
+	}
+
+	err = p.MakeRequestAcceptStatus(
 		ctx,
-		"POST",
+		method,
 		endpoint,
-		strings.NewReader(formData.Encode()),
-		nil,
-		func(resp *http.Response) error {
-			rawResp = bufferResponseBody(resp)
+		body,
+		func(r *http.Response) error {
+			if r.StatusCode == http.StatusForbidden {
+				forbidden = true
+			}
+
+			resp = bufferResponseBody(r)
+
 			return nil
 		},
 		headers,
+		http.StatusForbidden,
 	)
-
-	// Don't clear authenticated for the /auth/login request itself - ensureAuthenticated
-	// already interprets its own status code/body directly.
-	if endpoint != "/auth/login" {
-		p.checkSessionExpired(err)
+	if err != nil {
+		return nil, false, err
 	}
 
-	return rawResp, err
+	return resp, forbidden, nil
 }
 
 // bufferResponseBody reads resp.Body into memory and replaces it with a

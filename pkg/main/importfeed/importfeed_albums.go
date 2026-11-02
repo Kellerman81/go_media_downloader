@@ -83,14 +83,50 @@ func AddAlbumByMusicBrainzID(
 		return logger.ErrNotFound
 	}
 
-	release := apiexternal_v2.ReleaseSearchResult{
-		ID:            mbid,
-		MusicBrainzID: mbid,
+	// addAlbumToDatabase needs at least the title; fetch the release first.
+	details, err := retryOnRateLimit(ctx, func() (*apiexternal_v2.ReleaseDetails, error) {
+		return getMusicBrainzProvider().GetReleaseByID(ctx, mbid)
+	})
+	if err != nil {
+		return fmt.Errorf("fetch MusicBrainz release %s: %w", mbid, err)
 	}
 
-	var str string
+	if details == nil || details.Title == "" {
+		return logger.ErrNotFound
+	}
 
-	return addAlbumToDatabase(ctx, &release, cfgp, listid, &str)
+	releaseGroupID := details.ReleaseGroupID
+	if releaseGroupID == "" {
+		releaseGroupID = details.MusicBrainzGroupID
+	}
+
+	release := apiexternal_v2.ReleaseSearchResult{
+		ID:             mbid,
+		MusicBrainzID:  mbid,
+		ReleaseGroupID: releaseGroupID,
+		Title:          details.Title,
+		Artists:        details.Artists,
+		ReleaseDate:    details.ReleaseDate,
+		ReleaseYear:    details.ReleaseYear,
+		Country:        details.Country,
+		Status:         details.Status,
+		Type:           details.Type,
+		CoverURL:       details.CoverURL,
+		TrackCount:     details.TrackCount,
+		Label:          details.Label,
+		CatalogNumber:  details.CatalogNumber,
+		Format:         details.Format,
+		Genres:         details.Genres,
+		Barcode:        details.Barcode,
+		ProviderType:   details.ProviderType,
+	}
+
+	artistName := ""
+	if len(details.Artists) > 0 {
+		artistName = details.Artists[0].Name
+	}
+
+	return addAlbumToDatabase(ctx, &release, cfgp, listid, &artistName)
 }
 
 // AddAlbumFromSearchResult adds a release returned by any metadata-provider search
@@ -235,10 +271,20 @@ func importAlbumsByArtist(
 
 	// Search for artist by name first
 	if artistName != "" {
-		artists, err := mbProvider.SearchArtists(ctx, artistName, 5)
+		artists, err := mbProvider.SearchArtists(ctx, logger.LuceneEscape(artistName), 5)
 		if err == nil && len(artists) > 0 {
-			// Use the first (best) match
-			if err := importAllReleasesByMBID(artists[0].MusicBrainzID); err == nil {
+			best := bestNameMatch(artistName, len(artists),
+				func(i int) string { return artists[i].Name }, nil)
+			if best == -1 {
+				logger.Logtype("info", 0).
+					Str("artist", artistName).
+					Str("candidate", artists[0].Name).
+					Msg("No MusicBrainz artist matched the requested name - skipping")
+
+				return logger.ErrNotFound
+			}
+
+			if err := importAllReleasesByMBID(artists[best].MusicBrainzID); err == nil {
 				return nil
 			}
 		}
@@ -270,12 +316,12 @@ func importAlbumsBySeries(
 		// this package - a series name containing Lucene special characters
 		// (":", "(", ")", etc, e.g. "Bravo Hits: The Collection (Vol. 2)")
 		// would otherwise produce a malformed or misinterpreted query.
-		escapedSeriesName := LuceneEscape(seriesName)
+		escapedSeriesName := logger.LuceneEscape(seriesName)
 		query := escapedSeriesName
 		if len(mediaFormats) > 0 {
 			fmtParts := make([]string, 0, len(mediaFormats))
 			for i := range mediaFormats {
-				fmtParts = append(fmtParts, "format:"+LuceneEscape(mediaFormats[i]))
+				fmtParts = append(fmtParts, "format:"+logger.LuceneEscape(mediaFormats[i]))
 			}
 
 			query = logger.JoinStrings(
@@ -351,26 +397,73 @@ func importSingleAlbum(
 	releases, _, err := mbProvider.SearchReleases(ctx, query, 10, 0)
 	if err == nil && len(releases) > 0 {
 		isVA := IsVariousArtists(album.ArtistName)
-		for i := range releases {
-			if !isVA && album.ArtistName != "" {
-				artistMatch := false
+		best := bestNameMatch(album.Name, len(releases),
+			func(i int) string { return releases[i].Title },
+			func(i int) bool {
+				if isVA || album.ArtistName == "" {
+					return true
+				}
+
 				for j := range releases[i].Artists {
-					if strings.EqualFold(releases[i].Artists[j].Name, album.ArtistName) {
-						artistMatch = true
-						break
+					if namesMatch(releases[i].Artists[j].Name, album.ArtistName) {
+						return true
 					}
 				}
 
-				if !artistMatch {
-					continue
-				}
-			}
-
-			return addAlbumToDatabase(ctx, &releases[i], cfgp, listid, &album.ArtistName)
+				return false
+			})
+		if best != -1 {
+			return addAlbumToDatabase(ctx, &releases[best], cfgp, listid, &album.ArtistName)
 		}
+
+		logger.Logtype("info", 0).
+			Str("album", album.Name).
+			Str("artist", album.ArtistName).
+			Msg("No MusicBrainz release matched the requested album/artist - skipping")
 	}
 
 	return logger.ErrNotFound
+}
+
+// resolveReleaseIDFromGroup returns a release MBID belonging to the given
+// release group, preferring an official release. Empty if none is found.
+func resolveReleaseIDFromGroup(ctx context.Context, releaseGroupID string) string {
+	releases, err := retryOnRateLimit(ctx, func() ([]apiexternal_v2.ReleaseSearchResult, error) {
+		r, _, e := getMusicBrainzProvider().SearchReleases(ctx, "rgid:"+releaseGroupID, 25, 0)
+		return r, e
+	})
+	if err != nil {
+		logger.Logtype("debug", 1).
+			Str("release_group_id", releaseGroupID).
+			Err(err).
+			Msg("Failed to resolve release from release group")
+
+		return ""
+	}
+
+	return pickReleaseIDForGroup(releases, releaseGroupID)
+}
+
+// pickReleaseIDForGroup picks the first official release of the group from
+// search results, falling back to any release of the group.
+func pickReleaseIDForGroup(releases []apiexternal_v2.ReleaseSearchResult, releaseGroupID string) string {
+	fallback := ""
+	for i := range releases {
+		if releases[i].MusicBrainzID == "" ||
+			(releases[i].ReleaseGroupID != "" && releases[i].ReleaseGroupID != releaseGroupID) {
+			continue
+		}
+
+		if strings.EqualFold(releases[i].Status, "official") {
+			return releases[i].MusicBrainzID
+		}
+
+		if fallback == "" {
+			fallback = releases[i].MusicBrainzID
+		}
+	}
+
+	return fallback
 }
 
 // addAlbumToDatabase adds an album to the database.
@@ -392,11 +485,18 @@ func addAlbumToDatabase(
 	)
 
 	mbProvider := getMusicBrainzProvider()
-	if release.MusicBrainzID != "" || release.ReleaseGroupID != "" {
-		mbid := release.MusicBrainzID
-		if mbid == "" {
-			mbid = release.ReleaseGroupID
+	if release.MusicBrainzID == "" && release.ReleaseGroupID != "" {
+		// Only the release group is known; GetReleaseByID and the
+		// musicbrainz_release_id column need an actual release of it.
+		if releaseID := resolveReleaseIDFromGroup(ctx, release.ReleaseGroupID); releaseID != "" {
+			r := *release
+			r.MusicBrainzID = releaseID
+			release = &r
 		}
+	}
+
+	if release.MusicBrainzID != "" {
+		mbid := release.MusicBrainzID
 
 		var err error
 
@@ -442,16 +542,29 @@ func addAlbumToDatabase(
 		)
 	}
 
-	// Last-resort dedup: same title + same release year prevents duplicate rows when
-	// different MB search runs return different release objects for the same album.
-	if existingID == 0 && release.Title != "" && release.ReleaseYear > 0 {
+	// Last-resort dedup: same title + same release year + same artist prevents
+	// duplicate rows when different MB search runs return different release
+	// objects for the same album. Without a known artist two different artists'
+	// same-titled albums would be merged, so the fallback is skipped then.
+	dedupArtist := ""
+	if artistName != nil {
+		dedupArtist = *artistName
+	}
+
+	if dedupArtist == "" && len(release.Artists) > 0 {
+		dedupArtist = release.Artists[0].Name
+	}
+
+	if existingID == 0 && release.Title != "" && release.ReleaseYear > 0 && dedupArtist != "" {
 		releaseYear := uint16(
 			release.ReleaseYear,
 		)
 		database.Scanrowsdyn(false,
-			"SELECT id FROM dbalbums WHERE LOWER(title) = LOWER(?) AND year = ?",
+			`SELECT a.id FROM dbalbums a WHERE LOWER(a.title) = LOWER(?) AND a.year = ?
+			 AND EXISTS (SELECT 1 FROM dbalbum_artists da JOIN dbartists ar ON ar.id = da.dbartist_id
+			             WHERE da.dbalbum_id = a.id AND ar.name = ? COLLATE NOCASE)`,
 			&existingID,
-			&release.Title, &releaseYear,
+			&release.Title, &releaseYear, &dedupArtist,
 		)
 	}
 
@@ -545,9 +658,9 @@ func addAlbumToDatabase(
 	}
 
 	// Fetch and store series name from MusicBrainz if available
-	releaseGroupID := release.MusicBrainzID
-	if releaseGroupID == "" {
-		releaseGroupID = release.ReleaseGroupID
+	releaseGroupID := release.ReleaseGroupID
+	if releaseGroupID == "" && releaseDetails != nil {
+		releaseGroupID = releaseDetails.ReleaseGroupID
 	}
 
 	if releaseGroupID != "" && dbalbumID > 0 {
@@ -791,14 +904,8 @@ func addAlbumToDatabase(
 				continue
 			}
 
-			// Check if tracked artist already exists
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM artists WHERE dbartist_id = ? AND listname = ?",
-				&existingTrackedID,
-				&dbartistID,
-				&listName2,
-			)
+			// Check if tracked artist already exists under any list of this config
+			existingTrackedID = trackedIDInConfigList("artists", "dbartist_id", &dbartistID, cfgp, listName2)
 
 			// Determine if this is the primary artist we want to track
 			isPrimary := !isMultiArtist ||
@@ -847,13 +954,7 @@ func addAlbumToDatabase(
 		)
 
 		if dbartistID > 0 {
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM artists WHERE dbartist_id = ? AND listname = ?",
-				&trackedArtistID,
-				&dbartistID,
-				&listName2,
-			)
+			trackedArtistID = trackedIDInConfigList("artists", "dbartist_id", &dbartistID, cfgp, listName2)
 
 			if trackedArtistID == 0 {
 				result, err := database.ExecNid(
@@ -868,48 +969,25 @@ func addAlbumToDatabase(
 		}
 	}
 
-	// Check if tracked album already exists
-	listName := cfgp.Lists[listid].Name
+	// Shared list-entry logic: ignore/replace lists and one entry per media config.
+	spec := albumEntrySpec()
+	spec.trackedParentID = trackedArtistID
 
-	var trackedID uint
-	database.Scanrowsdyn(
-		false,
-		"SELECT id FROM albums WHERE dbalbum_id = ? AND listname = ?",
-		&trackedID,
-		&dbalbumID,
-		&listName,
-	)
-
-	if trackedID == 0 {
-		albumID, err := database.ExecNid(
-			`INSERT INTO albums (dbalbum_id, listname, missing, quality_profile, artist_id)
-			 VALUES (?, ?, 1, ?, ?)`,
-			&dbalbumID, &listName, &cfgp.Lists[listid].CfgQuality.Name, &trackedArtistID,
-		)
-		if err != nil {
-			return err
+	if err := checkaddMediaEntry(
+		&dbalbumID, cfgp, &cfgp.Lists[listid], release.Title, spec,
+	); err != nil {
+		if errors.Is(err, errAlbumIgnored) {
+			return nil
 		}
 
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoInt(
-				logger.CacheAlbum,
-				syncops.DbstaticOneStringTwoInt{
-					Str:  listName,
-					Num1: dbalbumID,
-					Num2: logger.Int64ToUint(albumID),
-				},
-			)
-		}
+		return err
+	}
 
-		logger.Logtype("info", 0).
-			Str("album", release.Title).
-			Str("list", listName).
-			Msg("Added album to tracking list")
-	} else if trackedArtistID > 0 {
-		// Update existing album to link to artist if not already linked
+	if trackedArtistID > 0 {
+		// Link an existing album entry to the artist if not already linked
 		_, _ = database.ExecNid(
-			`UPDATE albums SET artist_id = ? WHERE id = ? AND artist_id = 0`,
-			&trackedArtistID, &trackedID,
+			`UPDATE albums SET artist_id = ? WHERE dbalbum_id = ? AND listname = ? COLLATE NOCASE AND artist_id = 0`,
+			&trackedArtistID, &dbalbumID, &listName2,
 		)
 	}
 
@@ -988,7 +1066,7 @@ func DiscoverAndAddArtistAlbums(
 	mbProvider := getMusicBrainzProvider()
 
 	// Search for the artist
-	artists, err := mbProvider.SearchArtists(ctx, *artistName, 5)
+	artists, err := mbProvider.SearchArtists(ctx, logger.LuceneEscape(*artistName), 5)
 	if err != nil || len(artists) == 0 {
 		logger.Logtype("debug", 1).
 			Str("artist", *artistName).
@@ -998,8 +1076,18 @@ func DiscoverAndAddArtistAlbums(
 		return 0
 	}
 
-	// Get the best match (first result)
-	artist := artists[0]
+	best := bestNameMatch(*artistName, len(artists),
+		func(i int) string { return artists[i].Name }, nil)
+	if best == -1 {
+		logger.Logtype("info", 1).
+			Str("artist", *artistName).
+			Str("candidate", artists[0].Name).
+			Msg("No MusicBrainz artist matched the requested name - skipping discovery")
+
+		return 0
+	}
+
+	artist := artists[best]
 
 	logger.Logtype("debug", 1).
 		Str("artist", *artistName).

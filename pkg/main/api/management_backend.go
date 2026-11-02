@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
 )
@@ -39,42 +40,37 @@ func HandleCronValidation(ctx *gin.Context) {
 		return
 	}
 
-	// Parse and validate the cron expression using robfig/cron with 6-field support (seconds included)
+	// Same parser and time zone as the worker schedulers (worker.go), so an
+	// expression is reported valid exactly when the scheduler would accept it.
 	parser := cron.NewParser(
-		cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow,
+		cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 	)
 
 	schedule, err := parser.Parse(expression)
 	if err != nil {
-		// Try 5-field format if 6-field fails
-		parser5 := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-
-		schedule5, err5 := parser5.Parse(expression)
-		if err5 != nil {
-			// err.Error() embeds robfig/cron's own error text, which can echo
-			// back the literal invalid expression fields - escape it before
-			// interpolating into HTML that's swapped into the page verbatim
-			// via HTMX (management_pages.go), or a cron expression containing
-			// e.g. "<img src=x onerror=...>" executes in the admin's browser.
-			ctx.Header("Content-Type", "text/html")
-			ctx.String(http.StatusOK, `<div class="alert alert-danger mb-0">
+		// err.Error() embeds robfig/cron's own error text, which can echo
+		// back the literal invalid expression fields - escape it before
+		// interpolating into HTML that's swapped into the page verbatim
+		// via HTMX (management_pages.go), or a cron expression containing
+		// e.g. "<img src=x onerror=...>" executes in the admin's browser.
+		ctx.Header("Content-Type", "text/html")
+		ctx.String(http.StatusOK, `<div class="alert alert-danger mb-0">
 				<i class="fa-solid fa-times-circle me-2"></i>
 				<strong>Invalid Expression</strong> - %s
-				<br><small class="text-muted mt-1 d-block">Supports both 5-field (minute hour day month weekday) and 6-field (second minute hour day month weekday) formats.</small>
+				<br><small class="text-muted mt-1 d-block">Supports 5-field (minute hour day month weekday), 6-field (second minute hour day month weekday) and descriptors such as @daily or @every 1h.</small>
 			</div>`, html.EscapeString(err.Error()))
 
-			return
-		}
-
-		// Use 5-field schedule
-		schedule = schedule5
+		return
 	}
 
 	// Generate human-readable description
 	description := generateCronDescription(expression)
+	if strings.HasPrefix(expression, "@") {
+		description = "Descriptor " + html.EscapeString(expression)
+	}
 
 	// Calculate next 5 run times
-	now := time.Now()
+	now := time.Now().In(logger.GetTimeZone())
 	nextRuns := make([]string, 0, 5)
 
 	nextTime := now
@@ -89,7 +85,9 @@ func HandleCronValidation(ctx *gin.Context) {
 	var html strings.Builder
 	html.WriteString(`<div class="alert alert-success mb-3">
 		<i class="fa-solid fa-check-circle me-2"></i>
-		<strong>Valid Expression</strong> - ` + description + `
+		<strong>Valid Expression</strong> - `)
+	html.WriteString(description)
+	html.WriteString(`
 	</div>
 	<div class="card">
 		<div class="card-header bg-light">

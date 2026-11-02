@@ -10,14 +10,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
@@ -298,7 +300,7 @@ func HandleJobManagement(c *gin.Context) {
 	jobType := c.PostForm("job_JobType")
 	mediaConfig := c.PostForm("job_MediaConfig")
 	listName := c.PostForm("job_ListName")
-	force, _ := strconv.ParseBool(c.PostForm("job_Force"))
+	force := formBool(c.PostForm("job_Force"))
 
 	if jobType == "" {
 		c.String(http.StatusOK, renderAlert("Please select a job type", "warning"))
@@ -620,22 +622,13 @@ func renderDebugStatsPage(csrfToken string) gomponents.Node {
 						gomponents.Text("Garbage collection performance metrics and timing"),
 					),
 					html.Li(
-						html.Class("mb-2"),
+						html.Class("mb-0"),
 						html.Span(
 							html.Class("badge bg-warning me-2"),
 							html.I(html.Class("fas fa-tasks me-1")),
 							gomponents.Text("Workers"),
 						),
 						gomponents.Text("Background job queue and worker pool statistics"),
-					),
-					html.Li(
-						html.Class("mb-0"),
-						html.Span(
-							html.Class("badge bg-danger me-2"),
-							html.I(html.Class("fas fa-download me-1")),
-							gomponents.Text("Heap Dump"),
-						),
-						gomponents.Text("Memory heap dump is saved to temp/heapdump for analysis"),
 					),
 				),
 			),
@@ -647,26 +640,16 @@ func renderDebugStatsPage(csrfToken string) gomponents.Node {
 func HandleDebugStats(c *gin.Context) {
 	action := c.PostForm("action")
 
-	// Collect debug information
+	// Run the requested GC first so the figures below show its effect.
+	if action == "gc" {
+		debug.FreeOSMemory()
+	}
+
 	var gc debug.GCStats
 	debug.ReadGCStats(&gc)
 
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-
-	if action == "gc" {
-		debug.FreeOSMemory()
-		runtime.GC()
-	}
-
-	// Create heap dump
-	err := os.MkdirAll("./temp", 0o755)
-	if err == nil {
-		if f, err := os.Create("./temp/heapdump"); err == nil {
-			debug.WriteHeapDump(f.Fd())
-			f.Close()
-		}
-	}
 
 	workerStats := worker.GetStats()
 
@@ -1050,6 +1033,48 @@ func renderDatabaseMaintenancePage(csrfToken string) gomponents.Node {
 						hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
 						hx.Vals("{\"action\": \"clearcache\"}"),
 					),
+					html.Button(
+						html.Class("btn btn-info mb-2"),
+						gomponents.Text("Preview Orphaned Rows"),
+						html.Type("button"),
+						hx.Target("#maintenanceResults"),
+						hx.Swap("innerHTML"),
+						hx.Post("/api/admin/dbmaintenance"),
+						hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
+						hx.Vals("{\"action\": \"cleanuporphans\"}"),
+					),
+					html.Button(
+						html.Class("btn btn-danger mb-2"),
+						gomponents.Text("Delete Orphaned Rows"),
+						html.Type("button"),
+						hx.Target("#maintenanceResults"),
+						hx.Swap("innerHTML"),
+						hx.Post("/api/admin/dbmaintenance"),
+						hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
+						hx.Vals("{\"action\": \"cleanuporphans_delete\"}"),
+						hx.Confirm("Delete all database rows whose parent row no longer exists?"),
+					),
+					html.Button(
+						html.Class("btn btn-info mb-2"),
+						gomponents.Text("Preview Rootpath Repair (Music/Audiobooks/Books)"),
+						html.Type("button"),
+						hx.Target("#maintenanceResults"),
+						hx.Swap("innerHTML"),
+						hx.Post("/api/admin/dbmaintenance"),
+						hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
+						hx.Vals("{\"action\": \"repairaudiorootpaths\"}"),
+					),
+					html.Button(
+						html.Class("btn btn-danger mb-2"),
+						gomponents.Text("Apply Rootpath Repair"),
+						html.Type("button"),
+						hx.Target("#maintenanceResults"),
+						hx.Swap("innerHTML"),
+						hx.Post("/api/admin/dbmaintenance"),
+						hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
+						hx.Vals("{\"action\": \"repairaudiorootpaths_apply\"}"),
+						hx.Confirm("Set each album/audiobook/book rootpath to the folder its files are in? Back up the database first."),
+					),
 					html.Details(
 						html.Summary(gomponents.Text("Remove Old Jobs (with days parameter)")),
 						html.Form(
@@ -1300,7 +1325,13 @@ func HandleDatabaseMaintenance(c *gin.Context) {
 	case "integrity":
 		message, alertClass = performIntegrityCheck(c)
 	case "cleanuporphans":
-		message, alertClass = performCleanupOrphans(c)
+		message, alertClass = performCleanupOrphans(true)
+	case "cleanuporphans_delete":
+		message, alertClass = performCleanupOrphans(false)
+	case "repairaudiorootpaths":
+		message, alertClass = performRepairAudioRootpaths(false)
+	case "repairaudiorootpaths_apply":
+		message, alertClass = performRepairAudioRootpaths(true)
 	case "backup":
 		message, alertClass = performBackup(c)
 	case "vacuum":
@@ -1346,24 +1377,103 @@ func HandleDatabaseMaintenance(c *gin.Context) {
 	c.String(http.StatusOK, renderComponentToString(result))
 }
 
-// performCleanupOrphans removes child rows whose parent rows no longer exist
-// (the schema's ON DELETE CASCADE relationships, applied manually since FK
-// enforcement is disabled).
-func performCleanupOrphans(_ *gin.Context) (string, string) {
-	deleted := database.CleanupOrphans()
-	if len(deleted) == 0 {
-		return "✅ Orphan cleanup completed. No orphaned rows found.", "success"
-	}
+// performCleanupOrphans counts (dryRun) or removes child rows whose parent
+// rows no longer exist (the schema's ON DELETE CASCADE relationships, applied
+// manually since FK enforcement is disabled).
+func performCleanupOrphans(dryRun bool) (string, string) {
+	found, err := database.CleanupOrphans(dryRun)
 
 	var total int64
-	for _, n := range deleted {
+	for _, n := range found {
 		total += n
 	}
 
+	tables := make([]string, 0, len(found))
+	for t, n := range found {
+		tables = append(tables, fmt.Sprintf("%s: %d", t, n))
+	}
+
+	sort.Strings(tables)
+
+	detail := ""
+	if len(tables) > 0 {
+		detail = " (" + strings.Join(tables, ", ") + ")"
+	}
+
+	if err != nil {
+		verb := "removed"
+		if dryRun {
+			verb = "counted"
+		}
+
+		return fmt.Sprintf("❌ Orphan cleanup failed: %v. %d orphaned rows %s before the failure%s.",
+			err, total, verb, detail), "danger"
+	}
+
+	if dryRun {
+		if total == 0 {
+			return "✅ Preview: no orphaned rows found.", "success"
+		}
+
+		return fmt.Sprintf(
+			"⚠️ Preview: %d orphaned rows in %d tables%s. Nothing was deleted - use \"Delete Orphaned Rows\" to remove them (deleting can orphan further child rows, which the delete also removes).",
+			total, len(found), detail,
+		), "warning"
+	}
+
+	if total == 0 {
+		return "✅ Orphan cleanup completed. No orphaned rows found.", "success"
+	}
+
 	return fmt.Sprintf(
-		"✅ Orphan cleanup completed. Removed %d orphaned rows across %d tables.",
-		total,
-		len(deleted),
+		"✅ Orphan cleanup completed. Removed %d orphaned rows across %d tables%s.",
+		total, len(found), detail,
+	), "success"
+}
+
+// performRepairAudioRootpaths previews (apply false) or writes the album /
+// audiobook / book rootpaths recomputed from their files' folders.
+func performRepairAudioRootpaths(apply bool) (string, string) {
+	res := structure.RepairAudioRootpaths(apply)
+
+	perTable := map[string]int{}
+	for i := range res.Changes {
+		perTable[res.Changes[i].Table]++
+	}
+
+	summary := fmt.Sprintf(
+		"albums: %d to change (%d with files in several folders, skipped), audiobooks: %d to change (%d skipped), books: %d to change (%d skipped)",
+		perTable["albums"], res.Ambiguous["albums"], perTable["audiobooks"], res.Ambiguous["audiobooks"],
+		perTable["books"], res.Ambiguous["books"],
+	)
+
+	if len(res.Changes) == 0 {
+		return "✅ All album/audiobook/book rootpaths match their files' folders - " + summary + ".", "success"
+	}
+
+	const maxSamples = 10
+
+	samples := make([]string, 0, maxSamples)
+	for i := range res.Changes {
+		if i == maxSamples {
+			samples = append(samples, "...")
+			break
+		}
+
+		c := &res.Changes[i]
+		samples = append(samples, fmt.Sprintf("%s %d: %q -> %q", c.Table, c.ID, c.Old, c.New))
+	}
+
+	if !apply {
+		return fmt.Sprintf(
+			"⚠️ Preview: %s. Nothing was changed - use \"Apply Rootpath Repair\" to write them. %s",
+			summary, strings.Join(samples, "; "),
+		), "warning"
+	}
+
+	return fmt.Sprintf(
+		"✅ Rootpath repair applied - %s. Clear the cache so library scans see the new rootpaths. %s",
+		summary, strings.Join(samples, "; "),
 	), "success"
 }
 
@@ -1381,8 +1491,9 @@ func performIntegrityCheck(_ *gin.Context) (string, string) {
 func performBackup(_ *gin.Context) (string, string) {
 	// Call the actual backup function (same logic as apiDBBackup)
 	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
+		// Pause, not Close: Close also stops the interval schedules for good.
 		worker.StopCronWorker()
-		worker.CloseWorkerPools()
+		worker.PauseWorkerPools(context.Background())
 
 		defer func() {
 			worker.InitWorkerPools(
@@ -1391,6 +1502,7 @@ func performBackup(_ *gin.Context) (string, string) {
 				config.GetSettingsGeneral().WorkerMetadata,
 				config.GetSettingsGeneral().WorkerRSS,
 				config.GetSettingsGeneral().WorkerIndexer,
+				config.GetSettingsGeneral().WorkerParse,
 			)
 			worker.StartCronWorker()
 		}()
@@ -1417,7 +1529,7 @@ func performVacuum(_ *gin.Context) (string, string) {
 	return "✅ Database vacuum completed. Storage optimized.", "success"
 }
 
-func performFillIMDB(c *gin.Context) (string, string) {
+func performFillIMDB(_ *gin.Context) (string, string) {
 	// Jobs["RefreshImdb"] runs FillImdb() synchronously with no goroutine of
 	// its own (utils/jobs.go) - calling it directly here blocked the request
 	// for the entire fill duration while still claiming "started in
@@ -1456,13 +1568,19 @@ func performRemoveOldJobs(c *gin.Context) (string, string) {
 	// Call the actual remove old jobs function (same logic as apiDBRemoveOldJobs)
 	scantime := time.Now().AddDate(0, 0, 0-daysInt)
 
-	_, err = database.DeleteRow("job_histories", "created_at < ?", scantime)
+	res, err := database.DeleteRow("job_histories", "created_at < ?", scantime)
 	if err != nil {
 		return fmt.Sprintf("❌ Failed to remove old jobs: %s", err.Error()), "danger"
 	}
 
+	var removed int64
+	if res != nil {
+		removed, _ = res.RowsAffected()
+	}
+
 	return fmt.Sprintf(
-		"✅ Old job entries older than %d days removed successfully.",
+		"✅ Removed %d job entries older than %d days.",
+		removed,
 		daysInt,
 	), "success"
 }
@@ -1710,22 +1828,8 @@ func HandlePushoverTest(c *gin.Context) {
 	var err error
 
 	switch strings.ToLower(notifCfg.NotificationType) {
-	case "pushover":
-		err = apiexternal.SendPushoverMessage(
-			notifCfg.Name, notifCfg.Apikey, messageText, messageTitle, notifCfg.Recipient,
-		)
-	case "gotify":
-		err = apiexternal.SendGotifyMessage(
-			notifCfg.Name, notifCfg.ServerURL, notifCfg.Apikey, messageText, messageTitle,
-		)
-	case "pushbullet":
-		err = apiexternal.SendPushbulletMessage(
-			notifCfg.Name, notifCfg.Apikey, messageText, messageTitle,
-		)
-	case "apprise":
-		err = apiexternal.SendAppriseMessage(
-			notifCfg.Name, notifCfg.ServerURL, messageText, messageTitle, notifCfg.AppriseURLs,
-		)
+	case "pushover", "gotify", "pushbullet", "apprise":
+		err = providers.SendNotification(notifCfg, messageText, messageTitle)
 	case "csv":
 		scanner.AppendCsv(notifCfg.Outputto, messageText)
 	default:
@@ -2119,6 +2223,9 @@ func renderLogViewerPage(csrfToken string) gomponents.Node {
 	)
 }
 
+// maxLogViewerLines caps how many log lines one log viewer request renders.
+const maxLogViewerLines = 10000
+
 // HandleLogViewer handles log viewing requests.
 func HandleLogViewer(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
@@ -2132,7 +2239,7 @@ func HandleLogViewer(c *gin.Context) {
 	lineCount := 100
 	if lineCountStr != "" {
 		if parsed, err := strconv.Atoi(lineCountStr); err == nil && parsed > 0 {
-			lineCount = parsed
+			lineCount = min(parsed, maxLogViewerLines)
 		}
 	}
 
@@ -2227,6 +2334,10 @@ func HandleLogViewer(c *gin.Context) {
 // yield enough matching lines, instead of ever reading the whole file.
 const tailChunkSize = 64 * 1024
 
+// tailMaxWindow caps how far back readLastLines reads when a level filter
+// matches rarely, so a large log is never read whole into memory.
+const tailMaxWindow = 64 << 20
+
 func readLastLines(filename string, lineCount int, logLevel string) ([]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -2280,7 +2391,7 @@ func readLastLines(filename string, lineCount int, logLevel string) ([]string, e
 			}
 		}
 
-		if len(filteredLines) >= lineCount || offset == 0 {
+		if len(filteredLines) >= lineCount || offset == 0 || chunkSize >= tailMaxWindow {
 			break
 		}
 	}
@@ -2387,7 +2498,7 @@ func renderMediaCleanupWizardPage(csrfToken string) gomponents.Node {
 					}, map[string]string{
 						"MediaTypes": "Media Types",
 					}, "MediaTypes", "select", "all", map[string][]string{
-						"options": {"all", "movies", "series"},
+						"options": {"all", "movies", "series", "books", "audiobooks", "music"},
 					}),
 
 					renderFormGroup("cleanup", map[string]string{
@@ -2397,19 +2508,10 @@ func renderMediaCleanupWizardPage(csrfToken string) gomponents.Node {
 					}, "MinFileSize", "number", "10", nil),
 
 					renderFormGroup("cleanup", map[string]string{
-						"Paths": "Specific paths to scan (leave empty for all configured paths)",
+						"Paths": "Specific paths to scan, one per line, inside the configured media paths (leave empty for all configured paths)",
 					}, map[string]string{
 						"Paths": "Scan Paths",
 					}, "Paths", "textarea", "", nil),
-
-					renderFormGroup("cleanup",
-						map[string]string{
-							"DryRun": "Scan and report issues without making changes",
-						},
-						map[string]string{
-							"DryRun": "Dry Run (Preview Only)",
-						},
-						"DryRun", "checkbox", true, nil),
 				),
 			),
 
@@ -3288,7 +3390,7 @@ func renderQualityReorderPage(csrfToken string) gomponents.Node {
 									html.Type("hidden"),
 									html.Name("reorder_rules"),
 									html.ID("reorder_rules_json"),
-									html.Value("[]"),
+									html.Value(""),
 								),
 								html.Div(
 									html.Class("form-text mt-2"),
@@ -3399,8 +3501,18 @@ func renderQualityReorderPage(csrfToken string) gomponents.Node {
 
 				// Profile selection handler - removed jQuery handler as HTMX handles this directly
 
+				// Set once the admin edits/removes a rule, so an emptied rule list is
+				// sent as "[]" (no rules) instead of "" (use the configured rules).
+				var rulesTouched = false;
+				$(document).on('click change', '#reorder-rules-container', function() { rulesTouched = true; });
+
 				// Function to collect temporary reorder rules and update the JSON field
 				function updateReorderRulesJSON() {
+					var rows = $('#reorder-rules-container [data-rule-id]');
+					if (!rulesTouched && rows.length === 0) {
+						$('#reorder_rules_json').val('');
+						return '';
+					}
 					var rules = [];
 					$('#reorder-rules-container [data-rule-id]').each(function() {
 						var $rule = $(this);
@@ -3418,13 +3530,20 @@ func renderQualityReorderPage(csrfToken string) gomponents.Node {
 						}
 					});
 					
-					$('#reorder_rules_json').val(JSON.stringify(rules));
+					var json = JSON.stringify(rules);
+					$('#reorder_rules_json').val(json);
+					return json;
 				}
 				
-				// Update JSON before form submission
+				// Update JSON before form submission. htmx has already collected the
+				// form values when configRequest fires, so the parameter is set too.
 				$(document).on('htmx:configRequest', function(evt) {
 					if (evt.target.id === 'quality-reorder-form' || $(evt.target).closest('#quality-reorder-form').length) {
-						updateReorderRulesJSON();
+						var json = updateReorderRulesJSON();
+						var d = evt.originalEvent && evt.originalEvent.detail;
+						if (d && d.parameters) {
+							if (typeof d.parameters.set === 'function') { d.parameters.set('reorder_rules', json); } else { d.parameters['reorder_rules'] = json; }
+						}
 					}
 				});
 				

@@ -2,17 +2,21 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -313,7 +317,7 @@ func HandleMovieMetadata(c *gin.Context) {
 	imdbID := c.PostForm("metadata_ImdbID")
 	tvdbID := c.PostForm("metadata_TvdbID")
 	provider := c.PostForm("metadata_Provider")
-	updateDB, _ := strconv.ParseBool(c.PostForm("metadata_UpdateDB"))
+	updateDB := formBool(c.PostForm("metadata_UpdateDB"))
 
 	isbn := strings.TrimSpace(c.PostForm("metadata_ISBN"))
 	asin := strings.TrimSpace(c.PostForm("metadata_ASIN"))
@@ -481,7 +485,8 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 
 	metadata.MovieGetMetadata(&dbmovie, imdb, tmdb, omdb, trakt)
 
-	if updateDB {
+	// Without any provider data the update below would blank the existing row.
+	if updateDB && dbmovie.Title != "" {
 		dbmovie.MovieFindDBIDByImdbParser()
 
 		if dbmovie.ID == 0 {
@@ -494,7 +499,9 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 			}
 		}
 
-		database.ExecN(
+		if dbmovie.ID == 0 {
+			result["db_error"] = "movie row could not be created"
+		} else if err := database.ExecNErr(
 			"update dbmovies SET Title = ? , Release_Date = ? , Year = ? , Adult = ? , Budget = ? , Genres = ? , Original_Language = ? , Original_Title = ? , Overview = ? , Popularity = ? , Revenue = ? , Runtime = ? , Spoken_Languages = ? , Status = ? , Tagline = ? , Vote_Average = ? , Vote_Count = ? , Trakt_ID = ? , Moviedb_ID = ? , Imdb_ID = ? , Freebase_M_ID = ? , Freebase_ID = ? , Facebook_ID = ? , Instagram_ID = ? , Twitter_ID = ? , URL = ? , Backdrop = ? , Poster = ? , Slug = ? where id = ?",
 			&dbmovie.Title,
 			&dbmovie.ReleaseDate,
@@ -526,7 +533,9 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 			&dbmovie.Poster,
 			&dbmovie.Slug,
 			&dbmovie.ID,
-		)
+		); err != nil {
+			result["db_error"] = err.Error()
+		}
 	}
 
 	// Convert dbmovie to map[string]any matching renderMovieMetadataDisplay expectations
@@ -577,7 +586,7 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	var lastError string
 
 	// If no data was found, return detailed error information
-	if result["title"] == nil {
+	if dbmovie.Title == "" {
 		result["error"] = "No movie data found for the provided IMDB ID"
 
 		result["placeholder"] = true
@@ -596,6 +605,37 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 	return renderMetadataResults(result)
 }
 
+// tvdbSeriesDetails fetches a series from TVDB.
+func tvdbSeriesDetails(id int, language string) (*apiexternal_v2.SeriesDetails, error) {
+	provider := providers.GetTVDB()
+	if provider == nil {
+		return nil, errProviderNotInitialized
+	}
+
+	return provider.GetSeriesByID(context.Background(), id, language)
+}
+
+// traktSeasonEpisodes fetches the episodes of one season of the show with the
+// given IMDB ID from Trakt.
+func traktSeasonEpisodes(imdbID string, season int) ([]*apiexternal_v2.Episode, error) {
+	show, err := providers.TraktSerieByIMDb(context.Background(), imdbID)
+	if err != nil {
+		return nil, err
+	}
+
+	return providers.GetTrakt().GetSeasonEpisodes(context.Background(), show.ID, season)
+}
+
+// joinGenres lists genre names comma-separated.
+func joinGenres(genres []apiexternal_v2.Genre) string {
+	names := make([]string, len(genres))
+	for i := range genres {
+		names[i] = genres[i].Name
+	}
+
+	return strings.Join(names, ", ")
+}
+
 // handleSeriesMetadataLookup handles series metadata lookup.
 func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) string {
 	result := map[string]any{
@@ -611,20 +651,27 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 	// Try TVDB lookup first if TVDB ID is provided
 	if tvdbID != "" {
 		if tvdbIDInt, err := strconv.Atoi(tvdbID); err == nil {
-			if tvdbSeries, err := apiexternal.GetTvdbSeries(tvdbIDInt, "en"); err == nil &&
+			if tvdbSeries, err := tvdbSeriesDetails(tvdbIDInt, "en"); err == nil &&
 				tvdbSeries != nil {
-				result["title"] = tvdbSeries.Data.SeriesName
-				result["plot"] = tvdbSeries.Data.Overview
-				result["first_aired"] = tvdbSeries.Data.FirstAired
-				result["network"] = tvdbSeries.Data.Network
-				result["status"] = tvdbSeries.Data.Status
-				result["rating"] = tvdbSeries.Data.Rating
-				result["runtime"] = tvdbSeries.Data.Runtime
-				result["genres"] = strings.Join(tvdbSeries.Data.Genre, ", ")
+				result["title"] = tvdbSeries.Name
+				result["plot"] = tvdbSeries.Overview
+				result["status"] = tvdbSeries.Status
+				result["genres"] = joinGenres(tvdbSeries.Genres)
 
-				result["banner"] = tvdbSeries.Data.Banner
-				if tvdbSeries.Data.ImdbID != "" && imdbID == "" {
-					result["imdb_id"] = tvdbSeries.Data.ImdbID
+				if !tvdbSeries.FirstAirDate.IsZero() {
+					result["first_aired"] = tvdbSeries.FirstAirDate.Format("2006-01-02")
+				}
+
+				if len(tvdbSeries.Networks) > 0 {
+					result["network"] = tvdbSeries.Networks[0].Name
+				}
+
+				if len(tvdbSeries.EpisodeRunTime) > 0 {
+					result["runtime"] = strconv.Itoa(tvdbSeries.EpisodeRunTime[0])
+				}
+
+				if tvdbSeries.IMDbID != "" && imdbID == "" {
+					result["imdb_id"] = tvdbSeries.IMDbID
 				}
 
 				result["data_source"] = "TVDB"
@@ -638,22 +685,23 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 
 	// Try Trakt lookup as fallback or if IMDB ID is provided
 	if result["title"] == nil && imdbID != "" {
-		if traktSeries, err := apiexternal.GetTraktSerie(imdbID); err == nil && traktSeries != nil {
-			result["title"] = traktSeries.Title
+		if traktSeries, err := providers.TraktSerieByIMDb(context.Background(), imdbID); err == nil && traktSeries != nil {
+			result["title"] = traktSeries.Name
 			result["plot"] = traktSeries.Overview
-			result["network"] = traktSeries.Network
 			result["status"] = traktSeries.Status
-			result["language"] = traktSeries.Language
-			result["country"] = traktSeries.Country
-			result["genres"] = strings.Join(traktSeries.Genres, ", ")
-			result["imdb_id"] = traktSeries.IDs.Imdb
-			result["tvdb_id"] = strconv.Itoa(traktSeries.IDs.Tvdb)
-			result["tmdb_id"] = strconv.Itoa(traktSeries.IDs.Tmdb)
-			result["trakt_id"] = strconv.Itoa(traktSeries.IDs.Trakt)
+			result["language"] = traktSeries.OriginalLanguage
+			result["genres"] = joinGenres(traktSeries.Genres)
+			result["imdb_id"] = traktSeries.IMDbID
+			result["tvdb_id"] = strconv.Itoa(traktSeries.TVDbID)
+			result["trakt_id"] = strconv.Itoa(traktSeries.ID)
 			result["data_source"] = "Trakt"
 
+			if len(traktSeries.Networks) > 0 {
+				result["network"] = traktSeries.Networks[0].Name
+			}
+
 			// Get seasons information from Trakt
-			if seasons, err := apiexternal.GetTraktSerieSeasons(imdbID); err == nil &&
+			if seasons, err := providers.GetTrakt().GetAllSeasons(context.Background(), traktSeries.ID); err == nil &&
 				len(seasons) > 0 {
 				result["seasons"] = len(seasons)
 				result["season_details"] = seasons
@@ -664,6 +712,12 @@ func handleSeriesMetadataLookup(imdbID, tvdbID, provider string, updateDB bool) 
 			}
 
 			lastError += fmt.Sprintf("Trakt API error: %v", err)
+		}
+	}
+
+	if updateDB && result["title"] != nil {
+		if err := updateSeriesMetadataDB(imdbID, tvdbID, provider); err != nil {
+			result["db_error"] = err.Error()
 		}
 	}
 
@@ -711,9 +765,9 @@ func handleEpisodeMetadataLookup(
 	var seriesImdbID string
 	if tvdbID != "" && imdbID == "" {
 		if tvdbIDInt, err := strconv.Atoi(tvdbID); err == nil {
-			if tvdbSeries, err := apiexternal.GetTvdbSeries(tvdbIDInt, "en"); err == nil &&
+			if tvdbSeries, err := tvdbSeriesDetails(tvdbIDInt, "en"); err == nil &&
 				tvdbSeries != nil {
-				seriesImdbID = tvdbSeries.Data.ImdbID
+				seriesImdbID = tvdbSeries.IMDbID
 			} else if err != nil {
 				lastError = fmt.Sprintf("TVDB series lookup error: %v", err)
 			}
@@ -724,24 +778,27 @@ func handleEpisodeMetadataLookup(
 		seriesImdbID = imdbID
 	}
 
+	var (
+		epTitle, epOverview string
+		epAired             time.Time
+		epRuntime           int
+	)
+
 	// Try Trakt episode lookup with the series IMDB ID
 	if result["title"] == nil && seriesImdbID != "" {
-		seasonStr := strconv.Itoa(season)
-		if episodes, err := apiexternal.GetTraktSerieSeasonEpisodes(
-			seriesImdbID,
-			seasonStr,
-		); err == nil &&
+		if episodes, err := traktSeasonEpisodes(seriesImdbID, season); err == nil &&
 			len(episodes) > 0 {
 			// Find the specific episode
 			for _, ep := range episodes {
-				if ep.Episode == episode {
-					result["title"] = ep.Title
+				if ep.EpisodeNumber == episode {
+					result["title"] = ep.Name
 					result["plot"] = ep.Overview
-					result["first_aired"] = ep.FirstAired.Format("2006-01-02")
-					result["season"] = ep.Season
-					result["episode"] = ep.Episode
+					result["first_aired"] = ep.AirDate.Format("2006-01-02")
+					result["season"] = ep.SeasonNumber
+					result["episode"] = ep.EpisodeNumber
 					result["runtime"] = ep.Runtime
 					result["data_source"] = "Trakt"
+					epTitle, epOverview, epAired, epRuntime = ep.Name, ep.Overview, ep.AirDate, ep.Runtime
 
 					break
 				}
@@ -752,6 +809,15 @@ func handleEpisodeMetadataLookup(
 			}
 
 			lastError += fmt.Sprintf("Trakt episodes API error: %v", err)
+		}
+	}
+
+	if updateDB && result["title"] != nil {
+		if err := updateEpisodeMetadataDB(
+			seriesImdbID, tvdbID, season, episode,
+			epTitle, epOverview, epAired, epRuntime,
+		); err != nil {
+			result["db_error"] = err.Error()
 		}
 	}
 
@@ -783,9 +849,172 @@ func handleEpisodeMetadataLookup(
 	return renderMetadataResults(result)
 }
 
+// findDbserieID resolves an existing dbseries row by TVDB ID, falling back to IMDB ID.
+func findDbserieID(imdbID string, tvdbID int) uint {
+	var id uint
+	if tvdbID != 0 {
+		database.Scanrowsdyn(false, database.QueryDbseriesGetIDByTvdb, &id, &tvdbID)
+	}
+
+	if id == 0 && imdbID != "" {
+		database.Scanrowsdyn(false, "select id from dbseries where imdb_id = ?", &id, &imdbID)
+	}
+
+	return id
+}
+
+// updateSeriesMetadataDB refreshes (or creates) the dbseries row through the
+// metadata package. Existing ids and links are kept because the row is loaded
+// first and SerieGetMetadata only replaces fields a provider actually returned.
+func updateSeriesMetadataDB(imdbID, tvdbID, provider string) error {
+	tvdbIDInt, _ := strconv.Atoi(tvdbID)
+
+	var dbserie database.Dbserie
+	if id := findDbserieID(imdbID, tvdbIDInt); id != 0 {
+		if err := dbserie.GetDbserieByIDP(&id); err != nil {
+			return fmt.Errorf("load series %d: %w", id, err)
+		}
+	}
+
+	if dbserie.ThetvdbID == 0 {
+		dbserie.ThetvdbID = tvdbIDInt
+	}
+
+	if dbserie.ImdbID == "" {
+		dbserie.ImdbID = imdbID
+	}
+
+	if dbserie.ThetvdbID == 0 {
+		return errors.New("series metadata refresh needs a TVDB ID (or an existing series row with one)")
+	}
+
+	var querytmdb, querytrakt bool
+	switch provider {
+	case "tmdb":
+		querytmdb = true
+	case "trakt":
+		querytrakt = true
+	default:
+		querytmdb = config.GetSettingsGeneral().SerieMetaSourceTmdb
+		querytrakt = config.GetSettingsGeneral().SerieMetaSourceTrakt
+	}
+
+	metadata.SerieGetMetadata(&dbserie, "", querytmdb, querytrakt, true, nil)
+
+	if dbserie.Seriename == "" {
+		return errors.New("no provider returned series data; database left unchanged")
+	}
+
+	if dbserie.ID == 0 {
+		inres, err := database.ExecNid(
+			"insert into dbseries (seriename, thetvdb_id, identifiedby) values (?, ?, ?)",
+			&dbserie.Seriename,
+			&dbserie.ThetvdbID,
+			&dbserie.Identifiedby,
+		)
+		if err != nil {
+			return fmt.Errorf("insert series: %w", err)
+		}
+
+		dbserie.ID = logger.Int64ToUint(inres)
+	}
+
+	return database.ExecNErr(
+		"update dbseries SET Seriename = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
+		&dbserie.Seriename,
+		&dbserie.Season,
+		&dbserie.Status,
+		&dbserie.Firstaired,
+		&dbserie.Network,
+		&dbserie.Runtime,
+		&dbserie.Language,
+		&dbserie.Genre,
+		&dbserie.Overview,
+		&dbserie.Rating,
+		&dbserie.Siterating,
+		&dbserie.SiteratingCount,
+		&dbserie.Slug,
+		&dbserie.TraktID,
+		&dbserie.ImdbID,
+		&dbserie.ThetvdbID,
+		&dbserie.FreebaseMID,
+		&dbserie.FreebaseID,
+		&dbserie.TvrageID,
+		&dbserie.Facebook,
+		&dbserie.Instagram,
+		&dbserie.Twitter,
+		&dbserie.Banner,
+		&dbserie.Poster,
+		&dbserie.Fanart,
+		&dbserie.Identifiedby,
+		&dbserie.ID,
+	)
+}
+
+// updateEpisodeMetadataDB writes the looked-up episode fields into the
+// existing dbserie_episodes row. Episodes are only created by the series
+// refresh jobs, so a missing row is reported rather than inserted; empty
+// provider values never overwrite stored ones.
+func updateEpisodeMetadataDB(
+	imdbID, tvdbID string,
+	season, episode int,
+	title, overview string,
+	aired time.Time,
+	runtime int,
+) error {
+	tvdbIDInt, _ := strconv.Atoi(tvdbID)
+
+	dbserieID := findDbserieID(imdbID, tvdbIDInt)
+	if dbserieID == 0 {
+		return errors.New("series not found in database")
+	}
+
+	seasonStr, episodeStr := strconv.Itoa(season), strconv.Itoa(episode)
+
+	var episodeID uint
+	database.Scanrowsdyn(
+		false,
+		"select id from dbserie_episodes where dbserie_id = ? and season = ? and episode = ?",
+		&episodeID,
+		&dbserieID,
+		&seasonStr,
+		&episodeStr,
+	)
+
+	if episodeID == 0 {
+		return fmt.Errorf("episode S%dE%d not found in database", season, episode)
+	}
+
+	firstAired := sql.NullTime{Time: aired, Valid: !aired.IsZero()}
+
+	return database.ExecNErr(
+		"update dbserie_episodes SET title = CASE WHEN ? != '' THEN ? ELSE title END, overview = CASE WHEN ? != '' THEN ? ELSE overview END, first_aired = COALESCE(?, first_aired), runtime = CASE WHEN ? > 0 THEN ? ELSE runtime END where id = ?",
+		&title, &title,
+		&overview, &overview,
+		&firstAired,
+		&runtime, &runtime,
+		&episodeID,
+	)
+}
+
 // renderMetadataResults renders metadata lookup results for movies, series, and episodes.
 func renderMetadataResults(result map[string]any) string {
 	mediaType, _ := result["media_type"].(string)
+
+	// The per-type renderers always draw a "retrieved" card, so a failed lookup
+	// has to be reported before reaching them.
+	if errMsg, ok := result["error"].(string); ok && errMsg != "" {
+		if note, ok := result["note"].(string); ok && note != "" {
+			errMsg += " - " + note
+		}
+
+		return renderAlert(errMsg, "warning")
+	}
+
+	if dbErr, ok := result["db_error"].(string); ok && dbErr != "" {
+		delete(result, "db_error")
+		return renderAlert("Database update failed: "+dbErr, "danger") + renderMetadataResults(result)
+	}
 
 	// For real metadata results, format based on media type
 	switch mediaType {
@@ -949,7 +1178,21 @@ func handleBookMetadataLookup(isbn string, updateDB bool) string {
 
 		if id != 0 {
 			book.ID = id
-			database.ExecN(
+			if book.Slug == "" {
+				book.Slug = logger.StringToSlugCached(book.Title)
+			}
+
+			// The metadata lookup does not resolve author/series links; keep the
+			// row's existing ones instead of resetting them to 0.
+			if book.DbauthorID == 0 {
+				book.DbauthorID = database.Getdatarow[uint](false, "SELECT dbauthor_id FROM dbbooks WHERE id = ?", &id)
+			}
+
+			if book.DbbookSeriesID == 0 {
+				book.DbbookSeriesID = database.Getdatarow[uint](false, "SELECT dbbook_series_id FROM dbbooks WHERE id = ?", &id)
+			}
+
+			err := database.ExecNErr(
 				"update dbbooks SET title = ?, original_title = ?, isbn_13 = ?, isbn_10 = ?, asin = ?, openlibrary_id = ?, goodreads_id = ?, description = ?, publisher = ?, publish_date = ?, page_count = ?, language = ?, genres = ?, cover_url = ?, dbauthor_id = ?, dbbook_series_id = ?, series_position = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ? where id = ?",
 				&book.Title,
 				&book.OriginalTitle,
@@ -974,8 +1217,11 @@ func handleBookMetadataLookup(isbn string, updateDB bool) string {
 				&book.Slug,
 				&book.ID,
 			)
-
-			heading = fmt.Sprintf("Book (saved to database, id %d)", id)
+			if err != nil {
+				heading = "Book (database update failed: " + err.Error() + ")"
+			} else {
+				heading = fmt.Sprintf("Book (saved to database, id %d)", id)
+			}
 		} else {
 			heading = "Book (database update failed)"
 		}
@@ -1033,8 +1279,17 @@ func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
 
 		if id != 0 {
 			ab.ID = id
-			database.ExecN(
-				"update dbaudiobooks SET title = ?, asin = ?, audible_id = ?, runtime_minutes = ?, chapter_count = ?, release_date = ?, publisher = ?, language = ?, abridged = ?, cover_url = ?, sample_url = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ?, dbbook_id = ?, description = ? where id = ?",
+			if ab.Slug == "" {
+				ab.Slug = logger.StringToSlugCached(ab.Title)
+			}
+
+			// Keep an existing book link when the lookup found none.
+			if ab.DbbookID == 0 {
+				ab.DbbookID = database.Getdatarow[uint](false, "SELECT dbbook_id FROM dbaudiobooks WHERE id = ?", &id)
+			}
+
+			err := database.ExecNErr(
+				"update dbaudiobooks SET title = ?, asin = ?, audible_id = ?, runtime_minutes = ?, chapter_count = ?, release_date = ?, publisher = ?, language = ?, abridged = ?, cover_url = ?, sample_url = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ?, dbbook_id = ?, description = ?, series_name = ?, series_position = ? where id = ?",
 				&ab.Title,
 				&ab.ASIN,
 				&ab.AudibleID,
@@ -1052,10 +1307,15 @@ func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
 				&ab.Slug,
 				&ab.DbbookID,
 				&ab.Description,
+				&ab.SeriesName,
+				&ab.SeriesPosition,
 				&ab.ID,
 			)
-
-			heading = fmt.Sprintf("Audiobook (saved to database, id %d)", id)
+			if err != nil {
+				heading = "Audiobook (database update failed: " + err.Error() + ")"
+			} else {
+				heading = fmt.Sprintf("Audiobook (saved to database, id %d)", id)
+			}
 		} else {
 			heading = "Audiobook (database update failed)"
 		}
@@ -1108,7 +1368,11 @@ func handleAlbumMetadataLookup(mbReleaseID string, updateDB bool) string {
 
 		if id != 0 {
 			album.ID = id
-			database.ExecN(
+			if album.Slug == "" {
+				album.Slug = logger.StringToSlugCached(album.Title)
+			}
+
+			err := database.ExecNErr(
 				"update dbalbums SET title = ?, musicbrainz_release_group_id = ?, musicbrainz_release_id = ?, discogs_master_id = ?, discogs_release_id = ?, spotify_id = ?, upc = ?, release_date = ?, release_type = ?, format = ?, label = ?, country = ?, total_tracks = ?, total_runtime_ms = ?, genres = ?, styles = ?, cover_url = ?, year = ?, slug = ? where id = ?",
 				&album.Title,
 				&album.MusicbrainzReleaseGroupID,
@@ -1131,8 +1395,11 @@ func handleAlbumMetadataLookup(mbReleaseID string, updateDB bool) string {
 				&album.Slug,
 				&album.ID,
 			)
-
-			heading = fmt.Sprintf("Album (saved to database, id %d)", id)
+			if err != nil {
+				heading = "Album (database update failed: " + err.Error() + ")"
+			} else {
+				heading = fmt.Sprintf("Album (saved to database, id %d)", id)
+			}
 		} else {
 			heading = "Album (database update failed)"
 		}

@@ -4,153 +4,163 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strconv"
-	"time"
+	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
-//
-// Jellyfin Provider - Watchlist integration
-//
+var errMissingServer = errors.New("jellyfin server URL, API key, and username are required")
 
-// Provider implements the WatchlistProvider interface for Jellyfin.
+// Provider reads watchlists (favorites) from Jellyfin servers. The server is
+// given per call, since every list config may point at another one.
 type Provider struct {
 	*base.BaseClient
-	serverURL string
-	token     string
-	userID    string
 }
 
-// NewProvider creates a new Jellyfin watchlist provider.
-func NewProvider(serverURL, token, userID string) *Provider {
-	config := base.ClientConfig{
-		Name:                    "jellyfin",
-		BaseURL:                 serverURL,
-		Timeout:                 30 * time.Second,
-		AuthType:                base.AuthAPIKeyHeader,
-		APIKey:                  token,
-		APIKeyHeader:            "X-MediaBrowser-Token",
-		RateLimitPer24h:         0, // No specific rate limit for Jellyfin
-		CircuitBreakerThreshold: 5,
-		CircuitBreakerTimeout:   60 * time.Second,
-		MaxRetries:              3,
-		RetryBackoff:            2 * time.Second,
+// NewProviderWithConfig creates a Jellyfin provider.
+func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
+	cfg.Name = "jellyfin"
+
+	return &Provider{BaseClient: base.NewBaseClient(cfg)}
+}
+
+// WatchlistItem is a favorite movie or series of a Jellyfin user.
+type WatchlistItem struct {
+	Name                    string            `json:"Name"`
+	ServerId                string            `json:"ServerId"`
+	Id                      string            `json:"Id"`
+	RunTimeTicks            int64             `json:"RunTimeTicks,omitempty"`
+	ProductionYear          int               `json:"ProductionYear,omitempty"`
+	Type                    string            `json:"Type"`
+	UserData                UserData          `json:"UserData"`
+	PrimaryImageAspectRatio float64           `json:"PrimaryImageAspectRatio,omitempty"`
+	OriginalTitle           string            `json:"OriginalTitle,omitempty"`
+	Overview                string            `json:"Overview,omitempty"`
+	CommunityRating         float64           `json:"CommunityRating,omitempty"`
+	DateCreated             string            `json:"DateCreated,omitempty"`
+	MediaType               string            `json:"MediaType,omitempty"`
+	ProviderIds             map[string]string `json:"ProviderIds,omitempty"`
+	IsFolder                bool              `json:"IsFolder,omitempty"`
+	ParentId                string            `json:"ParentId,omitempty"`
+	GenreItems              []Genre           `json:"GenreItems,omitempty"`
+	ImageTags               map[string]string `json:"ImageTags,omitempty"`
+	BackdropImageTags       []string          `json:"BackdropImageTags,omitempty"`
+}
+
+// UserData is the user-specific state of an item.
+type UserData struct {
+	PlaybackPositionTicks int64  `json:"PlaybackPositionTicks"`
+	PlayCount             int    `json:"PlayCount"`
+	IsFavorite            bool   `json:"IsFavorite"`
+	Played                bool   `json:"Played"`
+	Key                   string `json:"Key,omitempty"`
+}
+
+// Genre is a genre of an item.
+type Genre struct {
+	Name string `json:"Name"`
+	Id   string `json:"Id"`
+}
+
+type watchlistResponse struct {
+	Items []WatchlistItem `json:"Items"`
+}
+
+type user struct {
+	Name string `json:"Name"`
+	Id   string `json:"Id"`
+}
+
+// GetWatchlist retrieves the favorite movies and series of a user.
+func (p *Provider) GetWatchlist(ctx context.Context, serverURL, apiKey, username string) ([]WatchlistItem, error) {
+	if serverURL == "" || apiKey == "" || username == "" {
+		return nil, errMissingServer
 	}
 
-	return &Provider{
-		BaseClient: base.NewBaseClient(config),
-		serverURL:  serverURL,
-		token:      token,
-		userID:     userID,
+	serverURL = strings.TrimSuffix(serverURL, "/")
+
+	userID, err := p.userID(ctx, serverURL, apiKey, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Jellyfin user ID: %w", err)
 	}
-}
 
-// GetProviderType returns the provider type.
-func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
-	return "jellyfin"
-}
+	params := url.Values{}
+	params.Set("api_key", apiKey)
+	params.Set("IsFavorite", "true")
+	params.Set("IncludeItemTypes", "Movie,Series")
+	params.Set("Recursive", "true")
+	params.Set("Fields", "ProviderIds,Overview,Genres,CommunityRating,DateCreated")
+	params.Set("limit", "1000")
 
-// GetProviderName returns the provider name.
-func (*Provider) GetProviderName() string {
-	return "jellyfin"
-}
+	var response watchlistResponse
 
-// JellyfinItem represents a Jellyfin library item.
-type JellyfinItem struct {
-	Name            string            `json:"Name"`
-	Type            string            `json:"Type"`
-	ProductionYear  int               `json:"ProductionYear"`
-	Id              string            `json:"Id"`
-	ProviderIds     map[string]string `json:"ProviderIds"`
-	CommunityRating float64           `json:"CommunityRating"`
-}
-
-// JellyfinItemsResponse represents the response from Jellyfin Items endpoint.
-type JellyfinItemsResponse struct {
-	Items            []JellyfinItem `json:"Items"`
-	TotalRecordCount int            `json:"TotalRecordCount"`
-}
-
-// GetWatchlist retrieves the watchlist for a Jellyfin user.
-func (p *Provider) GetWatchlist(
-	ctx context.Context,
-	_ string,
-) ([]apiexternal_v2.WatchlistItem, error) {
-	// Jellyfin uses Favorites as watchlist
-	endpoint := fmt.Sprintf(
-		"/Users/%s/Items?IsFavorite=true&IncludeItemTypes=Movie,Series&Recursive=true&Fields=ProviderIds&limit=1000",
-		p.userID,
+	err = p.MakeRequest(
+		ctx,
+		http.MethodGet,
+		serverURL+"/Users/"+url.PathEscape(userID)+"/Items?"+params.Encode(),
+		nil,
+		&response,
+		nil,
 	)
-
-	var response JellyfinItemsResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
-	items := make([]apiexternal_v2.WatchlistItem, 0, len(response.Items))
-	for i := range response.Items {
-		itemType := "movie"
-		if response.Items[i].Type == "Series" {
-			itemType = "tv"
-		}
-
-		watchlistItem := apiexternal_v2.WatchlistItem{
-			Type:         itemType,
-			Title:        response.Items[i].Name,
-			Year:         response.Items[i].ProductionYear,
-			ProviderName: "jellyfin",
-		}
-
-		// Extract IMDb and TVDB IDs from ProviderIds
-		if imdbID, ok := response.Items[i].ProviderIds["Imdb"]; ok {
-			watchlistItem.IMDbID = imdbID
-		}
-
-		if tvdbIDStr, ok := response.Items[i].ProviderIds["Tvdb"]; ok {
-			if tvdbID, err := strconv.Atoi(tvdbIDStr); err == nil {
-				watchlistItem.TVDbID = tvdbID
-			}
-		}
-
-		items = append(items, watchlistItem)
-	}
-
-	return items, nil
+	return response.Items, nil
 }
 
-// AddToWatchlist adds an item to favorites (Jellyfin's watchlist equivalent).
-func (p *Provider) AddToWatchlist(
-	ctx context.Context,
-	username string,
-	_ string,
-	id int,
-) error {
-	endpoint := fmt.Sprintf("/Users/%s/FavoriteItems/%d", p.userID, id)
+func (p *Provider) userID(ctx context.Context, serverURL, apiKey, username string) (string, error) {
+	var users []user
 
-	var response any
-	if err := p.MakeRequest(ctx, "POST", endpoint, nil, &response, nil); err != nil {
-		return errors.New(logger.JoinStrings("failed to add to favorites: ", err.Error()))
+	err := p.MakeRequest(
+		ctx,
+		http.MethodGet,
+		serverURL+"/Users?api_key="+url.QueryEscape(apiKey),
+		nil,
+		&users,
+		nil,
+	)
+	if err != nil {
+		return "", err
 	}
 
-	return nil
+	for _, u := range users {
+		if strings.EqualFold(u.Name, username) {
+			return u.Id, nil
+		}
+	}
+
+	return "", fmt.Errorf("user '%s' not found on Jellyfin server", username)
 }
 
-// RemoveFromWatchlist removes an item from favorites.
-func (p *Provider) RemoveFromWatchlist(
-	ctx context.Context,
-	username string,
-	_ string,
-	id int,
-) error {
-	endpoint := fmt.Sprintf("/Users/%s/FavoriteItems/%d", p.userID, id)
+func (item *WatchlistItem) providerInt(key string) int {
+	n, _ := strconv.Atoi(item.ProviderIds[key])
+	return n
+}
 
-	var response any
-	if err := p.MakeRequest(ctx, "DELETE", endpoint, nil, &response, nil); err != nil {
-		return errors.New(logger.JoinStrings("failed to remove from favorites: ", err.Error()))
+// IMDbID returns the item's IMDB ID or "".
+func (item *WatchlistItem) IMDbID() string { return item.ProviderIds["Imdb"] }
+
+// TVDbID returns the item's TVDB ID or 0.
+func (item *WatchlistItem) TVDbID() int { return item.providerInt("Tvdb") }
+
+// TMDbID returns the item's TMDB ID or 0.
+func (item *WatchlistItem) TMDbID() int { return item.providerInt("Tmdb") }
+
+// IsMovie reports whether the item is a movie.
+func (item *WatchlistItem) IsMovie() bool { return item.Type == "Movie" }
+
+// IsSeries reports whether the item is a TV series.
+func (item *WatchlistItem) IsSeries() bool { return item.Type == "Series" }
+
+// Title returns the original title, or the name when there is none.
+func (item *WatchlistItem) Title() string {
+	if item.OriginalTitle != "" {
+		return item.OriginalTitle
 	}
 
-	return nil
+	return item.Name
 }

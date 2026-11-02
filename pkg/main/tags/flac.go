@@ -161,76 +161,7 @@ func (h *FLACHandler) parseFLACMeta(r io.Reader, withCover bool) (*AudioTags, er
 // parseVorbisComments extracts tag values from Vorbis Comment fields.
 func (*FLACHandler) parseVorbisComments(comments [][2]string, tags *AudioTags) {
 	for i := range comments {
-		key := strings.ToUpper(comments[i][0])
-		value := comments[i][1]
-
-		switch key {
-		// Standard tags
-		case "TITLE":
-			tags.Title = value
-		case "ARTIST":
-			tags.Artist = value
-		case "ALBUM":
-			tags.Album = value
-		case "ALBUMARTIST", "ALBUM ARTIST":
-			tags.AlbumArtist = value
-		case "GENRE":
-			tags.Genre = value
-		case "DATE", "YEAR":
-			tags.Year = parseYear(value)
-		case "TRACKNUMBER", "TRACK":
-			tags.TrackNumber, _ = parseTrackNum(value)
-		case "TRACKTOTAL", "TOTALTRACKS", "TRACKC":
-			tags.TotalTracks, _ = strconv.Atoi(value)
-		case "DISCNUMBER", "DISC":
-			tags.DiscNumber, _ = parseTrackNum(value)
-		case "DISCTOTAL", "TOTALDISCS", "DISCC":
-			tags.TotalDiscs, _ = strconv.Atoi(value)
-		case "COMMENT", "DESCRIPTION":
-			tags.Comment = value
-
-		// Extended tags
-		case "COMPOSER":
-			tags.Composer = value
-		case "CONDUCTOR":
-			tags.Conductor = value
-		case "LABEL", "ORGANIZATION", "PUBLISHER":
-			tags.Label = value
-		case "CATALOGNUMBER", "CATALOG", "LABELNO":
-			tags.CatalogNum = value
-		case "ISRC":
-			tags.ISRC = value
-		case "LYRICS", "UNSYNCEDLYRICS":
-			tags.Lyrics = value
-		case "COPYRIGHT":
-			tags.Copyright = value
-
-		// MusicBrainz IDs
-		case "MUSICBRAINZ_TRACKID", "MUSICBRAINZ_RECORDINGID":
-			tags.MBRecordingID = value
-		case "MUSICBRAINZ_ALBUMID", "MUSICBRAINZ_RELEASEID":
-			tags.MBReleaseID = value
-		case "MUSICBRAINZ_RELEASEGROUPID":
-			tags.MBReleaseGroupID = value
-		case "MUSICBRAINZ_ARTISTID":
-			tags.MBArtistID = value
-		case "MUSICBRAINZ_ALBUMARTISTID":
-			tags.MBAlbumArtistID = value
-
-		// AcoustID
-		case "ACOUSTID_ID":
-			tags.AcoustID = value
-
-		// ReplayGain
-		case "REPLAYGAIN_TRACK_GAIN":
-			tags.ReplayGainTrack = parseReplayGain(value)
-		case "REPLAYGAIN_TRACK_PEAK":
-			tags.ReplayGainTrackPeak = parseReplayGainPeak(value)
-		case "REPLAYGAIN_ALBUM_GAIN":
-			tags.ReplayGainAlbum = parseReplayGain(value)
-		case "REPLAYGAIN_ALBUM_PEAK":
-			tags.ReplayGainAlbumPeak = parseReplayGainPeak(value)
-		}
+		applyVorbisComment(comments[i][0], comments[i][1], tags)
 	}
 }
 
@@ -260,15 +191,35 @@ func (h *FLACHandler) WriteTags(ctx context.Context, filepath string, tags *Audi
 		}
 	}
 
-	args := []string{"--remove-all-tags"}
-	args = append(args, h.buildTagArgs(tags)...)
+	args := h.buildTagArgs(tags)
 
-	if len(tags.CoverData) > 0 {
+	writeCover := len(tags.CoverData) > 0
+
+	var replace []string
+	if writeCover {
+		blocks, same, err := flacFrontCoverBlocks(filepath, tags.CoverData)
+		if err != nil {
+			return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
+		}
+
+		// Callers pass the file's own front cover back on every re-tag;
+		// rewriting it would only churn the file.
+		writeCover = !same
+		replace = blocks
+	}
+
+	if len(args) == 0 && !writeCover {
+		return nil
+	}
+
+	if writeCover {
 		// --remove is a major operation and cannot be combined with the
-		// shorthand operations above in one invocation - drop any existing
-		// picture block first (best-effort: a file with no picture block
-		// yet is the common, non-error case for --remove --block-type).
-		exec.CommandContext(ctx, metaflac, "--remove", "--block-type=PICTURE", filepath).Run() //nolint:errcheck
+		// shorthand operations above in one invocation - drop the replaced
+		// front-cover blocks first. Back covers, artist photos etc. are kept.
+		if len(replace) > 0 {
+			blocks := "--block-number=" + strings.Join(replace, ",")
+			exec.CommandContext(ctx, metaflac, "--remove", blocks, filepath).Run() //nolint:errcheck
+		}
 
 		tmpFile, err := os.CreateTemp("", "flac-cover-*")
 		if err != nil {
@@ -315,79 +266,91 @@ func (h *FLACHandler) WriteTags(ctx context.Context, filepath string, tags *Audi
 	return nil
 }
 
-// buildTagArgs builds the metaflac arguments for setting tags.
-func (*FLACHandler) buildTagArgs(tags *AudioTags) []string {
-	var args []string
+// flacFrontCoverBlocks returns the metadata block numbers (metaflac
+// --block-number) of the pictures a new cover replaces: every front-cover
+// (type 3) picture, or the "other" (type 0) pictures when there is no front
+// cover. same reports that one of them already holds exactly cover.
+func flacFrontCoverBlocks(path string, cover []byte) (blocks []string, same bool, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer file.Close()
 
-	addTag := func(key, value string) {
-		if value != "" {
-			args = append(args, fmt.Sprintf("--set-tag=%s=%s", key, value))
+	br := bufio.NewReader(file)
+
+	var sig [4]byte
+	if _, err := io.ReadFull(br, sig[:]); err != nil {
+		return nil, false, fmt.Errorf("reading signature: %w", err)
+	}
+
+	if sig != [4]byte{'f', 'L', 'a', 'C'} {
+		return nil, false, errors.New("not a FLAC file")
+	}
+
+	var front, other []string
+
+	var sameFront, sameOther bool
+
+	for num := 0; ; num++ {
+		block, err := meta.New(br)
+		if err != nil {
+			return nil, false, fmt.Errorf("reading block header: %w", err)
+		}
+
+		if block.Type != meta.TypePicture {
+			block.Skip() //nolint:errcheck
+		} else {
+			if err := block.Parse(); err != nil {
+				return nil, false, fmt.Errorf("parsing Picture: %w", err)
+			}
+
+			if pic, ok := block.Body.(*meta.Picture); ok {
+				switch pic.Type {
+				case 3:
+					front = append(front, strconv.Itoa(num))
+					sameFront = sameFront || bytes.Equal(pic.Data, cover)
+				case 0:
+					other = append(other, strconv.Itoa(num))
+					sameOther = sameOther || bytes.Equal(pic.Data, cover)
+				}
+			}
+		}
+
+		if block.IsLast {
+			break
 		}
 	}
 
-	// Standard tags
-	addTag("TITLE", tags.Title)
-	addTag("ARTIST", tags.Artist)
-	addTag("ALBUM", tags.Album)
-	addTag("ALBUMARTIST", tags.AlbumArtist)
-	addTag("GENRE", tags.Genre)
-
-	if tags.Year > 0 {
-		addTag("DATE", strconv.Itoa(tags.Year))
+	if len(front) > 0 {
+		return front, sameFront, nil
 	}
 
-	if tags.TrackNumber > 0 {
-		addTag("TRACKNUMBER", formatPaddedNum(tags.TrackNumber, tags.TotalTracks))
+	return other, sameOther, nil
+}
+
+// buildTagArgs builds the metaflac arguments for setting tags. Only the
+// fields tags sets are touched: their existing values (under every alias the
+// reader accepts) are removed and the new value written; all other comments
+// (ARTISTS, ORIGINALDATE, custom keys, ReplayGain from another tool, ...)
+// are preserved. metaflac applies shorthand operations in argument order.
+func (*FLACHandler) buildTagArgs(tags *AudioTags) []string {
+	set, remove := vorbisCommentUpdate(tags)
+
+	args := make([]string, 0, len(remove)+len(set))
+
+	for i := range vorbisFields {
+		if _, ok := remove[vorbisFields[i].keys[0]]; !ok {
+			continue
+		}
+
+		for _, k := range vorbisFields[i].keys {
+			args = append(args, "--remove-tag="+k)
+		}
 	}
 
-	if tags.TotalTracks > 0 {
-		addTag("TRACKTOTAL", formatPaddedNum(tags.TotalTracks, tags.TotalTracks))
-	}
-
-	if tags.DiscNumber > 0 {
-		addTag("DISCNUMBER", strconv.Itoa(tags.DiscNumber))
-	}
-
-	if tags.TotalDiscs > 0 {
-		addTag("DISCTOTAL", strconv.Itoa(tags.TotalDiscs))
-	}
-
-	addTag("COMMENT", tags.Comment)
-
-	// Extended tags
-	addTag("COMPOSER", tags.Composer)
-	addTag("CONDUCTOR", tags.Conductor)
-	addTag("LABEL", tags.Label)
-	addTag("CATALOGNUMBER", tags.CatalogNum)
-	addTag("ISRC", tags.ISRC)
-	addTag("LYRICS", tags.Lyrics)
-	addTag("COPYRIGHT", tags.Copyright)
-
-	// MusicBrainz IDs
-	addTag("MUSICBRAINZ_TRACKID", tags.MBRecordingID)
-	addTag("MUSICBRAINZ_ALBUMID", tags.MBReleaseID)
-	addTag("MUSICBRAINZ_RELEASEGROUPID", tags.MBReleaseGroupID)
-	addTag("MUSICBRAINZ_ARTISTID", tags.MBArtistID)
-	addTag("MUSICBRAINZ_ALBUMARTISTID", tags.MBAlbumArtistID)
-
-	// AcoustID
-	addTag("ACOUSTID_ID", tags.AcoustID)
-
-	// ReplayGain
-	if tags.ReplayGainTrack != 0 {
-		addTag("REPLAYGAIN_TRACK_GAIN", fmt.Sprintf("%.2f dB", tags.ReplayGainTrack))
-	}
-
-	if tags.ReplayGainTrackPeak != 0 {
-		addTag("REPLAYGAIN_TRACK_PEAK", fmt.Sprintf("%.6f", tags.ReplayGainTrackPeak))
-	}
-
-	if tags.ReplayGainAlbum != 0 {
-		addTag("REPLAYGAIN_ALBUM_GAIN", fmt.Sprintf("%.2f dB", tags.ReplayGainAlbum))
-	}
-
-	if tags.ReplayGainAlbumPeak != 0 {
-		addTag("REPLAYGAIN_ALBUM_PEAK", fmt.Sprintf("%.6f", tags.ReplayGainAlbumPeak))
+	for i := range set {
+		args = append(args, "--set-tag="+set[i])
 	}
 
 	return args

@@ -150,6 +150,35 @@ func getcmd(ctx context.Context, file, typ string) *exec.Cmd {
 	}
 }
 
+// ExecCmdString executes the given command with the provided arguments and returns
+// the stdout as a string, and any error that occurred. The command type is specified
+// by the 'typ' parameter, which can be either "ffprobe" or "mediainfo". The 'file'
+// parameter is the path to the file to analyze.
+func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](
+	ctx context.Context,
+	file, typ string,
+) (string, error) {
+	cmd := getcmd(ctx, file, typ)
+	if cmd == nil {
+		return "", logger.ErrNotFound
+	}
+
+	outputBuf := logger.PlAddBuffer.Get()
+
+	stdErr := logger.PlAddBuffer.Get()
+	defer func() {
+		logger.PlAddBuffer.Put(outputBuf)
+		logger.PlAddBuffer.Put(stdErr)
+	}()
+
+	cmd.Stdout = outputBuf
+	cmd.Stderr = stdErr
+
+	err := cmd.Run()
+
+	return outputBuf.String(), err
+}
+
 // ExecCmdJSON executes the given command with the provided arguments and returns
 // the parsed JSON output as either a mediaInfoJSON or ffProbeJSON struct, or an error.
 // The command type is specified by the 'typ' parameter, which can be either "ffprobe" or "mediainfo".
@@ -202,33 +231,4 @@ func ExecCmdJSON[T mediaInfoJSON | ffProbeJSON](
 	}
 
 	return nil
-}
-
-// ExecCmdString executes the given command with the provided arguments and returns
-// the stdout as a string, and any error that occurred. The command type is specified
-// by the 'typ' parameter, which can be either "ffprobe" or "mediainfo". The 'file'
-// parameter is the path to the file to analyze.
-func ExecCmdString[t []byte | mediaInfoJSON | ffProbeJSON](
-	ctx context.Context,
-	file, typ string,
-) (string, error) {
-	cmd := getcmd(ctx, file, typ)
-	if cmd == nil {
-		return "", logger.ErrNotFound
-	}
-
-	outputBuf := logger.PlAddBuffer.Get()
-
-	stdErr := logger.PlAddBuffer.Get()
-	defer func() {
-		logger.PlAddBuffer.Put(outputBuf)
-		logger.PlAddBuffer.Put(stdErr)
-	}()
-
-	cmd.Stdout = outputBuf
-	cmd.Stderr = stdErr
-
-	err := cmd.Run()
-
-	return outputBuf.String(), err
 }

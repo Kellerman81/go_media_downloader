@@ -71,14 +71,6 @@ type mbRelease struct {
 // mbReleaseResponse is the full release response.
 type mbReleaseResponse = mbRelease
 
-// mbReleaseGroupSearchResponse represents the release group search response.
-type mbReleaseGroupSearchResponse struct {
-	Created       string           `json:"created"`
-	Count         int              `json:"count"`
-	Offset        int              `json:"offset"`
-	ReleaseGroups []mbReleaseGroup `json:"release-groups"`
-}
-
 // mbReleaseGroup represents a release group (album across editions).
 type mbReleaseGroup struct {
 	ID               string           `json:"id"`
@@ -95,14 +87,6 @@ type mbReleaseGroup struct {
 
 // mbReleaseGroupResponse is the full release group response.
 type mbReleaseGroupResponse = mbReleaseGroup
-
-// mbRecordingSearchResponse represents the recording search response.
-type mbRecordingSearchResponse struct {
-	Created    string        `json:"created"`
-	Count      int           `json:"count"`
-	Offset     int           `json:"offset"`
-	Recordings []mbRecording `json:"recordings"`
-}
 
 // mbRecording represents a recording (track).
 type mbRecording struct {
@@ -495,43 +479,23 @@ func convertReleaseToDetails(release *mbReleaseResponse) *apiexternal_v2.Release
 	return details
 }
 
-func convertReleaseGroupSearchResults(
-	groups []mbReleaseGroup,
-) []apiexternal_v2.ReleaseSearchResult {
-	results := make([]apiexternal_v2.ReleaseSearchResult, 0, len(groups))
-
-	for i := range groups {
-		result := apiexternal_v2.ReleaseSearchResult{
-			ID:             groups[i].ID,
-			Title:          groups[i].Title,
-			Type:           groups[i].PrimaryType,
-			ReleaseGroupID: groups[i].ID,
-			MusicBrainzID:  groups[i].ID,
-			ProviderType:   apiexternal_v2.ProviderMusicBrainz,
+// pickGroupReleaseID returns the ID of the first official release of a release
+// group, falling back to the first release. Empty when the group carries no
+// releases — MusicBrainzID must never hold a release-group ID.
+func pickGroupReleaseID(releases []mbRelease) string {
+	for i := range releases {
+		if releases[i].ID != "" && strings.EqualFold(releases[i].Status, "official") {
+			return releases[i].ID
 		}
-
-		// First release date
-		if groups[i].FirstReleaseDate != "" {
-			result.ReleaseYear = extractYear(groups[i].FirstReleaseDate)
-		}
-
-		// Artists
-		if len(groups[i].ArtistCredit) > 0 {
-			artists := make([]apiexternal_v2.ArtistRef, 0, len(groups[i].ArtistCredit))
-			for j := range groups[i].ArtistCredit {
-				artists = append(artists, apiexternal_v2.ArtistRef{
-					Name: groups[i].ArtistCredit[j].Artist.Name,
-					ID:   groups[i].ArtistCredit[j].Artist.ID,
-				})
-			}
-
-			result.Artists = artists
-		}
-
-		results = append(results, result)
 	}
 
-	return results
+	for i := range releases {
+		if releases[i].ID != "" {
+			return releases[i].ID
+		}
+	}
+
+	return ""
 }
 
 func convertReleaseGroupToDetails(group *mbReleaseGroupResponse) *apiexternal_v2.ReleaseDetails {
@@ -541,7 +505,7 @@ func convertReleaseGroupToDetails(group *mbReleaseGroupResponse) *apiexternal_v2
 		Type:           group.PrimaryType,
 		SecondaryTypes: group.SecondaryTypes,
 		ReleaseGroupID: group.ID,
-		MusicBrainzID:  group.ID,
+		MusicBrainzID:  pickGroupReleaseID(group.Releases),
 		ProviderType:   apiexternal_v2.ProviderMusicBrainz,
 	}
 
@@ -575,46 +539,6 @@ func convertReleaseGroupToDetails(group *mbReleaseGroupResponse) *apiexternal_v2
 	}
 
 	return details
-}
-
-func convertRecordingSearchResults(recordings []mbRecording) []apiexternal_v2.Track {
-	results := make([]apiexternal_v2.Track, 0, len(recordings))
-
-	for i := range recordings {
-		track := apiexternal_v2.Track{
-			ID:            recordings[i].ID,
-			Title:         recordings[i].Title,
-			Duration:      time.Duration(recordings[i].Length) * time.Millisecond,
-			MusicBrainzID: recordings[i].ID,
-		}
-
-		// Artists
-		if len(recordings[i].ArtistCredit) > 0 {
-			artists := make([]apiexternal_v2.ArtistRef, 0, len(recordings[i].ArtistCredit))
-			for j := range recordings[i].ArtistCredit {
-				artists = append(artists, apiexternal_v2.ArtistRef{
-					Name: recordings[i].ArtistCredit[j].Artist.Name,
-					ID:   recordings[i].ArtistCredit[j].Artist.ID,
-				})
-			}
-
-			track.Artists = artists
-		}
-
-		// ISRC
-		if len(recordings[i].ISRCs) > 0 {
-			track.ISRC = recordings[i].ISRCs[0]
-		}
-
-		// First release date
-		if recordings[i].FirstReleaseDate != "" {
-			track.ReleaseYear = extractYear(recordings[i].FirstReleaseDate)
-		}
-
-		results = append(results, track)
-	}
-
-	return results
 }
 
 func convertRecordingToTrack(recording *mbRecordingResponse) *apiexternal_v2.Track {

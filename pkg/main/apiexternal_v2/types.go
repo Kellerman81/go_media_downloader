@@ -73,6 +73,8 @@ type SeriesSearchResult struct {
 	VoteCount    int       `json:"vote_count"`
 	Popularity   float64   `json:"popularity"`
 	ProviderName string    `json:"provider_name"`
+	TVDbID       int       `json:"tvdb_id,omitempty"`
+	IMDbID       string    `json:"imdb_id,omitempty"`
 }
 
 // SeriesDetails represents comprehensive TV series information.
@@ -233,18 +235,6 @@ type PopularSeriesResponse struct {
 	TotalPages   int                  `json:"total_pages"`
 	TotalResults int                  `json:"total_results"`
 	Results      []SeriesSearchResult `json:"results"`
-}
-
-// WatchlistItem represents an item from a user's watchlist.
-type WatchlistItem struct {
-	ID           int       `json:"id"`
-	Type         string    `json:"type"` // "movie" or "tv"
-	Title        string    `json:"title"`
-	Year         int       `json:"year"`
-	AddedAt      time.Time `json:"added_at"`
-	IMDbID       string    `json:"imdb_id"`
-	TVDbID       int       `json:"tvdb_id"`
-	ProviderName string    `json:"provider_name"`
 }
 
 // ImageCollection represents a collection of images.
@@ -444,21 +434,6 @@ const (
 	IndexerTorznab IndexerProviderType = "torznab"
 )
 
-// IndexerSearchRequest represents a search request to an indexer.
-type IndexerSearchRequest struct {
-	Query      string            `json:"query"`       // Search query
-	IMDBID     string            `json:"imdb_id"`     // IMDB ID for movie search
-	TVDBID     int               `json:"tvdb_id"`     // TVDB ID for TV search
-	Season     string            `json:"season"`      // Season number
-	Episode    string            `json:"episode"`     // Episode number
-	Categories []string          `json:"categories"`  // Category IDs
-	Limit      int               `json:"limit"`       // Max results
-	Offset     int               `json:"offset"`      // Pagination offset
-	MaxAge     int               `json:"max_age"`     // Max age in days
-	SearchType string            `json:"search_type"` // movie, tvsearch, search
-	Options    map[string]string `json:"options"`     // Provider-specific options
-}
-
 // IndexerCapabilities represents indexer capabilities.
 type IndexerCapabilities struct {
 	ServerTitle   string            `json:"server_title"`
@@ -487,8 +462,7 @@ type IndexerLimits struct {
 // Searcher/Download Types - Bridge types for compatibility with searcher package
 //
 
-// Nzb represents an NZB/Torrent found on an indexer (v2 compatible version).
-// This mirrors the apiexternal.Nzb type for backward compatibility with searcher.
+// Nzb represents an NZB/Torrent found on an indexer.
 type Nzb struct {
 	ID             string    `json:"id,omitempty"`
 	Title          string    `json:"title,omitempty"`
@@ -512,8 +486,7 @@ type Nzb struct {
 	Quality *config.QualityConfig  `json:"-"` // *config.QualityConfig
 }
 
-// Nzbwithprio represents an NZB with priority and validation information (v2 compatible version).
-// This mirrors the apiexternal.Nzbwithprio type for backward compatibility with searcher.
+// Nzbwithprio represents an NZB with priority and validation information.
 type Nzbwithprio struct {
 	NZB                 Nzb                               `json:"nzb"`
 	Info                database.ParseInfo                `json:"info"`

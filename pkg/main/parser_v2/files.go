@@ -228,12 +228,27 @@ func ParseASINFromPath(folderPath string) string {
 }
 
 // extractASINFromString finds an ASIN pattern in a string.
+//
+// Modern Amazon/Audible ASINs ("B0" + 8 uppercase alphanumerics) contain a
+// digit no ordinary word has, so they are accepted as any token. A numeric
+// ASIN is an ISBN-10, which plain numbers in a folder name easily resemble, so
+// it additionally needs a valid checksum and context: bracketed, preceded by
+// "asin", or making up the whole name.
 func extractASINFromString(s string) string {
-	words := strings.FieldsSeq(s)
-	for word := range words {
-		// Clean up the word
-		word = strings.Trim(word, "()[]")
-		if isValidASIN(word) {
+	words := strings.Fields(s)
+	for i, raw := range words {
+		word := strings.Trim(raw, "()[]")
+		if isModernASIN(word) {
+			return word
+		}
+
+		if !ValidateISBN10(word) || len(word) != 10 {
+			continue
+		}
+
+		bracketed := len(raw) > len(word)
+		prefixed := i > 0 && strings.EqualFold(strings.TrimRight(words[i-1], ":-"), "asin")
+		if bracketed || prefixed || len(words) == 1 {
 			return word
 		}
 	}
@@ -241,26 +256,16 @@ func extractASINFromString(s string) string {
 	return ""
 }
 
-// isValidASIN checks if a string looks like an ASIN.
-func isValidASIN(s string) bool {
-	if len(s) != 10 {
+// isModernASIN reports whether s has the shape of a current Amazon ASIN:
+// "B0" followed by 8 uppercase letters or digits.
+func isModernASIN(s string) bool {
+	if len(s) != 10 || s[0] != 'B' || s[1] != '0' {
 		return false
 	}
 
-	// ASINs starting with B are alphanumeric
-	if s[0] == 'B' {
-		for _, c := range s[1:] {
-			if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z')) {
-				return false
-			}
-		}
-
-		return true
-	}
-
-	// Numeric ASINs (10 digits)
-	for _, c := range s {
-		if c < '0' || c > '9' {
+	for i := 2; i < len(s); i++ {
+		c := s[i]
+		if (c < '0' || c > '9') && (c < 'A' || c > 'Z') {
 			return false
 		}
 	}
@@ -321,17 +326,14 @@ func ParseAudioFilename(filename string) *TrackInfo {
 		return info
 	}
 
-	// Fallback: try to extract just a track number from the start
-	if matches := database.GetCachedRegexp(`^(\d{1,3})`).
-		FindStringSubmatch(base); len(
-		matches,
-	) > 1 {
-		info.TrackNumber, _ = strconv.Atoi(matches[1])
-		// Remove track number and extension for title
-		title := strings.TrimPrefix(base, matches[0])
-
-		title = strings.TrimSuffix(title, filepath.Ext(title))
-		title = strings.TrimLeft(title, " -._")
+	// Fallback: try to extract just a track number from the start. The number
+	// must be followed by a separator (not a digit), otherwise a numeric title
+	// such as "1999.flac" was split into track 199 and title "9".
+	nameNoExt := strings.TrimSuffix(base, ext)
+	if loc := database.GetCachedRegexp(`^(\d{1,3})(?:$|[\s_-]|\.[^\d])`).
+		FindStringSubmatchIndex(nameNoExt); len(loc) > 3 {
+		info.TrackNumber, _ = strconv.Atoi(nameNoExt[loc[2]:loc[3]])
+		title := strings.TrimLeft(nameNoExt[loc[3]:], " -._")
 		info.Title = strings.TrimSpace(title)
 	} else {
 		// No track number found, use filename as title
@@ -592,7 +594,7 @@ func readAudioTagsCtx(ctx context.Context, filePath string, needDuration bool) (
 					info.TrackNumber = parsed.TrackNumber
 				}
 
-				if info.DiscNumber == 0 || info.DiscNumber == 1 {
+				if info.DiscNumber <= 1 && parsed.DiscNumber > 0 {
 					info.DiscNumber = parsed.DiscNumber
 				}
 			}

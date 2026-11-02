@@ -36,17 +36,8 @@ func TestLimiter(t *testing.T) {
 
 	printResults(t, "Improved Limiter", results)
 
-	// Validate that we didn't exceed rate limits
-	// Allow a tolerance for timing precision issues under high concurrency.
-	// Rate limiters can have small violations due to clock precision,
-	// goroutine scheduling, and the sliding window algorithm's inherent approximation.
-	maxAllowedViolations := int64(50) // Reasonable tolerance for 10s test with 50 goroutines
-	if results.RateLimitViolations > maxAllowedViolations {
-		t.Errorf("Improved limiter had %d rate limit violations (max allowed: %d)",
-			results.RateLimitViolations, maxAllowedViolations)
-	} else if results.RateLimitViolations > 0 {
-		t.Logf("Improved limiter had %d minor violations (within tolerance of %d)",
-			results.RateLimitViolations, maxAllowedViolations)
+	if results.RateLimitViolations > 0 {
+		t.Errorf("Improved limiter had %d rate limit violations", results.RateLimitViolations)
 	}
 }
 
@@ -78,9 +69,7 @@ func TestPerformanceValidation(t *testing.T) {
 	t.Logf("Improved - Duration: %v, Violations: %d, Allowed: %d",
 		improvedDuration, improvedResults.RateLimitViolations, improvedResults.AllowedRequests)
 
-	// Improved limiter should have minimal violations (allow tolerance for timing issues)
-	maxAllowedViolations := int64(50)
-	if improvedResults.RateLimitViolations > maxAllowedViolations {
+	if improvedResults.RateLimitViolations > 0 {
 		t.Errorf("Improved limiter had %d rate limit violations - should be zero",
 			improvedResults.RateLimitViolations)
 	}
@@ -108,6 +97,7 @@ func runConcurrencyTest(
 	var results TestResults
 	var wg sync.WaitGroup
 	var currentConcurrent atomic.Int64
+	var maxConcurrent, maxResponse atomic.Int64
 
 	// Track requests in sliding windows to detect violations
 	requestTimes := make([]time.Time, 0, 1000)
@@ -123,9 +113,8 @@ func runConcurrencyTest(
 
 			for time.Since(startTime) < testDuration {
 				// Track concurrent requests
-				currentConcurrent.Add(1)
-				if current := currentConcurrent.Load(); current > results.MaxConcurrent {
-					atomic.StoreInt64(&results.MaxConcurrent, current)
+				if current := currentConcurrent.Add(1); current > maxConcurrent.Load() {
+					maxConcurrent.Store(current)
 				}
 
 				reqStart := time.Now()
@@ -154,8 +143,8 @@ func runConcurrencyTest(
 				}
 
 				// Update average response time (simplified)
-				if reqDuration > results.AverageResponseTime {
-					results.AverageResponseTime = reqDuration
+				if int64(reqDuration) > maxResponse.Load() {
+					maxResponse.Store(int64(reqDuration))
 				}
 
 				// Small delay to make test more realistic
@@ -165,6 +154,9 @@ func runConcurrencyTest(
 	}
 
 	wg.Wait()
+
+	results.MaxConcurrent = maxConcurrent.Load()
+	results.AverageResponseTime = time.Duration(maxResponse.Load())
 
 	// Check for rate limit violations
 	results.RateLimitViolations = countRateLimitViolations(requestTimes)
@@ -189,10 +181,14 @@ func countRateLimitViolations(requestTimes []time.Time) int64 {
 		}
 	}
 
-	// Check each window for violations
+	// requestTimes are taken before Allow() acquires the lock, so they can
+	// precede the limiter's own timestamp by the lock wait; clockSlack absorbs
+	// that skew without hiding real over-admission.
+	const clockSlack = 20 * time.Millisecond
+
 	for i := range requestTimes {
 		windowStart := requestTimes[i]
-		windowEnd := windowStart.Add(testInterval)
+		windowEnd := windowStart.Add(testInterval - clockSlack)
 		count := 0
 
 		for j := i; j < len(requestTimes) && requestTimes[j].Before(windowEnd); j++ {
@@ -595,6 +591,18 @@ func TestLimiterWaitTill(t *testing.T) {
 	_, _ = lim.Allow()
 	lim.WaitTill(futureTime)
 
+	if ok, wait := lim.Check(); ok || wait < 59*time.Minute {
+		t.Errorf("Check during WaitTill block: ok=%v wait=%v", ok, wait)
+	}
+
+	if ok, wait := lim.Allow(); ok || wait < 59*time.Minute {
+		t.Errorf("Allow during WaitTill block: ok=%v wait=%v", ok, wait)
+	}
+
+	if ok, _ := lim.Reserve("x"); ok {
+		t.Error("Reserve during WaitTill block should be denied")
+	}
+
 	// The next slot should be in the future
 	active, reservations, nextAvailable := lim.Stats()
 	if nextAvailable.Before(futureTime) {
@@ -678,14 +686,65 @@ func TestZeroRateLimitViolations(t *testing.T) {
 		t.Error("Should have returned positive wait time")
 	}
 
-	// Verify metrics show no violations
 	metrics := lim.GetMetrics()
-	if metrics.Violations > 0 {
-		t.Errorf("Expected 0 violations, got %d", metrics.Violations)
+	if metrics.AllowedRequests != 3 || metrics.DeniedRequests != 1 {
+		t.Errorf("Expected 3 allowed / 1 denied, got %d / %d",
+			metrics.AllowedRequests, metrics.DeniedRequests)
+	}
+}
+
+// TestStaleEntriesDoNotAdmitBurst covers the case where the window is full of
+// expired entries shortly after a (denied) call: a following burst must still
+// be capped at max.
+func TestStaleEntriesDoNotAdmitBurst(t *testing.T) {
+	const maxReq = 3
+	lim := NewLimiter(100*time.Millisecond, maxReq)
+
+	for range maxReq {
+		lim.Allow()
 	}
 
-	// Health check should pass
-	if !lim.HealthCheck() {
-		t.Error("Health check should pass when no violations occurred")
+	time.Sleep(90 * time.Millisecond)
+
+	if ok, _ := lim.Allow(); ok {
+		t.Fatal("expected a denial while the window is still full")
+	}
+
+	// The first entries are now stale, but only just.
+	time.Sleep(15 * time.Millisecond)
+
+	allowed := 0
+	for range 20 {
+		if ok, _ := lim.Allow(); ok {
+			allowed++
+		}
+	}
+
+	if allowed != maxReq {
+		t.Fatalf("burst after stale window admitted %d requests, want %d", allowed, maxReq)
+	}
+
+	if ok, _ := lim.Check(); ok {
+		t.Fatal("Check reported free capacity on a full window")
+	}
+}
+
+// TestWaitAfterForcedOverflow checks that the wait accounts for every
+// in-window entry when AllowForce pushed the count above max.
+func TestWaitAfterForcedOverflow(t *testing.T) {
+	lim := NewLimiter(200*time.Millisecond, 1)
+
+	lim.AllowForce()
+	time.Sleep(100 * time.Millisecond)
+	lim.AllowForce()
+
+	ok, wait := lim.Check()
+	if ok {
+		t.Fatal("expected Check to deny")
+	}
+
+	// The second entry, ~200ms out, is the one that has to expire.
+	if wait < 150*time.Millisecond {
+		t.Fatalf("wait %v ignores the newer forced entry", wait)
 	}
 }

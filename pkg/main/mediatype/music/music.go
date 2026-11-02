@@ -5,11 +5,11 @@ package music
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -236,8 +236,13 @@ func (h *handler) GetDBIDsFull(
 		return logger.ErrNotFoundDbalbum
 	}
 
-	// Find album in lists (if not already found by wanted-list search)
+	// Find album in lists (if not already found by wanted-list search);
+	// a pre-set ID still needs its ListID resolved.
 	if m.AlbumID != 0 {
+		if m.ListID == -1 {
+			m.ListID = database.GetMediaListIDGetListname(cfgp, &m.AlbumID)
+		}
+
 		return nil
 	}
 
@@ -354,7 +359,7 @@ func (*handler) PerformIDSearch(
 	_ *config.QualityConfig,
 	_ *apiexternal_v2.Nzbwithprio,
 	_ int,
-	_ *apiexternal.NzbSlice,
+	_ *apiexternal_v2.NzbSlice,
 ) error {
 	// Music doesn't support ID-based search like IMDB/TVDB
 	// They use query-based search only
@@ -503,18 +508,25 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		)
 	}
 
-	database.ExecN(
+	if albumID == 0 || dbalbumID == 0 {
+		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+	}
+
+	var indexerName string
+	if nzb.NZB.Indexer != nil {
+		indexerName = nzb.NZB.Indexer.Name
+	}
+
+	return database.ExecNErr(
 		"Insert into album_histories (title, url, target, indexer, downloaded_at, album_id, dbalbum_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
 		&targetPath,
-		&nzb.NZB.Indexer.Name,
+		&indexerName,
 		&albumID,
 		&dbalbumID,
 		&qualityProfile,
 	)
-
-	return nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for an album download.
@@ -587,7 +599,7 @@ func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbalbumID
 }
 
-// GetNzbIDP returns the NzbaudiobookID field.
+// GetNzbIDP returns a pointer to the NzbalbumID field.
 func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbalbumID
 }
@@ -747,7 +759,7 @@ func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
 	return args
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// GetRefreshIncData returns data for incremental refresh (100 least recently updated
 // MusicBrainz IDs in the config's lists).
 func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	if cfgp == nil || cfgp.ListsLen == 0 {
@@ -759,7 +771,7 @@ func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.musicbrainz_release_id != '' and albums.listname in (?"+cfgp.ListsQu+") group by dbalbums.musicbrainz_release_id order by dbalbums.updated_at desc limit 100",
+		"select distinct dbalbums.musicbrainz_release_id from dbalbums inner join albums on albums.dbalbum_id = dbalbums.id where dbalbums.musicbrainz_release_id != '' and albums.listname in (?"+cfgp.ListsQu+") group by dbalbums.musicbrainz_release_id order by dbalbums.updated_at asc limit 100",
 		args...,
 	)
 }
@@ -869,15 +881,6 @@ func (*handler) SupportsAbsoluteEpisode() bool { return false }
 
 // HandleRSSListID does nothing for music - list ID is determined by album lookup.
 func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
-
-// CheckEpisodeMatch returns false - music doesn't have episode validation.
-func (*handler) CheckEpisodeMatch(
-	_, _ *apiexternal_v2.Nzbwithprio,
-	_ string,
-	_ func(string, *apiexternal_v2.Nzbwithprio),
-) bool {
-	return false
-}
 
 // SupportsVideoFile returns false - music uses audio files, not video.
 func (*handler) SupportsVideoFile() bool { return false }

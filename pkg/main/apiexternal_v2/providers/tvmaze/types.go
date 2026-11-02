@@ -1,6 +1,7 @@
 package tvmaze
 
 import (
+	"html"
 	"strings"
 	"time"
 
@@ -94,79 +95,6 @@ type tvmazeLink struct {
 	Href string `json:"href"`
 }
 
-type tvmazeSeasonResponse []tvmazeSeason
-
-type tvmazeSeason struct {
-	ID           int               `json:"id"`
-	URL          string            `json:"url"`
-	Number       int               `json:"number"`
-	Name         string            `json:"name"`
-	EpisodeOrder int               `json:"episodeOrder"`
-	PremiereDate string            `json:"premiereDate"`
-	EndDate      string            `json:"endDate"`
-	Network      *tvmazeNetwork    `json:"network"`
-	WebChannel   *tvmazeWebChannel `json:"webChannel"`
-	Image        *tvmazeImage      `json:"image"`
-	Summary      string            `json:"summary"`
-	Links        tvmazeLinks       `json:"_links"`
-}
-
-type tvmazeEpisodeResponse []tvmazeEpisode
-
-type tvmazeEpisode struct {
-	ID       int          `json:"id"`
-	URL      string       `json:"url"`
-	Name     string       `json:"name"`
-	Season   int          `json:"season"`
-	Number   int          `json:"number"`
-	Type     string       `json:"type"`
-	Airdate  string       `json:"airdate"`
-	Airtime  string       `json:"airtime"`
-	Airstamp string       `json:"airstamp"`
-	Runtime  int          `json:"runtime"`
-	Rating   tvmazeRating `json:"rating"`
-	Image    *tvmazeImage `json:"image"`
-	Summary  string       `json:"summary"`
-	Links    tvmazeLinks  `json:"_links"`
-}
-
-type tvmazeCastResponse []tvmazeCastMember
-
-type tvmazeCastMember struct {
-	Person    tvmazePerson    `json:"person"`
-	Character tvmazeCharacter `json:"character"`
-	Self      bool            `json:"self"`
-	Voice     bool            `json:"voice"`
-}
-
-type tvmazePerson struct {
-	ID       int            `json:"id"`
-	URL      string         `json:"url"`
-	Name     string         `json:"name"`
-	Country  *tvmazeCountry `json:"country"`
-	Birthday string         `json:"birthday"`
-	Deathday string         `json:"deathday"`
-	Gender   string         `json:"gender"`
-	Image    *tvmazeImage   `json:"image"`
-	Updated  int64          `json:"updated"`
-	Links    tvmazeLinks    `json:"_links"`
-}
-
-type tvmazeCharacter struct {
-	ID    int          `json:"id"`
-	URL   string       `json:"url"`
-	Name  string       `json:"name"`
-	Image *tvmazeImage `json:"image"`
-	Links tvmazeLinks  `json:"_links"`
-}
-
-type tvmazeCrewResponse []tvmazeCrewMember
-
-type tvmazeCrewMember struct {
-	Type   string       `json:"type"`
-	Person tvmazePerson `json:"person"`
-}
-
 //
 // Conversion Functions
 //
@@ -186,6 +114,8 @@ func convertSearchResults(
 			PosterPath:   getImageURL(tvmazeResults[i].Show.Image),
 			VoteAverage:  tvmazeResults[i].Show.Rating.Average,
 			ProviderName: provider,
+			TVDbID:       tvmazeResults[i].Show.Externals.TVDB,
+			IMDbID:       tvmazeResults[i].Show.Externals.IMDB,
 		})
 	}
 
@@ -242,93 +172,6 @@ func convertShowToDetails(show *tvmazeShow) *apiexternal_v2.SeriesDetails {
 	}
 }
 
-func convertSeasonToDetails(season *tvmazeSeason) *apiexternal_v2.Season {
-	return &apiexternal_v2.Season{
-		ID:           season.ID,
-		SeasonNumber: season.Number,
-		Name:         season.Name,
-		Overview:     stripHTML(season.Summary),
-		AirDate:      parseTVMazeDate(season.PremiereDate),
-		PosterPath:   getImageURL(season.Image),
-		EpisodeCount: season.EpisodeOrder,
-	}
-}
-
-func convertEpisodeToDetails(episode *tvmazeEpisode) *apiexternal_v2.Episode {
-	return &apiexternal_v2.Episode{
-		ID:            episode.ID,
-		EpisodeNumber: episode.Number,
-		SeasonNumber:  episode.Season,
-		Name:          episode.Name,
-		Overview:      stripHTML(episode.Summary),
-		AirDate:       parseTVMazeDate(episode.Airdate),
-		Runtime:       episode.Runtime,
-		StillPath:     getImageURL(episode.Image),
-		VoteAverage:   episode.Rating.Average,
-	}
-}
-
-func convertCastToCredits(cast []tvmazeCastMember) *apiexternal_v2.Credits {
-	castMembers := make([]apiexternal_v2.CastMember, len(cast))
-	for i, c := range cast {
-		castMembers[i] = apiexternal_v2.CastMember{
-			ID:          c.Person.ID,
-			Name:        c.Person.Name,
-			Character:   c.Character.Name,
-			Order:       i,
-			ProfilePath: getImageURL(c.Person.Image),
-		}
-	}
-
-	return &apiexternal_v2.Credits{
-		Cast: castMembers,
-		Crew: []apiexternal_v2.CrewMember{}, // Crew handled separately
-	}
-}
-
-func convertCrewToCredits(crew []tvmazeCrewMember) []apiexternal_v2.CrewMember {
-	crewMembers := make([]apiexternal_v2.CrewMember, len(crew))
-	for i, c := range crew {
-		crewMembers[i] = apiexternal_v2.CrewMember{
-			ID:          c.Person.ID,
-			Name:        c.Person.Name,
-			Job:         c.Type,
-			Department:  c.Type,
-			ProfilePath: getImageURL(c.Person.Image),
-		}
-	}
-
-	return crewMembers
-}
-
-func convertExternalsToExternalIDs(
-	externals tvmazeExternals,
-	_ int,
-) *apiexternal_v2.ExternalIDs {
-	return &apiexternal_v2.ExternalIDs{
-		IMDbID: externals.IMDB,
-		TVDbID: externals.TVDB,
-	}
-}
-
-func convertImagesToCollection(image *tvmazeImage) *apiexternal_v2.ImageCollection {
-	images := &apiexternal_v2.ImageCollection{
-		Posters:   []apiexternal_v2.Image{},
-		Backdrops: []apiexternal_v2.Image{},
-		Logos:     []apiexternal_v2.Image{},
-	}
-
-	if image != nil {
-		img := apiexternal_v2.Image{
-			FilePath: image.Original,
-		}
-
-		images.Posters = append(images.Posters, img)
-	}
-
-	return images
-}
-
 //
 // Helper Functions
 //
@@ -373,11 +216,11 @@ func stripHTML(s string) string {
 		}
 
 		if !inTag {
-			result.WriteString(string(r))
+			result.WriteRune(r)
 		}
 	}
 
-	return result.String()
+	return html.UnescapeString(result.String())
 }
 
 func getImageURL(image *tvmazeImage) string {

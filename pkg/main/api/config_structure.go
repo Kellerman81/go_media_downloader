@@ -2,15 +2,20 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -358,6 +363,9 @@ func renderFolderStructurePage(csrfToken string) gomponents.Node {
 func previewFolderOrganization(
 	ctx context.Context,
 	folderPath string,
+	mediaTypeConfig *config.MediaTypeConfig,
+	sourceTemplate, targetTemplate string,
+	manualID uint,
 ) (*FolderOrganizationResults, error) {
 	startTime := time.Now()
 	results := &FolderOrganizationResults{
@@ -365,7 +373,22 @@ func previewFolderOrganization(
 		Errors:         make([]OrganizationError, 0),
 	}
 
-	// Walk through the folder to find media files
+	// Music and audiobooks are organized per album folder through the API
+	// matching workflow, which has no single-file preview.
+	if mediaTypeConfig.IsType == config.MediaTypeMusic ||
+		mediaTypeConfig.IsType == config.MediaTypeAudiobook {
+		return nil, errors.New(
+			"dry run is not available for music/audiobook configs - use the album force-match preview",
+		)
+	}
+
+	sourcepathCfg := config.GetSettingsPath(sourceTemplate)
+	if sourcepathCfg == nil {
+		return nil, fmt.Errorf("path template %q: %w", sourceTemplate, logger.ErrNotFound)
+	}
+
+	// Mirrors the file selection of structure.OrganizeSingleFolder and the
+	// naming/target computation of the real organizer (PreviewOrganizeFile).
 	err := filepath.WalkDir(folderPath, func(fpath string, info os.DirEntry, errw error) error {
 		if errw != nil {
 			results.Errors = append(results.Errors, OrganizationError{
@@ -386,42 +409,50 @@ func previewFolderOrganization(
 
 		results.TotalFiles++
 
-		// Check if it's a media file
 		ext := filepath.Ext(info.Name())
 		if ext == "" {
 			return nil
 		}
 
-		// For preview, we'll simulate the organization process
-		// In a real implementation, this would use the actual parser and structure logic
-		mediaTitle := "Example Media"
-		mediaYear := fmt.Sprintf("%d", time.Now().Year())
-		quality := "1080p"
-		resolution := "HD"
-
-		// Simulate what the organized path would be
-		targetPath := filepath.Join(
-			folderPath,
-			"organized",
-			mediaTitle+" ("+mediaYear+")",
-			info.Name(),
-		)
-
-		operation := FileOperation{
-			SourcePath: fpath,
-			TargetPath: targetPath,
-			Operation:  "move",
-			Reason:     "Preview - would organize this file",
-			MediaTitle: mediaTitle,
-			MediaYear:  mediaYear,
-			Quality:    quality,
-			Resolution: resolution,
+		if ok, _ := scanner.CheckExtensionsType(mediaTypeConfig.IsType, false, sourcepathCfg, ext); !ok {
+			return nil
 		}
 
-		results.FileOperations = append(results.FileOperations, operation)
+		if logger.SlicesContainsPart2I(sourcepathCfg.Disallowed, fpath) ||
+			(sourcepathCfg.BlockedLen >= 1 && logger.SlicesContainsPart2I(sourcepathCfg.Blocked, fpath)) {
+			results.SkippedFiles++
+			results.FileOperations = append(results.FileOperations, FileOperation{
+				SourcePath: fpath,
+				Operation:  "skip",
+				Reason:     "Path is disallowed or blocked",
+			})
+
+			return nil
+		}
+
 		results.ProcessedFiles++
 
+		preview, perr := structure.PreviewOrganizeFile(fpath, mediaTypeConfig, sourceTemplate, targetTemplate, manualID)
+		if perr != nil {
+			results.SkippedFiles++
+			results.FileOperations = append(results.FileOperations, FileOperation{
+				SourcePath: fpath,
+				Operation:  "skip",
+				Reason:     "Would not be organized: " + perr.Error(),
+			})
+
+			return nil
+		}
+
 		results.OrganizedFiles++
+		results.FileOperations = append(results.FileOperations, FileOperation{
+			SourcePath: fpath,
+			TargetPath: filepath.Join(preview.TargetFolder, preview.TargetFile+ext),
+			Operation:  "move",
+			Reason:     "Preview - would organize this file",
+			MediaTitle: preview.Title,
+			MediaYear:  strconv.Itoa(preview.Year),
+		})
 
 		return nil
 	})
@@ -429,25 +460,35 @@ func previewFolderOrganization(
 		return nil, err
 	}
 
-	// Calculate summary
-	processingTime := time.Since(startTime)
-
 	results.Summary = OrganizationSummary{
-		ProcessingTime:   processingTime.String(),
-		MovedFiles:       results.OrganizedFiles,
-		RenamedFiles:     0,
-		DeletedFiles:     0,
-		CreatedFolders:   results.OrganizedFiles, // Estimate one folder per file
-		RuntimeVerified:  0,
-		LanguageFiltered: 0,
+		ProcessingTime: time.Since(startTime).String(),
+		MovedFiles:     results.OrganizedFiles,
 	}
 
 	return results, nil
 }
 
-// organizeFolderWithResults organizes a folder and returns detailed results.
+// countFolderFiles returns the number of regular files below folderPath.
+func countFolderFiles(folderPath string) int {
+	n := 0
+
+	filepath.WalkDir(folderPath, func(_ string, info os.DirEntry, errw error) error {
+		if errw == nil && !info.IsDir() {
+			n++
+		}
+
+		return nil
+	})
+
+	return n
+}
+
+// organizeFolderWithResults queues the real organization of a folder as a
+// background job. Moving files (possibly across filesystems, with runtime
+// probes) can take far longer than an HTTP request, so it runs on the Data
+// worker queue with the job's own context; the job logs how many files left
+// the folder.
 func organizeFolderWithResults(
-	ctx context.Context,
 	folderPath string,
 	mediaTypeConfig *config.MediaTypeConfig,
 	dataImportConfig *config.MediaDataImportConfig,
@@ -457,70 +498,49 @@ func organizeFolderWithResults(
 ) (*FolderOrganizationResults, error) {
 	startTime := time.Now()
 	results := &FolderOrganizationResults{
-		FileOperations: make([]FileOperation, 0),
+		FileOperations: make([]FileOperation, 0, 1),
 		Errors:         make([]OrganizationError, 0),
+		TotalFiles:     countFolderFiles(folderPath),
 	}
 
-	// Use the actual OrganizeSingleFolder function
-	err := structure.OrganizeSingleFolder(
-		ctx,
-		folderPath,
-		mediaTypeConfig,
-		dataImportConfig,
-		defaultTemplate,
-		checkRuntime,
-		deleteWrongLanguage,
-		manualID,
+	err := worker.Dispatch(
+		"structure_"+mediaTypeConfig.NamePrefix+"_"+folderPath,
+		func(_ uint32, ctx context.Context) error {
+			before := countFolderFiles(folderPath)
+
+			err := structure.OrganizeSingleFolder(
+				ctx,
+				folderPath,
+				mediaTypeConfig,
+				dataImportConfig,
+				defaultTemplate,
+				checkRuntime,
+				deleteWrongLanguage,
+				manualID,
+			)
+
+			logger.Logtype("info", 0).
+				Str(logger.StrPath, folderPath).
+				Int("files_before", before).
+				Int("files_moved", before-countFolderFiles(folderPath)).
+				Err(err).
+				Msg("manual folder organization finished")
+
+			return err
+		},
+		"Data",
 	)
 	if err != nil {
-		results.Errors = append(results.Errors, OrganizationError{
-			FilePath: folderPath,
-			Error:    err.Error(),
-		})
-		results.ErrorFiles++
-	} else {
-		results.OrganizedFiles++
+		return nil, fmt.Errorf("could not queue organization job: %w", err)
 	}
 
-	// Count total files in folder
-	filepath.WalkDir(folderPath, func(_ string, info os.DirEntry, errw error) error {
-		if errw != nil || info.IsDir() {
-			return nil
-		}
-
-		results.TotalFiles++
-
-		return nil
+	results.FileOperations = append(results.FileOperations, FileOperation{
+		SourcePath: folderPath,
+		Operation:  "queued",
+		Reason:     "Organization queued as a background job - see the scheduler/job history and the log (\"manual folder organization finished\") for the number of files moved",
 	})
 
-	results.ProcessedFiles = results.TotalFiles - results.ErrorFiles
-
-	// Calculate summary
-	processingTime := time.Since(startTime)
-
-	results.Summary = OrganizationSummary{
-		ProcessingTime:   processingTime.String(),
-		MovedFiles:       results.OrganizedFiles,
-		RenamedFiles:     0, // This would be tracked by the actual organization
-		DeletedFiles:     0, // This would be tracked by the actual organization
-		CreatedFolders:   0, // This would be tracked by the actual organization
-		RuntimeVerified:  0, // This would be tracked by the actual organization
-		LanguageFiltered: 0, // This would be tracked by the actual organization
-	}
-
-	// Add a general operation result since we don't have detailed tracking yet
-	if err == nil {
-		results.FileOperations = append(results.FileOperations, FileOperation{
-			SourcePath: folderPath,
-			TargetPath: "Organized according to configuration",
-			Operation:  "organize",
-			Reason:     "Folder organization completed successfully",
-			MediaTitle: "",
-			MediaYear:  "",
-			Quality:    "",
-			Resolution: "",
-		})
-	}
+	results.Summary = OrganizationSummary{ProcessingTime: time.Since(startTime).String()}
 
 	return results, nil
 }
@@ -582,12 +602,6 @@ func HandleFolderStructure(c *gin.Context) {
 		dataImportConfig.TemplatePath = defaultTemplate
 	}
 
-	// Run folder organization or preview
-	ctx := context.Background()
-
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	var (
 		organizationResults *FolderOrganizationResults
 		err                 error
@@ -595,11 +609,20 @@ func HandleFolderStructure(c *gin.Context) {
 
 	if dryRun {
 		// Preview mode - scan folder and show what would be organized
-		organizationResults, err = previewFolderOrganization(ctx, folderPath)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+
+		organizationResults, err = previewFolderOrganization(
+			ctx,
+			folderPath,
+			mediaTypeConfig,
+			dataImportConfig.TemplatePath,
+			defaultTemplate,
+			manualID,
+		)
 	} else {
 		// Actual organization
 		organizationResults, err = organizeFolderWithResults(
-			ctx,
 			folderPath,
 			mediaTypeConfig,
 			dataImportConfig,
@@ -726,7 +749,7 @@ func renderFolderStructureResults(result map[string]any) string {
 						return "Preview (Dry Run)"
 					}
 
-					return "Actual Organization"
+					return "Actual Organization (queued as background job)"
 				}()))),
 			),
 		),
@@ -834,6 +857,8 @@ func renderFolderStructureResults(result map[string]any) string {
 				operationClass += " list-group-item-warning"
 			case "error":
 				operationClass += " list-group-item-danger"
+			case "queued":
+				operationClass += " list-group-item-info"
 			}
 
 			operationItems = append(operationItems, html.Div(

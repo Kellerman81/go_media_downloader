@@ -37,6 +37,17 @@ func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
 		cfg.Timeout = 30 * time.Second
 	}
 
+	// The configured MusicBrainz limits apply to every instance; the built-in
+	// limits below are only the fallback for 0.
+	general := config.GetSettingsGeneral()
+	if cfg.RateLimitCalls == 0 {
+		cfg.RateLimitCalls = general.MusicBrainzLimiterCalls
+	}
+
+	if cfg.RateLimitSeconds == 0 {
+		cfg.RateLimitSeconds = int(general.MusicBrainzLimiterSeconds)
+	}
+
 	// MusicBrainz requires 1 request per second rate limit
 	if cfg.RateLimitCalls == 0 {
 		cfg.RateLimitCalls = 3
@@ -81,9 +92,7 @@ func (p *Provider) SearchArtists(
 	query string,
 	limit int,
 ) ([]apiexternal_v2.ArtistSearchResult, error) {
-	if limit <= 0 {
-		limit = 25
-	}
+	limit = clampLimit(limit)
 
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/artist?query=")
@@ -131,9 +140,7 @@ func (p *Provider) GetArtistReleases(
 	limit int,
 	offset int,
 ) ([]apiexternal_v2.ReleaseSearchResult, error) {
-	if limit <= 0 {
-		limit = 25
-	}
+	limit = clampLimit(limit)
 
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/release?artist=")
@@ -142,7 +149,7 @@ func (p *Provider) GetArtistReleases(
 	buf.WriteInt(limit)
 	buf.WriteString("&offset=")
 	buf.WriteInt(offset)
-	buf.WriteString("&inc=labels%2Bmedia&fmt=json")
+	buf.WriteString("&inc=artist-credits%2Blabels%2Bmedia%2Brelease-groups&fmt=json")
 
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
@@ -166,9 +173,7 @@ func (p *Provider) SearchReleases(
 	limit int,
 	offset int,
 ) ([]apiexternal_v2.ReleaseSearchResult, int, error) {
-	if limit <= 0 {
-		limit = 25
-	}
+	limit = clampLimit(limit)
 
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/release?query=")
@@ -199,7 +204,7 @@ func (p *Provider) GetReleaseByID(
 	buf.WriteString("/release/")
 	buf.WriteString(mbid)
 	buf.WriteString(
-		"?inc=artists%2Blabels%2Brecordings%2Brelease-groups%2Bmedia%2Btags%2Bratings&fmt=json",
+		"?inc=artists%2Blabels%2Brecordings%2Brelease-groups%2Bmedia%2Btags%2Bisrcs&fmt=json",
 	)
 
 	endpoint := buf.String()
@@ -242,34 +247,6 @@ func (p *Provider) GetReleaseByBarcode(
 //
 // Recording Methods
 //
-
-// SearchRecordings searches for recordings (tracks).
-func (p *Provider) SearchRecordings(
-	ctx context.Context,
-	query string,
-	limit int,
-) ([]apiexternal_v2.Track, error) {
-	if limit <= 0 {
-		limit = 25
-	}
-
-	buf := logger.PlAddBuffer.Get()
-	buf.WriteString("/recording?query=")
-	buf.WriteURL(query)
-	buf.WriteString("&limit=")
-	buf.WriteInt(limit)
-	buf.WriteString("&fmt=json")
-
-	endpoint := buf.String()
-	logger.PlAddBuffer.Put(buf)
-
-	var response mbRecordingSearchResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return convertRecordingSearchResults(response.Recordings), nil
-}
 
 // GetRecordingByID retrieves recording details by MusicBrainz ID.
 func (p *Provider) GetRecordingByID(
@@ -327,7 +304,7 @@ func (p *Provider) GetReleaseIDsByDiscID(
 	buf := logger.PlAddBuffer.Get()
 	buf.WriteString("/discid/")
 	buf.WriteString(discID)
-	buf.WriteString("?inc=releases&fmt=json")
+	buf.WriteString("?fmt=json")
 
 	endpoint := buf.String()
 	logger.PlAddBuffer.Put(buf)
@@ -398,34 +375,6 @@ func (p *Provider) GetReleaseIDsByISRC(
 // Release Group Methods
 //
 
-// SearchReleaseGroups searches for release groups (albums across editions).
-func (p *Provider) SearchReleaseGroups(
-	ctx context.Context,
-	query string,
-	limit int,
-) ([]apiexternal_v2.ReleaseSearchResult, error) {
-	if limit <= 0 {
-		limit = 25
-	}
-
-	buf := logger.PlAddBuffer.Get()
-	buf.WriteString("/release-group?query=")
-	buf.WriteURL(query)
-	buf.WriteString("&limit=")
-	buf.WriteInt(limit)
-	buf.WriteString("&fmt=json")
-
-	endpoint := buf.String()
-	logger.PlAddBuffer.Put(buf)
-
-	var response mbReleaseGroupSearchResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return convertReleaseGroupSearchResults(response.ReleaseGroups), nil
-}
-
 // GetReleaseGroupByID retrieves release group details by MusicBrainz ID.
 func (p *Provider) GetReleaseGroupByID(
 	ctx context.Context,
@@ -467,4 +416,14 @@ func (p *Provider) GetLabelByID(ctx context.Context, mbid string) (*mbLabelRespo
 	}
 
 	return &response, nil
+}
+
+// clampLimit applies the default page size and caps it at MusicBrainz's
+// maximum of 100 results per request.
+func clampLimit(limit int) int {
+	if limit <= 0 {
+		return 25
+	}
+
+	return min(limit, 100)
 }

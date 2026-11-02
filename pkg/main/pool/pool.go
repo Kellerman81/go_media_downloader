@@ -11,11 +11,9 @@ import (
 
 // Common pool errors.
 var (
-	ErrPoolClosed       = errors.New("pool is closed")
 	ErrNilObject        = errors.New("cannot put nil object")
 	ErrPoolFull         = errors.New("pool is full")
 	ErrInvalidOperation = errors.New("invalid pool operation")
-	ErrTimeout          = errors.New("operation timed out")
 )
 
 // PoolStats provides observability metrics for pool operations. All counters
@@ -28,15 +26,14 @@ var (
 // Snapshot() to get a plain, freely-copyable point-in-time snapshot instead.
 type PoolStats struct {
 	// Basic pool metrics
-	Gets        atomic.Int64 // Total Get() calls
-	Puts        atomic.Int64 // Total Put() calls
-	Creates     atomic.Int64 // Total NewObj() calls
-	Hits        atomic.Int64 // Get() calls that reused existing objects
-	Misses      atomic.Int64 // Get() calls that created new objects
-	Rejects     atomic.Int64 // Put() calls rejected by destructor
-	Fails       atomic.Int64 // Put() calls that failed (pool full)
-	MaxSize     int          // Maximum pool capacity (set once under Poolobj.mu, not atomic)
-	CurrentSize atomic.Int64 // Current number of objects in pool
+	Gets    atomic.Int64 // Total Get() calls
+	Puts    atomic.Int64 // Total Put() calls
+	Creates atomic.Int64 // Total NewObj() calls
+	Hits    atomic.Int64 // Get() calls that reused existing objects
+	Misses  atomic.Int64 // Get() calls that created new objects
+	Rejects atomic.Int64 // Put() calls rejected by destructor
+	Fails   atomic.Int64 // Put() calls that failed (pool full)
+	MaxSize int          // Maximum pool capacity (set once under Poolobj.mu, not atomic)
 
 	// Performance metrics
 	TotalGetTime    atomic.Int64 // Total time spent in Get() operations (nanoseconds)
@@ -55,7 +52,7 @@ type PoolStatsSnapshot struct {
 	Rejects         int64
 	Fails           int64
 	MaxSize         int
-	CurrentSize     int64
+	CurrentSize     int64 // set by Poolobj.Stats from the channel length
 	TotalGetTime    int64
 	TotalPutTime    int64
 	TotalCreateTime int64
@@ -72,7 +69,6 @@ func (s *PoolStats) Snapshot() PoolStatsSnapshot {
 		Rejects:         s.Rejects.Load(),
 		Fails:           s.Fails.Load(),
 		MaxSize:         s.MaxSize,
-		CurrentSize:     s.CurrentSize.Load(),
 		TotalGetTime:    s.TotalGetTime.Load(),
 		TotalPutTime:    s.TotalPutTime.Load(),
 		TotalCreateTime: s.TotalCreateTime.Load(),
@@ -151,7 +147,6 @@ type Poolobj[t any] struct {
 
 	// Enhanced features
 	stats   PoolStats
-	closed  atomic.Int32 // atomic bool for closed state
 	maxSize int          // maximum pool capacity
 	mu      sync.RWMutex // for pool state operations
 }
@@ -167,56 +162,15 @@ func (p *Poolobj[t]) Get() *t {
 
 	p.stats.Gets.Add(1)
 
-	if p.closed.Load() == 1 {
-		return nil
-	}
-
 	select {
 	case obj := <-p.objs:
 		p.stats.Hits.Add(1)
-		p.stats.CurrentSize.Add(-1)
 		return obj
 
 	default:
 		p.stats.Misses.Add(1)
 		return p.NewObj()
 	}
-}
-
-// GetWithContext retrieves an object from the pool with context support.
-// Returns an object and nil error on success, or nil object and error on failure.
-func (p *Poolobj[t]) GetWithContext(ctx context.Context) (*t, error) {
-	start := time.Now()
-	defer func() {
-		p.stats.TotalGetTime.Add(int64(time.Since(start)))
-	}()
-
-	p.stats.Gets.Add(1)
-
-	if p.closed.Load() == 1 {
-		return nil, ErrPoolClosed
-	}
-
-	select {
-	case obj := <-p.objs:
-		p.stats.Hits.Add(1)
-		p.stats.CurrentSize.Add(-1)
-		return obj, nil
-
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-		p.stats.Misses.Add(1)
-		return p.NewObj(), nil
-	}
-}
-
-// GetWithTimeout retrieves an object from the pool with a timeout.
-// If no object is available and timeout expires, returns nil.
-func (p *Poolobj[t]) GetWithTimeout(timeout time.Duration) (*t, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return p.GetWithContext(ctx)
 }
 
 // NewObj creates a new object of type T, optionally initializing it using the pool's constructor function.
@@ -238,9 +192,9 @@ func (p *Poolobj[t]) NewObj() *t {
 	return &bo
 }
 
-// Put returns an object to the pool.
-// If the pool is not at capacity, it calls the destructor function if provided,
-// then sends the object back on the channel. Uses non-blocking channel operation to avoid race conditions.
+// Put returns an object to the pool and reports whether it was kept.
+// If the pool has room, the destructor (if any) resets the object and may
+// reject it; a full pool drops the object without running the destructor.
 func (p *Poolobj[t]) Put(bo *t) bool {
 	err := p.PutWithError(bo)
 	return err == nil
@@ -260,11 +214,13 @@ func (p *Poolobj[t]) PutWithError(bo *t) error {
 		return ErrNilObject
 	}
 
-	if p.closed.Load() == 1 {
-		return ErrPoolClosed
+	// Cheap pre-check so a full pool doesn't pay for resetting an object it
+	// is going to drop anyway; the non-blocking send below stays authoritative.
+	if len(p.objs) >= cap(p.objs) {
+		p.stats.Fails.Add(1)
+		return ErrPoolFull
 	}
 
-	// Call destructor if provided
 	if p.destructor != nil {
 		if p.destructor(bo) {
 			p.stats.Rejects.Add(1)
@@ -272,52 +228,13 @@ func (p *Poolobj[t]) PutWithError(bo *t) error {
 		}
 	}
 
-	// Try to put object back in pool using non-blocking send
 	select {
 	case p.objs <- bo:
-		p.stats.CurrentSize.Add(1)
 		return nil
 
 	default:
 		p.stats.Fails.Add(1)
 		return ErrPoolFull
-	}
-}
-
-// PutWithContext returns an object to the pool with context support.
-// Returns nil on success, or an appropriate error on failure.
-func (p *Poolobj[t]) PutWithContext(ctx context.Context, bo *t) error {
-	start := time.Now()
-	defer func() {
-		p.stats.TotalPutTime.Add(int64(time.Since(start)))
-	}()
-
-	p.stats.Puts.Add(1)
-
-	if bo == nil {
-		return ErrNilObject
-	}
-
-	if p.closed.Load() == 1 {
-		return ErrPoolClosed
-	}
-
-	// Call destructor if provided
-	if p.destructor != nil {
-		if p.destructor(bo) {
-			p.stats.Rejects.Add(1)
-			return ErrInvalidOperation
-		}
-	}
-
-	// Try to put object back in pool
-	select {
-	case p.objs <- bo:
-		p.stats.CurrentSize.Add(1)
-		return nil
-
-	case <-ctx.Done():
-		return ctx.Err()
 	}
 }
 
@@ -336,7 +253,6 @@ func (p *Poolobj[t]) Init(maxsize, initcreate int, constructor func(*t), destruc
 	p.destructor = destructor
 	p.maxSize = maxsize
 	p.stats.MaxSize = maxsize
-	p.closed.Store(0)
 
 	p.objs = make(chan *t, maxsize)
 
@@ -360,8 +276,9 @@ func (p *Poolobj[t]) Init(maxsize, initcreate int, constructor func(*t), destruc
 // constructor, if non-nil, is called whenever a new object needs to be
 // created.
 //
-// destructor, if non-nil, is called whenever an object is removed from
-// the pool.
+// destructor, if non-nil, is called on every Put that has room in the pool,
+// before the object is stored, to reset it. Returning true rejects the
+// object (it is dropped instead of pooled), e.g. to discard oversized buffers.
 func NewPool[t any](
 	maxsize, initcreate int,
 	constructor func(*t),
@@ -375,7 +292,7 @@ func NewPool[t any](
 // Len returns the current number of objects in the pool.
 // This provides visibility into pool utilization.
 func (p *Poolobj[t]) Len() int {
-	return int(p.stats.CurrentSize.Load())
+	return len(p.objs)
 }
 
 // Cap returns the maximum capacity of the pool.
@@ -388,16 +305,15 @@ func (p *Poolobj[t]) Cap() int {
 // Stats returns a snapshot of the current pool statistics.
 // This provides comprehensive observability into pool performance.
 func (p *Poolobj[t]) Stats() PoolStatsSnapshot {
-	return p.stats.Snapshot()
+	snap := p.stats.Snapshot()
+	snap.CurrentSize = int64(len(p.objs))
+
+	return snap
 }
 
 // IsHealthy returns true if the pool is in a healthy state.
-// A pool is considered healthy if it's not closed and has reasonable hit rates.
+// A pool is considered healthy if it has reasonable hit rates.
 func (p *Poolobj[t]) IsHealthy() bool {
-	if p.closed.Load() == 1 {
-		return false
-	}
-
 	stats := p.stats.Snapshot()
 	// Consider the pool healthy if we have a reasonable hit rate (>= 10%)
 	// or if we haven't had enough operations to judge yet
@@ -406,99 +322,6 @@ func (p *Poolobj[t]) IsHealthy() bool {
 	}
 
 	return stats.HitRate() >= 0.1
-}
-
-// IsClosed returns true if the pool has been closed.
-func (p *Poolobj[t]) IsClosed() bool {
-	return p.closed.Load() == 1
-}
-
-// Close drains and closes the pool, preventing further operations.
-// Returns the number of objects that were drained from the pool.
-func (p *Poolobj[t]) Close() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.closed.Load() == 1 {
-		return 0 // Already closed
-	}
-
-	p.closed.Store(1)
-
-	// Drain the pool
-	var drained int
-	for {
-		select {
-		case <-p.objs:
-			drained++
-
-			p.stats.CurrentSize.Add(-1)
-
-		default:
-			return drained
-		}
-	}
-}
-
-// Drain removes all objects from the pool without closing it.
-// Returns the number of objects that were drained.
-// This can be useful for clearing the pool when object state might be stale.
-func (p *Poolobj[t]) Drain() int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.closed.Load() == 1 {
-		return 0
-	}
-
-	var drained int
-	for {
-		select {
-		case <-p.objs:
-			drained++
-
-			p.stats.CurrentSize.Add(-1)
-
-		default:
-			return drained
-		}
-	}
-}
-
-// Reset clears all statistics and drains the pool.
-// The pool remains open and functional after reset.
-func (p *Poolobj[t]) Reset() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.closed.Load() == 1 {
-		return
-	}
-
-	// Drain the pool
-	for {
-		select {
-		case <-p.objs:
-			p.stats.CurrentSize.Add(-1)
-		default:
-			goto resetStats
-		}
-	}
-
-resetStats:
-	// Reset all statistics
-	p.stats.Gets.Store(0)
-
-	p.stats.Puts.Store(0)
-	p.stats.Creates.Store(0)
-	p.stats.Hits.Store(0)
-	p.stats.Misses.Store(0)
-	p.stats.Rejects.Store(0)
-	p.stats.Fails.Store(0)
-	p.stats.CurrentSize.Store(0)
-	p.stats.TotalGetTime.Store(0)
-	p.stats.TotalPutTime.Store(0)
-	p.stats.TotalCreateTime.Store(0)
 }
 
 // UtilizationPercent returns the current pool utilization as a percentage (0.0-1.0).
@@ -516,25 +339,6 @@ func (p *Poolobj[t]) UtilizationPercent() float64 {
 // IsAtCapacity returns true if the pool is at maximum capacity.
 func (p *Poolobj[t]) IsAtCapacity() bool {
 	return p.Len() >= p.Cap()
-}
-
-// Warmup pre-fills the pool with the specified number of objects.
-// This can be useful for improving initial performance by avoiding
-// object creation during the first requests.
-func (p *Poolobj[t]) Warmup(count int) int {
-	if p.closed.Load() == 1 {
-		return 0
-	}
-
-	var created int
-	for i := 0; i < count && !p.IsAtCapacity(); i++ {
-		obj := p.NewObj()
-		if p.Put(obj) {
-			created++
-		}
-	}
-
-	return created
 }
 
 // SizedWaitGroupStats provides observability for SizedWaitGroup operations.

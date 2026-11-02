@@ -61,10 +61,16 @@ type APIResponse struct {
 type Config struct {
 	SiteName           string
 	StartURL           string
-	SiteID             uint
 	FilterCollectionID int
-	FirstPageDBOnly    bool
-	SerieName          string
+	// FilterBrandID filters by brand instead of collection. Aylo has reassigned
+	// collectionId values over time (e.g. collectionId 21 used to be "We Live
+	// Together" but now points at a defunct, unrelated collection that stopped
+	// updating in 2017); brandId is the current, stable way to filter by site
+	// when a site's own collectionId has gone stale like this. Takes priority
+	// over FilterCollectionID when both are set.
+	FilterBrandID   int
+	FirstPageDBOnly bool
+	SerieName       string
 }
 
 // Scraper handles scraping from Project1Service API.
@@ -94,6 +100,17 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 
 	if cfg.SerieName == "" {
 		return nil, errors.New("series name is required")
+	}
+
+	// Running without a filter is documented ("0 to disable filtering") and
+	// used by single-brand sites whose instance token already scopes the
+	// catalog, so it stays allowed - but make it visible, because on a
+	// network-wide token it imports every brand's scenes into this series.
+	if cfg.FilterBrandID == 0 && cfg.FilterCollectionID == 0 {
+		logger.Logtype(logger.StatusWarning, 0).
+			Str("site", cfg.SiteName).
+			Str("start_url", cfg.StartURL).
+			Msg("project1service scraper has no filter_brand_id or filter_collection_id; all releases visible to the site's instance token will be imported")
 	}
 
 	return &Scraper{
@@ -205,7 +222,9 @@ func (s *Scraper) buildURL(page int) string {
 		params.Add("offset", fmt.Sprintf("%d", offset))
 	}
 
-	if s.config.FilterCollectionID != 0 {
+	if s.config.FilterBrandID != 0 {
+		params.Add("brandId", fmt.Sprintf("%d", s.config.FilterBrandID))
+	} else if s.config.FilterCollectionID != 0 {
 		params.Add("collectionId", fmt.Sprintf("%d", s.config.FilterCollectionID))
 	}
 
@@ -290,7 +309,7 @@ func buildProject1ItemURL(startURL string, id int, title string) string {
 	startURL = strings.ReplaceAll(startURL, "/videos/", "/video/")
 	startURL = strings.ReplaceAll(startURL, "/scenes/", "/scene/")
 
-	return startURL + strconv.Itoa(id) + "/" + cleanTitle(title)
+	return strings.TrimRight(startURL, "/") + "/" + strconv.Itoa(id) + "/" + cleanTitle(title)
 }
 
 // createEpisode creates or updates an episode in the database.
@@ -302,6 +321,10 @@ func buildProject1ItemURL(startURL string, id int, title string) string {
 // Returns:
 //   - error: Any errors during episode creation
 func (s *Scraper) createEpisode(_ context.Context, release *SceneRelease) error {
+	if release.ID == 0 {
+		return errors.New("release id is zero")
+	}
+
 	if release.DateReleased.IsZero() {
 		return fmt.Errorf("invalid date for scene: %s", release.Title)
 	}
@@ -454,18 +477,18 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			totalProcessed++
 		}
 
+		// Break if first page only
+		if s.config.FirstPageDBOnly {
+			break
+		}
+
 		// Sleep between pages to avoid rate limiting
-		if page < maxPages-1 && len(releases) > 0 {
+		if page < maxPages-1 {
 			select {
 			case <-ctx.Done():
 				return totalProcessed, ctx.Err()
 			case <-time.After(2 * time.Second):
 			}
-		}
-
-		// Break if first page only
-		if s.config.FirstPageDBOnly {
-			break
 		}
 	}
 

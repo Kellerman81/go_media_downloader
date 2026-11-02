@@ -5,10 +5,10 @@ package movies
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -16,6 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
 
@@ -162,21 +163,25 @@ func (*handler) GetTableName() string {
 	return "movies"
 }
 
+// imdbPaddingCandidates returns the unprefixed IMDB id followed by its
+// zero-padded variants up to 7 digits ("123456" -> "123456", "0123456").
+func imdbPaddingCandidates(src string) []string {
+	candidates := []string{src}
+	for padded := "0" + src; len(padded) <= 7; padded = "0" + padded {
+		candidates = append(candidates, padded)
+	}
+
+	return candidates
+}
+
 // GetDBIDs retrieves database IDs for the parsed movie info.
 // It attempts IMDB lookup first, then falls back to title-based search.
 func (*handler) GetDBIDs(info *database.ParseInfo) error {
 	// Handle IMDB lookup with padding optimization
 	if info.Imdb != "" {
 		if !logger.HasPrefixI(info.Imdb, logger.StrTt) {
-			sourceimdb := info.Imdb
-
-			paddings := []string{"", "0", "00", "000", "0000"}
-			for i := range paddings {
-				if len(sourceimdb)+len(paddings[i]) >= 7 && paddings[i] != "" {
-					break
-				}
-
-				info.Imdb = paddings[i] + sourceimdb
+			for _, candidate := range imdbPaddingCandidates(info.Imdb) {
+				info.Imdb = candidate
 				info.MovieFindDBIDByImdbParser()
 
 				if info.DbmovieID != 0 {
@@ -207,15 +212,8 @@ func (h *handler) GetDBIDsFull(
 	// Handle IMDB lookup with padding optimization
 	if m.Imdb != "" {
 		if !logger.HasPrefixI(m.Imdb, logger.StrTt) {
-			sourceimdb := m.Imdb
-
-			paddings := []string{"", "0", "00", "000", "0000"}
-			for i := range paddings {
-				if len(sourceimdb)+len(paddings[i]) >= 7 && paddings[i] != "" {
-					break
-				}
-
-				m.Imdb = paddings[i] + sourceimdb
+			for _, candidate := range imdbPaddingCandidates(m.Imdb) {
+				m.Imdb = candidate
 				m.MovieFindDBIDByImdbParser()
 
 				if m.DbmovieID != 0 {
@@ -366,13 +364,13 @@ func (*handler) PerformIDSearch(
 	quality *config.QualityConfig,
 	entry *apiexternal_v2.Nzbwithprio,
 	cats int,
-	raw *apiexternal.NzbSlice,
+	raw *apiexternal_v2.NzbSlice,
 ) error {
 	if entry.Info.Imdb == "" {
 		return nil
 	}
 
-	_, _, err := apiexternal.QueryNewznabMovieImdb(
+	_, _, err := providers.EnsureIndexer(indcfg).QueryMovieImdb(
 		ctx, indcfg, quality, logger.Trim(entry.Info.Imdb, 't'), cats, raw,
 	)
 
@@ -488,12 +486,21 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		)
 	}
 
-	database.ExecN(
+	if movieID == 0 || dbmovieID == 0 {
+		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+	}
+
+	var indexerName string
+	if nzb.NZB.Indexer != nil {
+		indexerName = nzb.NZB.Indexer.Name
+	}
+
+	return database.ExecNErr(
 		"Insert into movie_histories (title, url, target, indexer, downloaded_at, movie_id, dbmovie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
 		&targetPath,
-		&nzb.NZB.Indexer.Name,
+		&indexerName,
 		&movieID,
 		&dbmovieID,
 		&nzb.Info.ResolutionID,
@@ -502,8 +509,6 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		&nzb.Info.AudioID,
 		&qualityProfile,
 	)
-
-	return nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for a movie download.
@@ -585,7 +590,7 @@ func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbmovieID
 }
 
-// GetNzbIDP returns the NzbaudiobookID field.
+// GetNzbIDP returns a pointer to the NzbmovieID field.
 func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbmovieID
 }
@@ -758,7 +763,7 @@ func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
 	return args
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// GetRefreshIncData returns data for incremental refresh (100 least recently updated
 // IMDB IDs in the config's lists).
 func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	if cfgp == nil || cfgp.ListsLen == 0 {
@@ -770,7 +775,7 @@ func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id where movies.listname in (?"+cfgp.ListsQu+") group by dbmovies.imdb_id order by dbmovies.updated_at desc limit 100",
+		"select distinct dbmovies.imdb_id from dbmovies inner join movies on movies.dbmovie_id = dbmovies.id where movies.listname in (?"+cfgp.ListsQu+") group by dbmovies.imdb_id order by dbmovies.updated_at asc limit 100",
 		args...,
 	)
 }
@@ -882,15 +887,6 @@ func (*handler) HandleRSSListID(entry *apiexternal_v2.Nzbwithprio, addinlistid i
 	if addinlistid != -1 {
 		entry.Info.ListID = addinlistid
 	}
-}
-
-// CheckEpisodeMatch returns false - movies don't have episode validation.
-func (*handler) CheckEpisodeMatch(
-	_, _ *apiexternal_v2.Nzbwithprio,
-	_ string,
-	_ func(string, *apiexternal_v2.Nzbwithprio),
-) bool {
-	return false
 }
 
 // SupportsVideoFile returns true - movies use video files.

@@ -5,9 +5,9 @@ package books
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -74,7 +74,7 @@ var (
 		"DBCountHistoriesByUrl":    "select count() from book_histories where url = ?",
 		"DBLocationIDFilesByID":    "select location, id from book_files where book_id = ?",
 		"DBFilePrioFilesByID":      "select location, book_id, id, 0, 0, 0, 0, 0, 0, 0 from book_files where book_id = ?",
-		"DBAudioFilePrioFilesByID": "select location, book_id, id, format, 0, 0, 0 from book_files where book_id = ?",
+		"DBAudioFilePrioFilesByID": "select location, book_id, id, coalesce(nullif(format, ''), extension, ''), 0, 0, 0 from book_files where book_id = ?",
 		"UpdateMediaLastscan":      "update books set lastscan = datetime('now','localtime') where id = ?",
 		"DBQualityMediaByID":       "select quality_profile from books where id = ?",
 		"SearchGenSelect":          "select books.quality_profile, books.id ",
@@ -208,8 +208,13 @@ func (h *handler) GetDBIDsFull(
 		return logger.ErrNotFoundDbbook
 	}
 
-	// Find book in lists (if not already found by wanted-list search)
+	// Find book in lists (if not already found by wanted-list search);
+	// a pre-set ID still needs its ListID resolved.
 	if m.BookID != 0 {
+		if m.ListID == -1 {
+			m.ListID = database.GetMediaListIDGetListname(cfgp, &m.BookID)
+		}
+
 		return nil
 	}
 
@@ -326,7 +331,7 @@ func (*handler) PerformIDSearch(
 	_ *config.QualityConfig,
 	_ *apiexternal_v2.Nzbwithprio,
 	_ int,
-	_ *apiexternal.NzbSlice,
+	_ *apiexternal_v2.NzbSlice,
 ) error {
 	// Books don't support ID-based search like IMDB/TVDB
 	// They use query-based search only
@@ -418,18 +423,25 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		)
 	}
 
-	database.ExecN(
+	if bookID == 0 || dbbookID == 0 {
+		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+	}
+
+	var indexerName string
+	if nzb.NZB.Indexer != nil {
+		indexerName = nzb.NZB.Indexer.Name
+	}
+
+	return database.ExecNErr(
 		"Insert into book_histories (title, url, target, indexer, downloaded_at, book_id, dbbook_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
 		&targetPath,
-		&nzb.NZB.Indexer.Name,
+		&indexerName,
 		&bookID,
 		&dbbookID,
 		&qualityProfile,
 	)
-
-	return nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for a book download.
@@ -457,10 +469,13 @@ func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) e
 		return logger.ErrNotFoundDbbook
 	}
 
-	var authorName string
+	var (
+		authorName                 string
+		seriesName, seriesPosition string
+	)
 
 	database.GetdatarowArgs(
-		"select books.dbbook_id, books.dont_search, books.dont_upgrade, books.listname, books.quality_profile, dbbooks.year, dbbooks.title from books inner join dbbooks ON dbbooks.id=books.dbbook_id where books.id = ?",
+		"select books.dbbook_id, books.dont_search, books.dont_upgrade, books.listname, books.quality_profile, dbbooks.year, dbbooks.title, COALESCE(dbbook_series.name, ''), COALESCE(dbbooks.series_position, '') from books inner join dbbooks ON dbbooks.id=books.dbbook_id left join dbbook_series ON dbbook_series.id=dbbooks.dbbook_series_id where books.id = ?",
 		&entry.NzbbookID,
 		&entry.Dbid,
 		&entry.DontSearch,
@@ -469,6 +484,8 @@ func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) e
 		&entry.Quality,
 		&entry.Info.Year,
 		&entry.WantedTitle,
+		&seriesName,
+		&seriesPosition,
 	)
 
 	if entry.Dbid == 0 {
@@ -477,6 +494,12 @@ func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) e
 
 	if entry.DontSearch {
 		return logger.ErrDisabled
+	}
+
+	// If series info is available, search by series name + position
+	if seriesName != "" && seriesPosition != "" {
+		entry.SearchFor = seriesName + " " + seriesPosition
+		return nil
 	}
 
 	// Get the primary author name for this book
@@ -501,7 +524,7 @@ func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbbookID
 }
 
-// GetNzbIDP returns the NzbaudiobookID field.
+// GetNzbIDP returns a pointer to the NzbbookID field.
 func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbbookID
 }
@@ -580,27 +603,58 @@ func (h *handler) FillNotifyData(
 }
 
 // FillNamingData fills NamingData for books from the database.
-// Returns clearFolder=true for books (folder name should be cleared when rootpath exists).
+// Returns clearFolder=false; GenerateNamingTemplate clears the book folder
+// itself once a rootpath exists.
 func (*handler) FillNamingData(
 	dbid *uint,
 	videofile string,
 	_ *database.ParseInfo,
 	data *mediatype.NamingData,
 ) (bool, bool) {
-	// Books need a different approach - we'll use Dbmovie fields for compatibility
-	// In a full implementation, this would use book-specific data structures
-	var dbbook database.Dbbook
-	if dbbook.GetDbbookByIDP(dbid) != nil {
+	if data.Dbbook.GetDbbookByIDP(dbid) != nil {
 		return false, false
 	}
 
-	logger.Path(&dbbook.Title, false)
+	logger.Path(&data.Dbbook.Title, false)
 
 	// Extract title from filename
 	data.TitleSource = filepath.Base(videofile)
 	data.TitleSource = logger.Trim(data.TitleSource, '.')
 	logger.Path(&data.TitleSource, false)
 	logger.StringReplaceWithP(&data.TitleSource, '.', ' ')
+
+	data.Title = data.TitleSource
+
+	if data.Dbbook.DbbookSeriesID > 0 {
+		database.GetdatarowArgs(
+			"SELECT name, description, goodreads_id, openlibrary_id FROM dbbook_series WHERE id = ?",
+			&data.Dbbook.DbbookSeriesID,
+			&data.BookSeries.Name,
+			&data.BookSeries.Description,
+			&data.BookSeries.GoodreadsID,
+			&data.BookSeries.OpenlibraryID,
+		)
+
+		data.BookSeries.ID = data.Dbbook.DbbookSeriesID
+	}
+
+	// Primary author: dbbooks.dbauthor_id, else the first linked author.
+	authorID := data.Dbbook.DbauthorID
+	if authorID == 0 {
+		database.Scanrowsdyn(false,
+			`SELECT dbauthor_id FROM dbbook_authors
+			 WHERE dbbook_id = ?
+			 ORDER BY position ASC
+			 LIMIT 1`,
+			&authorID, dbid)
+	}
+
+	if authorID > 0 {
+		var author database.Dbauthor
+		if author.GetDbauthorByIDP(&authorID) == nil {
+			data.Author = author
+		}
+	}
 
 	return false, true // clearFolder=false for books
 }
@@ -616,7 +670,7 @@ func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
 	return args
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// GetRefreshIncData returns data for incremental refresh (100 least recently updated
 // ISBN IDs in the config's lists).
 func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	if cfgp == nil || cfgp.ListsLen == 0 {
@@ -628,7 +682,7 @@ func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbbooks.isbn_13 from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.isbn_13 != '' and books.listname in (?"+cfgp.ListsQu+") group by dbbooks.isbn_13 order by dbbooks.updated_at desc limit 100",
+		"select distinct dbbooks.isbn_13 from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.isbn_13 != '' and books.listname in (?"+cfgp.ListsQu+") group by dbbooks.isbn_13 order by dbbooks.updated_at asc limit 100",
 		args...,
 	)
 }
@@ -735,15 +789,6 @@ func (*handler) SupportsAbsoluteEpisode() bool { return false }
 // HandleRSSListID does nothing for books - list ID is determined by book lookup.
 func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
 
-// CheckEpisodeMatch returns false - books don't have episode validation.
-func (*handler) CheckEpisodeMatch(
-	_, _ *apiexternal_v2.Nzbwithprio,
-	_ string,
-	_ func(string, *apiexternal_v2.Nzbwithprio),
-) bool {
-	return false
-}
-
 // SupportsVideoFile returns false - books use ebook files, not video.
 func (*handler) SupportsVideoFile() bool { return false }
 
@@ -776,18 +821,4 @@ func (*handler) UsesListNameAsQualityProfile() bool { return false }
 // GetStringsMap returns a book-specific string for the given key.
 func (*handler) GetStringsMap(key string) string {
 	return StringsMap[key]
-}
-
-// trimStringInclAfterString trims the input string starting from the first occurrence of trim.
-func trimStringInclAfterString(input, trim string) string {
-	if trim == "" {
-		return input
-	}
-
-	idx := logger.IndexI(input, trim)
-	if idx != -1 {
-		return input[:idx]
-	}
-
-	return input
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
@@ -288,6 +287,7 @@ func bookMetadataSearchContent(
 			),
 
 			bookSearchScript(),
+			listQualityScript("book", map[string]string{"bk4_list": "bk4_quality_profile"}),
 		),
 	)
 }
@@ -475,6 +475,7 @@ func audiobookMetadataSearchContent(
 			),
 
 			audiobookSearchScript(),
+			listQualityScript("audiobook", map[string]string{"ab4_list": "ab4_quality_profile"}),
 		),
 	)
 }
@@ -498,12 +499,7 @@ func bookSearchDispatch(
 		return nil, errProviderUnavailable
 	}
 
-	p := providers.GetOpenLibrary()
-	if p == nil {
-		p = openlibrary.NewProvider()
-	}
-
-	return p.SearchBooks(ctx, title, author, limit)
+	return providers.SharedOpenLibrary().SearchBooks(ctx, title, author, limit)
 }
 
 // SearchBookMetadata handles book search. view=select renders a checklist (mode 3),
@@ -679,7 +675,7 @@ func AddBooksByAuthor(c *gin.Context) {
 	}
 
 	authorCopy := author
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"add_book_author_"+author+"_"+listName,
 		func(_ uint32, ctx context.Context) error {
 			err := importfeed.JobImportDBBook(
@@ -698,7 +694,10 @@ func AddBooksByAuthor(c *gin.Context) {
 			return nil
 		},
 		"Data",
-	)
+	); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		return
+	}
 
 	c.JSON(
 		http.StatusOK,
@@ -716,17 +715,14 @@ func AddBooksByAuthor(c *gin.Context) {
 // Audiobook search + cards
 // ---------------------------------------------------------------------------
 
-// audibleProviderForRegion returns an Audible provider for the given region code.
+// audibleProviderForRegion returns the shared Audible provider for the given
+// region code; unknown codes fall back to the German store.
 func audibleProviderForRegion(region string) *audible.Provider {
 	switch region {
-	case "us":
-		return audible.NewProviderWithRegion(audible.RegionUS)
-	case "uk":
-		return audible.NewProviderWithRegion(audible.RegionUK)
-	case "fr":
-		return audible.NewProviderWithRegion(audible.RegionFR)
+	case "us", "uk", "fr":
+		return providers.SharedAudible(region)
 	default:
-		return audible.NewProviderWithRegion(audible.RegionDE)
+		return providers.SharedAudible(string(audible.RegionDE))
 	}
 }
 
@@ -934,7 +930,7 @@ func AddAudiobooksByAuthor(c *gin.Context) {
 	}
 
 	authorCopy := author
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"add_audiobook_author_"+author+"_"+listName,
 		func(_ uint32, ctx context.Context) error {
 			err := importfeed.JobImportDBAudiobook(
@@ -953,7 +949,10 @@ func AddAudiobooksByAuthor(c *gin.Context) {
 			return nil
 		},
 		"Data",
-	)
+	); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		return
+	}
 
 	c.JSON(
 		http.StatusOK,
@@ -998,12 +997,21 @@ func AddBookToDatabase(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "book")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "book", c.PostForm("book_quality_profile")) {
+		return
+	}
+
 	if openlibraryID == "" && isbn == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "OpenLibrary ID or ISBN is required"})
 		return
 	}
 
-	provider := openlibrary.NewProvider()
+	provider := providers.SharedOpenLibrary()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1099,7 +1107,7 @@ func AddBookToDatabase(c *gin.Context) {
 	listExists := database.GetrowsN[int](
 		false,
 		1,
-		"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ?",
+		"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE",
 		dbBookID,
 		listName,
 	)
@@ -1155,6 +1163,15 @@ func AddAudiobookToDatabase(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "audiobook")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "audiobook", c.PostForm("audiobook_quality_profile")) {
+		return
+	}
+
 	// Check if audiobook already exists in dbaudiobooks
 	audiobookExists := database.GetrowsN[int](
 		false,
@@ -1168,8 +1185,9 @@ func AddAudiobookToDatabase(c *gin.Context) {
 	nowTime := time.Now()
 
 	if len(audiobookExists) == 0 {
-		// We need to fetch details from Audible
-		provider := audible.NewProviderWithRegion(audible.RegionDE)
+		// Look the ASIN up in the region it was found in; ASINs are
+		// marketplace-specific.
+		provider := audibleProviderForRegion(c.PostForm("audiobook_region"))
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -1228,7 +1246,7 @@ func AddAudiobookToDatabase(c *gin.Context) {
 	listExists := database.GetrowsN[int](
 		false,
 		1,
-		"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ?",
+		"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE",
 		dbAudiobookID,
 		listName,
 	)
@@ -1282,6 +1300,15 @@ func AddBookManual(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "book")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "book", c.PostForm("manualBook_quality_profile")) {
+		return
+	}
+
 	year := 0
 	if yearStr != "" {
 		if parsedYear, err := strconv.Atoi(yearStr); err == nil {
@@ -1289,55 +1316,70 @@ func AddBookManual(c *gin.Context) {
 		}
 	}
 
-	// Check if book with same title already exists
-	exists := database.GetrowsN[int](false, 1, "SELECT count() FROM dbbooks WHERE title = ?", title)
-	if len(exists) > 0 && exists[0] > 0 {
-		c.JSON(
-			http.StatusConflict,
-			gin.H{"error": "Book with same title already exists in database"},
-		)
-
-		return
+	// An existing dbbooks row with the same title (and the same author when
+	// one is given) is linked into the list instead of creating a duplicate.
+	var existing []int
+	if author != "" {
+		existing = database.GetrowsN[int](false, 1,
+			"SELECT id FROM dbbooks WHERE title = ? COLLATE NOCASE AND dbauthor_id IN (SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE) ORDER BY id LIMIT 1",
+			title, author)
+	} else {
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbbooks WHERE title = ? COLLATE NOCASE ORDER BY id LIMIT 1", title)
 	}
 
 	nowTime := time.Now()
 
-	// Link (or create) the author entry before the book insert so its id can
-	// be stored directly, matching how the search-based add flows link
-	// authors - previously this field was hardcoded to 0 and the submitted
-	// author name was only logged, never actually persisted anywhere.
-	dbauthorID := importfeed.AddOrGetAuthor(author)
+	var dbBookID int
 
-	newID, err := database.ExecNid(
-		"INSERT INTO dbbooks (title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		title,
-		title,
-		isbn,
-		"",
-		"",
-		"",
-		"",
-		"",
-		publisher,
-		nil,
-		0,
-		"",
-		"",
-		"",
-		dbauthorID,
-		0,
-		"",
-		0.0,
-		0,
-		year,
-		"",
-		nowTime,
-		nowTime,
-	)
-	if err != nil {
-		logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual book")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book to database"})
-		return
+	if len(existing) > 0 {
+		dbBookID = existing[0]
+
+		inList := database.GetrowsN[int](false, 1,
+			"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE", dbBookID, listName)
+		if len(inList) > 0 && inList[0] > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "Book already exists in list '" + listName + "'"})
+			return
+		}
+	} else {
+		// Link (or create) the author entry before the book insert so its id can
+		// be stored directly, matching how the search-based add flows link
+		// authors - previously this field was hardcoded to 0 and the submitted
+		// author name was only logged, never actually persisted anywhere.
+		dbauthorID := importfeed.AddOrGetAuthor(author)
+
+		newID, err := database.ExecNid(
+			"INSERT INTO dbbooks (title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			title,
+			title,
+			isbn,
+			"",
+			"",
+			"",
+			"",
+			"",
+			publisher,
+			nil,
+			0,
+			"",
+			"",
+			"",
+			dbauthorID,
+			0,
+			"",
+			0.0,
+			0,
+			year,
+			"",
+			nowTime,
+			nowTime,
+		)
+		if err != nil {
+			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual book")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book to database"})
+			return
+		}
+
+		dbBookID = int(newID)
 	}
 
 	// Resolve the wanted quality for this list, matching AddBookToDatabase -
@@ -1354,7 +1396,7 @@ func AddBookManual(c *gin.Context) {
 
 	if err := database.ExecNErr(
 		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		int(newID),
+		dbBookID,
 		listName,
 		qualityProfile,
 		nowTime,
@@ -1366,6 +1408,14 @@ func AddBookManual(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": "Book added manually to " + listName})
 }
+
+// Lookups of AddAudiobookManual for an existing dbaudiobooks row. The title
+// lookups take the given ASIN ("" = none) as their second argument.
+const (
+	manualAudiobookByASINQuery        = "SELECT id FROM dbaudiobooks WHERE asin = ? ORDER BY id LIMIT 1"
+	manualAudiobookByTitleQuery       = "SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE AND (? = '' OR asin = '') ORDER BY id LIMIT 1"
+	manualAudiobookByTitleAuthorQuery = "SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE AND (? = '' OR asin = '') AND id IN (SELECT dbaudiobook_id FROM dbaudiobook_authors WHERE dbauthor_id IN (SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE)) ORDER BY id LIMIT 1"
+)
 
 // AddAudiobookManual handles manual audiobook entry.
 func AddAudiobookManual(c *gin.Context) {
@@ -1381,6 +1431,15 @@ func AddAudiobookManual(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "audiobook")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "audiobook", c.PostForm("manualAudiobook_quality_profile")) {
+		return
+	}
+
 	runtime := 0
 	if runtimeStr != "" {
 		if parsedRuntime, err := strconv.Atoi(runtimeStr); err == nil {
@@ -1388,68 +1447,107 @@ func AddAudiobookManual(c *gin.Context) {
 		}
 	}
 
-	// Check if audiobook already exists
-	var exists []int
+	// An existing dbaudiobooks row (same ASIN, else same title and author) is
+	// linked into the list instead of creating a duplicate metadata row. A
+	// title match is only taken when it can't be a different edition: no ASIN
+	// was given, or the row has none.
+	var existing []int
 	if asin != "" {
-		exists = database.GetrowsN[int](
-			false,
-			1,
-			"SELECT count() FROM dbaudiobooks WHERE asin = ?",
-			asin,
-		)
-	} else {
-		exists = database.GetrowsN[int](
-			false,
-			1,
-			"SELECT count() FROM dbaudiobooks WHERE title = ?",
-			title,
-		)
+		existing = database.GetrowsN[int](false, 1, manualAudiobookByASINQuery, asin)
 	}
 
-	if len(exists) > 0 && exists[0] > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "Audiobook already exists in database"})
-		return
+	if len(existing) == 0 {
+		if author != "" {
+			existing = database.GetrowsN[int](false, 1,
+				manualAudiobookByTitleAuthorQuery, title, asin, author)
+		} else {
+			existing = database.GetrowsN[int](false, 1,
+				manualAudiobookByTitleQuery, title, asin)
+		}
 	}
 
 	nowTime := time.Now()
 
-	newID, err := database.ExecNid(
-		"INSERT INTO dbaudiobooks (title, asin, audible_id, runtime_minutes, chapter_count, release_date, publisher, language, abridged, cover_url, sample_url, average_rating, ratings_count, year, slug, dbbook_id, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		title,
-		asin,
-		"",
-		runtime,
-		0,
-		nil,
-		"",
-		"",
-		false,
-		"",
-		"",
-		0.0,
-		0,
-		0,
-		"",
-		0,
-		"",
-		nowTime,
-		nowTime,
-	)
-	if err != nil {
-		logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual audiobook")
-		c.JSON(
-			http.StatusInternalServerError,
-			gin.H{"error": "Failed to add audiobook to database"},
-		)
+	var dbaudiobookID uint
 
+	if len(existing) > 0 {
+		dbaudiobookID = uint(existing[0]) //nolint:gosec // row ids are positive
+
+		inList := database.GetrowsN[int](false, 1,
+			"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE", existing[0], listName)
+		if len(inList) > 0 && inList[0] > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "Audiobook already exists in list '" + listName + "'"})
+			return
+		}
+	} else {
+		newID, err := database.ExecNid(
+			"INSERT INTO dbaudiobooks (title, asin, audible_id, runtime_minutes, chapter_count, release_date, publisher, language, abridged, cover_url, sample_url, average_rating, ratings_count, year, slug, dbbook_id, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			title,
+			asin,
+			"",
+			runtime,
+			0,
+			nil,
+			"",
+			"",
+			false,
+			"",
+			"",
+			0.0,
+			0,
+			0,
+			"",
+			0,
+			"",
+			nowTime,
+			nowTime,
+		)
+		if err != nil {
+			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual audiobook")
+			c.JSON(
+				http.StatusInternalServerError,
+				gin.H{"error": "Failed to add audiobook to database"},
+			)
+
+			return
+		}
+
+		dbaudiobookID = uint(newID) //nolint:gosec // safe: value within target type range
+
+		linkManualAudiobookPeople(dbaudiobookID, author, narrator)
+	}
+
+	// Resolve the wanted quality for this list, matching AddAudiobookToDatabase -
+	// previously this was hardcoded to '' for manual entries.
+	audiobookCfgp, audiobookListID := findAudiobookCfgpAndListID(listName)
+
+	qualityProfile := c.PostForm("manualAudiobook_quality_profile")
+	if qualityProfile == "" && audiobookCfgp != nil && audiobookListID >= 0 {
+		qualityProfile = audiobookCfgp.Lists[audiobookListID].TemplateQuality
+		if qualityProfile == "" {
+			qualityProfile = audiobookCfgp.TemplateQuality
+		}
+	}
+
+	if err := database.ExecNErr(
+		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
+		dbaudiobookID,
+		listName,
+		qualityProfile,
+		nowTime,
+		nowTime,
+	); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
 		return
 	}
 
-	// Link (or create) the author/narrator via the junction tables, matching
-	// the real search-based import pipeline (importfeed.addAudiobookDetailToDatabase)
-	// - previously these fields were only logged, never actually persisted.
-	dbaudiobookID := uint(newID) //nolint:gosec // safe: value within target type range
+	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added manually to " + listName})
+}
 
+// linkManualAudiobookPeople links (or creates) the author/narrator of a new
+// manual audiobook via the junction tables, matching the search-based import
+// pipeline (importfeed.addAudiobookDetailToDatabase).
+func linkManualAudiobookPeople(dbaudiobookID uint, author, narrator string) {
 	if author != "" {
 		if authorID := importfeed.AddOrGetAuthor(author); authorID > 0 {
 			if err := database.ExecNErr(
@@ -1477,32 +1575,6 @@ func AddAudiobookManual(c *gin.Context) {
 			}
 		}
 	}
-
-	// Resolve the wanted quality for this list, matching AddAudiobookToDatabase -
-	// previously this was hardcoded to '' for manual entries.
-	audiobookCfgp, audiobookListID := findAudiobookCfgpAndListID(listName)
-
-	qualityProfile := c.PostForm("manualAudiobook_quality_profile")
-	if qualityProfile == "" && audiobookCfgp != nil && audiobookListID >= 0 {
-		qualityProfile = audiobookCfgp.Lists[audiobookListID].TemplateQuality
-		if qualityProfile == "" {
-			qualityProfile = audiobookCfgp.TemplateQuality
-		}
-	}
-
-	if err := database.ExecNErr(
-		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		int(newID),
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
-	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added manually to " + listName})
 }
 
 // bookSearchScript returns client logic for the 3 book modes.
@@ -1533,7 +1605,8 @@ function bookAddAuthor(){
 	var author=bkVal('bk2_author'), list=bkVal('bk2_list');
 	if(!author){ showToaster('warning','Enter an author name'); return; }
 	if(!list){ showToaster('warning','Select a list'); return; }
-	confirmAction('Add author','Import all books by "'+author+'" into "'+list+'"? This runs in the background.',function(){
+	var esc=function(v){var d=document.createElement('div');d.textContent=v;return d.innerHTML;};
+	confirmAction('Add author','Import all books by "'+esc(author)+'" into "'+esc(list)+'"? This runs in the background.',function(){
 		var p=new URLSearchParams();
 		p.append('book_author',author); p.append('book_list',list);
 		bkPost('/api/admin/add/book/author',p).then(function(r){return r.json();}).then(function(d){
@@ -1654,7 +1727,8 @@ function audiobookAddAuthor(){
 	var author=abVal('ab2_author'), list=abVal('ab2_list');
 	if(!author){ showToaster('warning','Enter an author name'); return; }
 	if(!list){ showToaster('warning','Select a list'); return; }
-	confirmAction('Add author','Import all audiobooks by "'+author+'" into "'+list+'"? This runs in the background.',function(){
+	var esc=function(v){var d=document.createElement('div');d.textContent=v;return d.innerHTML;};
+	confirmAction('Add author','Import all audiobooks by "'+esc(author)+'" into "'+esc(list)+'"? This runs in the background.',function(){
 		var p=new URLSearchParams();
 		p.append('audiobook_author',author); p.append('audiobook_list',list);
 		abPost('/api/admin/add/audiobook/author',p).then(function(r){return r.json();}).then(function(d){
@@ -1700,9 +1774,11 @@ document.addEventListener('click', function(e){
 		var list=listEl?listEl.value:'';
 		if(!list){ showToaster('warning','Select a list first'); return; }
 		var orig=add.innerHTML; add.disabled=true; add.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+		var regionEl=pane?pane.querySelector('[id$="_region"]'):null;
 		var p=new URLSearchParams();
 		p.append('asin', add.getAttribute('data-asin')||'');
 		p.append('audiobook_list', list);
+		p.append('audiobook_region', regionEl?regionEl.value:'');
 		abPost('/api/admin/add/audiobook',p).then(function(r){return r.json();}).then(function(d){
 			if(d.success){ showToaster('success',d.success); add.innerHTML='<i class="fas fa-check me-1"></i>Added'; add.classList.remove('btn-success'); add.classList.add('btn-outline-success'); }
 			else { showToaster('error',d.error||'Failed to add audiobook'); add.innerHTML=orig; add.disabled=false; }
@@ -1720,6 +1796,8 @@ document.addEventListener('click', function(e){
 	if(addSel){
 		var pane2=addSel.closest('.tab-pane'); var listEl2=pane2?pane2.querySelector('[id$="_list"]'):null;
 		var list2=listEl2?listEl2.value:'';
+		var regionEl2=pane2?pane2.querySelector('[id$="_region"]'):null;
+		var region2=regionEl2?regionEl2.value:'';
 		if(!list2){ showToaster('warning','Select a list first'); return; }
 		var wrap2=addSel.closest('.ab-select-list');
 		var chosen=[]; wrap2.querySelectorAll('.ab-select-check:checked').forEach(function(c){ chosen.push(c); });
@@ -1730,6 +1808,7 @@ document.addEventListener('click', function(e){
 				var p=new URLSearchParams();
 				p.append('asin', c.getAttribute('data-asin')||'');
 				p.append('audiobook_list', list2);
+				p.append('audiobook_region', region2);
 				return abPost('/api/admin/add/audiobook',p).then(function(r){return r.json();}).then(function(d){return !!d.success;}).catch(function(){return false;});
 			});
 			Promise.all(jobs).then(function(res){

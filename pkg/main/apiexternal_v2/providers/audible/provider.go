@@ -2,10 +2,12 @@ package audible
 
 import (
 	"context"
+	"net/url"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	appconfig "github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
@@ -47,7 +49,6 @@ var regionURLs = map[Region]string{
 // Provider implements the audiobook metadata provider for Audible.
 type Provider struct {
 	*base.BaseClient
-	region Region
 }
 
 // NewProviderWithConfig creates a new Audible provider with custom config.
@@ -65,6 +66,17 @@ func NewProviderWithConfig(config base.ClientConfig, region Region) *Provider {
 		config.Timeout = 30 * time.Second
 	}
 
+	// The configured Audible limits apply to every instance; the built-in
+	// limits below are only the fallback for 0.
+	general := appconfig.GetSettingsGeneral()
+	if config.RateLimitCalls == 0 {
+		config.RateLimitCalls = general.AudibleLimiterCalls
+	}
+
+	if config.RateLimitSeconds == 0 {
+		config.RateLimitSeconds = int(general.AudibleLimiterSeconds)
+	}
+
 	if config.RateLimitCalls == 0 {
 		config.RateLimitCalls = 5
 	}
@@ -80,7 +92,6 @@ func NewProviderWithConfig(config base.ClientConfig, region Region) *Provider {
 
 	return &Provider{
 		BaseClient: base.NewBaseClient(config),
-		region:     region,
 	}
 }
 
@@ -102,21 +113,6 @@ func (*Provider) GetProviderType() apiexternal_v2.ProviderType {
 // GetProviderName returns the provider name.
 func (*Provider) GetProviderName() string {
 	return "audible"
-}
-
-// GetRegion returns the current region.
-func (p *Provider) GetRegion() Region {
-	return p.region
-}
-
-// SetRegion sets the current region.
-func (p *Provider) SetRegion(region Region) {
-	p.region = region
-	if baseURL, ok := regionURLs[region]; ok {
-		p.SetBaseURL(baseURL)
-	} else {
-		p.SetBaseURL(regionURLs[RegionUS])
-	}
 }
 
 //
@@ -143,7 +139,7 @@ func (p *Provider) SearchAudiobooks(
 	buf.WriteString("&num_results=")
 	buf.WriteInt(numResults)
 	buf.WriteString(
-		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries",
+		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries%2Crating%2Ccategory_ladders",
 	)
 
 	endpoint := buf.String()
@@ -166,7 +162,7 @@ func (p *Provider) SearchByASIN(
 	buf.WriteString("/1.0/catalog/products/")
 	buf.WriteString(asin)
 	buf.WriteString(
-		"?response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries%2Cchapter_info",
+		"?response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries%2Crating%2Ccategory_ladders",
 	)
 
 	endpoint := buf.String()
@@ -177,7 +173,30 @@ func (p *Provider) SearchByASIN(
 		return nil, err
 	}
 
+	// /catalog/products rejects the chapter_info group with HTTP 400; chapters
+	// come from the content metadata endpoint instead. Missing chapters are
+	// not fatal for the product lookup.
+	if info, err := p.getChapterInfo(ctx, asin); err == nil {
+		response.Product.Chapters = *info
+	} else {
+		logger.Logtype("debug", 0).Err(err).Str("asin", asin).Msg("audible chapter info unavailable")
+	}
+
 	return convertProductToDetails(&response.Product), nil
+}
+
+// getChapterInfo fetches the chapter list of an audiobook.
+func (p *Provider) getChapterInfo(ctx context.Context, asin string) (*audibleChapterInfo, error) {
+	endpoint := logger.JoinStrings(
+		"/1.0/content/", url.PathEscape(asin), "/metadata?response_groups=chapter_info",
+	)
+
+	var response audibleContentMetadataResponse
+	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+		return nil, err
+	}
+
+	return &response.ContentMetadata.ChapterInfo, nil
 }
 
 // SearchByAuthor searches for audiobooks by author name.
@@ -200,7 +219,7 @@ func (p *Provider) SearchByAuthor(
 	buf.WriteString("&num_results=")
 	buf.WriteInt(numResults)
 	buf.WriteString(
-		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries",
+		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries%2Crating%2Ccategory_ladders",
 	)
 
 	endpoint := buf.String()
@@ -234,7 +253,7 @@ func (p *Provider) SearchByNarrator(
 	buf.WriteString("&num_results=")
 	buf.WriteInt(numResults)
 	buf.WriteString(
-		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries",
+		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries%2Crating%2Ccategory_ladders",
 	)
 
 	endpoint := buf.String()
@@ -268,7 +287,7 @@ func (p *Provider) SearchByTitle(
 	buf.WriteString("&num_results=")
 	buf.WriteInt(numResults)
 	buf.WriteString(
-		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries",
+		"&products_sort_by=Relevance&response_groups=product_desc%2Ccontributors%2Cmedia%2Cproduct_attrs%2Cseries%2Crating%2Ccategory_ladders",
 	)
 
 	endpoint := buf.String()

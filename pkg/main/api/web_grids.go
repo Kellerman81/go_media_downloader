@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"database/sql"
 	"fmt"
 	stdhtml "html"
@@ -171,9 +172,26 @@ func queueHeader() gomponents.Node {
 // renderQueueCard renders the live data card. It is the fragment returned by the
 // HTMX partial endpoint and swapped into #queue-refresh-region on each poll.
 func renderQueueCard() gomponents.Node {
-	queueData := make([]map[string]any, 0, len(worker.GetQueues()))
+	queues := worker.GetQueues()
 
-	for i, value := range worker.GetQueues() {
+	// Map order is random; sort so rows don't reshuffle on every poll.
+	ids := make([]uint32, 0, len(queues))
+	for id := range queues {
+		ids = append(ids, id)
+	}
+
+	slices.SortFunc(ids, func(x, y uint32) int {
+		if c := queues[x].Added.Compare(queues[y].Added); c != 0 {
+			return c
+		}
+
+		return cmp.Compare(x, y)
+	})
+
+	queueData := make([]map[string]any, 0, len(queues))
+
+	for _, i := range ids {
+		value := queues[i]
 		queueData = append(queueData, map[string]any{
 			"id":      i,
 			"queue":   value.Queue,
@@ -430,7 +448,7 @@ func queueScript() gomponents.Node {
 
 // renderSchedulerPage renders the scheduler monitoring page.
 func renderSchedulerPage(ctx *gin.Context) {
-	pageNode := page("Scheduler Monitor", false, false, true, renderSchedulerGrid())
+	pageNode := page("Scheduler Monitor", false, false, true, renderSchedulerGrid(getCSRFToken(ctx)))
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -438,8 +456,37 @@ func renderSchedulerPage(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
+// scheduleActionButtons renders "Add to queue" plus the Stop button of an
+// active schedule or the Start button of a stopped one.
+func scheduleActionButtons(id any, job string, paused bool) gomponents.Node {
+	toggle := scheduleActionButton(id, job, "stop", "Stop", "fas fa-stop", "btn-outline-danger")
+	if paused {
+		toggle = scheduleActionButton(id, job, "start", "Start", "fas fa-play", "btn-outline-success")
+	}
+
+	return html.Div(
+		html.Class("d-inline-flex gap-2"),
+		scheduleActionButton(id, job, "queue", "Add to queue", "fas fa-plus", "btn-outline-primary"),
+		toggle,
+	)
+}
+
+func scheduleActionButton(id any, job, action, label, icon, class string) gomponents.Node {
+	return html.Button(
+		html.Class("btn btn-sm text-nowrap schedule-action-btn "+class),
+		html.Style("border-radius: 20px; padding: 0.4rem 1rem;"),
+		html.Type("button"),
+		html.Data("schedule-id", fmt.Sprintf("%v", id)),
+		html.Data("action", action),
+		html.Data("job", job),
+		gomponents.Attr("aria-label", label+": "+job),
+		html.I(html.Class(icon+" me-1"), gomponents.Attr("aria-hidden", "true")),
+		gomponents.Text(label),
+	)
+}
+
 // renderSchedulerGrid creates a grid showing scheduler status.
-func renderSchedulerGrid() gomponents.Node {
+func renderSchedulerGrid(csrfToken string) gomponents.Node {
 	schedulerData := make([]map[string]any, 0, len(worker.GetSchedules()))
 
 	for i, value := range worker.GetSchedules() {
@@ -449,6 +496,7 @@ func renderSchedulerGrid() gomponents.Node {
 			"lastrun":   value.LastRun.Format("2006-01-02 15:04:05"),
 			"nextrun":   value.NextRun.Format("2006-01-02 15:04:05"),
 			"isrunning": value.IsRunning,
+			"paused":    value.Paused,
 		})
 	}
 
@@ -460,6 +508,12 @@ func renderSchedulerGrid() gomponents.Node {
 	var rows []gomponents.Node
 	for _, item := range schedulerData {
 		isRunning := item["isrunning"].(bool)
+		paused := item["paused"].(bool)
+
+		nextRun := fmt.Sprintf("%v", item["nextrun"])
+		if paused {
+			nextRun = "—"
+		}
 
 		rows = append(rows, html.Tr(
 			html.Style("border-left: 4px solid "+func() string {
@@ -501,7 +555,7 @@ func renderSchedulerGrid() gomponents.Node {
 				html.Small(
 					html.Class("text-info fw-semibold"),
 					html.I(html.Class("fas fa-forward me-1")),
-					gomponents.Text(fmt.Sprintf("%v", item["nextrun"])),
+					gomponents.Text(nextRun),
 				),
 			),
 			html.Td(
@@ -516,6 +570,15 @@ func renderSchedulerGrid() gomponents.Node {
 						)
 					}
 
+					if paused {
+						return html.Span(
+							html.Class("badge bg-danger px-3 py-2"),
+							html.Style("border-radius: 15px;"),
+							html.I(html.Class("fas fa-stop me-1")),
+							gomponents.Text("Stopped"),
+						)
+					}
+
 					return html.Span(
 						html.Class("badge bg-secondary px-3 py-2"),
 						html.Style("border-radius: 15px;"),
@@ -524,13 +587,17 @@ func renderSchedulerGrid() gomponents.Node {
 					)
 				}(),
 			),
+			html.Td(
+				html.Style("padding: 1rem; vertical-align: middle; text-align: center;"),
+				scheduleActionButtons(item["id"], fmt.Sprintf("%v", item["job"]), paused),
+			),
 		))
 	}
 
 	if len(rows) == 0 {
 		rows = append(rows, html.Tr(
 			html.Td(
-				html.ColSpan("5"),
+				html.ColSpan("6"),
 				html.Class("text-center text-muted"),
 				gomponents.Text("No scheduled jobs found"),
 			),
@@ -539,6 +606,8 @@ func renderSchedulerGrid() gomponents.Node {
 
 	return html.Div(
 		html.Class("config-section-enhanced"),
+		// gmdApiProxyFetch reads its CSRF token from here.
+		html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
 		// Enhanced page header with gradient background
 		html.Div(
 			html.Class("page-header-enhanced"),
@@ -658,6 +727,12 @@ func renderSchedulerGrid() gomponents.Node {
 												),
 												gomponents.Text("Status"),
 											),
+											html.Th(
+												html.Style(
+													"border-top: none; color: #495057; font-weight: 600; padding: 1rem; text-align: center;",
+												),
+												gomponents.Text("Actions"),
+											),
 										),
 									),
 									html.TBody(
@@ -676,6 +751,29 @@ func renderSchedulerGrid() gomponents.Node {
 				setInterval(function() {
 					window.location.reload();
 				}, 60000);
+
+				document.addEventListener('click', function(e) {
+					var btn = e.target.closest ? e.target.closest('.schedule-action-btn') : null;
+					if (!btn) return;
+					var action = btn.getAttribute('data-action');
+					btn.disabled = true;
+					gmdApiProxyFetch('/api/scheduler/' + action + '/' + btn.getAttribute('data-schedule-id'))
+					.then(function(r) {
+						return r.json().then(function(data) {
+							if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+						});
+					})
+					.then(function() {
+						var done = {stop: ' stopped', start: ' started', queue: ' added to queue'};
+						showToaster('success', btn.getAttribute('data-job') + done[action]);
+						window.location.reload();
+					})
+					.catch(function(err) {
+						btn.disabled = false;
+						var what = {stop: 'stop schedule', start: 'start schedule', queue: 'add to queue'};
+						showToaster('error', 'Failed to ' + what[action] + ': ' + err.message);
+					});
+				});
 			`),
 		),
 	)
@@ -1379,13 +1477,10 @@ func renderCustomFilters(tableName string) gomponents.Node {
 
 func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 	header := make([]gomponents.Node, 0, len(tableInfo.Columns)+1)
-	// var footer []gomponents.Node
+	aliases := make([]string, 0, len(tableInfo.Columns))
 
 	for _, col := range tableInfo.Columns {
-		var (
-			addnode gomponents.Node
-			addsort gomponents.Node
-		)
+		var addnode gomponents.Node
 
 		// Extract the alias from "table.column as alias" format for display
 		columnAlias := col.Name
@@ -1407,7 +1502,8 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 			addnode = html.Data("priority", "100000")
 		}
 
-		// Use displayname from column info
+		aliases = append(aliases, columnAlias)
+
 		header = append(
 			header,
 			html.Th(
@@ -1415,11 +1511,9 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 				html.Role("columnheader"),
 				html.Data("column-name", columnAlias),
 				addnode,
-				addsort,
 				gomponents.Text(col.DisplayName),
 			),
 		)
-		// footer = append(footer, html.Th(html.Role("columnfooter"), html.Input(html.Type("text"), html.Name("search_"+col.Name), html.Value("Search "+col.Name), html.Class("search_init"))))
 	}
 
 	// Add Actions column header
@@ -1433,9 +1527,6 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 			gomponents.Text("Actions"),
 		),
 	)
-	// For DataTables 1.13 with server-side processing, we don't need aoColumns
-	// The server already knows the column structure and returns data correctly
-	columnsStr := "" // Empty - no aoColumns configuration needed
 
 	return gomponents.Group(
 		[]gomponents.Node{
@@ -1443,728 +1534,13 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 				html.Table(
 					html.ID("table-data"),
 					html.Class("table table-striped datatable"),
-					// html.Style("width: 100%"),
 					html.THead(
 						html.Tr(
 							header...,
 						),
 					),
-					// html.TFoot(html.Tr(
-					//	footer...,
-					// )),
 				),
-				html.Script(gomponents.Rawf(`
-					var oTable;
-					// Debug logging - CODE UPDATED v2
-					console.log('Initializing DataTable for server-side processing...');
-					console.log('window.initDataTable available:', typeof window.initDataTable);
-					console.log('jQuery DataTable available:', typeof $.fn.DataTable);
-
-					if (window.initDataTable) {
-						console.log('Calling window.initDataTable...');
-						oTable = window.initDataTable('.datatable', {
-							bServerSide: true,
-							bProcessing: true,
-							sAjaxSource: "/api/admin/tablejson/%s",
-							%s
-							"fnServerData": function (sSource, aoData, fnCallback) {
-								// Add all filter-* parameters from URL
-								var urlParams = new URLSearchParams(window.location.search);
-								urlParams.forEach(function(value, key) {
-									if (key.startsWith('filter-')) {
-										aoData.push({ "name": key, "value": value });
-									}
-								});
-
-								// Legacy support: Add 'id' parameter as 'filter-id' if present
-								var idValue = urlParams.get('id');
-								if (idValue && !urlParams.has('filter-id')) {
-									aoData.push({ "name": "filter-id", "value": idValue });
-								}
-
-								// Add custom filter parameters from HTML elements
-								$('.custom-filter').each(function() {
-									var id = $(this).attr('id');
-									var value = $(this).val();
-									if (value) {
-										aoData.push({ "name": id, "value": value });
-									}
-								});
-								
-								$.ajax({
-									"dataType": 'json',
-									"type": "POST",
-									"url": sSource,
-									"data": aoData,
-									"headers": {
-										"X-CSRF-Token": "%s"
-									},
-									"success": fnCallback
-								});
-							},
-							"columnDefs": [
-								{
-									"targets": -1,
-									"data": null,
-									"orderable": false,
-									"searchable": false,
-									"render": function (data, type, row, meta) {
-										var id = row[0]; // Assuming ID is first column
-										var tableName = '%s';
-										var buttons = '<div class="d-flex gap-1 justify-content-center">' +
-											'<button class="btn-action-edit" data-id="' + id + '" data-bs-toggle="modal" data-bs-target="#editFormModal" aria-label="Edit" title="Edit"><i aria-hidden="true" class="fa fa-edit"></i></button>' +
-											'<button class="btn-action-delete" data-id="' + id + '" aria-label="Delete" title="Delete"><i aria-hidden="true" class="fa fa-trash"></i></button>';
-
-										// Add table-specific buttons
-										if (tableName === 'movies') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="imdb" aria-label="Search by IMDB" title="Search by IMDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'serie_episodes') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="tvdb" aria-label="Search by TVDB" title="Search by TVDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'dbmovies') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbseries') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbalbums') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbaudiobooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbbooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'albums') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'audiobooks') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'books') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'dbartists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>';
-										} else if (tableName === 'artists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" aria-label="Search Missing Albums" title="Search Missing Albums"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-discover-series" data-id="' + id + '" aria-label="Discover Series Albums" title="Discover Series Albums"><i aria-hidden="true" class="fa fa-layer-group"></i></button>';
-										} else if (tableName === 'dbauthors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>';
-										} else if (tableName === 'authors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" aria-label="Search Missing Books" title="Search Missing Books"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" aria-label="Search Missing Audiobooks" title="Search Missing Audiobooks"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										}
-
-										buttons += '</div>';
-										return buttons;
-									}
-								},
-								{
-									"targets": "_all",
-									"render": function (data, type, row, meta) {
-										// Skip if this is the actions column (last column)
-										if (meta.col === row.length - 1) {
-											return data;
-										}
-
-										// Get column name from table header data attribute
-										var $th = $('#table-data thead th').eq(meta.col);
-										var colName = $th.attr('data-column-name');
-
-										// Map of ID column names to their corresponding table names
-										var idColumnMap = {
-											'dbmovie_id': 'dbmovies',
-											'movie_id': 'movies',
-											'dbserie_id': 'dbseries',
-											'serie_id': 'series',
-											'serie_episode_id': 'serie_episodes',
-											'dbserie_episode_id': 'dbserie_episodes',
-											'dbbook_id': 'dbbooks',
-											'book_id': 'books',
-											'dbauthor_id': 'dbauthors',
-											'author_id': 'authors',
-											'dbbook_series_id': 'dbbook_series',
-											'book_series_id': 'book_series',
-											'dbaudiobook_id': 'dbaudiobooks',
-											'audiobook_id': 'audiobooks',
-											'dbnarrator_id': 'dbnarrators',
-											'dbalbum_id': 'dbalbums',
-											'album_id': 'albums',
-											'dbartist_id': 'dbartists',
-											'artist_id': 'artists',
-											'dbtrack_id': 'dbtracks'
-										};
-
-										// Check if this column is an ID column that should be a link
-										if (idColumnMap[colName] && data && data != '') {
-											var targetTable = idColumnMap[colName];
-											return '<a href="/api/admin/database/' + targetTable + '?id=' + data + '" class="id-link" title="View in ' + targetTable + ' table">' + data + '</a>';
-										}
-
-										return data;
-									}
-								}
-							]
-
-							%s
-						});
-						console.log('DataTable initialized:', oTable);
-					} else {
-						console.warn('window.initDataTable not available, falling back to direct initialization');
-						oTable = $('.datatable').DataTable({						
-							"bDestroy": true,
-							"bFilter": true,
-							"bSort": true,
-							"bPaginate": true,
-							responsive: true,
-							"aaSorting": [[ 0, "desc" ]],
-							"bProcessing": true,
-        					"bServerSide": true,
-							"sAjaxSource": "/api/admin/tablejson/%s",
-							%s
-							"fnServerData": function (sSource, aoData, fnCallback) {
-								console.log('Using fnServerData approach, data:', aoData);
-								// Add ID filter from URL parameter if present
-								var urlParams = new URLSearchParams(window.location.search);
-								var idValue = urlParams.get('id');
-								if (idValue) {
-									aoData.push({ "name": "filter-id", "value": idValue });
-								}
-
-								// Add custom filter parameters
-								$('.custom-filter').each(function() {
-									var id = $(this).attr('id');
-									var value = $(this).val();
-									if (value) {
-										aoData.push({ "name": id, "value": value });
-									}
-								});
-								
-								$.ajax({
-									"dataType": 'json',
-									"type": "POST",
-									"url": sSource,
-									"data": aoData,
-									"headers": {
-										"X-CSRF-Token": "%s"
-									},
-									"success": function(data) {
-										console.log('fnServerData AJAX Success:', data);
-										fnCallback(data);
-									},
-									"error": function(xhr, error, code) {
-										console.error('fnServerData AJAX Error:', error, code, xhr.responseText);
-									}
-								});
-							},
-							"columnDefs": [
-								{
-									"targets": -1,
-									"data": null,
-									"orderable": false,
-									"searchable": false,
-									"render": function (data, type, row, meta) {
-										var id = row[0];
-										var tableName = '%s';
-										var buttons = '<div class="d-flex gap-1 justify-content-center">' +
-											   '<button class="btn-action-edit" data-id="' + id + '" data-bs-toggle="modal" data-bs-target="#editFormModal" aria-label="Edit" title="Edit"><i aria-hidden="true" class="fa fa-edit"></i></button>' +
-											   '<button class="btn-action-delete" data-id="' + id + '" aria-label="Delete" title="Delete"><i aria-hidden="true" class="fa fa-trash"></i></button>';
-
-										// Add table-specific buttons
-										if (tableName === 'movies') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="imdb" aria-label="Search by IMDB" title="Search by IMDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'serie_episodes') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search" data-id="' + id + '" data-search-type="tvdb" aria-label="Search by TVDB" title="Search by TVDB"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-title" data-id="' + id + '" data-search-type="title" aria-label="Search by Title" title="Search by Title"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'dbmovies') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="movie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbseries') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="serie" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbalbums') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="album" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbaudiobooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="audiobook" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'dbbooks') {
-											buttons += '<button class="btn-action-metadata-refresh" data-id="' + id + '" data-type="book" aria-label="Refresh Metadata" title="Refresh Metadata"><i aria-hidden="true" class="fa fa-sync"></i></button>';
-										} else if (tableName === 'albums') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="music" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'audiobooks') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="audiobooks" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'books') {
-											buttons += '<button class="btn-action-files" data-id="' + id + '" aria-label="View Files" title="View Files"><i aria-hidden="true" class="fa fa-file"></i></button>' +
-												'<button class="btn-action-search-list" data-id="' + id + '" data-media="books" aria-label="Search List" title="Search List"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										} else if (tableName === 'dbartists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="dbartist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>';
-										} else if (tableName === 'artists') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="albums" data-filter="artist_id" aria-label="View Albums" title="View Albums"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="music" data-endpoint="artists" aria-label="Search Missing Albums" title="Search Missing Albums"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-discover-series" data-id="' + id + '" aria-label="Discover Series Albums" title="Discover Series Albums"><i aria-hidden="true" class="fa fa-layer-group"></i></button>';
-										} else if (tableName === 'dbauthors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="dbauthor_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>';
-										} else if (tableName === 'authors') {
-											buttons += '<button class="btn-action-list-sub" data-id="' + id + '" data-target="books" data-filter="author_id" aria-label="View Books" title="View Books"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-list-sub" data-id="' + id + '" data-target="audiobooks" data-filter="author_id" aria-label="View Audiobooks" title="View Audiobooks"><i aria-hidden="true" class="fa fa-list"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="books" data-endpoint="authors" aria-label="Search Missing Books" title="Search Missing Books"><i aria-hidden="true" class="fa fa-search"></i></button>' +
-												'<button class="btn-action-search-artist" data-id="' + id + '" data-media="audiobooks" data-endpoint="authors" aria-label="Search Missing Audiobooks" title="Search Missing Audiobooks"><i aria-hidden="true" class="fa fa-search-plus"></i></button>';
-										}
-
-										buttons += '</div>';
-										return buttons;
-									}
-								},
-								{
-									"targets": "_all",
-									"render": function (data, type, row, meta) {
-										// Skip if this is the actions column (last column)
-										if (meta.col === row.length - 1) {
-											return data;
-										}
-
-										// Get column name from table header data attribute
-										var $th = $('#table-data thead th').eq(meta.col);
-										var colName = $th.attr('data-column-name');
-
-										// Map of ID column names to their corresponding table names
-										var idColumnMap = {
-											'dbmovie_id': 'dbmovies',
-											'movie_id': 'movies',
-											'dbserie_id': 'dbseries',
-											'serie_id': 'series',
-											'serie_episode_id': 'serie_episodes',
-											'dbserie_episode_id': 'dbserie_episodes',
-											'dbbook_id': 'dbbooks',
-											'book_id': 'books',
-											'dbauthor_id': 'dbauthors',
-											'author_id': 'authors',
-											'dbbook_series_id': 'dbbook_series',
-											'book_series_id': 'book_series',
-											'dbaudiobook_id': 'dbaudiobooks',
-											'audiobook_id': 'audiobooks',
-											'dbnarrator_id': 'dbnarrators',
-											'dbalbum_id': 'dbalbums',
-											'album_id': 'albums',
-											'dbartist_id': 'dbartists',
-											'artist_id': 'artists',
-											'dbtrack_id': 'dbtracks'
-										};
-
-										// Check if this column is an ID column that should be a link
-										if (idColumnMap[colName] && data && data != '') {
-											var targetTable = idColumnMap[colName];
-											return '<a href="/api/admin/database/' + targetTable + '?id=' + data + '" class="id-link" title="View in ' + targetTable + ' table">' + data + '</a>';
-										}
-
-										return data;
-									}
-								}
-							]
-						});
-					}
-
-					// Function to convert ID values to links in child rows
-					function convertChildRowIdsToLinks() {
-						var idColumnMap = {
-							'dbmovie_id': 'dbmovies',
-							'movie_id': 'movies',
-							'dbserie_id': 'dbseries',
-							'serie_id': 'series',
-							'serie_episode_id': 'serie_episodes',
-							'dbserie_episode_id': 'dbserie_episodes',
-							'dbbook_id': 'dbbooks',
-							'book_id': 'books',
-							'dbauthor_id': 'dbauthors',
-							'author_id': 'authors',
-							'dbbook_series_id': 'dbbook_series',
-							'book_series_id': 'book_series',
-							'dbaudiobook_id': 'dbaudiobooks',
-							'audiobook_id': 'audiobooks',
-							'dbnarrator_id': 'dbnarrators',
-							'dbalbum_id': 'dbalbums',
-							'album_id': 'albums',
-							'dbartist_id': 'dbartists',
-							'artist_id': 'artists',
-							'dbtrack_id': 'dbtracks'
-						};
-
-						// Label to column name mapping (handles display names like "Database Movie ID")
-						var labelToColumnMap = {
-							'database_movie_id': 'dbmovie_id',
-							'database_serie_id': 'dbserie_id',
-							'database_serie_episode_id': 'dbserie_episode_id',
-							'db_movie_id': 'dbmovie_id',
-							'db_serie_id': 'dbserie_id',
-							'db_serie_episode_id': 'dbserie_episode_id',
-							'database_book_id': 'dbbook_id',
-							'database_author_id': 'dbauthor_id',
-							'database_audiobook_id': 'dbaudiobook_id',
-							'database_narrator_id': 'dbnarrator_id',
-							'database_album_id': 'dbalbum_id',
-							'database_artist_id': 'dbartist_id',
-							'database_track_id': 'dbtrack_id',
-							'db_book_id': 'dbbook_id',
-							'db_author_id': 'dbauthor_id',
-							'db_audiobook_id': 'dbaudiobook_id',
-							'db_album_id': 'dbalbum_id',
-							'db_artist_id': 'dbartist_id'
-						};
-
-						// Process all child rows
-						$('.dtr-details li').each(function() {
-							var $li = $(this);
-							var labelText = $li.find('.dtr-title').text().trim();
-							var $dataSpan = $li.find('.dtr-data');
-							var dataText = $dataSpan.text().trim();
-
-							// Check if this label matches an ID column
-							var columnName = null;
-							var labelLower = labelText.toLowerCase().replace(/\s+/g, '_');
-
-							// First, check if there's a specific mapping for this label
-							if (labelToColumnMap[labelLower]) {
-								columnName = labelToColumnMap[labelLower];
-							} else {
-								// Otherwise, try direct match with ID column names
-								for (var key in idColumnMap) {
-									if (labelLower === key || labelLower === key.replace(/_/g, ' ')) {
-										columnName = key;
-										break;
-									}
-								}
-							}
-
-							// If this is an ID column and has a value, convert to link
-							if (columnName && dataText && dataText !== '' && !isNaN(dataText)) {
-								var targetTable = idColumnMap[columnName];
-								var link = '<a href="/api/admin/database/' + targetTable + '?id=' + dataText + '" class="id-link" title="View in ' + targetTable + ' table">' + dataText + '</a>';
-								$dataSpan.html(link);
-							}
-						});
-					}
-
-					// Handle responsive child row display
-					oTable.on('responsive-display', function(e, datatable, row, showHide, update) {
-						if (showHide) {
-							// Child row was opened, convert IDs to links
-							convertChildRowIdsToLinks();
-						}
-					});
-
-					// Also run on initial load and after AJAX reload
-					oTable.on('draw', function() {
-						convertChildRowIdsToLinks();
-					});
-
-					// Handle custom filter changes - trigger table refresh
-					$(document).on('change keyup input', '.custom-filter', function() {
-						var delay = 500; // Delay in milliseconds for text inputs
-						var element = $(this);
-						
-						// Clear existing timer
-						clearTimeout(element.data('timer'));
-						
-						// Set new timer
-						element.data('timer', setTimeout(function() {
-							oTable.ajax.reload();
-						}, element.is('select') ? 0 : delay)); // No delay for select elements
-					});
-					
-					// Handle Edit button clicks
-					$(document).on('click', '.btn-action-edit', function() {
-						var id = $(this).data('id');
-						$('#editFormModal .modal-body').html('<div class="text-center"><div class="spinner-border" role="status"><span class="sr-only">Loading...</span></div><p class="mt-2">Loading edit form...</p></div>');
-						var url = '/api/admin/tableedit/%s/' + id;
-						
-						// Set a timeout to help debug hanging requests
-						var requestTimeout = setTimeout(function() {
-							console.warn('AJAX request taking longer than 10 seconds...');
-							$('#editFormModal .modal-body').append('<div class="alert alert-warning mt-3">Request is taking longer than expected...</div>');
-						}, 10000);
-						
-						$.ajax({
-							url: url,
-							type: 'GET',
-							headers: {
-								'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
-							}
-						})
-							.done(function(data) {
-								clearTimeout(requestTimeout);
-								$('#editFormModal .modal-body').html(data);
-								// Initialize Select2 after form is loaded
-								setTimeout(function() {
-									if (window.initSelect2Global) {
-										window.initSelect2Global();
-									}
-								}, 100);
-							})
-							.fail(function(xhr, status, error) {
-								clearTimeout(requestTimeout);
-								console.error('Failed to load edit form:', status, error);
-								console.error('HTTP Status Code:', xhr.status);
-								console.error('Response Text:', xhr.responseText);
-								var errorMsg = 'Error loading form: ' + error;
-								if (xhr.status) {
-									errorMsg += ' (HTTP ' + xhr.status + ')';
-								}
-								$('#editFormModal .modal-body').html('<div class="alert alert-danger">' + errorMsg + '<br><small>Check console for details</small></div>');
-							});
-					});
-					
-					// Handle Delete button clicks
-					$(document).on('click', '.btn-action-delete', function() {
-						var id = $(this).data('id');
-						confirmAction('Please confirm', '⚠️ Are you sure you want to permanently delete this record?\n\nThis action cannot be undone.', function() {
-							$.ajax({
-								url: '/api/admin/table/%s/delete/' + id,
-								type: 'POST',
-								headers: {
-									'X-CSRF-Token': $('input[name="csrf_token"]').val() || ''
-								},
-								success: function(data) {
-									oTable.ajax.reload();
-									alert('Record deleted successfully');
-								},
-								error: function() {
-									alert('Error deleting record');
-								}
-							});
-						})
-					});
-
-					// Handle Files button clicks
-					$(document).on('click', '.btn-action-files', function() {
-						var id = $(this).data('id');
-						var tableName = '%s';
-						if (tableName === 'movies') {
-							window.location.href = '/api/admin/database/movie_files?filter-movie_id=' + id;
-						} else if (tableName === 'serie_episodes') {
-							window.location.href = '/api/admin/database/serie_episode_files?filter-serie_episode_id=' + id;
-						} else if (tableName === 'albums') {
-							window.location.href = '/api/admin/database/album_files?filter-album_id=' + id;
-						} else if (tableName === 'audiobooks') {
-							window.location.href = '/api/admin/database/audiobook_files?filter-audiobook_id=' + id;
-						} else if (tableName === 'books') {
-							window.location.href = '/api/admin/database/book_files?filter-book_id=' + id;
-						}
-					});
-
-					// Handle Search button clicks (movies and serie_episodes tables - search by IMDB/TVDB)
-					$(document).on('click', '.btn-action-search', function() {
-						var id = $(this).data('id');
-						var tableName = '%s';
-						if (tableName === 'movies') {
-							confirmAction('Please confirm', 'Start search for this movie by IMDB ID?', function() {
-								gmdApiProxyFetch('/api/movies/search/list/' + id + '?searchByTitle=false&download=true')
-									.then(function(r){ return r.json().catch(function(){ return {}; }); })
-									.then(function(data){
-										var msg = 'Search completed!\n';
-										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
-										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
-										alert(msg);
-										oTable.ajax.reload();
-									})
-									.catch(function(err){
-										alert('Error starting search: ' + err.message);
-									});
-							})
-						} else if (tableName === 'serie_episodes') {
-							confirmAction('Please confirm', 'Start search for this episode by TVDB ID?', function() {
-								gmdApiProxyFetch('/api/series/episodes/search/list/' + id + '?searchByTitle=false&download=true')
-									.then(function(r){ return r.json().catch(function(){ return {}; }); })
-									.then(function(data){
-										var msg = 'Search completed!\n';
-										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
-										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
-										alert(msg);
-										oTable.ajax.reload();
-									})
-									.catch(function(err){
-										alert('Error starting search: ' + err.message);
-									});
-							})
-						}
-					});
-
-					// Handle Search by Title button clicks (movies and serie_episodes tables)
-					$(document).on('click', '.btn-action-search-title', function() {
-						var id = $(this).data('id');
-						var tableName = '%s';
-						if (tableName === 'movies') {
-							confirmAction('Please confirm', 'Start search for this movie by Title?', function() {
-								gmdApiProxyFetch('/api/movies/search/list/' + id + '?searchByTitle=true&download=true')
-									.then(function(r){ return r.json().catch(function(){ return {}; }); })
-									.then(function(data){
-										var msg = 'Search completed!\n';
-										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
-										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
-										alert(msg);
-										oTable.ajax.reload();
-									})
-									.catch(function(err){
-										alert('Error starting search: ' + err.message);
-									});
-							})
-						} else if (tableName === 'serie_episodes') {
-							confirmAction('Please confirm', 'Start search for this episode by Title?', function() {
-								gmdApiProxyFetch('/api/series/episodes/search/list/' + id + '?searchByTitle=true&download=true')
-									.then(function(r){ return r.json().catch(function(){ return {}; }); })
-									.then(function(data){
-										var msg = 'Search completed!\n';
-										msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
-										msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
-										alert(msg);
-										oTable.ajax.reload();
-									})
-									.catch(function(err){
-										alert('Error starting search: ' + err.message);
-									});
-							})
-						}
-					});
-
-					// Handle Metadata Refresh button clicks
-					$(document).on('click', '.btn-action-metadata-refresh', function() {
-						var dbId = $(this).data('id');
-						var type = $(this).data('type');
-
-						confirmAction('Please confirm', 'Refresh metadata for this ' + type + '?', function() {
-							if (type === 'album' || type === 'audiobook' || type === 'book') {
-								// Bulk refresh job (no per-record endpoint for these types)
-								var jobUrl = '';
-								if (type === 'album') jobUrl = '/api/music/job/refresh';
-								else if (type === 'audiobook') jobUrl = '/api/audiobooks/job/refresh';
-								else if (type === 'book') jobUrl = '/api/books/job/refresh';
-								gmdApiProxyFetch(jobUrl)
-									.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
-									.then(function(data){
-										alert('Metadata refresh job started successfully!');
-										oTable.ajax.reload();
-									})
-									.catch(function(err){
-										alert('Error starting metadata refresh: ' + err.message);
-									});
-							} else {
-								// Per-record refresh for movies/series (two-step lookup)
-								var apiUrl = type === 'movie' ? '/api/movies/refresh/' : '/api/series/refresh/';
-								$.ajax({
-									url: '/api/admin/tablejson/' + (type === 'movie' ? 'movies' : 'series'),
-									type: 'POST',
-									headers: { 'X-CSRF-Token': $('input[name="csrf_token"]').val() || '' },
-									data: { sSearch: dbId, iDisplayStart: 0, iDisplayLength: 1 },
-									success: function(response) {
-										if (response.aaData && response.aaData.length > 0) {
-											var recordId = response.aaData[0][0];
-											gmdApiProxyFetch(apiUrl + recordId)
-												.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
-												.then(function(data){
-													alert('Metadata refresh started successfully!');
-													oTable.ajax.reload();
-												})
-												.catch(function(err){
-													alert('Error starting metadata refresh: ' + err.message);
-												});
-										} else {
-											alert('No related ' + type + ' record found for this db' + type + ' ID');
-										}
-									},
-									error: function(xhr) {
-										alert('Error finding related record: ' + (xhr.responseText || 'Unknown error'));
-									}
-								});
-							}
-						})
-					});
-
-					// Handle Search List button clicks (albums, audiobooks, books)
-					$(document).on('click', '.btn-action-search-list', function() {
-						var id = $(this).data('id');
-						var media = $(this).data('media');
-						var row = oTable.row($(this).closest('tr')).data();
-						var headers = $('#table-data thead th');
-						var listIdx = -1;
-						headers.each(function(i) {
-							if ($(this).attr('data-column-name') === 'listname') listIdx = i;
-						});
-						if (listIdx === -1 || !row || !row[listIdx]) {
-							alert('Could not determine list name for this record');
-							return;
-						}
-						var listname = row[listIdx];
-						confirmAction('Please confirm', 'Start search for ' + media + ' list "' + listname + '"?', function() {
-							gmdApiProxyFetch('/api/' + media + '/search/list/' + listname)
-								.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
-								.then(function(data){
-									alert('Search started for ' + media + ' list: ' + listname);
-									oTable.ajax.reload();
-								})
-								.catch(function(err){
-									alert('Error starting search: ' + err.message);
-								});
-						})
-					});
-
-					// Handle List Sub button clicks (artists/authors -> albums/books/audiobooks)
-					$(document).on('click', '.btn-action-list-sub', function() {
-						var id = $(this).data('id');
-						var target = $(this).data('target');
-						var filter = $(this).data('filter');
-						window.location.href = '/api/admin/database/' + target + '?filter-' + filter + '=' + id;
-					});
-
-					// Handle Search Artist/Author button clicks
-					$(document).on('click', '.btn-action-search-artist', function() {
-						var id = $(this).data('id');
-						var media = $(this).data('media');
-						var endpoint = $(this).data('endpoint');
-						var row = oTable.row($(this).closest('tr')).data();
-						var headers = $('#table-data thead th');
-						var listIdx = -1;
-						headers.each(function(i) {
-							if ($(this).attr('data-column-name') === 'listname') listIdx = i;
-						});
-						if (listIdx === -1 || !row || !row[listIdx]) {
-							alert('Could not determine list name for this record');
-							return;
-						}
-						var listname = row[listIdx];
-						confirmAction('Please confirm', 'Search missing ' + media + ' for ' + endpoint + ' in list "' + listname + '"?', function() {
-							gmdApiProxyFetch('/api/' + media + '/search/' + endpoint + '/missing/' + listname)
-								.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
-								.then(function(data){
-									alert('Search started for missing ' + media + ' by ' + endpoint + ' in list: ' + listname);
-									oTable.ajax.reload();
-								})
-								.catch(function(err){
-									alert('Error starting search: ' + err.message);
-								});
-						})
-					});
-
-					// Handle Discover Series Albums button clicks
-					$(document).on('click', '.btn-action-discover-series', function() {
-						var id = $(this).data('id');
-						confirmAction('Please confirm', 'Discover and import series albums for artist #' + id + '?', function() {
-							gmdApiProxyFetch('/api/music/discover/series/artist/' + id)
-								.then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){ return {}; }); })
-								.then(function(data){
-									alert('Discover series albums queued for artist #' + id);
-								})
-								.catch(function(err){
-									alert('Error: ' + err.message);
-								});
-						})
-					});
-					`, tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, "", tableInfo.Name, columnsStr, csrfToken, tableInfo.Name, tableInfo.Name, tableInfo.Name, tableInfo.Name, tableInfo.Name, tableInfo.Name)),
+				tableScripts(tableInfo, csrfToken, aliases),
 			),
 		})
 }
@@ -2241,7 +1617,10 @@ func generateFormField(col, fieldName, displayName string, fieldData any) gompon
 		)
 
 	case sql.NullTime:
-		valformat := val.Time.Format("2006-01-02")
+		valformat := ""
+		if val.Valid {
+			valformat = val.Time.Format("2006-01-02")
+		}
 
 		return RenderFormGroup(
 			"",
@@ -2909,14 +2288,16 @@ func createTextareaInput(
 		html.Class(classelement),
 		html.ID(id),
 		html.Name(id),
-		html.Value(fmt.Sprintf("%v", value)),
 	}
 
 	if !hasRowsOption(options) {
 		baseAttrs = append(baseAttrs, html.Rows("3"))
 	}
 
-	return html.Textarea(append(baseAttrs, addDetails...)...)
+	baseAttrs = append(baseAttrs, addDetails...)
+
+	// A textarea's content is its child text; a value attribute is ignored.
+	return html.Textarea(append(baseAttrs, gomponents.Text(fmt.Sprintf("%v", value)))...)
 }
 
 // hasRowsOption checks if rows option is specified.
@@ -2980,6 +2361,8 @@ func createNumberInput(id string, value any, addDetails []gomponents.Node) gompo
 		setvalue = fmt.Sprintf("%d", val)
 	case float64, float32:
 		setvalue = fmt.Sprintf("%f", val)
+	case string:
+		setvalue = val
 	}
 
 	return createFormField(fieldTypeNumber, id, setvalue, "", addDetails)
@@ -3176,7 +2559,11 @@ func buildOptionString(options map[string][]string) string {
 		opts2.Sort()
 
 		for _, opt := range opts2 {
-			optionString.WriteString("<option value=\"" + opt + "\">" + opt + "</option>")
+			optionString.WriteString("<option value=\"")
+			optionString.WriteString(opt)
+			optionString.WriteString("\">")
+			optionString.WriteString(opt)
+			optionString.WriteString("</option>")
 		}
 	}
 
@@ -3527,9 +2914,7 @@ func CreateImdbConfigFields(configv *config.ImdbConfig) []FormFieldDefinition {
 		{Name: "Indexedlanguages", Type: "array", DefaultValue: configv.Indexedlanguages},
 		{Name: "Indexfull", Type: "checkbox", DefaultValue: configv.Indexfull},
 		{Name: "ImdbIDSize", Type: "number", DefaultValue: configv.ImdbIDSize},
-		{Name: "LoopSize", Type: "number", DefaultValue: configv.LoopSize},
 		{Name: "UseMemory", Type: "checkbox", DefaultValue: configv.UseMemory},
-		{Name: "UseCache", Type: "checkbox", DefaultValue: configv.UseCache},
 	}
 }
 

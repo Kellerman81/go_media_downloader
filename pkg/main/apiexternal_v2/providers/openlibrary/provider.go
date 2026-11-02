@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -30,6 +32,17 @@ func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
 
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
+	}
+
+	// The configured OpenLibrary limits apply to every instance; the built-in
+	// limits below are only the fallback for 0.
+	general := config.GetSettingsGeneral()
+	if cfg.RateLimitCalls == 0 {
+		cfg.RateLimitCalls = general.OpenLibraryLimiterCalls
+	}
+
+	if cfg.RateLimitSeconds == 0 {
+		cfg.RateLimitSeconds = int(general.OpenLibraryLimiterSeconds)
 	}
 
 	if cfg.RateLimitCalls == 0 {
@@ -75,8 +88,9 @@ func (p *Provider) SearchBooks(
 	author string,
 	limit int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
-	// Build search URL
-	searchURL := fmt.Sprintf("/search.json?q=%s", url.QueryEscape(query))
+	// q is parsed as a Solr query; escape user text so e.g. "Title: Subtitle"
+	// is not read as a field search.
+	searchURL := fmt.Sprintf("/search.json?q=%s", url.QueryEscape(logger.LuceneEscape(query)))
 	if author != "" {
 		searchURL += fmt.Sprintf("&author=%s", url.QueryEscape(author))
 	}
@@ -113,12 +127,12 @@ func (p *Provider) SearchByISBN(
 //
 
 // GetBookByID retrieves book details by OpenLibrary ID.
-// ID format: /works/OL123W or /books/OL123M.
+// ID format: /works/OL123W, /books/OL123M or the bare OL123W / OL123M.
 func (p *Provider) GetBookByID(
 	ctx context.Context,
 	id string,
 ) (*apiexternal_v2.BookDetails, error) {
-	endpoint := fmt.Sprintf("%s.json", id)
+	endpoint := olKeyPath(id, "works") + ".json"
 
 	var response olWorkResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -129,12 +143,12 @@ func (p *Provider) GetBookByID(
 }
 
 // GetAuthorByID retrieves author details by OpenLibrary author ID.
-// ID format: /authors/OL123A.
+// ID format: /authors/OL123A or the bare OL123A.
 func (p *Provider) GetAuthorByID(
 	ctx context.Context,
 	id string,
 ) (*apiexternal_v2.AuthorDetails, error) {
-	endpoint := fmt.Sprintf("%s.json", id)
+	endpoint := olKeyPath(id, "authors") + ".json"
 
 	var response olAuthorResponse
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -150,8 +164,7 @@ func (p *Provider) GetBooksByAuthor(
 	authorID string,
 	limit int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
-	// Extract the author key if full path given
-	endpoint := fmt.Sprintf("/authors/%s/works.json", url.PathEscape(authorID))
+	endpoint := fmt.Sprintf("/authors/%s/works.json", url.PathEscape(extractOLID(authorID)))
 	if limit > 0 {
 		endpoint += fmt.Sprintf("?limit=%d", limit)
 	}
@@ -170,7 +183,7 @@ func (p *Provider) GetEditionsByWork(
 	workID string,
 	limit int,
 ) ([]apiexternal_v2.BookSearchResult, error) {
-	endpoint := fmt.Sprintf("/works/%s/editions.json", url.PathEscape(workID))
+	endpoint := fmt.Sprintf("/works/%s/editions.json", url.PathEscape(extractOLID(workID)))
 	if limit > 0 {
 		endpoint += fmt.Sprintf("?limit=%d", limit)
 	}
@@ -181,6 +194,30 @@ func (p *Provider) GetEditionsByWork(
 	}
 
 	return convertEditionsToSearchResults(response.Entries), nil
+}
+
+// olKeyPath turns an OpenLibrary key into its request path. Full keys
+// ("/works/OL1W") are used as is; bare IDs as stored in the database ("OL1W")
+// get the collection implied by their type suffix, or fallback.
+func olKeyPath(id, fallback string) string {
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "/") {
+		return id
+	}
+
+	collection := fallback
+	if id != "" {
+		switch id[len(id)-1] {
+		case 'W':
+			collection = "works"
+		case 'M':
+			collection = "books"
+		case 'A':
+			collection = "authors"
+		}
+	}
+
+	return logger.JoinStrings("/", collection, "/", url.PathEscape(id))
 }
 
 // GetCoverURL returns the URL for a book cover.

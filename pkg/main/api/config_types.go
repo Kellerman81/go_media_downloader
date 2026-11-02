@@ -127,6 +127,7 @@ var listsValidator = &ConfigValidator[config.ListsConfig]{
 			func(c config.ListsConfig) string { return c.ListType },
 		),
 		validateNonNegativeInt("min_votes", func(c config.ListsConfig) int { return c.MinVotes }),
+		validateNonNegativeInt("tmdb_pages", func(c config.ListsConfig) int { return c.TmdbPages }),
 		validateNonNegativeFloat(
 			"min_rating",
 			func(c config.ListsConfig) float32 { return c.MinRating },
@@ -149,7 +150,7 @@ var notificationValidator = &ConfigValidator[config.NotificationConfig]{
 	GetName:    func(c config.NotificationConfig) string { return c.Name },
 	Validators: []func(config.NotificationConfig) error{
 		requireNonEmptyString("name", func(c config.NotificationConfig) string { return c.Name }),
-		validateInStringList("type", []string{"csv", "pushover", "gotify", "pushbullet", "apprise"},
+		validateInStringList("type", []string{"csv", "pushover", "gotify", "pushbullet", "apprise", "sendmail"},
 			func(c config.NotificationConfig) string { return c.NotificationType }),
 	},
 }

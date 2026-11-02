@@ -25,6 +25,8 @@ func AddBooksRoutes(routerbooks *gin.RouterGroup) {
 		routerbooks.GET("/list/:name", apiBooksListGet)
 		routerbooks.DELETE("/:id", apiBookDelete)
 
+		routerbooks.GET("/refresh/:id", apirefreshBook)
+
 		routerbooks.GET("/job/:job", apiBooksAllJobs)
 		routerbooks.GET("/job/:job/:name", apiBooksJobs)
 
@@ -55,6 +57,7 @@ func AddBooksRoutes(routerbooks *gin.RouterGroup) {
 // @Router       /api/books [get].
 func apiBooksDBList(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
+	boundPagination(&params)
 
 	rows := database.Getdatarow[uint](false, "select count() from dbbooks")
 
@@ -100,9 +103,9 @@ func apiBooksListGet(ctx *gin.Context) {
 
 	params := parsePaginationParams(ctx)
 
-	rows := database.Getdatarow[uint](false, "select count() from books where listname = ?", &name)
+	rows := database.Getdatarow[uint](false, "select count() from books where listname = ? COLLATE NOCASE", &name)
 
-	query := "select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbbook_id,book_series_id,author_id from books where listname = ?"
+	query := "select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbbook_id,book_series_id,author_id from books where listname = ? COLLATE NOCASE"
 	if params.Order != "" {
 		query += " order by " + params.Order
 	}
@@ -158,6 +161,32 @@ func itoa(i int) string {
 	return strconv.Itoa(i)
 }
 
+// @Summary      Refresh a single Book
+// @Description  Refreshes specific Book Metadata
+// @Tags         book
+// @Param        id   path      int  true  "Book ID"
+// @Param        apikey query     string    true  "apikey"
+// @Success      200  {object}  string "returns started"
+// @Failure      401  {object}  Jsonerror
+// @Router       /api/books/refresh/{id} [get].
+func apirefreshBook(c *gin.Context) {
+	id := c.Param(logger.StrID)
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM books WHERE dbbook_id = ? LIMIT 1",
+		&id,
+	)
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList(logger.StrBook, listname),
+		logger.StrBook,
+		"Refresh Single Book_"+id,
+		func(_ context.Context, cfgp *config.MediaTypeConfig) error {
+			return utils.RefreshBook(cfgp, &id)
+		},
+	)
+}
+
 // @Summary      Start All Book Jobs
 // @Description  Starts a Job for all book configurations
 // @Tags         book
@@ -171,7 +200,6 @@ func apiBooksAllJobs(c *gin.Context) {
 	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
 		TypeName:    "book",
 		NamePrefix:  logger.StrBook,
-		Plural:      "books",
 		AllowedJobs: allowedjobsbooksstr,
 	})
 }
@@ -190,7 +218,6 @@ func apiBooksJobs(c *gin.Context) {
 	dispatchMediaJob(c, mediaJobDispatchConfig{
 		TypeName:    "book",
 		NamePrefix:  logger.StrBook,
-		Plural:      "books",
 		AllowedJobs: allowedjobsbooksstr,
 	})
 }
@@ -204,15 +231,8 @@ func apiBooksJobs(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/books/rss/search/list/{group} [get].
 func apiBooksRssSearchList(c *gin.Context) {
-	cfgpstr := "book_" + c.Param("group")
-	worker.Dispatch(
-		"rss_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRss, cfgpstr, "", true, key)
-		},
-		"RSS",
-	)
-	sendSuccess(c, "RSS search started for "+cfgpstr)
+	group := c.Param("group")
+	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, group, logger.StrRss, logger.StrRss+"_", "RSS", "RSS search started for book_"+group)
 }
 
 // @Summary      Search Books by List
@@ -225,15 +245,7 @@ func apiBooksRssSearchList(c *gin.Context) {
 // @Router       /api/books/search/list/{id} [get].
 func apiBooksSearchList(c *gin.Context) {
 	listName := c.Param(StrID)
-	cfgpstr := "book_" + listName
-	worker.Dispatch(
-		"searchlist_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrSearchMissingInc, cfgpstr, "", true, key)
-		},
-		"Search",
-	)
-	sendSuccess(c, "Search started for book list "+listName)
+	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, listName, logger.StrSearchMissingInc, logger.StrSearchMissingInc+"_", "Search", "Search started for book list "+listName)
 }
 
 // @Summary      Clear Book History by Name
@@ -245,9 +257,7 @@ func apiBooksSearchList(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/books/search/history/clear/{name} [get].
 func apiBooksClearHistoryName(c *gin.Context) {
-	name := c.Param("name")
-	err := database.ExecNErr("DELETE FROM book_histories WHERE listname = ?", &name)
-	handleDBError(c, err, "History cleared for "+name)
+	dispatchClearHistory(c, logger.StrBook, logger.StrBook, c.Param(StrName))
 }
 
 // @Summary      Clear Book History by ID
@@ -277,16 +287,8 @@ func apiBooksClearHistoryID(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/books/search/authors/missing/{name} [get].
 func apiBooksSearchAuthorsMissing(c *gin.Context) {
-	listName := c.Param("name")
-	cfgpstr := "book_" + listName
-	worker.Dispatch(
-		"searchauthors_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRssAuthors, cfgpstr, "", true, key)
-		},
-		"Author Search",
-	)
-	sendSuccess(c, "Author search (missing) started for book list "+listName)
+	listName := c.Param(StrName)
+	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, listName, logger.StrRssAuthors, logger.StrRssAuthors+"_", "Search", "Author search (missing) started for book list "+listName)
 }
 
 // @Summary      Search Upgrade Books by Author
@@ -298,16 +300,8 @@ func apiBooksSearchAuthorsMissing(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/books/search/authors/upgrade/{name} [get].
 func apiBooksSearchAuthorsUpgrade(c *gin.Context) {
-	listName := c.Param("name")
-	cfgpstr := "book_" + listName
-	worker.Dispatch(
-		"searchauthorsupgrade_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRssAuthorsUpgrade, cfgpstr, "", true, key)
-		},
-		"Author Search",
-	)
-	sendSuccess(c, "Author search (upgrade) started for book list "+listName)
+	listName := c.Param(StrName)
+	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, listName, logger.StrRssAuthorsUpgrade, logger.StrRssAuthorsUpgrade+"_", "Search", "Author search (upgrade) started for book list "+listName)
 }
 
 // @Summary      Import Book Bestseller List for a Specific Date
@@ -334,15 +328,12 @@ func apiBooksFeedsDate(c *gin.Context) {
 		return
 	}
 
-	// dispatched also doubles as "a response was already sent inside the
-	// closure" - every early-return path below (list disabled, bad chart
-	// URL, or a real dispatch) must set it, or the trailing
-	// sendBadRequest below double-writes a second JSON body onto the
-	// already-committed response.
-	var dispatched bool
+	// responded is set by every path inside the closure that already wrote
+	// a response, so the trailing writes below never double-write.
+	var found, responded bool
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, "books") {
+		if found || !strings.HasPrefix(media.NamePrefix, logger.StrBook+"_") {
 			return nil
 		}
 
@@ -355,8 +346,10 @@ func apiBooksFeedsDate(c *gin.Context) {
 				continue
 			}
 
+			found = true
+
 			if !media.Lists[idxlist].Enabled || media.Lists[idxlist].CfgList == nil {
-				dispatched = true
+				responded = true
 
 				sendBadRequest(c, "list "+listName+" is disabled or not configured")
 
@@ -365,7 +358,7 @@ func apiBooksFeedsDate(c *gin.Context) {
 
 			overrideURL, err := buildChartDateURL(media.Lists[idxlist].CfgList, dateStr)
 			if err != nil {
-				dispatched = true
+				responded = true
 
 				sendBadRequest(c, err.Error())
 
@@ -375,7 +368,7 @@ func apiBooksFeedsDate(c *gin.Context) {
 			idxCopy := idxlist
 			cfgp := media
 
-			worker.Dispatch(
+			if err := worker.Dispatch(
 				"feeds_date_books_"+media.Name+"_"+listName,
 				func(_ uint32, ctx context.Context) error {
 					return utils.ImportFeedsWithURL(
@@ -387,9 +380,11 @@ func apiBooksFeedsDate(c *gin.Context) {
 					)
 				},
 				"Feeds",
-			)
+			); err != nil {
+				responded = true
 
-			dispatched = true
+				sendDispatchError(c, err)
+			}
 
 			return nil
 		}
@@ -397,7 +392,11 @@ func apiBooksFeedsDate(c *gin.Context) {
 		return nil
 	})
 
-	if !dispatched {
+	if responded {
+		return
+	}
+
+	if !found {
 		sendBadRequest(c, "list "+listName+" not found in books config "+mediaName)
 		return
 	}

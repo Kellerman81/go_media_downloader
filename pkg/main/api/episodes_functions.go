@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -13,108 +12,30 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 )
 
-// checkSeriesMissingEpisodes finds missing episodes for series.
-func checkSeriesMissingEpisodes(
-	seriesName string,
-	seasonNumber int,
-	includeSpecials, onlyAired bool,
-	dateRangeDays int,
-	status string,
-) ([]database.SerieEpisode, error) {
-	var (
-		queryWhere string
-		queryArgs  []any
-	)
-
-	// Base query for missing episodes
-	queryWhere = "serie_episodes.missing = 1"
-
-	// Add series name filter if provided
-	if seriesName != "" {
-		queryWhere += " AND series.seriename LIKE ?"
-
-		queryArgs = append(queryArgs, "%"+seriesName+"%")
-	}
-
-	// Add season filter if provided
-	if seasonNumber > 0 {
-		queryWhere += " AND dbserie_episodes.season = ?"
-
-		queryArgs = append(queryArgs, strconv.Itoa(seasonNumber))
-	}
-
-	// Add specials filter
-	if !includeSpecials {
-		queryWhere += " AND dbserie_episodes.season != '0'"
-	}
-
-	// Add aired date filter if requested
-	if onlyAired {
-		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired <= ?)"
-
-		queryArgs = append(queryArgs, time.Now().Format("2006-01-02"))
-	}
-
-	// Add date range filter
-	if dateRangeDays > 0 {
-		cutoffDate := time.Now().AddDate(0, 0, -dateRangeDays)
-
-		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired >= ?)"
-
-		queryArgs = append(queryArgs, cutoffDate.Format("2006-01-02"))
-	}
-
-	// Add status filter
-	if status != "all" {
-		switch status {
-		case "missing":
-			queryWhere += " AND serie_episodes.missing = 1"
-		case "wanted":
-			queryWhere += " AND serie_episodes.missing = 1 AND serie_episodes.dont_search = 0"
-		case "ignored":
-			queryWhere += " AND serie_episodes.dont_search = 1"
-		}
-	}
-
-	// Execute query to get missing episodes
-	missingEpisodes := database.StructscanT[database.SerieEpisode](false, 0,
-		"SELECT serie_episodes.* FROM serie_episodes "+
-			"INNER JOIN series ON series.id = serie_episodes.serie_id "+
-			"INNER JOIN dbserie_episodes ON dbserie_episodes.id = serie_episodes.dbserie_episode_id "+
-			"WHERE "+queryWhere+" "+
-			"ORDER BY series.seriename, dbserie_episodes.season, dbserie_episodes.episode "+
-			"LIMIT 1000",
-		queryArgs...)
-
-	return missingEpisodes, nil
-}
-
-// triggerEpisodeDownloads initiates downloads for missing episodes.
+// triggerEpisodeDownloads runs a search for each episode. It is meant to run
+// inside a worker job; ctx cancellation stops it between episodes.
 func triggerEpisodeDownloads(
+	ctx context.Context,
 	episodes []database.SerieEpisode,
 	qualityProfile string,
-	autoDownload bool,
-) (*EpisodeDownloadResults, error) {
+) *EpisodeDownloadResults {
 	results := &EpisodeDownloadResults{
-		TotalEpisodes:      len(episodes),
-		TriggeredDownloads: 0,
-		FailedDownloads:    0,
-		SkippedEpisodes:    0,
-		Details:            make([]string, 0),
+		TotalEpisodes: len(episodes),
+		Details:       make([]string, 0),
 	}
 
-	if !autoDownload {
-		results.Details = append(
-			results.Details,
-			"Auto-download disabled - episodes marked for manual review",
-		)
-		results.SkippedEpisodes = len(episodes)
+	for i, episode := range episodes {
+		if ctx.Err() != nil {
+			results.SkippedEpisodes += len(episodes) - i
+			break
+		}
 
-		return results, nil
-	}
+		// Episodes the user set to dont_search are never searched here.
+		if episode.DontSearch {
+			results.SkippedEpisodes++
+			continue
+		}
 
-	// Process each missing episode
-	for _, episode := range episodes {
 		// Get series information
 		series := database.StructscanT[database.Serie](false, 1,
 			"SELECT * FROM series WHERE id = ?", episode.SerieID)
@@ -199,7 +120,7 @@ func triggerEpisodeDownloads(
 		}
 
 		// Trigger search for this episode
-		err := triggerEpisodeSearch(episode.ID, episodeData, mediaConfig, qualityConfig)
+		err := triggerEpisodeSearch(ctx, episode.ID, episodeData, mediaConfig, qualityConfig)
 		if err != nil {
 			results.FailedDownloads++
 
@@ -225,7 +146,7 @@ func triggerEpisodeDownloads(
 		}
 	}
 
-	return results, nil
+	return results
 }
 
 // triggerEpisodeSearch initiates a real search for a specific episode.
@@ -233,6 +154,7 @@ func triggerEpisodeDownloads(
 // instance) - MediaSearch requires this, not the dbserie_episodes.id used
 // only for the episode's descriptive metadata.
 func triggerEpisodeSearch(
+	ctx context.Context,
 	serieEpisodeID uint,
 	episode database.DbserieEpisode,
 	mediaConfig *config.MediaTypeConfig,
@@ -257,14 +179,8 @@ func triggerEpisodeSearch(
 		Str("title", episode.Title).
 		Msg("Triggering episode search")
 
-	if err := searcherInstance.MediaSearch(context.Background(), mediaConfig, serieEpisodeID, false, false, false); err != nil {
-		return err
-	}
-
-	return database.ExecNErr(
-		"UPDATE serie_episodes SET dont_search = 0, last_searched = ? WHERE id = ?",
-		time.Now(), serieEpisodeID,
-	)
+	// MediaSearch updates serie_episodes.lastscan itself.
+	return searcherInstance.MediaSearch(ctx, mediaConfig, serieEpisodeID, false, false, false)
 }
 
 // EpisodeDownloadResults holds the results of episode download operations.
@@ -274,16 +190,4 @@ type EpisodeDownloadResults struct {
 	FailedDownloads    int
 	SkippedEpisodes    int
 	Details            []string
-}
-
-// EpisodeSearchCriteria holds search criteria for missing episodes.
-type EpisodeSearchCriteria struct {
-	SeriesName      string
-	SeasonNumber    int
-	IncludeSpecials bool
-	OnlyAired       bool
-	DateRangeDays   int
-	Status          string
-	QualityProfile  string
-	AutoDownload    bool
 }

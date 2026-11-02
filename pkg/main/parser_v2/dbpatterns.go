@@ -212,23 +212,29 @@ func (ps *DBPatternStore) MatchString(
 
 	for i := range patterns {
 		for j := range patterns[i].Strings {
-			idx := logger.IndexI(input, patterns[i].Strings[j])
-			if idx == -1 {
+			str := patterns[i].Strings[j]
+			if str == "" {
 				continue
 			}
 
-			endIdx := idx + len(patterns[i].Strings[j])
+			// The first occurrence may sit inside a word ("dd" in "Eddie"), so
+			// every occurrence is checked against the word boundary.
+			for off := 0; off < len(input); {
+				rel := logger.IndexI(input[off:], str)
+				if rel == -1 {
+					break
+				}
 
-			// Word boundary check — isDigitOrLetter handles both cases so original input is fine.
-			if endIdx < len(input) && isDigitOrLetter(input[endIdx]) {
-				continue
+				idx := off + rel
+				endIdx := idx + len(str)
+
+				if (endIdx >= len(input) || !isDigitOrLetter(input[endIdx])) &&
+					(idx == 0 || !isDigitOrLetter(input[idx-1])) {
+					return patterns[i].Name, idx, endIdx
+				}
+
+				off = idx + 1
 			}
-
-			if idx > 0 && isDigitOrLetter(input[idx-1]) {
-				continue
-			}
-
-			return patterns[i].Name, idx, endIdx
 		}
 	}
 

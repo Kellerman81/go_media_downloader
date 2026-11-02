@@ -40,7 +40,13 @@ func NewProvider(host string, port int, token string, urls []string, useSSL bool
 		scheme = "https"
 	}
 
-	baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
+	// host may carry a reverse-proxy sub-path ("example.com/gotify").
+	hostOnly, subPath, _ := strings.Cut(host, "/")
+
+	baseURL := fmt.Sprintf("%s://%s:%d", scheme, hostOnly, port)
+	if subPath = strings.Trim(subPath, "/"); subPath != "" {
+		baseURL += "/" + subPath
+	}
 
 	config := base.ClientConfig{
 		Name:                    "apprise",
@@ -101,7 +107,7 @@ func (p *Provider) SendNotification(
 		}
 
 		if optURLs, ok := request.Options["urls"]; ok {
-			urls = strings.Split(optURLs, ",")
+			urls = splitURLs(optURLs)
 		}
 
 		if tag, ok := request.Options["tag"]; ok {
@@ -113,7 +119,9 @@ func (p *Provider) SendNotification(
 		}
 	}
 
-	if len(urls) == 0 {
+	// With a persistent config key the server holds the target URLs (optionally
+	// filtered by tag), so the request needs none.
+	if len(urls) == 0 && p.token == "" {
 		return nil, errors.New("no notification URLs configured")
 	}
 
@@ -203,6 +211,21 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// splitURLs splits a comma-separated URL list, trimming entries and dropping
+// empty ones.
+func splitURLs(list string) []string {
+	parts := strings.Split(list, ",")
+
+	out := make([]string, 0, len(parts))
+	for i := range parts {
+		if u := strings.TrimSpace(parts[i]); u != "" {
+			out = append(out, u)
+		}
+	}
+
+	return out
 }
 
 // mapPriorityToType converts priority to Apprise notification type.

@@ -5,19 +5,19 @@ package series
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -352,13 +352,13 @@ func (*handler) PerformIDSearch(
 	quality *config.QualityConfig,
 	entry *apiexternal_v2.Nzbwithprio,
 	cats int,
-	raw *apiexternal.NzbSlice,
+	raw *apiexternal_v2.NzbSlice,
 ) error {
 	if entry.NZB.TVDBID == 0 {
 		return nil
 	}
 
-	_, _, err := apiexternal.QueryNewznabTvTvdb(
+	_, _, err := providers.EnsureIndexer(indcfg).QueryTvTvdb(
 		ctx, indcfg, quality, entry.NZB.TVDBID, cats,
 		entry.NZB.Season, entry.NZB.Episode, true, true, raw,
 	)
@@ -552,12 +552,21 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		)
 	}
 
-	database.ExecN(
+	if nzb.NzbepisodeID == 0 || serieID == 0 || dbserieID == 0 || dbserieEpisodeID == 0 {
+		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+	}
+
+	var indexerName string
+	if nzb.NZB.Indexer != nil {
+		indexerName = nzb.NZB.Indexer.Name
+	}
+
+	return database.ExecNErr(
 		"Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
 		&targetPath,
-		&nzb.NZB.Indexer.Name,
+		&indexerName,
 		&serieID,
 		&nzb.NzbepisodeID,
 		&dbserieEpisodeID,
@@ -568,8 +577,6 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		&nzb.Info.AudioID,
 		&qualityProfile,
 	)
-
-	return nil
 }
 
 const strTvdbid = " (tvdb"
@@ -671,7 +678,7 @@ func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbepisodeID
 }
 
-// GetNzbIDP returns the NzbaudiobookID field.
+// GetNzbIDP returns a pointer to the NzbepisodeID field.
 func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbepisodeID
 }
@@ -1007,24 +1014,9 @@ func (*handler) CleanupAfterRemove(
 // MoveOtherFilesAfterOrganize handles moving additional files after main series episode is organized.
 // For series: moves files with other allowed extensions, then calls notify and cleanup.
 func (*handler) MoveOtherFilesAfterOrganize(params *mediatype.MoveOtherFilesParams) error {
-	fileext := filepath.Ext(params.MediaFile)
-
-	for idx := range params.AllowedOtherExtensions {
-		if fileext == params.AllowedOtherExtensions[idx] {
-			continue
-		}
-
-		also := strings.Replace(params.MediaFile, fileext, params.AllowedOtherExtensions[idx], 1)
-
-		err := params.MoveFileFn(also, params.TargetPath, params.Filename)
-		if err != nil && !errors.Is(err, logger.ErrNotFound) {
-			logger.Logtype("error", 1).
-				Str(logger.StrFile, also).
-				Err(err).
-				Msg("file move")
-		}
-	}
-
+	// The organizer moves the episode's own companion files (subtitles named
+	// after it, language-suffixed ones included).
+	params.WalkCleanupFn(params.Rootpath, params.TargetPath, params.Filename)
 	params.NotifyFn()
 	params.CleanupFolderFn()
 
@@ -1056,50 +1048,6 @@ func (*handler) SupportsAbsoluteEpisode() bool { return true }
 
 // HandleRSSListID does nothing for series - list ID is determined by episode lookup.
 func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
-
-// CheckEpisodeMatch validates if the entry matches the expected episode.
-// For series: validates season/episode identifiers against the source entry.
-// Returns true if entry should be skipped (doesn't match).
-func (*handler) CheckEpisodeMatch(
-	sourceentry, entry *apiexternal_v2.Nzbwithprio,
-	searchActionType string,
-	logdenied func(string, *apiexternal_v2.Nzbwithprio),
-) bool {
-	// Validate absolute episode match
-	if entry.Info.AbsoluteEpisode != 0 && sourceentry.Info.AbsoluteEpisode != 0 {
-		if entry.Info.AbsoluteEpisode == sourceentry.Info.AbsoluteEpisode {
-			return false // Match found
-		}
-	}
-
-	// Validate season/episode match
-	if sourceentry.NZB.Season != "" && sourceentry.NZB.Episode != "" {
-		if entry.NZB.Season == sourceentry.NZB.Season &&
-			entry.NZB.Episode == sourceentry.NZB.Episode {
-			return false // Match found
-		}
-	}
-
-	// Validate identifier match for date-based episodes
-	if sourceentry.Info.Identifier != "" && entry.Info.Identifier != "" {
-		if entry.Info.Identifier == sourceentry.Info.Identifier {
-			return false // Match found
-		}
-	}
-
-	// For RSS search, be more lenient - allow if any episode info matches
-	if searchActionType == "rss" {
-		return false
-	}
-
-	// No match found
-	entry.Reason = "episode mismatch"
-	if logdenied != nil {
-		logdenied("episode mismatch", entry)
-	}
-
-	return true
-}
 
 // SupportsVideoFile returns true - series use video files.
 func (*handler) SupportsVideoFile() bool { return true }

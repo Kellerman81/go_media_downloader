@@ -2,6 +2,7 @@ package logger
 
 import (
 	"context"
+	"io/fs"
 	"testing"
 	"time"
 )
@@ -1328,85 +1329,132 @@ func TestStringReplaceWithP(t *testing.T) {
 	}
 }
 
-func TestStringReplaceWithStr(t *testing.T) {
-	tests := []struct {
-		name     string
-		s        string
-		r        string
-		t        string
-		expected string
-	}{
-		{
-			name:     "Empty strings",
-			s:        "",
-			r:        "old",
-			t:        "new",
-			expected: "",
-		},
-		{
-			name:     "Replace empty string",
-			s:        "abc",
-			r:        "",
-			t:        "x",
-			expected: "abc",
-		},
-		{
-			name:     "Replace with empty string",
-			s:        "hello world",
-			r:        "o",
-			t:        "",
-			expected: "hell wrld",
-		},
-		{
-			name:     "Multiple word replacement",
-			s:        "the quick brown fox",
-			r:        "quick",
-			t:        "slow",
-			expected: "the slow brown fox",
-		},
-		{
-			name:     "Overlapping patterns",
-			s:        "aaaaa",
-			r:        "aa",
-			t:        "b",
-			expected: "bba",
-		},
-		{
-			name:     "Unicode replacement",
-			s:        "hello 世界",
-			r:        "世界",
-			t:        "world",
-			expected: "hello world",
-		},
-		{
-			name:     "Replace longer with shorter",
-			s:        "hello world",
-			r:        "world",
-			t:        "all",
-			expected: "hello all",
-		},
-		{
-			name:     "Replace shorter with longer",
-			s:        "hi world",
-			r:        "hi",
-			t:        "hello",
-			expected: "hello world",
-		},
+// TestStringToSlugTransliteration checks transliterated (non-Latin and
+// capitalised diacritic) input ends up lowercase and hyphenated like ASCII.
+// pkg/imdb's stringToSlug pins the same outputs; keep the two in sync.
+func TestStringToSlugTransliteration(t *testing.T) {
+	tests := map[string]string{
+		"日本語":           "ri-ben-yu",
+		"Гарри Поттер":  "garri-potter",
+		"Österreich":    "oesterreich",
+		"Élan Vital":    "elan-vital",
+		"Björk":         "bjoerk",
+		"Rock 'n' Roll": "rock-n-roll",
+		"!!!":           "",
+	}
+	for in, want := range tests {
+		if got := StringToSlug(in); got != want {
+			t.Errorf("StringToSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestStringToSlugVariants(t *testing.T) {
+	if got := StringToSlugWild("  Amélie & Nino! "); got != "%amelie-and-nino%" {
+		t.Errorf("StringToSlugWild = %q", got)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := StringReplaceWithStr(tt.s, tt.r, tt.t)
-			if result != tt.expected {
-				t.Errorf(
-					"StringReplaceWithStr(%q, %q, %q) = %q, expected %q",
-					tt.s,
-					tt.r,
-					tt.t,
-					result,
-					tt.expected,
-				)
-			}
-		})
+	if got := StringToSlugWild("!!!"); got != "%%" {
+		t.Errorf("StringToSlugWild(punctuation) = %q", got)
+	}
+
+	if got := string(StringToSlugBytes("The Dark Knight (2008)")); got != "the-dark-knight-2008" {
+		t.Errorf("StringToSlugBytes = %q", got)
+	}
+
+	// The result must not alias the pooled buffer.
+	a := StringToSlugBytes("first title")
+	_ = StringToSlugBytes("second title that is longer")
+
+	if string(a) != "first-title" {
+		t.Errorf("slug changed after buffer reuse: %q", a)
+	}
+}
+
+func TestStringToFileMode(t *testing.T) {
+	for in, want := range map[string]fs.FileMode{"": 0, "755": 0o755, "0644": 0o644, "abc": 0, "9": 0} {
+		if got := StringToFileMode(in); got != want {
+			t.Errorf("StringToFileMode(%q) = %o, want %o", in, got, want)
+		}
+	}
+}
+
+func TestFieldTagHelpers(t *testing.T) {
+	type sample struct {
+		Name  string `comment:"short" displayname:"Display Name" longcomment:"long text"`
+		Plain int
+	}
+
+	if got := GetFieldDisplayNames(sample{}); len(got) != 1 || got["Name"] != "Display Name" {
+		t.Errorf("GetFieldDisplayNames = %v", got)
+	}
+
+	if got := GetFieldComments(&sample{}); len(got) != 1 || got["Name"] != "long text" {
+		t.Errorf("GetFieldComments = %v", got)
+	}
+
+	if GetFieldCommentByName(sample{}, "Name") != "short" || GetFieldCommentByName(sample{}, "Plain") != "" ||
+		GetFieldCommentByName(sample{}, "Missing") != "" || GetFieldCommentByName(nil, "Name") != "" {
+		t.Error("GetFieldCommentByName gave a wrong answer")
+	}
+
+	for _, v := range []any{nil, 42, "text"} {
+		if len(GetFieldDisplayNames(v)) != 0 || len(GetFieldComments(v)) != 0 {
+			t.Errorf("tag helpers returned entries for %T", v)
+		}
+	}
+}
+
+func TestTemplateFormatHelpers(t *testing.T) {
+	for _, tt := range []struct {
+		season string
+		eps    []int
+		want   string
+	}{
+		{"1", nil, "S01"},
+		{"1", []int{5}, "S01E05"},
+		{"12", []int{1, 2, 3}, "S12E01E02E03"},
+		{"x", []int{1}, "S00E01"},
+	} {
+		if got := seMulti(tt.season, tt.eps); got != tt.want {
+			t.Errorf("seMulti(%q, %v) = %q, want %q", tt.season, tt.eps, got, tt.want)
+		}
+	}
+
+	for in, want := range map[string]string{
+		"The Matrix": "Matrix, The", " A Beautiful Mind ": "Beautiful Mind, A", "An Education": "Education, An",
+		"Theory of Everything": "Theory of Everything", "Anything": "Anything",
+	} {
+		if got := titleThe(in); got != want {
+			t.Errorf("titleThe(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSmallStringHelpers(t *testing.T) {
+	if got := BytesToString([]byte("abc")); got != "abc" {
+		t.Errorf("BytesToString = %q", got)
+	}
+
+	s := []string{"Movie", "Series"}
+	if SlicesIndexI(s, "series") != 1 || SlicesIndexI(s, "Movie") != 0 || SlicesIndexI(s, "book") != -1 {
+		t.Error("SlicesIndexI gave a wrong index")
+	}
+
+	for in, want := range map[string][2]string{
+		"group.name": {"group", "name"}, "a.b.c": {"a.b", "c"}, "plain": {"", "plain"}, ".hidden": {"", ".hidden"}, "trail.": {"trail", ""},
+	} {
+		if l, r := SplitByLR(in, '.'); l != want[0] || r != want[1] {
+			t.Errorf("SplitByLR(%q) = %q, %q, want %q, %q", in, l, r, want[0], want[1])
+		}
+	}
+
+	var b AddBuffer
+
+	b.WriteHex8(0xDEADBEEF)
+	b.WriteHex8(1)
+
+	if got := b.String(); got != "DEADBEEF00000001" {
+		t.Errorf("WriteHex8 = %q", got)
 	}
 }

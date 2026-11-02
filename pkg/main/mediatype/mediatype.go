@@ -7,7 +7,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -123,7 +122,7 @@ type Handler interface {
 		quality *config.QualityConfig,
 		entry *apiexternal_v2.Nzbwithprio,
 		cats int,
-		raw *apiexternal.NzbSlice,
+		raw *apiexternal_v2.NzbSlice,
 	) error
 
 	// ClearUnmatchedCache removes the file from the unmatched cache
@@ -347,16 +346,6 @@ type Handler interface {
 	// For other types: no-op
 	HandleRSSListID(entry *apiexternal_v2.Nzbwithprio, addinlistid int)
 
-	// CheckEpisodeMatch validates if the entry matches the expected episode.
-	// For series: validates season/episode identifiers
-	// For other types: returns false (no validation needed)
-	// Returns true if entry should be skipped (doesn't match).
-	CheckEpisodeMatch(
-		sourceentry, entry *apiexternal_v2.Nzbwithprio,
-		searchActionType string,
-		logdenied func(string, *apiexternal_v2.Nzbwithprio),
-	) bool
-
 	// SupportsVideoFile returns true if this media type uses video files.
 	// For movies/series: returns true (uses video extensions)
 	// For books/audiobooks/music: returns false (uses other file types)
@@ -418,7 +407,6 @@ type MoveOtherFilesParams struct {
 	PathCfgName            string
 	AllowedOtherExtensions []string
 	WalkCleanupFn          func(rootpath, targetpath, filename string)
-	MoveFileFn             func(source, target, filename string) error
 	NotifyFn               func()
 	CleanupFolderFn        func()
 }
@@ -683,21 +671,6 @@ func HandleRSSListID(mediaType uint, entry *apiexternal_v2.Nzbwithprio, addinlis
 	if h := Get(mediaType); h != nil {
 		h.HandleRSSListID(entry, addinlistid)
 	}
-}
-
-// CheckEpisodeMatch validates if the entry matches the expected episode for the media type.
-// Returns true if entry should be skipped (doesn't match).
-func CheckEpisodeMatch(
-	mediaType uint,
-	sourceentry, entry *apiexternal_v2.Nzbwithprio,
-	searchActionType string,
-	logdenied func(string, *apiexternal_v2.Nzbwithprio),
-) bool {
-	if h := Get(mediaType); h != nil {
-		return h.CheckEpisodeMatch(sourceentry, entry, searchActionType, logdenied)
-	}
-
-	return false
 }
 
 // SupportsVideoFile returns true if the media type uses video files.

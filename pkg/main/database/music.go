@@ -212,7 +212,7 @@ type AlbumHistory struct {
 // GetDbalbumByIDP retrieves a Dbalbum by ID.
 func (album *Dbalbum) GetDbalbumByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,title,musicbrainz_release_group_id,musicbrainz_release_id,discogs_master_id,discogs_release_id,spotify_id,upc,release_date,release_type,format,label,country,total_tracks,total_runtime_ms,genres,styles,cover_url,year,slug from dbalbums where id = ?",
+		"select id,created_at,updated_at,title,musicbrainz_release_group_id,musicbrainz_release_id,discogs_master_id,discogs_release_id,spotify_id,upc,release_date,release_type,format,label,country,total_tracks,total_runtime_ms,genres,styles,cover_url,series_name,year,slug from dbalbums where id = ?",
 		album,
 		id,
 	)
@@ -324,8 +324,8 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 		// Find artist IDs
 		artistIDs := Getrowssize[uint](
 			false,
-			"SELECT count() FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = ?",
-			"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = ?",
+			"SELECT count() FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
+			"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
 			artist,
 			artist,
 			&artistSlug,
@@ -334,8 +334,8 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 		// Also check artist aliases
 		aliasIDs := Getrowssize[uint](
 			false,
-			"SELECT count() FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = ?",
-			"SELECT dbartist_id FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = ?",
+			"SELECT count() FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
+			"SELECT dbartist_id FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
 			artist, &artistSlug)
 
 		artistIDs = append(artistIDs, aliasIDs...)
@@ -349,7 +349,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 				`SELECT a.id FROM dbalbums a
 				 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
-				 AND (a.title = ? COLLATE NOCASE OR a.slug = ?)
+				 AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))
 				 LIMIT 1`,
 				&result.ID, &artistIDs[artistid], title, &slug)
 
@@ -367,7 +367,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 				`SELECT at.dbalbum_id FROM dbalbum_titles at
 				 JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
-				 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)
+				 AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))
 				 LIMIT 1`,
 				&result.ID, &artistIDs[artistid], title, &slug)
 
@@ -390,7 +390,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 					`SELECT a.id FROM dbalbums a
 					 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 					 WHERE aa.dbartist_id = ?
-					 AND (a.title = ? COLLATE NOCASE OR a.slug = ?)
+					 AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))
 					 LIMIT 1`,
 					&result.ID, &artistIDs[artistID], &strippedTitle, &strippedSlug)
 
@@ -409,7 +409,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 					`SELECT at.dbalbum_id FROM dbalbum_titles at
 					 JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id
 					 WHERE aa.dbartist_id = ?
-					 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)
+					 AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))
 					 LIMIT 1`,
 					&result.ID, &artistIDs[artistID], &strippedTitle, &strippedSlug)
 
@@ -438,7 +438,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 	var result AlbumSearchResult
 
 	Scanrowsdyn(false,
-		"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ? LIMIT 1",
+		"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') LIMIT 1",
 		&result.ID, title, &slug)
 
 	if result.ID > 0 {
@@ -452,7 +452,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 	// Try stripped title without artist
 	if strippedTitle != *title && strippedTitle != "" {
 		Scanrowsdyn(false,
-			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ? LIMIT 1",
+			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') LIMIT 1",
 			&result.ID, &strippedTitle, &strippedSlug)
 
 		if result.ID > 0 {
@@ -472,29 +472,6 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 	// 	Msg("DEBUG: FindAlbumByArtistTitle - album not found")
 
 	return nil, logger.ErrNotFoundDbalbum
-}
-
-// albumResultDedup tracks unique album IDs seen by FindAlbumsByArtistTitle.
-// The backing array is embedded in the struct so it stays on the stack —
-// no heap allocation needed for the common maxResults ≤ 16 case.
-type albumResultDedup struct {
-	buf [16]uint
-	n   int
-}
-
-func (d *albumResultDedup) add(id uint) bool {
-	for i := range d.n {
-		if d.buf[i] == id {
-			return false
-		}
-	}
-
-	if d.n < len(d.buf) {
-		d.buf[d.n] = id
-		d.n++
-	}
-
-	return true
 }
 
 // FindAlbumsByArtistTitle returns ALL potential album matches for an artist/title combination.
@@ -520,7 +497,28 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 	results := make([]*AlbumSearchResult, 0, maxResults)
 
-	var dedup albumResultDedup
+	// addIDs appends unseen IDs until maxResults is reached; every accepted ID
+	// costs two fill queries, so broad LIKE matches must not run unbounded.
+	addIDs := func(ids []uint) {
+	next:
+		for _, id := range ids {
+			if len(results) >= maxResults {
+				return
+			}
+
+			if id == 0 {
+				continue
+			}
+
+			for _, r := range results {
+				if r.ID == id {
+					continue next
+				}
+			}
+
+			results = append(results, fillAlbumResult(&AlbumSearchResult{ID: id}, ""))
+		}
+	}
 
 	// If we have an artist, try artist-first lookup (more accurate)
 	if artist != nil && *artist != "" {
@@ -529,8 +527,8 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 		// Find artist IDs
 		artistIDs := Getrowssize[uint](
 			false,
-			"SELECT count() FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = ?",
-			"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = ?",
+			"SELECT count() FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
+			"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR sort_name = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
 			artist,
 			artist,
 			&artistSlug,
@@ -539,8 +537,8 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 		// Also check artist aliases
 		aliasIDs := Getrowssize[uint](
 			false,
-			"SELECT count() FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = ?",
-			"SELECT dbartist_id FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = ?",
+			"SELECT count() FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
+			"SELECT dbartist_id FROM dbartist_aliases WHERE alias = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
 			artist, &artistSlug)
 
 		artistIDs = append(artistIDs, aliasIDs...)
@@ -554,21 +552,17 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 			// Exact title matches
 			ids := Getrowssize[uint](
 				false,
-				`SELECT count() FROM dbalbums a JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (a.title = ? COLLATE NOCASE OR a.slug = ?)`,
+				`SELECT count() FROM dbalbums a JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))`,
 				`SELECT a.id FROM dbalbums a
 				 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
-				 AND (a.title = ? COLLATE NOCASE OR a.slug = ?)`,
+				 AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))`,
 				&artistIDs[artistID],
 				title,
 				&slug,
 			)
 
-			for i := range ids {
-				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-				}
-			}
+			addIDs(ids)
 
 			// Alternate title matches
 			if len(results) >= maxResults {
@@ -577,21 +571,17 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 			ids = Getrowssize[uint](
 				false,
-				`SELECT count() FROM dbalbum_titles at JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (at.title = ? COLLATE NOCASE OR at.slug = ?)`,
+				`SELECT count() FROM dbalbum_titles at JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))`,
 				`SELECT at.dbalbum_id FROM dbalbum_titles at
 				 JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
-				 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)`,
+				 AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))`,
 				&artistIDs[artistID],
 				title,
 				&slug,
 			)
 
-			for i := range ids {
-				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-				}
-			}
+			addIDs(ids)
 		}
 
 		// Try with stripped title (remove release type, year, etc.)
@@ -603,24 +593,17 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 				ids := Getrowssize[uint](
 					false,
-					`SELECT count() FROM dbalbums a JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (a.title = ? COLLATE NOCASE OR a.slug = ?)`,
+					`SELECT count() FROM dbalbums a JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))`,
 					`SELECT a.id FROM dbalbums a
 					 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 					 WHERE aa.dbartist_id = ?
-					 AND (a.title = ? COLLATE NOCASE OR a.slug = ?)`,
+					 AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))`,
 					&artistIDs[artistID],
 					&strippedTitle,
 					&strippedSlug,
 				)
 
-				for i := range ids {
-					if ids[i] > 0 && dedup.add(ids[i]) {
-						results = append(
-							results,
-							fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""),
-						)
-					}
-				}
+				addIDs(ids)
 
 				// Alternate titles with stripped version
 				if len(results) >= maxResults {
@@ -629,24 +612,17 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 				ids = Getrowssize[uint](
 					false,
-					`SELECT count() FROM dbalbum_titles at JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (at.title = ? COLLATE NOCASE OR at.slug = ?)`,
+					`SELECT count() FROM dbalbum_titles at JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ? AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))`,
 					`SELECT at.dbalbum_id FROM dbalbum_titles at
 					 JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id
 					 WHERE aa.dbartist_id = ?
-					 AND (at.title = ? COLLATE NOCASE OR at.slug = ?)`,
+					 AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))`,
 					&artistIDs[artistID],
 					&strippedTitle,
 					&strippedSlug,
 				)
 
-				for i := range ids {
-					if ids[i] > 0 && dedup.add(ids[i]) {
-						results = append(
-							results,
-							fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""),
-						)
-					}
-				}
+				addIDs(ids)
 			}
 		}
 	}
@@ -654,29 +630,21 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 	// Fallback: search by title only (less accurate)
 	if len(results) < maxResults {
 		ids := Getrowssize[uint](false,
-			"SELECT count() FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ?",
-			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ?",
+			"SELECT count() FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
+			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
 			title, &slug)
 
-		for i := range ids {
-			if ids[i] > 0 && dedup.add(ids[i]) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-			}
-		}
+		addIDs(ids)
 	}
 
 	// Try stripped title without artist
 	if strippedTitle != *title && strippedTitle != "" && len(results) < maxResults {
 		ids := Getrowssize[uint](false,
-			"SELECT count() FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ?",
-			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = ?",
+			"SELECT count() FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
+			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '')",
 			&strippedTitle, &strippedSlug)
 
-		for i := range ids {
-			if ids[i] > 0 && dedup.add(ids[i]) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-			}
-		}
+		addIDs(ids)
 	}
 
 	// LIKE-based fallback: match partial titles
@@ -685,49 +653,40 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 	// - "Holy Bible" matching "The Holy Bible"
 	if len(results) < maxResults && *title != "" {
 		likeTitle := logger.JoinStrings(*title, "%")
+		// A short term can prefix-match thousands of albums; fetching maxResults
+		// rows still yields enough new IDs, as at most len(results) are repeats.
+		limit := uint(maxResults) //nolint:gosec // maxResults > 0 here
 
-		// Title starts with our search term
-		ids := Getrowssize[uint](false,
-			"SELECT count() FROM dbalbums WHERE title LIKE ? COLLATE NOCASE",
-			"SELECT id FROM dbalbums WHERE title LIKE ? COLLATE NOCASE",
-			&likeTitle)
+		// Title starts with our search term; closest (shortest) titles first.
+		ids := GetrowsN[uint](false, limit,
+			"SELECT id FROM dbalbums WHERE title LIKE ? ORDER BY length(title), id LIMIT ?",
+			&likeTitle, limit)
 
-		for i := range ids {
-			if ids[i] > 0 && dedup.add(ids[i]) {
-				results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-			}
-		}
+		addIDs(ids)
 
 		// Our search term starts with the database title (parsed has extra junk)
 		if len(results) < maxResults {
-			ids = Getrowssize[uint](
+			// Longest (most specific) stored title first.
+			ids = GetrowsN[uint](
 				false,
-				`SELECT count() FROM dbalbums WHERE ? LIKE title || '%' COLLATE NOCASE AND length(title) > 5`,
-				`SELECT id FROM dbalbums WHERE ? LIKE title || '%' COLLATE NOCASE AND length(title) > 5`,
+				limit,
+				`SELECT id FROM dbalbums WHERE ? LIKE title || '%' AND length(title) > 5 ORDER BY length(title) DESC, id LIMIT ?`,
 				title,
+				limit,
 			)
 
-			for i := range ids {
-				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-				}
-			}
+			addIDs(ids)
 		}
 
 		// Also try with stripped title for LIKE matches
 		if strippedTitle != "" && strippedTitle != *title && len(results) < maxResults {
 			likeStripped := strippedTitle + "%"
 
-			ids = Getrowssize[uint](false,
-				"SELECT count() FROM dbalbums WHERE title LIKE ? COLLATE NOCASE",
-				"SELECT id FROM dbalbums WHERE title LIKE ? COLLATE NOCASE",
-				&likeStripped)
+			ids = GetrowsN[uint](false, limit,
+				"SELECT id FROM dbalbums WHERE title LIKE ? ORDER BY length(title), id LIMIT ?",
+				&likeStripped, limit)
 
-			for i := range ids {
-				if ids[i] > 0 && dedup.add(ids[i]) {
-					results = append(results, fillAlbumResult(&AlbumSearchResult{ID: ids[i]}, ""))
-				}
-			}
+			addIDs(ids)
 		}
 	}
 
@@ -917,13 +876,13 @@ func AlbumFileExists(filepath *string) bool {
 // GetAlbumListEntryID looks up the correct albums.id for a given dbalbum_id and listname.
 // This is needed because album.DatabaseID stores dbalbum_id, not albums.id.
 // Multiple list entries can reference the same dbalbum_id, so listname is required.
-func GetAlbumListEntryID(dbalbumID uint, listname string) uint {
-	if dbalbumID == 0 || listname == "" {
+func GetAlbumListEntryID(dbalbumID *uint, listname *string) uint {
+	if *dbalbumID == 0 || *listname == "" {
 		return 0
 	}
 
-	return ScanRowVal2[uint, string, uint](
-		"SELECT id FROM albums WHERE dbalbum_id = ? AND listname = ?",
+	return ScanRowVal2[*uint, *string, uint](
+		"SELECT id FROM albums WHERE dbalbum_id = ? AND listname = ? COLLATE NOCASE",
 		dbalbumID, listname)
 }
 
@@ -939,35 +898,15 @@ func FindAlbumByMusicBrainzID(musicBrainzID *string) (*AlbumSearchResult, error)
 	// Query for exact MusicBrainz release ID match
 	Scanrowsdyn(
 		false,
-		"SELECT id FROM dbalbums WHERE musicbrainz_release_id = ? OR musicbrainz_release_group_id = ? LIMIT 1",
+		"SELECT id FROM dbalbums WHERE musicbrainz_release_id = ? OR musicbrainz_release_group_id = ? ORDER BY musicbrainz_release_id = ? DESC, id LIMIT 1",
 		&result.ID,
+		musicBrainzID,
 		musicBrainzID,
 		musicBrainzID,
 	)
 
 	if result.ID > 0 {
 		return fillAlbumResult(&result, "musicbrainz"), nil
-	}
-
-	return nil, logger.ErrNotFoundDbalbum
-}
-
-// FindAlbumByUPC searches for an album by its UPC/barcode.
-// Returns the best matching album or an error if not found.
-func FindAlbumByUPC(upc *string) (*AlbumSearchResult, error) {
-	if upc == nil || *upc == "" {
-		return nil, logger.ErrNotFoundDbalbum
-	}
-
-	var result AlbumSearchResult
-
-	// Query for exact UPC match
-	result.ID = Getdatarow[uint](false,
-		"SELECT id FROM dbalbums WHERE upc = ? LIMIT 1",
-		upc)
-
-	if result.ID > 0 {
-		return fillAlbumResult(&result, ""), nil
 	}
 
 	return nil, logger.ErrNotFoundDbalbum

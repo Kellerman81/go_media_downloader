@@ -1,15 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"database/sql"
-	"encoding/csv"
+	"errors"
 	"fmt"
 	"html"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -39,9 +41,7 @@ type imdbConfig struct {
 	Indexedlanguages []string `toml:"indexed_languages"`
 	Indexfull        bool     `toml:"index_full"`
 	ImdbIDSize       int      `toml:"imdbid_size"`
-	LoopSize         int      `toml:"loop_size"`
 	UseMemory        bool     `toml:"use_memory"`
-	UseCache         bool     `toml:"use_cache"`
 }
 
 // Validate validates the configuration and sets defaults
@@ -49,34 +49,28 @@ func (c *imdbConfig) Validate() error {
 	if c.ImdbIDSize <= 0 {
 		c.ImdbIDSize = DefaultImdbIDSize
 	}
-	if c.LoopSize <= 0 {
-		c.LoopSize = SQLBatchSize // Set to actual batch size used
-	}
 	if c.ImdbIDSize > MaxImdbIDSize {
 		return fmt.Errorf("imdbid_size %d exceeds maximum %d", c.ImdbIDSize, MaxImdbIDSize)
-	}
-	if c.LoopSize > MaxLoopSize {
-		return fmt.Errorf("loop_size %d exceeds maximum %d", c.LoopSize, MaxLoopSize)
 	}
 	return nil
 }
 
 const (
 	configfile = "./config/config.toml"
+	tempDBPath = "./databases/imdbtemp.db"
 
 	// Default configuration values
 	DefaultImdbIDSize = 1200000
-	DefaultLoopSize   = SQLBatchSize // Match the actual batch size
 
 	// Maximum values for safety
 	MaxImdbIDSize = 20000000
-	MaxLoopSize   = 1000000
 
 	// Optimized batch processing constants
-	SQLBatchSize     = 400000 // Large but reasonable batches for commit frequency
-	SQLParamBatch    = 99     // Max records per SQL batch (SQLite limit: 999 params, titles have 10 params: 99*10=990)
-	ValueArgsCapInit = 50000  // Pre-allocated buffers
-	SQLCacheSize     = 1000
+	SQLParamBatch    = 99    // Max records per SQL batch (SQLite limit: 999 params, titles have 10 params: 99*10=990)
+	ValueArgsCapInit = 50000 // Pre-allocated buffers
+
+	// tsvMaxLineSize bounds a single dataset line; IMDb rows are far below this.
+	tsvMaxLineSize = 1024 * 1024
 
 	// Buffer sizes
 	BufferPoolSize = 100
@@ -110,11 +104,11 @@ var (
 		'—':  "-", // em dash
 		'―':  "-", // horizontal bar
 		'ä':  "ae",
-		'Ä':  "Ae",
+		'Ä':  "ae",
 		'ö':  "oe",
-		'Ö':  "Oe",
+		'Ö':  "oe",
 		'ü':  "ue",
-		'Ü':  "Ue",
+		'Ü':  "ue",
 		'ß':  "ss",
 	}
 	subRune = map[rune]bool{
@@ -259,15 +253,20 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
-	defer func() {
-		if closeErr := processor.Close(); closeErr != nil {
-			logger.Error("Error closing processor", "error", closeErr)
+	runErr := processor.Run(ctx)
+	if closeErr := processor.Close(); closeErr != nil {
+		logger.Error("Error closing processor", "error", closeErr)
+		if runErr == nil {
+			runErr = closeErr
 		}
-	}()
-
-	// Run the import process
-	if err := processor.Run(ctx); err != nil {
-		return fmt.Errorf("import process failed: %w", err)
+	}
+	if runErr != nil {
+		// The main app swaps in imdbtemp.db after a successful exit; never leave
+		// a partial one behind.
+		if err := os.Remove(tempDBPath); err != nil && !os.IsNotExist(err) {
+			logger.Error("Failed to remove incomplete temp database", "file", tempDBPath, "error", err)
+		}
+		return fmt.Errorf("import process failed: %w", runErr)
 	}
 
 	logger.Info("IMDB import completed successfully")
@@ -297,14 +296,6 @@ func loadCfgDataDBImproved() (imdbConfig, error) {
 
 // validateAndSetDefaults validates configuration and sets reasonable defaults
 func validateAndSetDefaults(cfg *imdbConfig) error {
-	// Set default loop size if not specified or too small
-	if cfg.LoopSize <= 0 {
-		cfg.LoopSize = SQLBatchSize // Use the actual batch size
-	}
-	if cfg.LoopSize > 1000000 {
-		cfg.LoopSize = 1000000
-	}
-
 	// Validate indexed types
 	if len(cfg.Indexedtypes) == 0 {
 		return fmt.Errorf("indexedtypes cannot be empty - at least one title type must be specified")
@@ -331,11 +322,6 @@ func validateAndSetDefaults(cfg *imdbConfig) error {
 		if len(lang) > 10 { // Reasonable limit for language codes
 			return fmt.Errorf("language code too long: %s", lang)
 		}
-	}
-
-	// Validate cache settings
-	if cfg.UseCache && cfg.ImdbIDSize <= 0 {
-		cfg.ImdbIDSize = 12000000 // Default cache size
 	}
 
 	return nil
@@ -439,10 +425,28 @@ func unidecode2(s string) []byte {
 						continue
 					}
 				}
-				if lastrune == '-' && tb[position] == "-" {
-					continue
+				// Transliterations may hold capitals, spaces or punctuation
+				// ("Ri ", "E"): apply the ASCII rules so the slug matches the
+				// main module's logger.StringToSlug output.
+				tr := tb[position]
+				for i := range len(tr) {
+					c := rune(tr[i])
+					if 'A' <= c && c <= 'Z' {
+						c += 'a' - 'A'
+					}
+					if _, ok := subRune[c]; !ok {
+						if lastrune != '-' {
+							lastrune = '-'
+							ret.WriteRune('-')
+						}
+						continue
+					}
+					if lastrune == '-' && c == '-' {
+						continue
+					}
+					lastrune = c
+					ret.WriteRune(c)
 				}
-				ret.WriteString(tb[position])
 			}
 		}
 	}
@@ -450,81 +454,149 @@ func unidecode2(s string) []byte {
 	return ret.Bytes()
 }
 
+// downloadClient has no overall Client.Timeout: the IMDb dumps are several
+// hundred MB and a fixed whole-transfer deadline would either be too short for
+// slow links or too long to catch a hang. Connection setup and response headers
+// are bounded here; a stalled body is caught by downloadStallTimeout, and
+// downloadMaxDuration is a last-resort backstop.
+var downloadClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   30 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+	},
+}
+
+const (
+	downloadStallTimeout = 2 * time.Minute
+	downloadMaxDuration  = 3 * time.Hour
+)
+
+var errDownloadStalled = errors.New("download stalled: no data received")
+
+// stallReader resets the stall timer every time body data arrives.
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s *stallReader) Read(b []byte) (int, error) {
+	n, err := s.r.Read(b)
+	if n > 0 {
+		s.timer.Reset(downloadStallTimeout)
+	}
+	return n, err
+}
+
 // downloadFile downloads the content from the given URL
 // and saves it to a file in the given directory with the given filename.
-// It returns any error encountered.
-func downloadFile(saveIn string, fileprefix string, filename string, url string) error {
-	// Get the data
-	resp, err := http.Get(url)
+// Non-200 responses, truncated bodies and stalled transfers are errors.
+func downloadFile(ctx context.Context, saveIn string, fileprefix string, filename string, url string) error {
+	ctx, cancelMax := context.WithTimeout(ctx, downloadMaxDuration)
+	defer cancelMax()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+
+	timer := time.AfterFunc(downloadStallTimeout, func() { cancel(errDownloadStalled) })
+	defer timer.Stop()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return fmt.Errorf("%w: %w", cause, err)
+		}
+		return err
+	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected HTTP status %s for %s", resp.Status, url)
+	}
 
 	// Create the file
 	if len(filename) == 0 {
 		filename = path.Base(resp.Request.URL.String())
 	}
-	var filepath string
 	if len(fileprefix) >= 1 {
 		filename = fileprefix + filename
 	}
-	filepath = path.Join(saveIn, filename)
-	out, err := os.Create(filepath)
+	out, err := os.Create(path.Join(saveIn, filename))
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	// Write the body to file
-	_, err = io.Copy(out, resp.Body)
-	out.Sync()
-	return err
+	_, err = io.Copy(out, &stallReader{r: resp.Body, timer: timer})
+	if err == nil {
+		err = out.Sync()
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return fmt.Errorf("%w: %w", cause, err)
+		}
+		return err
+	}
+	return nil
 }
 
 // gunzip decompresses a gzipped file to a target filename.
-// It takes a gzipped source filename and a target filename to decompress to.
-// It handles reading the gzipped data, decompressing it, and writing the
-// decompressed data to the target file.
-func gunzip(source string, target string) {
-	data, _ := os.ReadFile(source)
-	body := bytes.NewBuffer(data)
-	reader, err := gzip.NewReader(body)
+// A truncated or corrupt archive (unexpected EOF, checksum mismatch) is an
+// error; the partially written target is removed in that case.
+func gunzip(source string, target string) error {
+	in, err := os.Open(source)
 	if err != nil {
-		fmt.Println("err1. ", err)
-		return
+		return err
+	}
+	defer in.Close()
+	reader, err := gzip.NewReader(bufio.NewReaderSize(in, 1<<20))
+	if err != nil {
+		return fmt.Errorf("open gzip %s: %w", source, err)
 	}
 	defer reader.Close()
 
 	bodyo, err := match(reader)
 	if err != nil {
-		fmt.Println("err2. ", err)
-		return
+		return fmt.Errorf("read gzip %s: %w", source, err)
 	}
 
-	err = copyfile(target, 0o666, bodyo)
-	if err != nil {
-		fmt.Println("err3. ", err)
+	if err := copyfile(target, 0o666, bodyo); err != nil {
+		if rmErr := os.Remove(target); rmErr != nil && !os.IsNotExist(rmErr) {
+			slog.Warn("Failed to remove partial file", "file", target, "error", rmErr)
+		}
+		return fmt.Errorf("extract %s: %w", source, err)
 	}
+	return nil
 }
 
 // copyfile copies the contents of the source reader to the file at the provided path.
 // It creates any necessary parent directories, truncates any existing file, sets the mode,
-// copies the data, syncs, and closes the file. Any errors are printed and returned.
+// copies the data, syncs, and closes the file. Any error is returned.
 func copyfile(path string, mode os.FileMode, src io.Reader) error {
 	// We add the execution permission to be able to create files inside it
 	err := os.MkdirAll(filepath.Dir(path), mode|os.ModeDir|100)
 	if err != nil {
-		fmt.Println("err4. ", err)
 		return err
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
-		fmt.Println("err5. ", err)
 		return err
 	}
-	defer file.Close()
 	_, err = io.Copy(file, src)
-	file.Sync()
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
 	return err
 }
 
@@ -643,26 +715,20 @@ type imdbProcessor struct {
 
 	// Processing state
 	allowEmptyLang bool
+	allLangs       bool
 
 	// Caches and maps
 	imdbCache map[uint32]struct{}
 	titleMap  map[string]struct{}
 	akaMap    map[string]struct{}
-	sqlCache  map[string]*sql.Stmt
 
 	// SQL building buffers for batch processing
 	sqlBuild       strings.Builder
 	valueArgs      []any
+	batchRows      int
 	sqlBuildGenre  strings.Builder
 	valueArgsGenre []any
-
-	// Prepared statements
-	stmtShortTitles  *sql.Stmt
-	stmtLongTitles   *sql.Stmt
-	stmtGenre        *sql.Stmt
-	stmtShortAkas    *sql.Stmt
-	stmtLongAkas     *sql.Stmt
-	stmtShortRatings *sql.Stmt
+	batchRowsGenre int
 }
 
 // Run executes the complete IMDB import process
@@ -738,8 +804,8 @@ func (p *imdbProcessor) Run(ctx context.Context) error {
 // initDatabase initializes the database connection and schema
 func (p *imdbProcessor) initDatabase() error {
 	// Remove existing temp database
-	if err := os.Remove("./databases/imdbtemp.db"); err != nil && !os.IsNotExist(err) {
-		p.logger.Warn("Could not remove existing database", "error", err)
+	if err := os.Remove(tempDBPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("could not remove existing temp database: %w", err)
 	}
 
 	db, err := p.initImdbdb("imdbtemp")
@@ -781,11 +847,6 @@ func (p *imdbProcessor) setupProcessing() error {
 	}
 	p.tx = tx
 
-	// Prepare statements
-	if err := p.prepareStatements(); err != nil {
-		return fmt.Errorf("failed to prepare statements: %w", err)
-	}
-
 	// Initialize title map based on indexed types
 	p.titleMap = make(map[string]struct{}, len(p.config.Indexedtypes))
 	for _, titleType := range p.config.Indexedtypes {
@@ -793,47 +854,8 @@ func (p *imdbProcessor) setupProcessing() error {
 	}
 
 	p.logger.Info("Processing setup completed",
-		"batch_size", p.config.LoopSize,
 		"title_types_configured", len(p.config.Indexedtypes),
-		"cache_size", SQLCacheSize,
 	)
-
-	return nil
-}
-
-// prepareStatements creates all prepared SQL statements
-func (p *imdbProcessor) prepareStatements() error {
-	var err error
-
-	p.stmtShortTitles, err = p.db.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, start_year, runtime_minutes) VALUES (?,?,?,?,?,?)")
-	if err != nil {
-		return fmt.Errorf("failed to prepare short titles statement: %w", err)
-	}
-
-	p.stmtLongTitles, err = p.db.Prepare("insert into imdb_titles (tconst, title_type, primary_title, slug, original_title, is_adult, start_year, end_year, runtime_minutes, genres) VALUES (?,?,?,?,?,?,?,?,?,?)")
-	if err != nil {
-		return fmt.Errorf("failed to prepare long titles statement: %w", err)
-	}
-
-	p.stmtGenre, err = p.db.Prepare("insert into imdb_genres (tconst, genre) VALUES (?,?)")
-	if err != nil {
-		return fmt.Errorf("failed to prepare genre statement: %w", err)
-	}
-
-	p.stmtShortAkas, err = p.db.Prepare("insert into imdb_akas (tconst, title, slug, region) VALUES (?,?,?,?)")
-	if err != nil {
-		return fmt.Errorf("failed to prepare short akas statement: %w", err)
-	}
-
-	p.stmtLongAkas, err = p.db.Prepare("insert into imdb_akas (tconst, ordering, title, slug, region, language, types, attributes, is_original_title) VALUES (?,?,?,?,?,?,?,?,?)")
-	if err != nil {
-		return fmt.Errorf("failed to prepare long akas statement: %w", err)
-	}
-
-	p.stmtShortRatings, err = p.db.Prepare("insert into imdb_ratings (tconst, num_votes, average_rating) VALUES (?,?,?)")
-	if err != nil {
-		return fmt.Errorf("failed to prepare short ratings statement: %w", err)
-	}
 
 	return nil
 }
@@ -884,6 +906,11 @@ func (p *imdbProcessor) buildSQLBatch(sqlTemplate string, paramTemplate string, 
 		builder.WriteString(",")
 	}
 	builder.WriteString(paramTemplate)
+	if isGenre {
+		p.batchRowsGenre++
+	} else {
+		p.batchRows++
+	}
 }
 
 // finalize completes the import process with comprehensive cleanup
@@ -893,14 +920,12 @@ func (p *imdbProcessor) finalize() error {
 
 	// Commit any pending transactions
 	if p.tx != nil {
-		if err := p.tx.Commit(); err != nil {
-			p.logger.Warn("Failed to commit final transaction", "error", err)
-		}
+		err := p.tx.Commit()
 		p.tx = nil
+		if err != nil {
+			return fmt.Errorf("failed to commit final transaction: %w", err)
+		}
 	}
-
-	// Clean up prepared statements
-	p.cleanupStatements()
 
 	// Final database optimizations
 	if err := p.optimizeFinalDatabase(); err != nil {
@@ -910,8 +935,8 @@ func (p *imdbProcessor) finalize() error {
 	// Vacuum if using memory mode
 	if p.config.UseMemory {
 		p.logger.Info("Vacuuming in-memory database to disk")
-		if _, err := p.db.Exec("VACUUM INTO ?", "./databases/imdbtemp.db"); err != nil {
-			p.logger.Warn("Failed to vacuum database", "error", err)
+		if _, err := p.db.Exec("VACUUM INTO ?", tempDBPath); err != nil {
+			return fmt.Errorf("failed to vacuum in-memory database to disk: %w", err)
 		}
 	}
 
@@ -922,10 +947,6 @@ func (p *imdbProcessor) finalize() error {
 	}
 
 	if stats.TotalTitles == 0 {
-		// Clean up empty database
-		if err := os.Remove("./databases/imdbtemp.db"); err != nil {
-			p.logger.Warn("Failed to remove empty database", "error", err)
-		}
 		return fmt.Errorf("import resulted in empty database")
 	}
 
@@ -982,49 +1003,11 @@ func (p *imdbProcessor) gatherImportStats() (*ImportStats, error) {
 	}
 
 	// Calculate database size
-	if stat, err := os.Stat("./databases/imdbtemp.db"); err == nil {
+	if stat, err := os.Stat(tempDBPath); err == nil {
 		stats.DatabaseSizeMB = float64(stat.Size()) / 1024 / 1024
 	}
 
 	return stats, nil
-}
-
-// cleanupStatements safely closes all prepared statements
-func (p *imdbProcessor) cleanupStatements() {
-	statements := []*sql.Stmt{
-		p.stmtShortTitles,
-		p.stmtLongTitles,
-		p.stmtGenre,
-		p.stmtShortAkas,
-		p.stmtLongAkas,
-		p.stmtShortRatings,
-	}
-
-	for i, stmt := range statements {
-		if stmt != nil {
-			if err := stmt.Close(); err != nil {
-				p.logger.Warn("Failed to close prepared statement", "index", i, "error", err)
-			}
-		}
-	}
-
-	// Clear statement references
-	p.stmtShortTitles = nil
-	p.stmtLongTitles = nil
-	p.stmtGenre = nil
-	p.stmtShortAkas = nil
-	p.stmtLongAkas = nil
-	p.stmtShortRatings = nil
-
-	// Clean up SQL cache
-	for query, stmt := range p.sqlCache {
-		if stmt != nil {
-			if err := stmt.Close(); err != nil {
-				p.logger.Warn("Failed to close cached statement", "query", query, "error", err)
-			}
-		}
-		delete(p.sqlCache, query)
-	}
 }
 
 // optimizeFinalDatabase applies final optimizations to the database
@@ -1096,26 +1079,33 @@ func (p *imdbProcessor) initImdbdb(dbfile string) (*sql.DB, error) {
 func (p *imdbProcessor) commitBatch(isGenre bool, force bool) error {
 	var builder *strings.Builder
 	var valueArgs *[]any
+	var rows *int
 	var paramLimit int
 
 	if isGenre {
 		builder = &p.sqlBuildGenre
 		valueArgs = &p.valueArgsGenre
+		rows = &p.batchRowsGenre
 		paramLimit = SQLParamBatch * 2 // 2 params per genre record (tconst, genre)
 	} else {
 		builder = &p.sqlBuild
 		valueArgs = &p.valueArgs
+		rows = &p.batchRows
 		paramLimit = SQLParamBatch * 10 // 10 params per title/aka/rating record (worst case)
 	}
 
-	// Use SQLite parameter limit for batching instead of LoopSize
+	// Use SQLite parameter limit for batching
 	if len(*valueArgs) >= paramLimit || force {
 		if builder.Len() > 0 {
-			if err := p.executeSQL(builder.String(), force, *valueArgs); err != nil {
-				return err
-			}
+			err := p.executeSQL(builder.String(), force, *valueArgs)
+			lost := *rows
+			// Always reset: a failed batch must not be re-sent with every later flush.
 			builder.Reset()
 			*valueArgs = (*valueArgs)[:0]
+			*rows = 0
+			if err != nil {
+				return fmt.Errorf("batch insert failed, %d rows lost: %w", lost, err)
+			}
 		}
 	}
 
@@ -1142,18 +1132,24 @@ func (p *imdbProcessor) downloadIMDBFiles(ctx context.Context) error {
 
 		p.progress.Report("download", int64(i), int64(len(files)), fmt.Sprintf("Downloading %s", file.name))
 
-		// Download compressed file
-		if err := downloadFile("./", "", file.name, file.url); err != nil {
-			return fmt.Errorf("failed to download %s: %w", file.name, err)
+		// A .tsv left over from an earlier run must never be imported in place
+		// of a failed download/extract.
+		outputName := strings.TrimSuffix(file.name, ".gz")
+		if err := os.Remove(outputName); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove stale %s: %w", outputName, err)
 		}
 
-		// Extract file
-		outputName := strings.TrimSuffix(file.name, ".gz")
-		gunzip("./"+file.name, outputName)
+		err := downloadFile(ctx, "./", "", file.name, file.url)
+		if err == nil {
+			err = gunzip("./"+file.name, outputName)
+		}
 
 		// Remove compressed file
-		if err := os.Remove("./" + file.name); err != nil {
-			p.logger.Warn("Failed to remove compressed file", "file", file.name, "error", err)
+		if rmErr := os.Remove("./" + file.name); rmErr != nil && !os.IsNotExist(rmErr) {
+			p.logger.Warn("Failed to remove compressed file", "file", file.name, "error", rmErr)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to download/extract %s: %w", file.name, err)
 		}
 	}
 
@@ -1182,11 +1178,14 @@ func (p *imdbProcessor) createInMemorySchema() error {
 			"genres" text DEFAULT ""
 		);`,
 
-		// Performance indexes for titles
+		// Performance indexes for titles (idx_imdb_* mirror schema/imdbdb migrations)
 		`CREATE INDEX "idx_titles_type" ON "imdb_titles" ("title_type");`,
-		`CREATE INDEX "idx_titles_year" ON "imdb_titles" ("start_year");`,
-		`CREATE INDEX "idx_titles_slug" ON "imdb_titles" ("slug");`,
+		`CREATE INDEX "idx_imdb_titles_start_year" ON "imdb_titles" ("start_year");`,
+		`CREATE INDEX "idx_imdb_titles_slug" ON "imdb_titles" ("slug");`,
 		`CREATE INDEX "idx_titles_runtime" ON "imdb_titles" ("runtime_minutes");`,
+		`CREATE INDEX "idx_imdb_titles_primary_title" ON "imdb_titles" ("primary_title");`,
+		`CREATE INDEX "idx_imdb_titles_original_title" ON "imdb_titles" ("original_title");`,
+		`CREATE INDEX "idx_imdb_titles_primary_original_slug" ON "imdb_titles" ("primary_title", "original_title", "slug");`,
 
 		// Alternative titles table
 		`CREATE TABLE "imdb_akas" (
@@ -1202,11 +1201,13 @@ func (p *imdbProcessor) createInMemorySchema() error {
 			FOREIGN KEY ("tconst") REFERENCES "imdb_titles" ("tconst")
 		);`,
 
-		// Performance indexes for akas
-		`CREATE INDEX "idx_akas_tconst" ON "imdb_akas" ("tconst");`,
+		// Performance indexes for akas (idx_imdb_* mirror schema/imdbdb migrations)
+		`CREATE INDEX "idx_imdb_akas_tconst" ON "imdb_akas" ("tconst");`,
 		`CREATE INDEX "idx_akas_region" ON "imdb_akas" ("region");`,
 		`CREATE INDEX "idx_akas_language" ON "imdb_akas" ("language");`,
-		`CREATE INDEX "idx_akas_slug" ON "imdb_akas" ("slug");`,
+		`CREATE INDEX "idx_imdb_akas_slug" ON "imdb_akas" ("slug");`,
+		`CREATE INDEX "idx_imdb_akas_title" ON "imdb_akas" ("title");`,
+		`CREATE INDEX "idx_imdb_akas_title_slug" ON "imdb_akas" ("title", "slug");`,
 
 		// Genres table for normalized storage
 		`CREATE TABLE "imdb_genres" (
@@ -1265,7 +1266,7 @@ func (p *imdbProcessor) createInMemorySchema() error {
 		}
 	}
 
-	p.logger.Info("Created optimized in-memory schema", "tables", 4, "indexes", 12)
+	p.logger.Info("Created optimized in-memory schema", "tables", 4, "indexes", 18)
 	return nil
 }
 
@@ -1326,16 +1327,7 @@ func (p *imdbProcessor) processTitles(ctx context.Context) error {
 func (p *imdbProcessor) processAkas(ctx context.Context) error {
 	p.logger.Info("Processing akas dataset")
 
-	// Initialize aka map based on indexed languages
-	p.akaMap = make(map[string]struct{}, len(p.config.Indexedlanguages))
-	p.allowEmptyLang = false
-	for _, lang := range p.config.Indexedlanguages {
-		if lang == "" {
-			p.allowEmptyLang = true
-		} else {
-			p.akaMap[lang] = nilStruct
-		}
-	}
+	p.initAkaFilter()
 
 	// Open akas file
 	file, err := os.Open("./title.akas.tsv")
@@ -1357,6 +1349,22 @@ func (p *imdbProcessor) processAkas(ctx context.Context) error {
 	clear(p.akaMap)
 	p.akaMap = nil
 	return nil
+}
+
+// initAkaFilter builds the region filter from indexed_languages. An empty list
+// imports all regions; an empty string or \N in the list matches akas without
+// a region, which IMDb writes as \N.
+func (p *imdbProcessor) initAkaFilter() {
+	p.akaMap = make(map[string]struct{}, len(p.config.Indexedlanguages))
+	p.allowEmptyLang = false
+	p.allLangs = len(p.config.Indexedlanguages) == 0
+	for _, lang := range p.config.Indexedlanguages {
+		if lang == "" || lang == "\\N" {
+			p.allowEmptyLang = true
+		} else {
+			p.akaMap[lang] = nilStruct
+		}
+	}
 }
 
 // processRatings processes the ratings dataset
@@ -1383,18 +1391,73 @@ func (p *imdbProcessor) processRatings(ctx context.Context) error {
 	return nil
 }
 
-// processTitlesCSV processes title records from a CSV file
-func (p *imdbProcessor) processTitlesCSV(ctx context.Context, file *os.File) error {
-	reader := csv.NewReader(file)
-	reader.Comma = '\t'
-	reader.LazyQuotes = true
-	reader.ReuseRecord = true
-	reader.TrimLeadingSpace = true
+// tsvReader reads IMDb dataset files. They are plain tab-separated values
+// without any quoting, so encoding/csv (which treats a leading '"' as a quoted
+// field and merges following lines) must not be used.
+type tsvReader struct {
+	sc   *bufio.Scanner
+	line int
+}
 
-	// Skip header row
-	if _, err := reader.Read(); err != nil {
-		return fmt.Errorf("failed to read CSV header: %w", err)
+func newTSVReader(r io.Reader) *tsvReader {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), tsvMaxLineSize)
+	return &tsvReader{sc: sc}
+}
+
+// Read returns the fields of the next line, io.EOF at the end of input, or the
+// underlying read error (including a line longer than tsvMaxLineSize).
+func (t *tsvReader) Read() ([]string, error) {
+	if !t.sc.Scan() {
+		if err := t.sc.Err(); err != nil {
+			return nil, fmt.Errorf("read error after line %d: %w", t.line, err)
+		}
+		return nil, io.EOF
 	}
+	t.line++
+	return strings.Split(strings.TrimSuffix(t.sc.Text(), "\r"), "\t"), nil
+}
+
+// readHeader consumes the header line.
+func (t *tsvReader) readHeader() error {
+	if _, err := t.Read(); err != nil {
+		if errors.Is(err, io.EOF) {
+			return errors.New("failed to read header: file is empty")
+		}
+		return fmt.Errorf("failed to read header: %w", err)
+	}
+	return nil
+}
+
+// malformedLines counts and logs dataset lines with an unexpected field count.
+type malformedLines struct {
+	logger *slog.Logger
+	file   string
+	count  int
+}
+
+const malformedLogLimit = 20
+
+func (m *malformedLines) add(line, fields, want int) {
+	m.count++
+	if m.count <= malformedLogLimit {
+		m.logger.Warn("Skipping malformed line", "file", m.file, "line", line, "fields", fields, "expected", want)
+	}
+}
+
+func (m *malformedLines) report() {
+	if m.count > 0 {
+		m.logger.Warn("Malformed lines skipped", "file", m.file, "count", m.count)
+	}
+}
+
+// processTitlesCSV processes title records from a TSV file
+func (p *imdbProcessor) processTitlesCSV(ctx context.Context, file io.Reader) error {
+	reader := newTSVReader(file)
+	if err := reader.readHeader(); err != nil {
+		return err
+	}
+	malformed := malformedLines{logger: p.logger, file: "title.basics.tsv"}
 
 	// Initialize performance tracking
 	startTime := time.Now()
@@ -1403,7 +1466,7 @@ func (p *imdbProcessor) processTitlesCSV(ctx context.Context, file *os.File) err
 	errorCount := 0
 	lastReportTime := startTime
 
-	p.logger.Info("Starting title processing", "batch_size", p.config.LoopSize)
+	p.logger.Info("Starting title processing")
 
 	for {
 		select {
@@ -1417,19 +1480,19 @@ func (p *imdbProcessor) processTitlesCSV(ctx context.Context, file *os.File) err
 			break
 		}
 		if err != nil {
-			errorCount++
-			p.logger.Warn("Failed to read CSV record", "error", err, "row", rowCount, "error_count", errorCount)
-			continue
+			return err
 		}
 
 		rowCount++
 
-		if err := p.processTitleRecord(record); err != nil {
+		if len(record) != 9 {
 			errorCount++
-			if errorCount%1000 == 0 {
-				p.logger.Warn("High error rate detected", "error", err, "row", rowCount, "total_errors", errorCount)
-			}
+			malformed.add(reader.line, len(record), 9)
 			continue
+		}
+
+		if err := p.processTitleRecord(record); err != nil {
+			return fmt.Errorf("line %d: %w", reader.line, err)
 		}
 
 		processedCount++
@@ -1452,6 +1515,7 @@ func (p *imdbProcessor) processTitlesCSV(ctx context.Context, file *os.File) err
 		}
 	}
 
+	malformed.report()
 	elapsed := time.Since(startTime)
 	avgRate := float64(rowCount) / elapsed.Seconds()
 
@@ -1587,18 +1651,14 @@ func (p *imdbProcessor) processGenresBatch(tconst, genres string) error {
 	return nil
 }
 
-// processAkasCSV processes alternative title records from a CSV file
-func (p *imdbProcessor) processAkasCSV(ctx context.Context, file *os.File) error {
-	reader := csv.NewReader(file)
-	reader.Comma = '\t'
-	reader.LazyQuotes = true
-	reader.ReuseRecord = true
-	reader.TrimLeadingSpace = true
-
-	// Skip header row
-	if _, err := reader.Read(); err != nil {
-		return fmt.Errorf("failed to read CSV header: %w", err)
+// processAkasCSV processes alternative title records from a TSV file
+func (p *imdbProcessor) processAkasCSV(ctx context.Context, file io.Reader) error {
+	reader := newTSVReader(file)
+	if err := reader.readHeader(); err != nil {
+		return err
 	}
+	malformed := malformedLines{logger: p.logger, file: "title.akas.tsv"}
+	defer malformed.report()
 
 	rowCount := 0
 	for {
@@ -1613,13 +1673,16 @@ func (p *imdbProcessor) processAkasCSV(ctx context.Context, file *os.File) error
 			break
 		}
 		if err != nil {
-			p.logger.Warn("Failed to read CSV record", "error", err, "row", rowCount)
+			return err
+		}
+
+		if len(record) != 8 {
+			malformed.add(reader.line, len(record), 8)
 			continue
 		}
 
 		if err := p.processAkaRecord(record); err != nil {
-			p.logger.Warn("Failed to process aka record", "error", err, "row", rowCount)
-			continue
+			return fmt.Errorf("line %d: %w", reader.line, err)
 		}
 
 		rowCount++
@@ -1656,7 +1719,7 @@ func (p *imdbProcessor) processAkaRecord(record []string) error {
 	title := unescapeString(record[2])
 	slug := stringToSlug(record[2])
 
-	if p.config.Indexfull && len(record) >= 9 {
+	if p.config.Indexfull && len(record) >= 8 {
 		// Full indexing with all fields
 		ordering := csvgetintarr(record[1])
 		language := record[4]
@@ -1692,38 +1755,24 @@ func (p *imdbProcessor) processAkaRecord(record []string) error {
 
 // shouldIndexLanguage checks if a language/region should be indexed
 func (p *imdbProcessor) shouldIndexLanguage(region string) bool {
-	// Match legacy logic exactly:
-	// 1. If allowEmptyLang is false and region is empty -> skip
-	if !p.allowEmptyLang && len(region) == 0 {
-		return false
+	if p.allLangs {
+		return true
 	}
-
-	// 2. If region is not in akaMap
-	if _, ok := p.akaMap[region]; !ok {
-		// If allowEmptyLang is true and region is empty -> allow
-		if p.allowEmptyLang && region == "" {
-			return true
-		}
-		// Otherwise reject
-		return false
+	if region == "" || region == "\\N" {
+		return p.allowEmptyLang
 	}
-
-	// 3. Region is in akaMap -> allow
-	return true
+	_, ok := p.akaMap[region]
+	return ok
 }
 
-// processRatingsCSV processes rating records from a CSV file
-func (p *imdbProcessor) processRatingsCSV(ctx context.Context, file *os.File) error {
-	reader := csv.NewReader(file)
-	reader.Comma = '\t'
-	reader.LazyQuotes = true
-	reader.ReuseRecord = true
-	reader.TrimLeadingSpace = true
-
-	// Skip header row
-	if _, err := reader.Read(); err != nil {
-		return fmt.Errorf("failed to read CSV header: %w", err)
+// processRatingsCSV processes rating records from a TSV file
+func (p *imdbProcessor) processRatingsCSV(ctx context.Context, file io.Reader) error {
+	reader := newTSVReader(file)
+	if err := reader.readHeader(); err != nil {
+		return err
 	}
+	malformed := malformedLines{logger: p.logger, file: "title.ratings.tsv"}
+	defer malformed.report()
 
 	rowCount := 0
 	for {
@@ -1738,13 +1787,16 @@ func (p *imdbProcessor) processRatingsCSV(ctx context.Context, file *os.File) er
 			break
 		}
 		if err != nil {
-			p.logger.Warn("Failed to read CSV record", "error", err, "row", rowCount)
+			return err
+		}
+
+		if len(record) != 3 {
+			malformed.add(reader.line, len(record), 3)
 			continue
 		}
 
 		if err := p.processRatingRecord(record); err != nil {
-			p.logger.Warn("Failed to process rating record", "error", err, "row", rowCount)
-			continue
+			return fmt.Errorf("line %d: %w", reader.line, err)
 		}
 
 		rowCount++
@@ -1797,55 +1849,13 @@ func (p *imdbProcessor) Close() error {
 
 	var errs []error
 
-	// Close prepared statements
-	if p.stmtShortTitles != nil {
-		if err := p.stmtShortTitles.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if p.stmtLongTitles != nil {
-		if err := p.stmtLongTitles.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if p.stmtGenre != nil {
-		if err := p.stmtGenre.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if p.stmtShortAkas != nil {
-		if err := p.stmtShortAkas.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if p.stmtLongAkas != nil {
-		if err := p.stmtLongAkas.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if p.stmtShortRatings != nil {
-		if err := p.stmtShortRatings.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	// Close cached statements
-	for _, stmt := range p.sqlCache {
-		if stmt != nil {
-			if err := stmt.Close(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
-
-	// Commit or rollback any active transaction
+	// Only reached with an open transaction on a failure path (finalize commits
+	// and clears it); the temp database is discarded then, so roll back.
 	if p.tx != nil {
-		if err := p.tx.Commit(); err != nil {
-			p.logger.Warn("Failed to commit final transaction", "error", err)
-			if rollbackErr := p.tx.Rollback(); rollbackErr != nil {
-				errs = append(errs, rollbackErr)
-			}
+		if err := p.tx.Rollback(); err != nil {
+			errs = append(errs, err)
 		}
+		p.tx = nil
 	}
 
 	// Close database
@@ -1859,11 +1869,9 @@ func (p *imdbProcessor) Close() error {
 	clear(p.imdbCache)
 	clear(p.titleMap)
 	clear(p.akaMap)
-	clear(p.sqlCache)
 	p.imdbCache = nil
 	p.titleMap = nil
 	p.akaMap = nil
-	p.sqlCache = nil
 
 	if len(errs) > 0 {
 		return fmt.Errorf("multiple errors during close: %v", errs)
@@ -1887,7 +1895,6 @@ func newimdbProcessor(ctx context.Context, config imdbConfig, logger *slog.Logge
 		config:   config,
 
 		imdbCache:      make(map[uint32]struct{}, config.ImdbIDSize),
-		sqlCache:       make(map[string]*sql.Stmt, SQLCacheSize),
 		valueArgs:      make([]any, 0, ValueArgsCapInit),
 		valueArgsGenre: make([]any, 0, ValueArgsCapInit),
 	}

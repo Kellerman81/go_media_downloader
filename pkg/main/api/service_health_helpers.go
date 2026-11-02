@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
@@ -56,7 +56,7 @@ func performServiceHealthCheck(
 	checkIMDB, checkTrakt, checkIndexers, checkNotifications bool,
 	checkOMDB, checkTVDB, checkTMDB, checkTVMaze, checkMediaProviders bool,
 	timeout, retries int,
-	detailedTest, _, _ bool,
+	detailedTest bool,
 ) *ServiceHealthResults {
 	startTime := time.Now()
 
@@ -250,6 +250,67 @@ func checkIMDBService(retries int, _ bool) ServiceInfo {
 	return service
 }
 
+// pingMetadataProvider runs a small search against a metadata provider to
+// test connectivity.
+func pingMetadataProvider(name string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var err error
+
+	switch name {
+	case "omdb":
+		p := providers.GetOMDB()
+		if p == nil {
+			return errProviderNotInitialized
+		}
+
+		_, err = p.SearchByTitle(ctx, "test", 0, "")
+	case "tmdb":
+		p := providers.GetTMDB()
+		if p == nil {
+			return errProviderNotInitialized
+		}
+
+		_, err = p.SearchMovies(ctx, "test", 0)
+	case "tvdb":
+		p := providers.GetTVDB()
+		if p == nil {
+			return errProviderNotInitialized
+		}
+
+		_, err = p.SearchSeries(ctx, "test", 0)
+	case "tvmaze":
+		p := providers.GetTVMaze()
+		if p == nil {
+			return errProviderNotInitialized
+		}
+
+		_, err = p.SearchSeries(ctx, "test", 0)
+	}
+
+	return err
+}
+
+// traktTrendingMovies fetches up to limit trending movies from Trakt; it
+// doubles as the Trakt connectivity test.
+func traktTrendingMovies(timeout time.Duration, limit int) ([]apiexternal_v2.MovieSearchResult, error) {
+	provider := providers.GetTrakt()
+	if provider == nil {
+		return nil, errTraktNotInitialized
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	results, err := provider.GetTrendingMovies(ctx, 1, limit, "")
+	if err != nil || results == nil {
+		return nil, err
+	}
+
+	return results.Results, nil
+}
+
 // checkTraktService checks Trakt service availability.
 func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 	service := ServiceInfo{
@@ -261,10 +322,8 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 
 	startTime := time.Now()
 
-	limit := "5"
-	// Try to connect to Trakt API using the traktAPI.Client
 	for attempt := range retries {
-		statusCode, _, err := apiexternal.TestTraktConnectivity(timeout, &limit)
+		_, err := traktTrendingMovies(timeout, 5)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
@@ -290,17 +349,10 @@ func checkTraktService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			}
 		}
 
-		// Trakt API returns different status codes, but we consider 2xx and some 4xx as "online"
-		if statusCode >= 200 && statusCode < 500 {
-			service.Status = "online"
-			service.ResponseTime = time.Since(startTime)
-			service.Details["status_code"] = statusCode
-			break
-		} else {
-			service.Status = "error"
-			service.ErrorMessage = fmt.Sprintf("HTTP %d", statusCode)
-			service.Details["status_code"] = statusCode
-		}
+		service.Status = "online"
+		service.ResponseTime = time.Since(startTime)
+
+		break
 	}
 
 	if service.Status == "" {
@@ -572,7 +624,7 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 
 	// Try to connect to OMDB API using the omdbAPI.Client
 	for attempt := range retries {
-		statusCode, err := apiexternal.TestOMDBConnectivity(timeout)
+		err := pingMetadataProvider("omdb", timeout)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
@@ -598,17 +650,10 @@ func checkOMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			}
 		}
 
-		// OMDB API returns different status codes, but we consider 2xx and some 4xx as "online"
-		if statusCode >= 200 && statusCode < 500 {
-			service.Status = "online"
-			service.ResponseTime = time.Since(startTime)
-			service.Details["status_code"] = statusCode
-			break
-		} else {
-			service.Status = "error"
-			service.ErrorMessage = fmt.Sprintf("HTTP %d", statusCode)
-			service.Details["status_code"] = statusCode
-		}
+		service.Status = "online"
+		service.ResponseTime = time.Since(startTime)
+
+		break
 	}
 
 	if service.Status == "" {
@@ -630,7 +675,7 @@ func checkTVmazeService(timeout time.Duration, retries int, _ bool) ServiceInfo 
 	startTime := time.Now()
 
 	for attempt := range retries {
-		statusCode, err := apiexternal.TestTVmazeConnectivity(timeout)
+		err := pingMetadataProvider("tvmaze", timeout)
 		if err != nil {
 			if strings.Contains(err.Error(), "not initialized") ||
 				strings.Contains(err.Error(), "missing API key") ||
@@ -655,16 +700,10 @@ func checkTVmazeService(timeout time.Duration, retries int, _ bool) ServiceInfo 
 			continue
 		}
 
-		if statusCode >= 200 && statusCode < 500 {
-			service.Status = "online"
-			service.ResponseTime = time.Since(startTime)
-			service.Details["status_code"] = statusCode
-			break
-		}
+		service.Status = "online"
+		service.ResponseTime = time.Since(startTime)
 
-		service.Status = "error"
-		service.ErrorMessage = fmt.Sprintf("HTTP %d", statusCode)
-		service.Details["status_code"] = statusCode
+		break
 	}
 
 	if service.Status == "" {
@@ -687,7 +726,7 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 
 	// Try to connect to TVDB API using the tvdbAPI.Client
 	for attempt := range retries {
-		statusCode, err := apiexternal.TestTVDBConnectivity(timeout)
+		err := pingMetadataProvider("tvdb", timeout)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
@@ -713,17 +752,10 @@ func checkTVDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			}
 		}
 
-		// TVDB API returns different status codes, but we consider 2xx and some 4xx as "online"
-		if statusCode >= 200 && statusCode < 500 {
-			service.Status = "online"
-			service.ResponseTime = time.Since(startTime)
-			service.Details["status_code"] = statusCode
-			break
-		} else {
-			service.Status = "error"
-			service.ErrorMessage = fmt.Sprintf("HTTP %d", statusCode)
-			service.Details["status_code"] = statusCode
-		}
+		service.Status = "online"
+		service.ResponseTime = time.Since(startTime)
+
+		break
 	}
 
 	if service.Status == "" {
@@ -746,7 +778,7 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 
 	// Try to connect to TMDB API using the tmdbAPI.Client
 	for attempt := range retries {
-		statusCode, err := apiexternal.TestTMDBConnectivity(timeout)
+		err := pingMetadataProvider("tmdb", timeout)
 		if err != nil {
 			// Check if it's an initialization error vs connection error
 			if strings.Contains(err.Error(), "not initialized") ||
@@ -772,17 +804,10 @@ func checkTMDBService(timeout time.Duration, retries int, _ bool) ServiceInfo {
 			}
 		}
 
-		// TMDB API returns different status codes, but we consider 2xx and some 4xx as "online"
-		if statusCode >= 200 && statusCode < 500 {
-			service.Status = "online"
-			service.ResponseTime = time.Since(startTime)
-			service.Details["status_code"] = statusCode
-			break
-		} else {
-			service.Status = "error"
-			service.ErrorMessage = fmt.Sprintf("HTTP %d", statusCode)
-			service.Details["status_code"] = statusCode
-		}
+		service.Status = "online"
+		service.ResponseTime = time.Since(startTime)
+
+		break
 	}
 
 	if service.Status == "" {

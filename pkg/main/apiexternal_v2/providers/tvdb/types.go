@@ -166,21 +166,21 @@ type tvdbSearchResponse struct {
 	Data   []tvdbSearchResult `json:"data"`
 }
 
+// tvdbSearchResult is a v2 /search/series entry - the provider talks to the
+// v2 host (api.thetvdb.com), whose search returns a numeric "id" and
+// "seriesName", not the v4 "tvdb_id"/"name" strings.
 type tvdbSearchResult struct {
-	ObjectID        string   `json:"objectID"`
-	Aliases         []string `json:"aliases"`
-	Country         string   `json:"country"`
-	ID              string   `json:"id"`
-	ImageURL        string   `json:"image_url"`
-	Name            string   `json:"name"`
-	FirstAirTime    string   `json:"first_air_time"`
-	Overview        string   `json:"overview"`
-	PrimaryLanguage string   `json:"primary_language"`
-	PrimaryType     string   `json:"primary_type"`
-	Status          string   `json:"status"`
-	Type            string   `json:"type"`
-	TVDBid          string   `json:"tvdb_id"`
-	Year            string   `json:"year"`
+	ID         int      `json:"id"`
+	SeriesName string   `json:"seriesName"`
+	Aliases    []string `json:"aliases"`
+	Banner     string   `json:"banner"`
+	Image      string   `json:"image"`
+	Poster     string   `json:"poster"`
+	FirstAired string   `json:"firstAired"`
+	Network    string   `json:"network"`
+	Overview   string   `json:"overview"`
+	Slug       string   `json:"slug"`
+	Status     string   `json:"status"`
 }
 
 // type tvdbSeriesResponse struct {
@@ -411,15 +411,19 @@ func convertSearchResults(
 	results := make([]apiexternal_v2.SeriesSearchResult, 0, len(tvdbResults))
 
 	for i := range tvdbResults {
-		id, _ := strconv.Atoi(tvdbResults[i].TVDBid)
+		poster := tvdbResults[i].Poster
+		if poster == "" {
+			poster = tvdbResults[i].Image
+		}
 
 		results = append(results, apiexternal_v2.SeriesSearchResult{
-			ID:           id,
-			Name:         tvdbResults[i].Name,
-			FirstAirDate: parseTVDBDate(tvdbResults[i].FirstAirTime),
-			PosterPath:   tvdbResults[i].ImageURL,
+			ID:           tvdbResults[i].ID,
+			Name:         tvdbResults[i].SeriesName,
+			FirstAirDate: parseTVDBDate(tvdbResults[i].FirstAired),
+			PosterPath:   poster,
 			Overview:     tvdbResults[i].Overview,
 			ProviderName: provider,
+			TVDbID:       tvdbResults[i].ID,
 		})
 	}
 

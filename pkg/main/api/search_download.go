@@ -155,62 +155,8 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 					html.Div(
 						html.Class("card-body"),
 
-						html.Div(
-							html.Class("form-group-enhanced mb-4"),
-							html.Div(
-								html.Class("form-field-card p-3 border rounded-3"),
-								html.Style(
-									"background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);",
-								),
-								html.Div(
-									html.Class("d-flex align-items-center mb-2"),
-									html.I(html.Class("fa-solid fa-list text-primary me-2")),
-									createFormLabel("MovieID", "Movie", false),
-								),
-
-								html.Select(
-									html.ID("MovieID"),
-									html.Name("MovieID"),
-									html.Class("form-select choices-ajax"),
-									html.Data("ajax-url", "/api/admin/dropdown/movies/dbmovie_id"),
-									html.Data("placeholder", "-- Select Movie --"),
-									html.Data("allow-clear", "true"),
-									html.Data("config-source", "search_MediaConfig"),
-									html.Option(
-										gomponents.Attr("value", ""),
-										gomponents.Text("-- Select Movie --"),
-									),
-								),
-							),
-						),
-
-						html.Div(
-							html.Class("form-group-enhanced mb-4"),
-							html.Div(
-								html.Class("form-field-card p-3 border rounded-3"),
-								html.Style(
-									"background: #ffffff; border: 1px solid #dee2e6 !important; transition: all 0.3s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.03);",
-								),
-								html.Div(
-									html.Class("d-flex align-items-center mb-2"),
-									html.I(html.Class("fa-solid fa-list text-primary me-2")),
-									createFormLabel("SerieID", "Series", false),
-								),
-								html.Select(
-									html.ID("SerieID"),
-									html.Name("SerieID"),
-									html.Class("form-select choices-ajax"),
-									html.Data("ajax-url", "/api/admin/dropdown/series/dbserie_id"),
-									html.Data("placeholder", "-- Select Series --"),
-									html.Data("allow-clear", "true"),
-									html.Data("config-source", "search_MediaConfig"),
-									html.Option(
-										gomponents.Attr("value", ""),
-										gomponents.Text("-- Select Series --"),
-									),
-								),
-							),
-						),
+						searchItemSelect("MovieID", "Movie", "movies", "-- Select Movie --", "search_MediaConfig"),
+						searchItemSelect("SerieID", "Series", "series", "-- Select Series --", "search_MediaConfig"),
 
 						renderFormGroup("search", map[string]string{
 							"SeasonNum": "Season number (for episode searches and series RSS with specific season)",
@@ -245,13 +191,14 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 							),
 						),
 
-						searchItemSelect("AlbumID", "Album", "albums", "-- Select Album --"),
-						searchItemSelect("BookID", "Book", "books", "-- Select Book --"),
+						searchItemSelect("AlbumID", "Album", "albums", "-- Select Album --", "search_MediaConfig"),
+						searchItemSelect("BookID", "Book", "books", "-- Select Book --", "search_MediaConfig"),
 						searchItemSelect(
 							"AudiobookID",
 							"Audiobook",
 							"audiobooks",
 							"-- Select Audiobook --",
+							"search_MediaConfig",
 						),
 					),
 				),
@@ -648,7 +595,7 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 							placeholderValue: '-- Select Series First --',
 							removeItemButton: true,
 							searchEnabled: false,
-							allowHTML: true
+							allowHTML: false
 						});
 						episodeSelect.classList.add('choices-initialized');
 					}
@@ -664,10 +611,10 @@ func renderSearchDownloadPage(csrfToken string) gomponents.Node {
 	)
 }
 
-// HandleSearchDownload handles search and download requests.
-// searchItemSelect renders an AJAX-backed dropdown for selecting a music/book/
-// audiobook item by id on the Search & Download page.
-func searchItemSelect(id, label, table, placeholder string) gomponents.Node {
+// searchItemSelect renders an AJAX-backed dropdown for picking a per-list
+// media row (movies.id, series.id, albums.id, ...), scoped to the media config
+// selected in the configSource element.
+func searchItemSelect(id, label, table, placeholder, configSource string) gomponents.Node {
 	return html.Div(
 		html.Class("form-group-enhanced mb-4"),
 		html.Div(
@@ -690,13 +637,14 @@ func searchItemSelect(id, label, table, placeholder string) gomponents.Node {
 				html.Data("ajax-url", "/api/admin/dropdown/"+table+"/id"),
 				html.Data("placeholder", placeholder),
 				html.Data("allow-clear", "true"),
-				html.Data("config-source", "search_MediaConfig"),
+				html.Data("config-source", configSource),
 				html.Option(gomponents.Attr("value", ""), gomponents.Text(placeholder)),
 			),
 		),
 	)
 }
 
+// HandleSearchDownload handles search and download requests.
 func HandleSearchDownload(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to parse form data: "+err.Error(), "danger"))

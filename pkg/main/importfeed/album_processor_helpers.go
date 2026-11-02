@@ -28,9 +28,83 @@ func looksLikeDiscFolder(name string) bool {
 	return discFolderRe.MatchString(name)
 }
 
-// LooksLikeDiscFolder is the exported version for use by other packages.
-func LooksLikeDiscFolder(name string) bool {
-	return discFolderRe.MatchString(name)
+// discSubfolderRe / discSubfolderTailRe are the strict forms used where a
+// false positive turns an artist folder into an album folder (library scan,
+// rootpath). The disc token must open the name ("CD1", "Disc 2 - Bonus"), or
+// close it when the rest repeats the album folder's name ("Play/Play CD2"); a
+// letter disc ("Side A") needs a separator. So "Party", "Tapes", "Dark Side of
+// the Moon", "Greatest Hits, Part 2" or an album folder "Moonflower (Disc 1)"
+// directly below its artist do not match.
+var (
+	discSubfolderRe     = regexp.MustCompile(`(?i)^` + discToken + `(?:$|[\s._)\]-])`)
+	discSubfolderTailRe = regexp.MustCompile(`(?i)[\s._-]*[(\[]?\s*` + discToken + `\s*[)\]]?\s*$`)
+	// albumFolderTailRe matches the "(Year)" / "(ASIN)" / "(ISBN)" suffix of a
+	// complete album or audiobook folder, which a disc subfolder never has.
+	albumFolderTailRe = regexp.MustCompile(`\s*\((?:19|20)\d{2}\)\s*$|\s*\((?:B0[0-9A-Z]{8}|\d{9}[\dX])\)\s*$`)
+)
+
+const discToken = `(?:(?:cd|disc|disk|part|chapter|book|tape|vol(?:ume)?)[\s._-]*\d{1,3}|(?:cd|disc|disk|side|tape)[\s._-]+[a-f])`
+
+// IsDiscSubfolder reports whether name is a disc/part subfolder of the album
+// or audiobook folder named parent (e.g. "CD1", "Disc 2", "Side A", or
+// "Play CD2" inside "Play (1999)"). parent may be empty when unknown.
+func IsDiscSubfolder(name, parent string) bool {
+	if albumFolderTailRe.MatchString(name) {
+		return false
+	}
+
+	if discSubfolderRe.MatchString(name) {
+		return true
+	}
+
+	loc := discSubfolderTailRe.FindStringIndex(name)
+	if loc == nil || loc[0] == 0 || parent == "" {
+		return false
+	}
+
+	album := strings.TrimSpace(albumFolderTailRe.ReplaceAllString(parent, ""))
+
+	return album != "" && strings.EqualFold(strings.TrimRight(name[:loc[0]], " -_.(["), album)
+}
+
+// discSetTokenRe finds a numbered disc token anywhere in a folder name:
+// "Box disk1 - Title", "Box CD 2 (Bonus)", "Box-Disc_03".
+var discSetTokenRe = regexp.MustCompile(`(?i)(?:^|[\s._([-])(?:cd|disc|disk)[\s._-]*(\d{1,2})(?:$|[^\d])`)
+
+// IsDiscSet reports whether sibling folder names are the discs of one set:
+// at least two of them are identical up to a numbered disc token and carry
+// different disc numbers ("Box disk1 - Part A", "Box disk2 - Part B"). This
+// catches disc folders whose token sits mid-name, which IsDiscSubfolder
+// rejects on its own to keep artist folders from turning into albums.
+func IsDiscSet(names []string) bool {
+	byPrefix := make(map[string]map[string]struct{})
+
+	for _, name := range names {
+		loc := discSetTokenRe.FindStringSubmatchIndex(name)
+		if loc == nil {
+			continue
+		}
+
+		prefix := strings.ToLower(strings.TrimRight(name[:loc[0]], " ._-"))
+		if prefix == "" {
+			continue // "CD1", "Disc 2": IsDiscSubfolder already handles these
+		}
+
+		num := strings.TrimLeft(name[loc[2]:loc[3]], "0")
+		if byPrefix[prefix] == nil {
+			byPrefix[prefix] = make(map[string]struct{})
+		}
+
+		byPrefix[prefix][num] = struct{}{}
+	}
+
+	for _, nums := range byPrefix {
+		if len(nums) >= 2 {
+			return true
+		}
+	}
+
+	return false
 }
 
 var (
@@ -67,6 +141,7 @@ type folderMetadata struct {
 	TagArtist         string
 	TagAlbumArtist    string
 	TagAlbum          string
+	TagTitle          string // single-file folders only: the file's title is the book's title
 	TagGenre          string
 	TagMusicBrainzID  string // populated for music only
 	TagASIN           string // populated for audiobooks only (from file tags)
@@ -162,6 +237,10 @@ func parseFolderMetadata(
 		m.TagArtist = tagData.Artist
 		m.TagAlbumArtist = tagData.AlbumArtist
 		m.TagAlbum = tagData.Album
+		if len(files) == 1 {
+			m.TagTitle = tagData.Title
+		}
+
 		m.TagGenre = tagData.Genre
 		m.TagMusicBrainzID = tagData.MusicBrainzID
 		m.TagASIN = tagData.ASIN
@@ -448,6 +527,7 @@ func fallbackRuntimeWithinTolerance(
 type syntheticAlbum struct {
 	title            string
 	mbReleaseGroupID string
+	mbReleaseID      string
 	discogsReleaseID string
 	discogsMasterID  string
 	upc              string
@@ -483,9 +563,10 @@ func insertSyntheticAlbum(
 		  discogs_release_id, discogs_master_id, upc, slug, year, release_type, format,
 		  label, country, total_tracks, total_runtime_ms, genres, cover_url, deezer_id,
 		  theaudiodb_id, itunes_id)
-		 VALUES (?, ?, '', ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, '', ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, '', ?, ?, ?, ?)`,
 		&sa.title,
 		&sa.mbReleaseGroupID,
+		&sa.mbReleaseID,
 		&sa.discogsReleaseID,
 		&sa.discogsMasterID,
 		&sa.upc,
@@ -792,10 +873,35 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 	add(meta.TagArtist, meta.FolderAlbum, "tag-artist+folder")
 	add(meta.TagArtist, meta.FilenameAlbum, "tag-artist+filename")
 	add(meta.TagArtist, meta.ParentAlbum, "tag-artist+parent")
+	add(meta.TagAlbumArtist, meta.TagTitle, "tag-albumartist+title")
+	add(meta.TagArtist, meta.TagTitle, "tag-artist+title")
+	add(meta.FolderArtist, meta.TagTitle, "folder+tag-title")
+
+	// Co-author variants — "A & B" (or "A and B") may be stored under either
+	// author alone, like the music path's compound-artist variants.
+	for _, compound := range []string{
+		meta.TagArtist, meta.TagAlbumArtist, meta.FolderArtist, meta.FilenameArtist,
+	} {
+		for _, sep := range []string{" & ", " and ", " und "} {
+			idx := strings.Index(strings.ToLower(compound), sep)
+			if idx <= 0 {
+				continue
+			}
+
+			first := strings.TrimSpace(compound[:idx])
+			second := strings.TrimSpace(compound[idx+len(sep):])
+			for _, title := range []string{meta.FolderAlbum, meta.TagAlbum, meta.FilenameAlbum} {
+				add(first, title, "coauthor-first")
+				add(second, title, "coauthor-second")
+			}
+
+			break
+		}
+	}
 
 	// Episode-number prefix variants.
 	for _, title := range []string{
-		meta.FolderAlbum, meta.FilenameAlbum, meta.TagAlbum, meta.ParentAlbum,
+		meta.FolderAlbum, meta.FilenameAlbum, meta.TagAlbum, meta.TagTitle, meta.ParentAlbum,
 	} {
 		stripped := stripLeadingEpisodeNumber(title)
 		if stripped != "" {
@@ -817,7 +923,7 @@ func buildAudiobookSearchPairs(meta folderMetadata) []searchPair {
 
 	// Series-keyword prefix and suffix variants (audiobook-specific).
 	for _, title := range []string{
-		meta.FolderAlbum, meta.FilenameAlbum, meta.TagAlbum, meta.ParentAlbum,
+		meta.FolderAlbum, meta.FilenameAlbum, meta.TagAlbum, meta.TagTitle, meta.ParentAlbum,
 	} {
 		if stripped := stripSeriesPrefix(title); stripped != "" {
 			add(meta.FolderArtist, stripped, "stripped-prefix+folder")
@@ -878,8 +984,6 @@ func runMusicCandidateMatchingLoop(
 			ctx,
 			preScored[i].c.ID,
 			preScored[i].c.MusicBrainzReleaseID,
-			"",
-			"",
 			preScored[i].c.Title,
 			preScored[i].c.Artist,
 		)
@@ -951,10 +1055,12 @@ func runMusicCandidatePasses(
 	year, fileCount int,
 	data *config.MediaDataConfig,
 ) []musicValidMatch {
+	_, mediumThresh := recThresholds(data)
+
 	validMatches := runMusicCandidateMatchingLoop(
 		ctx, preScored, albumTracks, localTotalMs, isVA,
 		albumTitle, artist, musicBrainzID, year, fileCount, data,
-		-1, mediumRecThresh, true,
+		-1, mediumThresh, true,
 	)
 	if len(validMatches) > 0 {
 		sort.SliceStable(validMatches, func(i, j int) bool {
@@ -966,7 +1072,7 @@ func runMusicCandidatePasses(
 	validMatches = runMusicCandidateMatchingLoop(
 		ctx, preScored, albumTracks, localTotalMs, isVA,
 		albumTitle, artist, musicBrainzID, year, fileCount, data,
-		mediumRecThresh, relaxedAlbumThresh, false,
+		mediumThresh, relaxedAlbumThresh, false,
 	)
 	sort.SliceStable(validMatches, func(i, j int) bool {
 		return validMatches[i].fullDist < validMatches[j].fullDist
@@ -990,6 +1096,8 @@ func runAudiobookCandidatePass(
 	data *config.MediaDataConfig,
 	cfgp *config.MediaTypeConfig,
 ) []audiobookValidMatch {
+	_, mediumThresh := recThresholds(data)
+
 	var validMatches []audiobookValidMatch
 	for i := range bestCandidates {
 		if audiobookMatchDistance(
@@ -997,20 +1105,31 @@ func runAudiobookCandidatePass(
 			albumTitle,
 			artist,
 			fileCount,
-		) > mediumRecThresh {
+		) > mediumThresh {
 			continue
 		}
 
-		dbTracks := resolveTracksForMatching(
+		dbTracks := resolveChaptersForMatching(
 			ctx,
 			bestCandidates[i].ID,
-			"",
 			bestCandidates[i].ASIN,
 			cfgp.AudibleRegion,
-			bestCandidates[i].Title,
-			bestCandidates[i].Author,
 		)
 		if len(dbTracks) == 0 {
+			continue
+		}
+
+		if len(albumTracks) == 1 && len(dbTracks) > 1 {
+			if tr, ok := singleFileAudiobookTrack(bestCandidates[i], &albumTracks[0], dbTracks, data); ok {
+				validMatches = append(validMatches, audiobookValidMatch{
+					bestCandidates[i],
+					audiobookDistanceWithTracks(
+						bestCandidates[i], albumTitle, artist, albumTracks, dbTracks, data,
+					),
+					[]parser_v2.TrackInfo{tr},
+				})
+			}
+
 			continue
 		}
 
@@ -1037,6 +1156,35 @@ func runAudiobookCandidatePass(
 	})
 
 	return validMatches
+}
+
+// singleFileAudiobookTrack verifies one local file holding a whole book against
+// the candidate's chapters by total runtime, and returns the file as the
+// book's only track.
+func singleFileAudiobookTrack(
+	c *database.AudiobookSearchResult,
+	local *parser_v2.TrackInfo,
+	dbTracks []database.DbtrackWithArtist,
+	data *config.MediaDataConfig,
+) (parser_v2.TrackInfo, bool) {
+	var chaptersMs int64
+	for i := range dbTracks {
+		chaptersMs += dbTracks[i].RuntimeMs
+	}
+
+	ok, diffMs, toleranceMs := singleFileTotalMatch(local.RuntimeMS, chaptersMs, len(dbTracks), data)
+	if !ok {
+		return parser_v2.TrackInfo{}, false
+	}
+
+	tr := *local
+	tr.TrackNumber = 1
+	tr.DiscNumber = 1
+	tr.Title = c.Title
+	tr.ExpectedRuntimeMS = chaptersMs
+	tr.TrackDist = float64(diffMs) / float64(toleranceMs)
+
+	return tr, true
 }
 
 // selectAudiobookCandidatesWithRefresh calls selectBestAudiobookMatches and, if no
@@ -1152,11 +1300,30 @@ func audnexAddFoundPreFlight(
 		return true
 	}
 
+	if trackCount == 1 && len(chapters) > 1 && len(tracks) == 1 {
+		ok, diffMs, toleranceMs := singleFileTotalMatch(
+			tracks[0].RuntimeMS, audnexChaptersTotalMs(chapters), len(chapters), data,
+		)
+		logger.Logtype("debug", 0).
+			Str("folder", folder).
+			Int("audnexChapters", len(chapters)).
+			Int64("diffMs", diffMs).
+			Int64("toleranceMs", toleranceMs).
+			Bool("proceed", ok).
+			Msg("Single local file - total runtime check against Audnex chapters")
+
+		return ok
+	}
+
 	if trackCount < len(chapters) {
 		if data.AllowMissingTracks && data.ExceedToleranceIfTotalMatch {
 			var audnexTotalMs int64
 			for i := range chapters {
-				audnexTotalMs += chapters[i].LengthMs
+				if chapters[i].LengthMs > 0 {
+					audnexTotalMs += chapters[i].LengthMs
+				} else {
+					audnexTotalMs += chapters[i].Duration.Milliseconds()
+				}
 			}
 
 			var localTotalMs int64
@@ -1219,7 +1386,7 @@ func audnexAddFoundPreFlight(
 // the imported entry (nil when nothing was imported).
 func importAudiobookWithAddFound(
 	ctx context.Context,
-	asin string,
+	asin, albumTitle string,
 	allMatches []*database.AudiobookSearchResult,
 	bestCandidates []*database.AudiobookSearchResult,
 	cfgp *config.MediaTypeConfig,
@@ -1232,6 +1399,12 @@ func importAudiobookWithAddFound(
 	if data.AllowAlternativeReleases && len(allMatches) > 0 {
 		for i := range allMatches {
 			if allMatches[i].ASIN == asin {
+				continue
+			}
+
+			// allMatches comes from a LIKE '%title%' search that also returns other
+			// books of the author; only a row for the same title may be overwritten.
+			if !namesMatch(allMatches[i].Title, albumTitle) {
 				continue
 			}
 
@@ -1297,6 +1470,7 @@ func importAudiobookWithAddFound(
 // whether a match was accepted.
 func applyAudiobookRecommendation(
 	validABMatches []audiobookValidMatch,
+	data *config.MediaDataConfig,
 ) (dbID uint, expectedTracks int, matchedTracks []parser_v2.TrackInfo, sortSuccess bool) {
 	if len(validABMatches) == 0 {
 		return
@@ -1307,7 +1481,7 @@ func applyAudiobookRecommendation(
 		fullDists[i] = vm.fullDist
 	}
 
-	if recommendation(fullDists) >= recMedium {
+	if recommendation(fullDists, data) >= recMedium {
 		best := validABMatches[0]
 
 		dbID = best.c.ID
@@ -1368,14 +1542,11 @@ func buildAudiobookFailureReport(
 				})
 			}
 		} else {
-			rptTracks := resolveTracksForMatching(
+			rptTracks := resolveChaptersForMatching(
 				ctx,
 				c.ID,
-				"",
 				c.ASIN,
 				cfgp.AudibleRegion,
-				c.Title,
-				c.Author,
 			)
 			if len(rptTracks) > 0 {
 				rptResult, rptMatched, _ := matchTracksByDistance(
@@ -1628,7 +1799,7 @@ func applyMusicRecommendation(
 		fullDists[i] = vm.fullDist
 	}
 
-	if recommendation(fullDists) >= recMedium {
+	if recommendation(fullDists, data) >= recMedium {
 		best := validMatches[0]
 
 		dbID = best.c.ID
@@ -1730,7 +1901,7 @@ func tryMusicAlternativeRelease(
 		&importedID,
 	)
 
-	altDbTracks := resolveTracksForMatching(ctx, importedID, altMBID, "", "", *albumTitle, *artist)
+	altDbTracks := resolveTracksForMatching(ctx, importedID, altMBID, *albumTitle, *artist)
 	if len(altDbTracks) == 0 {
 		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
@@ -1743,26 +1914,24 @@ func tryMusicAlternativeRelease(
 		data,
 	)
 
+	// Load title/artist/runtime of the imported row: a bare ID would score the
+	// album and artist components as full mismatches in albumDistanceWithTracks.
+	altCandidate := database.FillAlbumResult(&database.AlbumSearchResult{ID: importedID}, "")
+
 	altUnmatchedDB, altUnusedLocal := countUnmatched(altMatched, altUsed)
 	if (altUnmatchedDB > 0 || altUnusedLocal > 0) && !data.AllowMissingTracks {
 		// Mirror runMusicCandidateMatchingLoop: try tier-2 runtime fallback before giving up.
-		altCandidate := &database.AlbumSearchResult{ID: importedID}
 		if !tierTwoRuntimeAccepted(altCandidate, altDbTracks, localTotalMs, *fileCount, data) {
 			return dbID, expectedTracks, matchedTracks, sortSuccess
 		}
 	}
 
 	// Mirror runMusicCandidateMatchingLoop: gate on fullDist recommendation.
-	altCandidate := &database.AlbumSearchResult{
-		ID:          importedID,
-		TotalTracks: newTrackCount,
-	}
-
 	fullDist := albumDistanceWithTracks(
-		altCandidate, *artist, *albumTitle, altMBID, 0,
+		altCandidate, *artist, *albumTitle, "", 0,
 		albumTracks, altDbTracks, isVA, data,
 	)
-	if recommendation([]float64{fullDist}) < recMedium {
+	if recommendation([]float64{fullDist}, data) < recMedium {
 		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
@@ -1821,8 +1990,6 @@ func buildMusicFailureReport(
 			ctx,
 			ps.c.ID,
 			ps.c.MusicBrainzReleaseID,
-			"",
-			"",
 			ps.c.Title,
 			ps.c.Artist,
 		)
@@ -1929,9 +2096,14 @@ func buildMusicFailureReport(
 
 // discoverAddFoundArtistAlbums triggers deferred artist or series discovery after a
 // successful addFound import and track/runtime verification.
+//
+// The imported row is looked up by its dbalbum ID: the folder's tag MBID is empty
+// after a text-search import, and matching an empty musicbrainz_release_id would pick an
+// arbitrary synthetic album.
 func discoverAddFoundArtistAlbums(
 	ctx context.Context,
-	albumTitle string, artist, musicBrainzID *string,
+	albumTitle string, artist *string,
+	dbalbumID uint,
 	cfgp *config.MediaTypeConfig,
 	listid int,
 	data *config.MediaDataConfig,
@@ -1939,10 +2111,15 @@ func discoverAddFoundArtistAlbums(
 ) {
 	isVariousArtists := IsVariousArtists(*artist)
 
-	if isVariousArtists && data.DiscoverSeriesAlbums {
+	if isVariousArtists {
+		// Artist discovery for "Various Artists" would import unrelated compilations.
+		if !data.DiscoverSeriesAlbums {
+			return
+		}
+
 		releaseGroupID := database.Getdatarow[string](false,
-			"SELECT musicbrainz_release_group_id FROM dbalbums WHERE musicbrainz_release_id = ?",
-			musicBrainzID,
+			"SELECT musicbrainz_release_group_id FROM dbalbums WHERE id = ?",
+			&dbalbumID,
 		)
 
 		if releaseGroupID == "" {
@@ -1952,15 +2129,15 @@ func discoverAddFoundArtistAlbums(
 		// If a series name is known and other albums in the series are already in the DB,
 		// discovery was already triggered for this series — skip to avoid redundant API calls.
 		seriesName := database.Getdatarow[string](false,
-			"SELECT series_name FROM dbalbums WHERE musicbrainz_release_id = ?",
-			musicBrainzID,
+			"SELECT series_name FROM dbalbums WHERE id = ?",
+			&dbalbumID,
 		)
 		if seriesName != "" {
 			otherCount := database.Getdatarow[int](
 				false,
-				"SELECT COUNT(*) FROM dbalbums WHERE series_name = ? AND musicbrainz_release_id != ?",
+				"SELECT COUNT(*) FROM dbalbums WHERE series_name = ? AND id != ?",
 				&seriesName,
-				musicBrainzID,
+				&dbalbumID,
 			)
 			if otherCount > 0 {
 				logger.Logtype("debug", 1).
@@ -2214,12 +2391,15 @@ func tryMusicLastFMFallback(
 
 	var existingID uint
 	if lfmMBID != "" {
-		// Last.fm returns a release-group MBID, not a specific release ID.
+		// Last.fm's album.getInfo mbid is a MusicBrainz release ID (checked live:
+		// it resolves under /release, 404s under /release-group). Older code
+		// stored it as a release-group ID, so match either column.
 		database.Scanrowsdyn(
 			false,
-			"SELECT id FROM dbalbums WHERE musicbrainz_release_group_id = ? LIMIT 1",
+			`SELECT id FROM dbalbums WHERE musicbrainz_release_id = ? OR musicbrainz_release_group_id = ?
+			 ORDER BY (musicbrainz_release_id = ?) DESC LIMIT 1`,
 			&existingID,
-			&lfmMBID,
+			&lfmMBID, &lfmMBID, &lfmMBID,
 		)
 	} else {
 		database.Scanrowsdyn(false,
@@ -2242,9 +2422,9 @@ func tryMusicLastFMFallback(
 		// Sequential track numbering — Last.fm sometimes numbers per-disc.
 		existingID = insertSyntheticAlbum(
 			&syntheticAlbum{
-				title:            releaseTitleName(release.Title, albumTitle),
-				mbReleaseGroupID: lfmMBID,
-				totalRuntimeMs:   lfmTotalMs,
+				title:          releaseTitleName(release.Title, albumTitle),
+				mbReleaseID:    lfmMBID,
+				totalRuntimeMs: lfmTotalMs,
 			},
 			release.Artists, artist, release.Tracks, true, fileCount, folder, "lastfm",
 		)
@@ -2327,9 +2507,8 @@ func tryMusicDiscogsFallback(
 		if release.DiscogsID != "" {
 			database.Scanrowsdyn(
 				false,
-				`SELECT id FROM dbalbums WHERE discogs_release_id = ? OR discogs_master_id = ? LIMIT 1`,
+				`SELECT id FROM dbalbums WHERE discogs_release_id = ? LIMIT 1`,
 				&existingID,
-				&release.DiscogsID,
 				&release.DiscogsID,
 			)
 		}
@@ -2712,6 +2891,10 @@ func buildMatchedTracksWithFallback(
 			used[bestK] = true
 		}
 
+		// Score the local file as found, before the DB values below overwrite
+		// its title/number (which would make the title component always 0).
+		trackDist := trackDistance(&tr, &dbTracks[i], isVA, isAudiobook, data)
+
 		if dbTracks[i].TrackNumber > 0 {
 			tr.TrackNumber = int(dbTracks[i].TrackNumber)
 		}
@@ -2728,7 +2911,7 @@ func buildMatchedTracksWithFallback(
 			tr.ExpectedRuntimeMS = dbTracks[i].RuntimeMs
 		}
 
-		tr.TrackDist = trackDistance(&tr, &dbTracks[i], isVA, isAudiobook, data)
+		tr.TrackDist = trackDist
 		matchedTracks = append(matchedTracks, tr)
 	}
 

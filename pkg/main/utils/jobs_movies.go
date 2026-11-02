@@ -124,7 +124,7 @@ func getdbmovieidbyimdb(
 
 // 	listnamefilter := list.Getlistnamefilterignore()
 
-// 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
+// 	pl := worker.WorkerPoolParse().NewGroupContext(ctx)
 
 // 	var getid uint
 

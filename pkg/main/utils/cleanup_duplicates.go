@@ -296,6 +296,7 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 
 	best := withFiles[0]
 	bestPrio := -1
+	bestEpisodes := 0
 	scored := false
 
 	for _, id := range withFiles {
@@ -312,16 +313,27 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 			continue
 		}
 
-		var prio int
-		if audio {
+		var (
+			prio     int
+			episodes int
+		)
+		switch {
+		case isType == config.MediaTypeSeries && spec.childTable != "":
+			// A series row; serie_episodes rows (episodeDupSpec) fall through
+			// to the per-episode Getpriobyfiles below.
+			episodes, prio = seriesFileScore(idCopy, qualcfg)
+		case audio:
 			prio, _ = searcher.GetpriobyfilesAudio(isType, &idCopy, true, -1, qualcfg, false)
-		} else {
+		default:
 			prio, _ = searcher.Getpriobyfiles(isType, &idCopy, true, -1, qualcfg, false)
 		}
 
-		if !scored || prio > bestPrio {
+		// For series, coverage (episodes with files) wins over quality so the
+		// row that loses the most data is never the one kept.
+		if !scored || episodes > bestEpisodes || (episodes == bestEpisodes && prio > bestPrio) {
 			scored = true
 			bestPrio = prio
+			bestEpisodes = episodes
 			best = id
 		}
 	}
@@ -331,6 +343,25 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 	}
 
 	return best
+}
+
+// seriesFileScore scores a series row for pickKeeper. Getpriobyfiles works
+// per episode (serie_episode_files.serie_episode_id), so passing the series id
+// to it would score an unrelated episode. Returns the number of episodes with
+// files and the sum of their best-file priorities.
+func seriesFileScore(serieID uint, qualcfg *config.QualityConfig) (int, int) {
+	episodeIDs := database.Getrowssize[uint](false,
+		"select count(distinct serie_episode_id) from serie_episode_files where serie_id = ?",
+		"select distinct serie_episode_id from serie_episode_files where serie_id = ?",
+		&serieID)
+
+	var sum int
+	for i := range episodeIDs {
+		prio, _ := searcher.Getpriobyfiles(config.MediaTypeSeries, &episodeIDs[i], true, -1, qualcfg, false)
+		sum += prio
+	}
+
+	return len(episodeIDs), sum
 }
 
 // deleteParentRow removes a parent row and all of its child rows (files,
@@ -352,9 +383,17 @@ func deleteParentRow(spec dupTableSpec, id uint) {
 	database.ExecN("delete from "+spec.table+" where id = ?", &id)
 }
 
+// episodeDupSpec lets pickKeeper compare duplicate serie_episodes rows by
+// their files' quality.
+var episodeDupSpec = dupTableSpec{
+	label: "episode", table: "serie_episodes",
+	fileTable: "serie_episode_files", fileFK: "serie_episode_id",
+}
+
 // cleanupDuplicateEpisodes collapses exact duplicate episode rows: the same
-// dbserie_episode_id linked to the same serie_id more than once. The row with
-// files is kept (else the lowest id); the rest and their files/histories go.
+// dbserie_episode_id linked to the same serie_id more than once. The row
+// pickKeeper picks (best-scoring files, else the lowest id) is kept; the rest
+// and their files/histories go.
 func cleanupDuplicateEpisodes(apply bool) (int, int) {
 	pairs := database.Getrowssize[database.DbstaticTwoUint](false,
 		"select count() from (select serie_id, dbserie_episode_id from serie_episodes"+
@@ -373,15 +412,7 @@ func cleanupDuplicateEpisodes(apply bool) (int, int) {
 			continue
 		}
 
-		keeper := ids[0]
-
-		for _, id := range ids {
-			if database.Getdatarow[uint](false,
-				"select count() from serie_episode_files where serie_episode_id = ?", &id) > 0 {
-				keeper = id
-				break
-			}
-		}
+		keeper := pickKeeper(episodeDupSpec, ids, config.MediaTypeSeries)
 
 		for _, id := range ids {
 			if id == keeper {

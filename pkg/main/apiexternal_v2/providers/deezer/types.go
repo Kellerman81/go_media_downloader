@@ -1,10 +1,13 @@
 package deezer
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -12,6 +15,7 @@ import (
 //
 
 type deezerSearchResponse struct {
+	Error *deezerError        `json:"error"`
 	Data  []deezerAlbumResult `json:"data"`
 	Total int                 `json:"total"`
 	Next  string              `json:"next"`
@@ -48,6 +52,7 @@ type deezerArtist struct {
 }
 
 type deezerAlbumDetail struct {
+	Error       *deezerError     `json:"error"`
 	ID          int              `json:"id"`
 	Title       string           `json:"title"`
 	UPC         string           `json:"upc"`
@@ -70,6 +75,29 @@ type deezerAlbumDetail struct {
 	Type        string           `json:"type"`
 }
 
+// deezerError is the error object Deezer returns with HTTP 200.
+type deezerError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	Code    int    `json:"code"`
+}
+
+// deezerNoDataCode is Deezer's "no data" (resource not found) error code.
+const deezerNoDataCode = 800
+
+func (e *deezerError) toError() error {
+	if e == nil {
+		return nil
+	}
+
+	msg := logger.JoinStrings("deezer error ", strconv.Itoa(e.Code), " (", e.Type, "): ", e.Message)
+	if e.Code == deezerNoDataCode {
+		return fmt.Errorf("%s: %w", msg, logger.ErrNotFound)
+	}
+
+	return errors.New(msg)
+}
+
 type deezerGenres struct {
 	Data []deezerGenre `json:"data"`
 }
@@ -81,7 +109,10 @@ type deezerGenre struct {
 }
 
 type deezerTracksList struct {
-	Data []deezerTrack `json:"data"`
+	Error *deezerError  `json:"error"`
+	Data  []deezerTrack `json:"data"`
+	Total int           `json:"total"`
+	Next  string        `json:"next"`
 }
 
 type deezerTrack struct {

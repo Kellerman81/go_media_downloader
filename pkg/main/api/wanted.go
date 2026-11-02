@@ -117,12 +117,18 @@ func (s wantedSection) countQuery(search string) (string, []any) {
 
 	var args []any
 	if search != "" {
-		where += " AND " + s.SearchExpr + " LIKE ?"
+		where += " AND " + s.SearchExpr + " LIKE ? ESCAPE '\\'"
 
-		args = append(args, "%"+search+"%")
+		args = append(args, "%"+escapeLikePattern(search)+"%")
 	}
 
 	return "SELECT COUNT(*) " + s.From + " WHERE " + where, args
+}
+
+// escapeLikePattern escapes LIKE wildcards so a search for "100%" or "a_b"
+// matches literally (used with ESCAPE '\').
+func escapeLikePattern(v string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(v)
 }
 
 func (s wantedSection) rowsQuery(search string, page int) (string, []any) {
@@ -130,9 +136,9 @@ func (s wantedSection) rowsQuery(search string, page int) (string, []any) {
 
 	var args []any
 	if search != "" {
-		where += " AND " + s.SearchExpr + " LIKE ?"
+		where += " AND " + s.SearchExpr + " LIKE ? ESCAPE '\\'"
 
-		args = append(args, "%"+search+"%")
+		args = append(args, "%"+escapeLikePattern(search)+"%")
 	}
 
 	offset := (page - 1) * wantedPageSize
@@ -339,6 +345,12 @@ func renderWantedTab(ctx *gin.Context) {
 
 	cq, cargs := sec.countQuery(search)
 	total := int(database.Getdatarow[uint](false, cq, cargs...))
+
+	// Clamp before querying so an out-of-range page shows the last page's
+	// rows rather than an empty table under a "page N of M" header.
+	if totalPages := (total + wantedPageSize - 1) / wantedPageSize; totalPages > 0 && page > totalPages {
+		page = totalPages
+	}
 
 	rq, rargs := sec.rowsQuery(search, page)
 	rows := database.GetrowsN[database.DbstaticOneStringOneUInt](

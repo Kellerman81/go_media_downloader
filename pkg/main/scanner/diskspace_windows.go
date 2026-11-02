@@ -3,6 +3,7 @@
 package scanner
 
 import (
+	"errors"
 	"math"
 
 	"golang.org/x/sys/windows"
@@ -26,4 +27,10 @@ func freeDiskSpace(path string) int64 {
 	}
 
 	return int64(free)
+}
+
+// isCrossDevice reports whether a rename failed because source and
+// destination are on different volumes.
+func isCrossDevice(err error) bool {
+	return errors.Is(err, windows.ERROR_NOT_SAME_DEVICE)
 }

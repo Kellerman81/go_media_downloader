@@ -2,6 +2,8 @@ package api
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
@@ -63,6 +65,9 @@ func renderStorageCard(stats StorageStatistics) gomponents.Node {
 		html.P(html.Class("mb-0"),
 			gomponents.Textf("%d Media Types", stats.TotalPaths),
 		),
+		gomponents.If(stats.Partial, html.P(html.Class("mb-0 text-warning small"),
+			gomponents.Text("Partial: scan timed out, counts are incomplete"),
+		)),
 	)
 }
 
@@ -134,7 +139,8 @@ func renderMediaDetailsCard(
 				gomponents.Text("No data")),
 		))
 	} else {
-		for quality, count := range byQuality {
+		for _, quality := range slices.Sorted(maps.Keys(byQuality)) {
+			count := byQuality[quality]
 			qualityRows = append(qualityRows, html.Tr(
 				html.Td(gomponents.Text(quality)),
 				html.Td(
@@ -155,7 +161,8 @@ func renderMediaDetailsCard(
 				gomponents.Text("No data")),
 		))
 	} else {
-		for list, count := range byList {
+		for _, list := range slices.Sorted(maps.Keys(byList)) {
+			count := byList[list]
 			listRows = append(listRows, html.Tr(
 				html.Td(gomponents.Text(list)),
 				html.Td(
@@ -239,11 +246,13 @@ func renderStorageDetails(stats StorageStatistics) gomponents.Node {
 				gomponents.Text("No storage paths configured")),
 		))
 	} else {
-		for mediaType, info := range stats.ByPath {
+		for _, mediaType := range slices.Sorted(maps.Keys(stats.ByPath)) {
+			info := stats.ByPath[mediaType]
 			pathRows = append(pathRows, html.Tr(
 				html.Td(html.Strong(gomponents.Text(mediaType))),
 				html.Td(html.Small(html.Class("text-muted"), gomponents.Text(info.Path))),
-				html.Td(html.Class("text-right text-dark"), gomponents.Textf("%d", info.FileCount)),
+				html.Td(html.Class("text-right text-dark"), gomponents.Textf("%d", info.FileCount),
+					gomponents.If(info.Partial, html.Small(html.Class("text-warning"), gomponents.Text(" (partial - scan timed out)")))),
 				html.Td(
 					html.Class("text-right text-dark"),
 					gomponents.Textf("%d", info.FolderCount),
@@ -396,22 +405,12 @@ func renderHTTPClientStats(stats HTTPStatistics) gomponents.Node {
 	rows := []gomponents.Node{}
 	hasClients := false
 
-	for name, client := range stats.ClientStats {
+	for _, name := range slices.Sorted(maps.Keys(stats.ClientStats)) {
+		client := stats.ClientStats[name]
 		hasClients = true
 
 		totalReqs := client.RequestsTotal
-
-		successRate := 0.0
-		if totalReqs > 0 {
-			successRate = (float64(client.SuccessCount) / float64(totalReqs)) * 100
-		}
-
-		rateClass := "danger"
-		if successRate >= 95 {
-			rateClass = "success"
-		} else if successRate >= 80 {
-			rateClass = "warning"
-		}
+		rateClass, rateText := successRateBadge(client.SuccessCount, client.FailureCount)
 
 		lastRequest := formatTimestamp(client.LastRequestAt)
 		nextAvailable := formatTimestamp(client.NextAvailableAt)
@@ -446,7 +445,7 @@ func renderHTTPClientStats(stats HTTPStatistics) gomponents.Node {
 				html.Class("text-center"),
 				html.Span(
 					html.Class("badge badge-"+rateClass+" text-dark"),
-					gomponents.Textf("%.1f%%", successRate),
+					gomponents.Text(rateText),
 				),
 			),
 			html.Td(html.Class("text-dark"), html.Small(gomponents.Text(lastRequest))),
@@ -505,22 +504,12 @@ func renderProviderStats(
 	rows := []gomponents.Node{}
 	hasProviders := false
 
-	for name, provider := range stats.ProviderStats {
+	for _, name := range slices.Sorted(maps.Keys(stats.ProviderStats)) {
+		provider := stats.ProviderStats[name]
 		hasProviders = true
 
 		totalReqs := provider.RequestsTotal
-
-		successRate := 0.0
-		if totalReqs > 0 {
-			successRate = (float64(provider.SuccessCount) / float64(totalReqs)) * 100
-		}
-
-		rateClass := "danger"
-		if successRate >= 95 {
-			rateClass = "success"
-		} else if successRate >= 80 {
-			rateClass = "warning"
-		}
+		rateClass, rateText := successRateBadge(provider.SuccessCount, provider.FailureCount)
 
 		lastRequest := formatTimestamp(provider.LastRequestAt)
 		nextAvailable := formatTimestamp(provider.NextAvailableAt)
@@ -561,7 +550,7 @@ func renderProviderStats(
 				html.Class("text-center"),
 				html.Span(
 					html.Class("badge badge-"+rateClass+" text-dark"),
-					gomponents.Textf("%.1f%%", successRate),
+					gomponents.Text(rateText),
 				),
 			),
 			html.Td(html.Class("text-dark"), html.Small(gomponents.Text(lastRequest))),
@@ -623,9 +612,11 @@ func formatDuration(seconds int64) string {
 		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
 	} else if hours > 0 {
 		return fmt.Sprintf("%dh %dm", hours, minutes)
+	} else if minutes > 0 {
+		return fmt.Sprintf("%dm", minutes)
 	}
 
-	return fmt.Sprintf("%dm", minutes)
+	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
 func formatTimestamp(t time.Time) string {
@@ -637,9 +628,32 @@ func formatTimestamp(t time.Time) string {
 }
 
 func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	r := []rune(s)
+	if len(r) <= maxLen {
 		return s
 	}
 
-	return s[:maxLen-3] + "..."
+	return string(r[:maxLen-3]) + "..."
+}
+
+// successRateBadge returns the badge colour and text for a success rate.
+// RequestsTotal also counts rate-limited (429) responses, which the base client
+// deliberately records as neither success nor failure, so the rate is taken
+// over completed requests only.
+func successRateBadge(success, failure int64) (string, string) {
+	completed := success + failure
+	if completed == 0 {
+		return "secondary", "-"
+	}
+
+	rate := float64(success) / float64(completed) * 100
+
+	switch {
+	case rate >= 95:
+		return "success", fmt.Sprintf("%.1f%%", rate)
+	case rate >= 80:
+		return "warning", fmt.Sprintf("%.1f%%", rate)
+	default:
+		return "danger", fmt.Sprintf("%.1f%%", rate)
+	}
 }

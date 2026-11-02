@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/omdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tmdb"
@@ -88,7 +87,7 @@ func TestTMDBFindMovieByIMDbID(t *testing.T) {
 	tmdbKey, _, _, _, _ := loadTestConfig(t)
 
 	// Use official NewTmdbClient constructor to initialize the global provider
-	apiexternal.NewTmdbClient(tmdbKey, 1, 1, false, 30)
+	providers.RegisterTMDB(tmdbKey, 1, 1, false, 30)
 
 	// Get the provider from global registry
 	provider := providers.GetTMDB()
@@ -166,7 +165,7 @@ func TestTraktFindMovieByIMDbID(t *testing.T) {
 	}
 
 	// Use official NewTraktClient constructor to initialize the global provider
-	apiexternal.NewTraktClient(traktID, traktSecret, 1, 1, false, 30, "http://localhost:9090")
+	providers.RegisterTrakt(traktID, traktSecret, 1, 1, false, 30, "http://localhost:9090")
 
 	// Get the provider from global registry
 	provider := providers.GetTrakt()
@@ -275,7 +274,7 @@ func TestOMDBFindMovieByIMDbID(t *testing.T) {
 	_, _, _, omdbKey, _ := loadTestConfig(t)
 
 	// Use official NewOmdbClient constructor to initialize the global provider
-	apiexternal.NewOmdbClient(omdbKey, 1, 1, false, 30)
+	providers.RegisterOMDB(omdbKey, 1, 1, false, 30)
 
 	// Get the provider from global registry
 	provider := providers.GetOMDB()
@@ -346,7 +345,7 @@ func testOMDBMovieLookup(
 func TestTVDBFindSeriesByIMDbID(t *testing.T) {
 	// Use official NewTvdbClient constructor to initialize the global provider
 	// Note: TVDB authentication is handled internally, no API key needed in config
-	apiexternal.NewTvdbClient(1, 1, false, 30)
+	providers.RegisterTVDB(1, 1, false, 30)
 
 	// Get the provider from global registry
 	provider := providers.GetTVDB()
@@ -418,7 +417,7 @@ func testTVDBSeriesLookup(
 
 func TestTVDBGetSeriesByID(t *testing.T) {
 	// Use official NewTvdbClient constructor to initialize the global provider
-	apiexternal.NewTvdbClient(1, 1, false, 30)
+	providers.RegisterTVDB(1, 1, false, 30)
 
 	// Get the provider from global registry
 	provider := providers.GetTVDB()
@@ -432,7 +431,7 @@ func TestTVDBGetSeriesByID(t *testing.T) {
 	// Test direct series lookup by TVDB ID
 	t.Logf("Testing TVDB GetSeriesByID for TVDB ID: %d (Breaking Bad)", testTVDBIDBreakingBad)
 
-	details, err := provider.GetSeriesByID(ctx, testTVDBIDBreakingBad)
+	details, err := provider.GetSeriesByID(ctx, testTVDBIDBreakingBad, "")
 	if err != nil {
 		// TVDB requires authentication - skip test if we get 401 or rate limit error
 		errStr := err.Error()

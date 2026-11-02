@@ -38,7 +38,6 @@ type ClientManager struct {
 
 	// Metadata providers
 	// metadataProviders  map[string]MetadataProvider
-	watchlistProviders map[string]WatchlistProvider
 
 	// Download clients
 	// downloadProviders map[string]DownloadProvider
@@ -54,7 +53,6 @@ type ClientManager struct {
 func NewClientManager() *ClientManager {
 	return &ClientManager{
 		// metadataProviders:     make(map[string]MetadataProvider),
-		watchlistProviders: make(map[string]WatchlistProvider),
 		// downloadProviders:     make(map[string]DownloadProvider),
 		notificationProviders: make(map[string]NotificationProvider),
 		// indexerProviders:      make(map[string]IndexerProvider),
@@ -108,38 +106,6 @@ func NewClientManager() *ClientManager {
 // }
 
 //
-// Watchlist Provider Methods - Fully Typed
-//
-
-// RegisterWatchlistProvider registers a watchlist provider with the manager.
-func (cm *ClientManager) RegisterWatchlistProvider(name string, provider WatchlistProvider) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	cm.watchlistProviders[name] = provider
-}
-
-// GetWatchlistProvider returns a watchlist provider by name.
-func (cm *ClientManager) GetWatchlistProvider(name string) (WatchlistProvider, bool) {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-
-	provider, exists := cm.watchlistProviders[name]
-
-	return provider, exists
-}
-
-// GetWatchlistProviderOrError returns a watchlist provider or an error if not found.
-func (cm *ClientManager) GetWatchlistProviderOrError(name string) (WatchlistProvider, error) {
-	provider, exists := cm.GetWatchlistProvider(name)
-	if !exists {
-		return nil, errors.New(logger.JoinStrings("watchlist provider '", name, "' not found"))
-	}
-
-	return provider, nil
-}
-
-//
 // Download Provider Methods - Fully Typed
 //
 
@@ -181,6 +147,20 @@ func (cm *ClientManager) RegisterNotificationProvider(name string, provider Noti
 	defer cm.mu.Unlock()
 
 	cm.notificationProviders[name] = provider
+}
+
+// ReplaceNotificationProviders swaps the whole set of notification providers
+// in one step, so a reload drops removed entries and readers never see a
+// partially rebuilt set. The map is owned by the manager afterwards.
+func (cm *ClientManager) ReplaceNotificationProviders(set map[string]NotificationProvider) {
+	if set == nil {
+		set = make(map[string]NotificationProvider)
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.notificationProviders = set
 }
 
 // GetNotificationProvider returns a notification provider by name.
@@ -258,48 +238,6 @@ func (cm *ClientManager) GetAllNotificationProviders() map[string]NotificationPr
 
 // 	return names
 // }
-
-//
-// Convenience Methods for Common Operations
-//
-
-// GetAllWatchlists retrieves watchlists from all registered providers.
-
-// ProviderHealthStatus represents the health status of a single provider.
-type ProviderHealthStatus struct {
-	Healthy bool   `json:"healthy"`
-	Type    string `json:"type"` // metadata, download, notification, indexer, watchlist
-	Error   string `json:"error,omitempty"`
-}
-
-// GetHealthStatus returns the health status of all registered providers.
-func (cm *ClientManager) GetHealthStatus() map[string]ProviderHealthStatus {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-
-	healthStatus := make(map[string]ProviderHealthStatus)
-
-	// Metadata and download providers are now in the direct registry (providers package)
-	// This health check method is deprecated - use providers package directly
-
-	// Check notification providers
-	for name := range cm.notificationProviders {
-		healthStatus[name] = ProviderHealthStatus{
-			Healthy: true,
-			Type:    "notification",
-		}
-	}
-
-	// Check watchlist providers
-	for name := range cm.watchlistProviders {
-		healthStatus[name] = ProviderHealthStatus{
-			Healthy: true,
-			Type:    "watchlist",
-		}
-	}
-
-	return healthStatus
-}
 
 //
 // Global Client Manager Access

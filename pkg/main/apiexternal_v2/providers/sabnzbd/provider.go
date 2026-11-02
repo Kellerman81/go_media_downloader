@@ -32,6 +32,15 @@ type sabBasicResult struct {
 	Status bool `json:"status"`
 }
 
+// sabStatusResult is a queue response as GetStatus reads it: Error is set
+// (and Queue absent) when SABnzbd rejects the API key.
+type sabStatusResult struct {
+	Queue *struct {
+		Version string `json:"version"`
+	} `json:"queue"`
+	Error string `json:"error"`
+}
+
 type sabQueueResult struct {
 	Queue sabQueue `json:"queue"`
 }
@@ -52,24 +61,33 @@ type sabQueue struct {
 }
 
 type sabQueueSlot struct {
-	Status     string `json:"status"`
-	Index      int    `json:"index"`
-	ETA        string `json:"eta"`
-	TimeLeft   string `json:"timeleft"`
-	AvgAge     string `json:"avg_age"`
-	Script     string `json:"script"`
-	MsgID      string `json:"msgid"`
-	Verbosity  string `json:"verbosity"`
-	MB         string `json:"mb"`
-	MBLeft     string `json:"mbleft"`
-	Filename   string `json:"filename"`
-	Priority   string `json:"priority"`
-	Cat        string `json:"cat"`
-	KBPerSec   string `json:"kbpersec"`
-	Size       string `json:"size"`
-	SizeLeft   string `json:"sizeleft"`
-	Percentage string `json:"percentage"`
-	NzoID      string `json:"nzo_id"`
+	Status     string      `json:"status"`
+	Index      int         `json:"index"`
+	ETA        string      `json:"eta"`
+	TimeLeft   string      `json:"timeleft"`
+	AvgAge     string      `json:"avg_age"`
+	Script     string      `json:"script"`
+	MsgID      string      `json:"msgid"`
+	Verbosity  string      `json:"verbosity"`
+	MB         string      `json:"mb"`
+	MBLeft     string      `json:"mbleft"`
+	Filename   string      `json:"filename"`
+	Priority   sabPriority `json:"priority"`
+	Cat        string      `json:"cat"`
+	KBPerSec   string      `json:"kbpersec"`
+	Size       string      `json:"size"`
+	SizeLeft   string      `json:"sizeleft"`
+	Percentage string      `json:"percentage"`
+	NzoID      string      `json:"nzo_id"`
+}
+
+// sabPriority accepts a queue slot's priority both as a JSON string (older
+// SABnzbd) and as a number (SABnzbd 5 sends "priority":0).
+type sabPriority string
+
+func (p *sabPriority) UnmarshalJSON(b []byte) error {
+	*p = sabPriority(strings.Trim(string(b), `"`))
+	return nil
 }
 
 //
@@ -85,8 +103,9 @@ type Provider struct {
 	baseURL string
 }
 
-// NewProvider creates a new SABnzbd download provider
-func NewProvider(host string, port int, apiKey string, useSSL bool) (*Provider, error) {
+// NewProvider creates a new SABnzbd download provider. urlBase is an optional
+// reverse-proxy sub-path ("/sabnzbd") in front of the /api endpoint.
+func NewProvider(host string, port int, apiKey string, useSSL bool, urlBase string) (*Provider, error) {
 	if apiKey == "" {
 		return nil, errors.New("SABnzbd requires an API key")
 	}
@@ -101,7 +120,7 @@ func NewProvider(host string, port int, apiKey string, useSSL bool) (*Provider, 
 		scheme = "https"
 	}
 
-	baseURL := fmt.Sprintf("%s://%s:%d/api", scheme, host, port)
+	baseURL := fmt.Sprintf("%s://%s:%d%s/api", scheme, host, port, strings.TrimSuffix(urlBase, "/"))
 
 	config := base.ClientConfig{
 		Name:                    "sabnzbd",
@@ -308,10 +327,15 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 	return nil
 }
 
-// GetStatus retrieves the download client status
+// GetStatus retrieves the download client status. It queries the queue
+// (limit 1) rather than mode=version: SABnzbd answers version without
+// checking the API key, so a wrong key looked "connected". A key problem
+// comes back as HTTP 200 with {"status": false, "error": "API Key Incorrect"}.
 func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClientStatus, error) {
 	params := url.Values{
-		"mode":   {"version"},
+		"mode":   {"queue"},
+		"start":  {"0"},
+		"limit":  {"1"},
 		"output": {"json"},
 		"apikey": {p.apiKey},
 	}
@@ -332,9 +356,32 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 		}, nil
 	}
 
+	var result sabStatusResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return &apiexternal_v2.DownloadClientStatus{
+			Connected: false,
+			Message:   logger.JoinStrings("unexpected SABnzbd response: ", err.Error()),
+		}, nil
+	}
+
+	if result.Error != "" {
+		return &apiexternal_v2.DownloadClientStatus{
+			Connected: false,
+			Message:   logger.JoinStrings("SABnzbd error: ", result.Error),
+		}, nil
+	}
+
+	if result.Queue == nil {
+		return &apiexternal_v2.DownloadClientStatus{
+			Connected: false,
+			Message:   "unexpected SABnzbd response: no queue data",
+		}, nil
+	}
+
 	return &apiexternal_v2.DownloadClientStatus{
 		Connected: true,
 		Message:   "Connected to SABnzbd",
+		Version:   result.Queue.Version,
 	}, nil
 }
 
@@ -450,7 +497,7 @@ func (p *Provider) convertSlotToTorrentInfo(slot sabQueueSlot) apiexternal_v2.To
 	}
 
 	// Set priority
-	if priority, err := strconv.Atoi(slot.Priority); err == nil {
+	if priority, err := strconv.Atoi(string(slot.Priority)); err == nil {
 		torrent.Priority = priority
 	}
 
@@ -498,6 +545,16 @@ func (p *Provider) handleHTTPError(resp *http.Response) error {
 // This is a SABnzbd-specific method not in the DownloadProvider interface,
 // but useful for clients that need direct NZB support
 func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority int) error {
+	return p.AddNZBNamed(ctx, nzbURL, category, "", priority)
+}
+
+// AddNZBNamed is AddNZB with an optional SABnzbd job name (the addurl
+// "nzbname" parameter); an empty name lets SABnzbd derive it from the NZB.
+func (p *Provider) AddNZBNamed(
+	ctx context.Context,
+	nzbURL, category, nzbName string,
+	priority int,
+) error {
 	params := url.Values{
 		"mode":   {"addurl"},
 		"name":   {nzbURL},
@@ -509,7 +566,15 @@ func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority
 		params.Set("cat", category)
 	}
 
-	if priority > 0 {
+	if nzbName != "" {
+		params.Set("nzbname", nzbName)
+	}
+
+	// SABnzbd priorities: -2 paused, -1 low, 0 normal, 1 high, 2 force.
+	// The downloader config's priority defaults to 0 and cannot tell "unset"
+	// from "normal", so 0 is treated as unset and the parameter is left out,
+	// letting the category's priority apply. Out-of-range values are not sent.
+	if priority != 0 && priority >= -2 && priority <= 2 {
 		params.Set("priority", strconv.Itoa(priority))
 	}
 

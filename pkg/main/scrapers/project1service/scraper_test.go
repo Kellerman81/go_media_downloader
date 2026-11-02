@@ -32,7 +32,6 @@ func TestProject1ServiceIntegration(t *testing.T) {
 	cfg := &Config{
 		SiteName:           "whengirlsplay",
 		StartURL:           "https://www.twistys.com/scenes/",
-		SiteID:             178,
 		FilterCollectionID: 227,
 		FirstPageDBOnly:    true,
 		SerieName:          "WhenGirlsPlay", // Series name for auto-creation
@@ -252,4 +251,35 @@ func containsRune(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestBuildProject1ItemURL(t *testing.T) {
+	tests := []struct {
+		startURL string
+		want     string
+	}{
+		{"https://www.twistys.com/scenes/", "https://www.twistys.com/scene/42/A-Title"},
+		{"https://www.twistys.com/scenes", "https://www.twistys.com/scenes/42/A-Title"},
+		{"https://www.brazzers.com/videos/", "https://www.brazzers.com/video/42/A-Title"},
+		{"https://www.lesbea.com/", "https://www.lesbea.com/42/A-Title"},
+	}
+
+	for _, tt := range tests {
+		if got := buildProject1ItemURL(tt.startURL, 42, "A Title"); got != tt.want {
+			t.Errorf("buildProject1ItemURL(%q) = %q, want %q", tt.startURL, got, tt.want)
+		}
+	}
+}
+
+func TestCreateEpisodeRejectsZeroID(t *testing.T) {
+	s := &Scraper{config: &Config{StartURL: "https://example.com/scenes/"}}
+
+	err := s.createEpisode(context.Background(), &SceneRelease{
+		ID:           0,
+		Title:        "x",
+		DateReleased: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+	})
+	if err == nil {
+		t.Fatal("expected error for release id 0")
+	}
 }

@@ -68,14 +68,24 @@ func newCircuitBreaker(config CircuitBreakerConfig, clientName string) *CircuitB
 	}
 }
 
-// CanMakeRequest checks if a request can be made.
+// CanMakeRequest checks if a request can be made. In half-open state an
+// admitted request consumes a probe slot, which must be settled with
+// RecordSuccess/RecordFailure, or returned with ReleaseProbe when no request
+// is sent after all.
 func (cb *CircuitBreaker) CanMakeRequest() bool {
+	ok, _ := cb.acquire()
+	return ok
+}
+
+// acquire is CanMakeRequest that also reports whether a half-open probe slot
+// was consumed.
+func (cb *CircuitBreaker) acquire() (ok, probe bool) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	switch cb.state {
 	case StateClosed:
-		return true
+		return true, false
 
 	case StateOpen:
 		// Check if max open time exceeded - force reset to closed
@@ -92,7 +102,7 @@ func (cb *CircuitBreaker) CanMakeRequest() bool {
 			cb.failures = 0
 			cb.firstOpenTime = time.Time{}
 
-			return true
+			return true, false
 		}
 
 		// Check if timeout has elapsed
@@ -105,10 +115,10 @@ func (cb *CircuitBreaker) CanMakeRequest() bool {
 			// limit before the next call would correctly start blocking.
 			cb.halfOpenAttempts = 1
 			cb.halfOpenSuccess = 0
-			return true
+			return true, true
 		}
 
-		return false
+		return false, false
 
 	case StateHalfOpen:
 		// Check if max open time exceeded - force reset to closed
@@ -127,19 +137,53 @@ func (cb *CircuitBreaker) CanMakeRequest() bool {
 			cb.halfOpenSuccess = 0
 			cb.halfOpenAttempts = 0
 
-			return true
+			return true, false
 		}
 
 		// Allow limited requests in half-open state
 		if cb.halfOpenAttempts < cb.config.HalfOpenMax {
 			cb.halfOpenAttempts++
-			return true
+			return true, true
 		}
 
-		return false
+		return false, false
 
 	default:
+		return false, false
+	}
+}
+
+// Allow reports whether CanMakeRequest would currently admit a request,
+// without consuming a half-open probe slot or changing state. Use it for
+// pre-flight checks that are not immediately followed by a request.
+func (cb *CircuitBreaker) Allow() bool {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+
+	maxOpenExceeded := !cb.firstOpenTime.IsZero() &&
+		time.Since(cb.firstOpenTime) > cb.config.MaxOpenTime
+
+	switch cb.state {
+	case StateClosed:
+		return true
+	case StateOpen:
+		return maxOpenExceeded || time.Since(cb.lastFailureTime) > cb.config.Timeout
+	case StateHalfOpen:
+		return maxOpenExceeded || cb.halfOpenAttempts < cb.config.HalfOpenMax
+	default:
 		return false
+	}
+}
+
+// ReleaseProbe returns a half-open probe slot taken by CanMakeRequest when
+// the request was never sent (or was cancelled by the caller), so the
+// breaker is not left waiting for a result that never comes.
+func (cb *CircuitBreaker) ReleaseProbe() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	if cb.state == StateHalfOpen && cb.halfOpenAttempts > 0 {
+		cb.halfOpenAttempts--
 	}
 }
 

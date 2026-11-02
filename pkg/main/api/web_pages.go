@@ -770,9 +770,10 @@ func addCSS() gomponents.Node {
 					/* Actions Column Visibility and Styling */
 					.dataTables_wrapper table th:last-child,
 					.dataTables_wrapper table td:last-child {
+						/* width 1% + nowrap sizes the column to its buttons (artists have five) */
 						min-width: 120px !important;
-						width: 120px !important;
-						max-width: 120px !important;
+						width: 1% !important;
+						white-space: nowrap;
 						text-align: center !important;
 						position: sticky;
 						right: 0;
@@ -798,8 +799,6 @@ func addCSS() gomponents.Node {
 						.dataTables_wrapper table th:last-child,
 						.dataTables_wrapper table td:last-child {
 							min-width: 100px !important;
-							width: 100px !important;
-							max-width: 100px !important;
 						}
 					}
 					
@@ -893,8 +892,8 @@ func addCSS() gomponents.Node {
 						justify-content: center;
 					}
 					
-					.btn-action-edit, .btn-action-delete, .btn-action-files, .btn-action-search, .btn-action-search-title, .btn-action-metadata-refresh {
-						background: none;
+					/* Row buttons of the database tables; each sets --action-color (web_table_actions.go). */
+					.row-action {
 						border: none;
 						padding: 0.5rem;
 						border-radius: 8px;
@@ -905,75 +904,17 @@ func addCSS() gomponents.Node {
 						justify-content: center;
 						width: 36px;
 						height: 36px;
+						color: var(--action-color);
+						background: color-mix(in srgb, var(--action-color) 10%, transparent);
 					}
 
-					.btn-action-edit {
-						color: #0d6efd;
-						background: rgba(13, 110, 253, 0.1);
-					}
-
-					.btn-action-edit:hover {
-						background: rgba(13, 110, 253, 0.2);
+					.row-action:hover {
+						background: color-mix(in srgb, var(--action-color) 20%, transparent);
 						transform: translateY(-2px);
-						box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+						box-shadow: 0 4px 12px color-mix(in srgb, var(--action-color) 30%, transparent);
 					}
 
-					.btn-action-delete {
-						color: #dc3545;
-						background: rgba(220, 53, 69, 0.1);
-					}
-
-					.btn-action-delete:hover {
-						background: rgba(220, 53, 69, 0.2);
-						transform: translateY(-2px);
-						box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-					}
-
-					.btn-action-files {
-						color: #198754;
-						background: rgba(25, 135, 84, 0.1);
-					}
-
-					.btn-action-files:hover {
-						background: rgba(25, 135, 84, 0.2);
-						transform: translateY(-2px);
-						box-shadow: 0 4px 12px rgba(25, 135, 84, 0.3);
-					}
-
-					.btn-action-search {
-						color: #fd7e14;
-						background: rgba(253, 126, 20, 0.1);
-					}
-
-					.btn-action-search:hover {
-						background: rgba(253, 126, 20, 0.2);
-						transform: translateY(-2px);
-						box-shadow: 0 4px 12px rgba(253, 126, 20, 0.3);
-					}
-
-					.btn-action-search-title {
-						color: #6f42c1;
-						background: rgba(111, 66, 193, 0.1);
-					}
-
-					.btn-action-search-title:hover {
-						background: rgba(111, 66, 193, 0.2);
-						transform: translateY(-2px);
-						box-shadow: 0 4px 12px rgba(111, 66, 193, 0.3);
-					}
-
-					.btn-action-metadata-refresh {
-						color: #20c997;
-						background: rgba(32, 201, 151, 0.1);
-					}
-
-					.btn-action-metadata-refresh:hover {
-						background: rgba(32, 201, 151, 0.2);
-						transform: translateY(-2px);
-						box-shadow: 0 4px 12px rgba(32, 201, 151, 0.3);
-					}
-
-					.btn-action-edit i, .btn-action-delete i, .btn-action-files i, .btn-action-search i, .btn-action-search-title i, .btn-action-metadata-refresh i {
+					.row-action i {
 						font-size: 0.9rem;
 					}
 
@@ -1834,6 +1775,55 @@ func faviconLinks() gomponents.Node {
 	})
 }
 
+// csrfAutoAttachScript adds the session's CSRF token (from the JS-readable
+// csrf_token cookie set by requireAuth) to every same-origin state-changing
+// htmx, fetch and jQuery request that doesn't already carry one, so no
+// individual form or button can forget it.
+func csrfAutoAttachScript() gomponents.Node {
+	return html.Script(gomponents.Raw(`
+(function () {
+	function gmdCsrfToken() {
+		var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+		if (m) { return decodeURIComponent(m[1]); }
+		if (window.csrfToken) { return window.csrfToken; }
+		var el = document.querySelector('input[name="csrf_token"]');
+		return el ? el.value : '';
+	}
+	window.gmdCsrfToken = gmdCsrfToken;
+	function unsafeMethod(m) { return !/^(GET|HEAD|OPTIONS)$/i.test(m || 'GET'); }
+	function sameOrigin(u) {
+		try { return new URL(u, window.location.href).origin === window.location.origin; } catch (e) { return false; }
+	}
+	document.addEventListener('htmx:configRequest', function (evt) {
+		var d = evt.detail;
+		if (unsafeMethod(d.verb) && !d.headers['X-CSRF-Token']) { d.headers['X-CSRF-Token'] = gmdCsrfToken(); }
+	});
+	if (window.fetch) {
+		var origFetch = window.fetch;
+		window.fetch = function (input, init) {
+			var url = (typeof input === 'string' || input instanceof URL) ? String(input) : input.url;
+			var method = (init && init.method) || (input && input.method) || 'GET';
+			if (unsafeMethod(method) && sameOrigin(url)) {
+				init = init || {};
+				var h = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+				if (!h.get('X-CSRF-Token')) { h.set('X-CSRF-Token', gmdCsrfToken()); }
+				init.headers = h;
+			}
+			return origFetch.call(this, input, init);
+		};
+	}
+	if (window.jQuery) {
+		jQuery.ajaxPrefilter(function (options) {
+			if (unsafeMethod(options.type || options.method) && sameOrigin(options.url)) {
+				options.headers = options.headers || {};
+				if (!options.headers['X-CSRF-Token']) { options.headers['X-CSRF-Token'] = gmdCsrfToken(); }
+			}
+		});
+	}
+})();
+`))
+}
+
 func page(
 	title string,
 	activeConfig bool,
@@ -1870,7 +1860,8 @@ func page(
 				html.Script(html.Src("/static/js/datatables.js")),
 				// html.Script(html.Src("https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js")),
 
-				html.Script(html.Src("https://unpkg.com/htmx.org")),
+				html.Script(html.Src("https://unpkg.com/htmx.org@2.0.11/dist/htmx.min.js")),
+				csrfAutoAttachScript(),
 				addCSS(),
 				// adminStyles(),
 			),
@@ -2533,6 +2524,8 @@ func adminPageGrid(ctx *gin.Context) {
 		renderSchedulerPage(ctx)
 	case "stats":
 		renderStatsPage(ctx)
+	default:
+		sendNotFound(ctx, "Unknown grid")
 	}
 }
 

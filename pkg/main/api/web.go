@@ -344,6 +344,17 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 						html.Li(html.Class("sidebar-item"),
 							html.A(
 								html.Class("sidebar-link"),
+								html.Href("/api/admin/metadata-search/books"),
+								html.I(html.Class("align-middle fa-solid fa-book")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Add Books"),
+								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
 								html.Href("/api/admin/metadata-search/audiobooks"),
 								html.I(html.Class("align-middle fa-solid fa-headphones")),
 								html.Span(
@@ -426,7 +437,7 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.I(html.Class("align-middle fa-solid fa-paper-plane")),
 								html.Span(
 									html.Class("align-middle"),
-									gomponents.Text("Pushover Test"),
+									gomponents.Text("Notification Test"),
 								),
 							),
 						),
@@ -775,39 +786,7 @@ func adminDatabaseContent(tableName string, csrfToken string) gomponents.Node {
 
 // adminButtonDescription returns a description panel explaining the available action buttons for the given table.
 func adminButtonDescription(tableName string) gomponents.Node {
-	var desc string
-	switch tableName {
-	case "dbmovies":
-		desc = "Edit: Edit record | Delete: Remove record | Refresh: Refresh movie metadata from external sources"
-	case "dbseries":
-		desc = "Edit: Edit record | Delete: Remove record | Refresh: Refresh series metadata from external sources"
-	case "dbalbums":
-		desc = "Edit: Edit record | Delete: Remove record | Refresh: Start metadata refresh job for all albums"
-	case "dbaudiobooks":
-		desc = "Edit: Edit record | Delete: Remove record | Refresh: Start metadata refresh job for all audiobooks"
-	case "dbbooks":
-		desc = "Edit: Edit record | Delete: Remove record | Refresh: Start metadata refresh job for all books"
-	case "movies":
-		desc = "Edit: Edit record | Delete: Remove record | Files: View associated files | Search: Search by IMDB ID | Search+: Search by title"
-	case "serie_episodes":
-		desc = "Edit: Edit record | Delete: Remove record | Files: View associated files | Search: Search by TVDB ID | Search+: Search by title"
-	case "albums":
-		desc = "Edit: Edit record | Delete: Remove record | Files: View album files | Search+: Search for missing albums in this list"
-	case "audiobooks":
-		desc = "Edit: Edit record | Delete: Remove record | Files: View audiobook files | Search+: Search for missing audiobooks in this list"
-	case "books":
-		desc = "Edit: Edit record | Delete: Remove record | Files: View book files | Search+: Search for missing books in this list"
-	case "dbartists":
-		desc = "Edit: Edit record | Delete: Remove record | List: View albums by this artist"
-	case "artists":
-		desc = "Edit: Edit record | Delete: Remove record | List: View albums by this artist | Search: Search for missing albums by artist | Discover: Discover and import all series albums"
-	case "dbauthors":
-		desc = "Edit: Edit record | Delete: Remove record | List: View books or audiobooks by this author"
-	case "authors":
-		desc = "Edit: Edit record | Delete: Remove record | List: View books or audiobooks by this author | Search: Search for missing books/audiobooks by author"
-	default:
-		desc = "Edit: Edit record | Delete: Remove record"
-	}
+	desc := tableActionHelp(tableName)
 
 	return html.Div(
 		html.Class("alert alert-info py-2 px-3 mb-3"),
@@ -961,7 +940,7 @@ func adminJavaScript() gomponents.Node {
 								<div class="d-flex">
 									<div class="toast-body d-flex align-items-center">
 										<i class="${iconClass} me-2"></i>
-										<span>${message}</span>
+										<span class="gmd-toast-msg"></span>
 									</div>
 									<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
 								</div>
@@ -974,6 +953,8 @@ func adminJavaScript() gomponents.Node {
 						try {
 							// Initialize and show the toast
 							const toastElement = document.getElementById(toastId);
+							// Messages carry server/provider text (titles, error strings) - never parse them as HTML.
+							toastElement.querySelector('.gmd-toast-msg').textContent = String(message == null ? '' : message);
 							const toast = new bootstrap.Toast(toastElement, {
 								autohide: true,
 								delay: type === 'error' ? 8000 : 4000  // Error messages stay longer
@@ -1076,7 +1057,8 @@ func adminJavaScript() gomponents.Node {
 							headers: { 'X-CSRF-Token': csrfToken }
 						}).then(function(r) { return r.text(); }).then(function(key) {
 							var el = document.querySelector('[name=' + CSS.escape(fieldName) + ']');
-							if (el) { el.value = key; }
+							// Secret fields render as password inputs; reveal the new key so the admin can note it.
+							if (el) { el.value = key; if (el.type === 'password') { el.type = 'text'; } }
 						});
 					};
 
@@ -1154,7 +1136,7 @@ func adminJavaScript() gomponents.Node {
 						searchResultLimit: 50,
 						renderChoiceLimit: 50,
 						shouldSort: false,
-						allowHTML: true,
+						allowHTML: false, // labels are DB/provider titles - render as text
 						addItems: allowCustom,
 						editItems: false,  // Never allow editing of selected items
 						addItemText: allowCustom ? 'Press Enter to add custom value' : '',

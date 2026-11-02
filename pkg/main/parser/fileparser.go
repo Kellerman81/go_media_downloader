@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -114,12 +113,6 @@ var (
 	mediainfoOnce sync.Once
 	ffprobepath   string
 	ffprobeOnce   sync.Once
-	arrExtended   = [4]string{
-		"extended",
-		"extended cut",
-		"extended.cut",
-		"extended-cut",
-	}
 
 	// Thread safety: Protect mutable global state.
 	prioritiesMu   sync.Mutex   // Serializes priority table generation
@@ -157,39 +150,6 @@ var (
 		{name: "tvdb", last: false, re: `(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`, getgroup: 2},
 	}
 )
-
-// getmatchesroot finds all substring matches in m.Str using the provided regular
-// expression pattern. It returns a slice of integer indices indicating the start
-// and end positions of the matched substring(s). For regex capture groups, the
-// even indices are start positions and odd indices are end positions.
-func (pattern *regexpattern) getmatchesroot(
-	m *database.ParseInfo,
-	cfgp *config.MediaTypeConfig,
-) (int, int) {
-	// For series, use all matches when it's the last year pattern
-	// (movies shorten year pattern, series does not)
-	useall := pattern.last && pattern.name == "year" &&
-		!mediatype.Get(cfgp.IsType).ShortenYearPattern()
-
-	matchest := database.RunRetRegex(
-		pattern.re,
-		m.Str,
-		useall,
-	)
-	if len(matchest) == 0 {
-		return -1, -1
-	}
-
-	lensubmatches := len(matchest)
-	groupIndex := pattern.getgroup * 2
-	// Ensure we have enough groups for the requested index
-	if groupIndex+1 >= lensubmatches || matchest[groupIndex+1] == -1 {
-		return -1, -1
-	}
-
-	// All branches returned the same value, so simplified to direct return
-	return matchest[groupIndex], matchest[groupIndex+1]
-}
 
 // getImdbFilename returns the path to the init_imdb executable
 // based on the current OS. For Windows it returns init_imdb.exe,
@@ -438,206 +398,19 @@ func GenerateCutoffPriorities() {
 				Quality:    lst.CfgQuality.CutoffQuality,
 				Resolution: lst.CfgQuality.CutoffResolution,
 			}
+			// Audio priorities are looked up by AudioFormat only; without this
+			// the cutoff silently became the media's default_quality format.
+			if media.IsType == config.MediaTypeMusic || media.IsType == config.MediaTypeAudiobook {
+				m.AudioFormat = lst.CfgQuality.CutoffQuality
+			}
+
 			GetPriorityMapQual(&m, media, lst.CfgQuality, true, false) // newCutoffPrio(media, idxi)
 
-			lst.CfgQuality.CutoffPriority = m.Priority
+			lst.CfgQuality.CutoffPriority = ComparablePriority(&m, media)
 		}
 
 		return nil
 	})
-}
-
-// processPatternMatch handles the processing of a matched regex pattern in file parsing.
-// It updates the ParseInfo struct with matched information based on the pattern type,
-// and manages the start and end indices of the matched substring within the original string.
-// The function is used internally during file name parsing to extract metadata like
-// IMDb ID, year, season, episode, and other media-related information.
-func processPatternMatch(
-	m *database.ParseInfo,
-	pattern *regexpattern,
-	strStart, strEnd int,
-	cfgp *config.MediaTypeConfig,
-	start, end *int,
-) {
-	shorten := pattern.name != "year" || mediatype.Get(cfgp.IsType).ShortenYearPattern()
-	if shorten {
-		// Use strStart directly - it's already the real position this match
-		// was found at. Re-deriving the position by searching for the
-		// matched text (strings.Index(m.Str, m.Str[strStart:strEnd])) finds
-		// the wrong, earlier occurrence whenever that same text recurs
-		// earlier in the string (e.g. a repeated year like
-		// "SNL.2024.Election.Special.2024.1080p...", where the real match is
-		// the second "2024" but the re-search finds the first).
-		if strStart == 0 {
-			if matchLen := strEnd - strStart; matchLen != len(m.Str) && matchLen < *end {
-				*start = matchLen
-			}
-		} else if strStart < *end && strStart > *start {
-			*end = strStart
-		}
-	}
-
-	if m.FirstIDX == 0 || strStart < m.FirstIDX {
-		m.FirstIDX = strStart
-	}
-
-	// Use a map for better performance on pattern matching
-	switch pattern.name {
-	case "imdb":
-		m.Imdb = m.Str[strStart:strEnd]
-	case "tvdb":
-		m.Tvdb, _ = strings.CutPrefix(m.Str[strStart:strEnd], logger.StrTvdb)
-		if logger.HasPrefixI(m.Tvdb, logger.StrTvdb) {
-			m.Tvdb = m.Tvdb[4:]
-		}
-
-	case "year":
-		m.FirstYearIDX = strStart
-		m.Year = logger.StringToUInt16(m.Str[strStart:strEnd])
-
-	case "season":
-		m.SeasonStr = m.Str[strStart:strEnd]
-		m.Season = logger.StringToInt(m.SeasonStr)
-
-	case "episode":
-		m.EpisodeStr = m.Str[strStart:strEnd]
-		m.Episode = logger.StringToInt(m.EpisodeStr)
-
-	case "identifier":
-		m.Identifier = m.Str[strStart:strEnd]
-	case logger.StrDate:
-		m.Date = m.Str[strStart:strEnd]
-	case "audio":
-		m.Audio = m.Str[strStart:strEnd]
-	case "resolution":
-		m.Resolution = m.Str[strStart:strEnd]
-	case "quality":
-		m.Quality = m.Str[strStart:strEnd]
-	case "codec":
-		m.Codec = m.Str[strStart:strEnd]
-	}
-}
-
-// shouldSkipPattern determines whether a specific regex pattern should be skipped during file parsing.
-// It checks various conditions based on the pattern type, media type configuration, and existing parsed information.
-// Returns true if the pattern should be skipped, false otherwise.
-func shouldSkipPattern(
-	pattern *regexpattern,
-	m *database.ParseInfo,
-	cfgp *config.MediaTypeConfig,
-	onlyifempty bool,
-	conttt, conttvdb bool,
-) bool {
-	switch pattern.name {
-	case "imdb":
-		return cfgp.IsType != config.MediaTypeMovie || !conttt || (onlyifempty && m.Imdb != "")
-	case "tvdb":
-		return cfgp.IsType != config.MediaTypeSeries || !conttvdb || (onlyifempty && m.Tvdb != "")
-	case "season":
-		return cfgp.IsType != config.MediaTypeSeries || (onlyifempty && m.Season != 0)
-	case "identifier":
-		return cfgp.IsType != config.MediaTypeSeries || (onlyifempty && m.Identifier != "")
-	case "episode":
-		return cfgp.IsType != config.MediaTypeSeries || (onlyifempty && m.Episode != 0)
-	case "date":
-		return cfgp.IsType != config.MediaTypeSeries || (onlyifempty && m.Date != "")
-	case "audio":
-		return m.Audio != ""
-	case "codec":
-		return m.Codec != ""
-	case "quality":
-		return m.Quality != ""
-	case "resolution":
-		return m.Resolution != ""
-	}
-
-	return false
-}
-
-// newFileParser reuses a FileParser instance. It sets the filename,
-// media config, list ID, and allow title search flag. It runs the main parsing
-// logic like splitting the filename on delimiters, running regex matches,
-// and cleaning up the parsed title and identifier.
-func newFileParser(
-	cleanName string,
-	onlyifempty bool,
-	cfgp *config.MediaTypeConfig,
-	listid int,
-	m *database.ParseInfo,
-) {
-	m.ListID = listid
-	if !onlyifempty || m.File == "" {
-		m.File = cleanName
-	}
-
-	m.Str = m.File
-	logger.StringReplaceWithP(&m.Str, '_', ' ')
-
-	m.Str = logger.Trim(m.Str, '[', ']')
-
-	if !config.GetSettingsGeneral().DisableParserStringMatch {
-		m.Parsegroup("audio", onlyifempty, database.DBConnect.AudioStrIn)
-		m.Parsegroup("codec", onlyifempty, database.DBConnect.CodecStrIn)
-		m.Parsegroup("quality", onlyifempty, database.DBConnect.QualityStrIn)
-		m.Parsegroup("resolution", onlyifempty, database.DBConnect.ResolutionStrIn)
-	}
-
-	m.Parsegroup("extended", onlyifempty, arrExtended[:])
-	m.ParsegroupEntry("proper")
-	m.ParsegroupEntry("repack")
-
-	var (
-		start, end = 0, len(m.Str)
-		conttt     = logger.ContainsI(m.Str, logger.StrTt)
-		conttvdb   = logger.ContainsI(m.Str, logger.StrTvdb)
-	)
-
-	for i := range scanpatterns {
-		pattern := &scanpatterns[i]
-		if shouldSkipPattern(pattern, m, cfgp, onlyifempty, conttt, conttvdb) {
-			continue
-		}
-
-		if strStart, strEnd := pattern.getmatchesroot(m, cfgp); strStart != -1 && strEnd != -1 {
-			processPatternMatch(m, pattern, strStart, strEnd, cfgp, &start, &end)
-		}
-	}
-
-	mediatype.Get(cfgp.IsType).GenerateIdentifier(m, onlyifempty)
-
-	if m.FirstIDX != 0 && m.FirstIDX < m.FirstYearIDX {
-		end = m.FirstIDX
-	}
-
-	var titleStr string
-	if end < start {
-		logger.Logtype("debug", 0).
-			Str(logger.StrPath, m.File).
-			Int("start", start).
-			Int("end", end).
-			Msg("EndIndex < startindex")
-
-		titleStr = m.File[start:]
-	} else {
-		titleStr = m.File[start:end]
-	}
-
-	if idx := strings.IndexRune(titleStr, '('); idx != -1 {
-		titleStr = titleStr[:idx]
-	}
-
-	m.Str = titleStr
-
-	if onlyifempty && m.Title != "" {
-		return
-	}
-
-	m.Title = titleStr
-	if strings.ContainsRune(m.Title, '.') && !strings.ContainsRune(m.Title, ' ') {
-		logger.StringReplaceWithP(&m.Title, '.', ' ')
-	}
-
-	m.Title = logger.TrimSpace(logger.TrimRight(logger.TrimSpace(m.Title), '-', '.', ' '))
 }
 
 // SplitByFull splits a string into two parts by the first
@@ -649,48 +422,6 @@ func splitByFull(str string, splitby rune) string {
 	}
 
 	return str
-}
-
-// ParseFile parses the given video file to extract metadata.
-// It accepts a video file path, booleans to indicate whether to use the path and folder
-// to extract metadata, a media type config, a list ID, and a FileParser to populate.
-// It calls ParseFileP to parse the file and populate the FileParser, which is then returned.
-func ParseFile(
-	videofile string,
-	usepath, usefolder bool,
-	cfgp *config.MediaTypeConfig,
-	listid int,
-) *database.ParseInfo {
-	m := database.PLParseInfo.Get()
-	ParseFileP(videofile, usepath, usefolder, cfgp, listid, m)
-	return m
-}
-
-// ParseFileP parses a video file to extract metadata.
-// It accepts the video file path, booleans to determine parsing behavior,
-// a media type config, list ID, and existing parser to populate.
-// It returns the populated parser after attempting to extract metadata.
-func ParseFileP(
-	videofile string,
-	usepath, usefolder bool,
-	cfgp *config.MediaTypeConfig,
-	listid int,
-	m *database.ParseInfo,
-) {
-	filename := videofile
-	if usepath {
-		filename = filepath.Base(videofile)
-	}
-
-	newFileParser(filename, false, cfgp, listid, m)
-
-	if m.Quality != "" && m.Resolution != "" {
-		return
-	}
-
-	if usefolder && usepath {
-		newFileParser(filepath.Base(filepath.Dir(videofile)), true, cfgp, listid, m)
-	}
 }
 
 // GetDBIDs retrieves the database IDs needed to locate a movie or TV episode in the database.
@@ -1147,89 +878,6 @@ func GetPriorityMapQual(
 	}
 }
 
-// GetPriorityMapQualAudio calculates priority for music and audiobook releases.
-// It looks up AudioFormatID from the qualities table (type 5) and uses the same
-// priority system as movies/series via findPriorityIndex. Bitrate, sample rate,
-// and bit depth are applied as bonus modifiers on top.
-func GetPriorityMapQualAudio(
-	m *database.ParseInfo,
-	cfgp *config.MediaTypeConfig,
-	quality *config.QualityConfig,
-	useall bool,
-) {
-	// Look up audio format from qualities table
-	if m.AudioFormatID == 0 {
-		m.AudioFormatID = m.Gettypeids(m.AudioFormat, database.DBConnect.GetaudioformatsIn)
-	}
-
-	// Fallback to default_quality from MediaTypeConfig if no audio format detected
-	if m.AudioFormatID == 0 && cfgp != nil {
-		idx := database.Getqualityidxbyname(database.DBConnect.GetaudioformatsIn, cfgp, false)
-		if idx != -1 {
-			m.AudioFormatID = database.DBConnect.GetaudioformatsIn[idx].ID
-		}
-	}
-
-	var defaultQuality string
-	if cfgp != nil {
-		defaultQuality = cfgp.DefaultQuality
-	}
-
-	logger.Logtype("debug", 0).
-		Str("audioformat_str", m.AudioFormat).
-		Uint("audioformat_id", m.AudioFormatID).
-		Int("audioformats_count", len(database.DBConnect.GetaudioformatsIn)).
-		Str("quality_name", quality.Name).
-		Bool("use_for_priority_audio_format", quality.UseForPriorityAudioFormat).
-		Str("default_quality", defaultQuality).
-		Msg("GetPriorityMapQualAudio debug")
-
-	var audioformat uint
-	if quality.UseForPriorityAudioFormat || useall {
-		audioformat = m.AudioFormatID
-	}
-
-	// Use the same priority lookup as movies (resolution/quality/codec/audio all 0 for audio media)
-	prio, found := findPriorityValue(0, 0, 0, 0, audioformat, quality, false)
-	if !found {
-		logger.Logtype("debug", 0).
-			Uint("audioformat", audioformat).
-			Str("quality_name", quality.Name).
-			Int("profiles", len(loadPrioSnapshot().profiles)).
-			Msg("GetPriorityMapQualAudio priority not found")
-
-		m.Priority = 0
-
-		return
-	}
-
-	m.Priority = prio
-
-	// Bitrate bonus modifier
-	if quality.UseForPriorityAudioBitrate || useall {
-		m.Priority += calculateAudioBitratePriority(m.AudioBitrate, m.AudioFormat)
-	}
-
-	// Bit depth bonus for hi-res audio (24-bit, 32-bit)
-	if m.AudioBitDepth >= 24 {
-		m.Priority += (m.AudioBitDepth - 16)
-	}
-
-	// Sample rate bonus for hi-res audio (above 44.1kHz)
-	if m.AudioSampleRate > 44100 {
-		if m.AudioSampleRate >= 96000 {
-			m.Priority += 10
-		} else if m.AudioSampleRate >= 48000 {
-			m.Priority += 5
-		}
-	}
-
-	// Apply standard modifiers (proper, repack, extended)
-	if quality.UseForPriorityOther || useall {
-		applyPriorityModifiers(m)
-	}
-}
-
 // calculateAudioBitratePriority returns priority bonus based on audio bitrate.
 // Higher bitrates get higher priority, especially for lossy formats.
 func calculateAudioBitratePriority(bitrate int, format string) int {
@@ -1272,14 +920,10 @@ func GetPriorityMapQualBook(
 	quality *config.QualityConfig,
 	useall bool,
 ) {
-	// Base priority starts at 100
-	m.Priority = 100
-
-	// Book format priority
-	m.Priority += calculateBookFormatPriority(m.Quality)
+	m.Priority = BookFormatPriority(m.Quality)
 
 	// Source quality bonus (retail > scan)
-	if logger.ContainsI(m.Quality, "retail") {
+	if m.Retail {
 		m.Priority += 20
 	}
 
@@ -1287,6 +931,26 @@ func GetPriorityMapQualBook(
 	if quality.UseForPriorityOther || useall {
 		applyPriorityModifiers(m)
 	}
+}
+
+// BookFormatPriority is the format-only book score: the release score without
+// the retail/proper/repack bonuses. book_files stores none of those, so this
+// is the only part of a release score that an existing file can match.
+func BookFormatPriority(format string) int {
+	return 100 + calculateBookFormatPriority(format)
+}
+
+// ComparablePriority returns the part of m's priority that can be compared
+// against existing-file priorities and the cutoff. For books that excludes the
+// retail/proper/repack bonuses (existing book files can't carry them, so
+// counting them would make every retail/proper release an endless "upgrade");
+// for every other media type it is m.Priority.
+func ComparablePriority(m *database.ParseInfo, cfgp *config.MediaTypeConfig) int {
+	if cfgp != nil && cfgp.IsType == config.MediaTypeBook {
+		return BookFormatPriority(m.Quality)
+	}
+
+	return m.Priority
 }
 
 // calculateBookFormatPriority returns priority bonus based on ebook format.
@@ -1567,4 +1231,87 @@ func BuildPrioStr(r, q, c, a, af uint) string {
 	bld.WriteUInt(af)
 
 	return bld.String()
+}
+
+// GetPriorityMapQualAudio calculates priority for music and audiobook releases.
+// It looks up AudioFormatID from the qualities table (type 5) and uses the same
+// priority system as movies/series via findPriorityIndex. Bitrate, sample rate,
+// and bit depth are applied as bonus modifiers on top.
+func GetPriorityMapQualAudio(
+	m *database.ParseInfo,
+	cfgp *config.MediaTypeConfig,
+	quality *config.QualityConfig,
+	useall bool,
+) {
+	// Look up audio format from qualities table
+	if m.AudioFormatID == 0 {
+		m.AudioFormatID = m.Gettypeids(m.AudioFormat, database.DBConnect.GetaudioformatsIn)
+	}
+
+	// Fallback to default_quality from MediaTypeConfig if no audio format detected
+	if m.AudioFormatID == 0 && cfgp != nil {
+		idx := database.Getqualityidxbyname(database.DBConnect.GetaudioformatsIn, cfgp, false)
+		if idx != -1 {
+			m.AudioFormatID = database.DBConnect.GetaudioformatsIn[idx].ID
+		}
+	}
+
+	var defaultQuality string
+	if cfgp != nil {
+		defaultQuality = cfgp.DefaultQuality
+	}
+
+	logger.Logtype("debug", 0).
+		Str("audioformat_str", m.AudioFormat).
+		Uint("audioformat_id", m.AudioFormatID).
+		Int("audioformats_count", len(database.DBConnect.GetaudioformatsIn)).
+		Str("quality_name", quality.Name).
+		Bool("use_for_priority_audio_format", quality.UseForPriorityAudioFormat).
+		Str("default_quality", defaultQuality).
+		Msg("GetPriorityMapQualAudio debug")
+
+	var audioformat uint
+	if quality.UseForPriorityAudioFormat || useall {
+		audioformat = m.AudioFormatID
+	}
+
+	// Use the same priority lookup as movies (resolution/quality/codec/audio all 0 for audio media)
+	prio, found := findPriorityValue(0, 0, 0, 0, audioformat, quality, false)
+	if !found {
+		logger.Logtype("debug", 0).
+			Uint("audioformat", audioformat).
+			Str("quality_name", quality.Name).
+			Int("profiles", len(loadPrioSnapshot().profiles)).
+			Msg("GetPriorityMapQualAudio priority not found")
+
+		m.Priority = 0
+
+		return
+	}
+
+	m.Priority = prio
+
+	// Bitrate bonus modifier
+	if quality.UseForPriorityAudioBitrate || useall {
+		m.Priority += calculateAudioBitratePriority(m.AudioBitrate, m.AudioFormat)
+	}
+
+	// Bit depth bonus for hi-res audio (24-bit, 32-bit)
+	if m.AudioBitDepth >= 24 {
+		m.Priority += (m.AudioBitDepth - 16)
+	}
+
+	// Sample rate bonus for hi-res audio (above 44.1kHz)
+	if m.AudioSampleRate > 44100 {
+		if m.AudioSampleRate >= 96000 {
+			m.Priority += 10
+		} else if m.AudioSampleRate >= 48000 {
+			m.Priority += 5
+		}
+	}
+
+	// Apply standard modifiers (proper, repack, extended)
+	if quality.UseForPriorityOther || useall {
+		applyPriorityModifiers(m)
+	}
 }

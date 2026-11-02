@@ -1,8 +1,12 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	stdhtml "html"
 	"net/http"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +14,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
@@ -124,7 +129,7 @@ func renderMissingEpisodesFinderPage(csrfToken string) gomponents.Node {
 					}, map[string]string{
 						"QualityProfile": "Quality Profile",
 					}, "QualityProfile", "select", "default", map[string][]string{
-						"options": {"default", "720p", "1080p", "4k"},
+						"options": missingEpisodesQualityOptions(),
 					}),
 				),
 			),
@@ -267,16 +272,6 @@ func renderLogAnalysisDashboardPage(csrfToken string) gomponents.Node {
 			html.Div(
 				html.Class("form-group submit-group"),
 				html.Button(
-					html.Class("btn btn-success ml-2"),
-					gomponents.Text("Export Report"),
-					html.Type("button"),
-					hx.Target("#analysisResults"),
-					hx.Swap("innerHTML"),
-					hx.Post("/api/admin/log-analysis/export"),
-					hx.Headers("{\"X-CSRF-Token\": \""+csrfToken+"\"}"),
-					hx.Include("#logAnalysisForm"),
-				),
-				html.Button(
 					html.Type("button"),
 					html.Class("btn btn-secondary ml-2"),
 					gomponents.Attr(
@@ -379,16 +374,6 @@ func renderStorageHealthMonitorPage(csrfToken string) gomponents.Node {
 					}, map[string]string{
 						"SlowIOThreshold": "Slow I/O Alert (MB/s)",
 					}, "SlowIOThreshold", "number", "10", nil),
-
-					renderFormGroup("storage",
-						map[string]string{
-							"EnableAlerts": "Send notifications when thresholds are exceeded",
-						},
-						map[string]string{
-							"EnableAlerts": "Enable Alert Notifications",
-						},
-						"EnableAlerts", "checkbox", true, nil,
-					),
 				),
 			),
 
@@ -567,15 +552,6 @@ func renderExternalServiceHealthCheckPage(csrfToken string) gomponents.Node {
 							"MeasurePerformance": "Measure Performance",
 						},
 						"MeasurePerformance", "checkbox", true, nil),
-
-					renderFormGroup("service",
-						map[string]string{
-							"SaveResults": "Store test results for trend analysis",
-						},
-						map[string]string{
-							"SaveResults": "Save Historical Data",
-						},
-						"SaveResults", "checkbox", false, nil),
 				),
 			),
 
@@ -818,7 +794,6 @@ var apiEndpointsGeneral = []apiEndpointDoc{
 	{"GET", "/api/scheduler/stop", "Stop scheduler"},
 	{"GET", "/api/scheduler/start", "Start scheduler"},
 	{"GET", "/api/scheduler/list", "List scheduled jobs"},
-	{"GET", "/api/db/close", "Close database"},
 	{"GET", "/api/db/backup", "Backup database"},
 	{"GET", "/api/db/integrity", "Check database integrity"},
 	{"GET", "/api/db/cleanuporphans", "Clean up orphaned database entries"},
@@ -1806,7 +1781,7 @@ func HandleQualityReorderRules(c *gin.Context) {
 	if qualityConfig == nil {
 		c.String(
 			http.StatusOK,
-			`<p class="text-danger mb-0 text-center">Quality profile "<strong>`+selectedProfile+`</strong>" not found.</p>`,
+			`<p class="text-danger mb-0 text-center">Quality profile "<strong>`+stdhtml.EscapeString(selectedProfile)+`</strong>" not found.</p>`,
 		)
 
 		return
@@ -1819,13 +1794,13 @@ func HandleQualityReorderRules(c *gin.Context) {
 		html.WriteString(
 			`<p class="text-muted mb-0 text-center">No reorder rules defined in profile: <strong>`,
 		)
-		html.WriteString(selectedProfile)
+		html.WriteString(stdhtml.EscapeString(selectedProfile))
 		html.WriteString(`</strong>. Click 'Add Rule' to create one.</p>`)
 	} else {
 		html.WriteString(`<p class="text-info mb-3 text-center">Showing `)
 		html.WriteString(strconv.Itoa(len(qualityConfig.QualityReorder)))
 		html.WriteString(` reorder rule(s) from profile: <strong>`)
-		html.WriteString(selectedProfile)
+		html.WriteString(stdhtml.EscapeString(selectedProfile))
 		html.WriteString(`</strong></p>`)
 
 		// Display each reorder rule
@@ -1842,9 +1817,9 @@ func HandleQualityReorderRules(c *gin.Context) {
 				`<select class="form-select form-select-sm" name="rule_type" disabled>`,
 			)
 			html.WriteString(`<option value="`)
-			html.WriteString(rule.ReorderType)
+			html.WriteString(stdhtml.EscapeString(rule.ReorderType))
 			html.WriteString(`" selected>`)
-			html.WriteString(cases.Title(language.English).String(rule.ReorderType))
+			html.WriteString(stdhtml.EscapeString(cases.Title(language.English).String(rule.ReorderType)))
 			html.WriteString(`</option>`)
 			html.WriteString(`</select>`)
 			html.WriteString(`</div>`)
@@ -1854,7 +1829,7 @@ func HandleQualityReorderRules(c *gin.Context) {
 			html.WriteString(
 				`<input type="text" class="form-control form-control-sm" name="rule_pattern" value="`,
 			)
-			html.WriteString(rule.Name)
+			html.WriteString(stdhtml.EscapeString(rule.Name))
 			html.WriteString(`" placeholder="Pattern/Name">`)
 			html.WriteString(`</div>`)
 
@@ -1957,8 +1932,10 @@ func HandleMediaCleanup(c *gin.Context) {
 		c.PostForm("cleanup_FindBroken") == "true"
 	findEmpty := c.PostForm("cleanup_FindEmpty") == "on" ||
 		c.PostForm("cleanup_FindEmpty") == "true"
-	dryRun := c.PostForm("cleanup_DryRun") == "on" || c.PostForm("cleanup_DryRun") == "true"
 	mediaTypes := c.PostForm("cleanup_MediaTypes")
+	if mediaTypes == "" {
+		mediaTypes = "all"
+	}
 	minFileSizeStr := c.PostForm("cleanup_MinFileSize")
 
 	if !findOrphans && !findDuplicates && !findBroken && !findEmpty {
@@ -2014,44 +1991,7 @@ func HandleMediaCleanup(c *gin.Context) {
 	brokenCount := 0
 	emptyCount := 0
 
-	// Get configured media paths for scanning
-	var scanPaths []string
-
-	paths := c.PostForm("cleanup_Paths")
-	if paths != "" {
-		scanPaths = strings.Split(strings.TrimSpace(paths), "\n")
-	} else {
-		// Use all configured media paths if none specified
-		media := config.GetSettingsMediaAll()
-		for i := range media.Movies {
-			for _, pathCfg := range media.Movies[i].Data {
-				if pathCfg.CfgPath != nil && pathCfg.CfgPath.Path != "" {
-					scanPaths = append(scanPaths, pathCfg.CfgPath.Path)
-				}
-			}
-		}
-
-		for i := range media.Series {
-			for _, pathCfg := range media.Series[i].Data {
-				if pathCfg.CfgPath != nil && pathCfg.CfgPath.Path != "" {
-					scanPaths = append(scanPaths, pathCfg.CfgPath.Path)
-				}
-			}
-		}
-	}
-
-	// Remove duplicates from scan paths
-	pathMap := make(map[string]bool)
-
-	var uniquePaths []string
-	for _, path := range scanPaths {
-		if path != "" && !pathMap[path] {
-			pathMap[path] = true
-			uniquePaths = append(uniquePaths, path)
-		}
-	}
-
-	scanPaths = uniquePaths
+	scanPaths, rejectedPaths := cleanupScanPaths(c.PostForm("cleanup_Paths"))
 
 	// Perform requested scans
 	if findBroken {
@@ -2084,13 +2024,10 @@ func HandleMediaCleanup(c *gin.Context) {
 			html.Td(gomponents.Text("Min File Size:")),
 			html.Td(gomponents.Text(minFileSizeStr+" MB")),
 		),
-		html.Tr(html.Td(gomponents.Text("Dry Run:")), html.Td(gomponents.Text(func() string {
-			if dryRun {
-				return "Yes (preview only)"
-			}
-
-			return "No (will make changes)"
-		}()))),
+		html.Tr(
+			html.Td(gomponents.Text("Mode:")),
+			html.Td(gomponents.Text("Scan only - nothing is changed or deleted")),
+		),
 		html.Tr(
 			html.Td(gomponents.Text("Scan Duration:")),
 			html.Td(gomponents.Text(scanDuration.String())),
@@ -2117,8 +2054,8 @@ func HandleMediaCleanup(c *gin.Context) {
 		results = append(
 			results,
 			html.Tr(
-				html.Td(gomponents.Text("Duplicate Sets:")),
-				html.Td(gomponents.Text(fmt.Sprintf("%d duplicate sets found", duplicateCount))),
+				html.Td(gomponents.Text("Possible Duplicates:")),
+				html.Td(gomponents.Text(fmt.Sprintf("%d files with the same size as another file (size match only, contents not compared)", duplicateCount))),
 			),
 		)
 	}
@@ -2153,9 +2090,22 @@ func HandleMediaCleanup(c *gin.Context) {
 		),
 		html.Tr(
 			html.Td(gomponents.Text("Paths Scanned:")),
-			html.Td(gomponents.Text("/media/movies, /media/tv, /downloads")),
+			html.Td(gomponents.Text(func() string {
+				if len(scanPaths) == 0 {
+					return "none"
+				}
+
+				return strings.Join(scanPaths, ", ")
+			}())),
 		),
 	)
+
+	if len(rejectedPaths) > 0 {
+		results = append(results, html.Tr(
+			html.Td(gomponents.Text("Paths Skipped:")),
+			html.Td(gomponents.Text(strings.Join(rejectedPaths, ", ")+" (not inside a configured media path)")),
+		))
+	}
 
 	// Determine alert styling based on results
 	alertClass := "card border-0 shadow-sm border-success mb-4"
@@ -2223,12 +2173,115 @@ func HandleMediaCleanup(c *gin.Context) {
 	c.String(http.StatusOK, renderComponentToString(result))
 }
 
+// configuredMediaRoots returns the deduplicated library paths of every
+// configured media group.
+func configuredMediaRoots() []string {
+	media := config.GetSettingsMediaAll()
+
+	var roots []string
+
+	for _, group := range [][]config.MediaTypeConfig{media.Movies, media.Series, media.Books, media.AudioBooks, media.Music} {
+		for i := range group {
+			for _, pathCfg := range group[i].Data {
+				if pathCfg.CfgPath != nil && pathCfg.CfgPath.Path != "" {
+					roots = append(roots, filepath.Clean(pathCfg.CfgPath.Path))
+				}
+			}
+		}
+	}
+
+	return collapseNestedPaths(roots)
+}
+
+// collapseNestedPaths sorts and deduplicates paths and drops every path that
+// lies inside another one in the list, so a directory tree is walked once.
+func collapseNestedPaths(paths []string) []string {
+	sorted := slices.Clone(paths)
+	for i := range sorted {
+		sorted[i] = filepath.Clean(sorted[i])
+	}
+
+	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
+
+	out := make([]string, 0, len(sorted))
+	for _, p := range sorted {
+		if !pathWithinAny(p, out) {
+			out = append(out, p)
+		}
+	}
+
+	return out
+}
+
+// cleanupScanPaths turns the cleanup tool's newline-separated path input into
+// the list of paths to scan. Only paths inside a configured media root are
+// accepted (the rest are returned as rejected); empty input means all roots.
+func cleanupScanPaths(input string) (scan, rejected []string) {
+	roots := configuredMediaRoots()
+
+	if strings.TrimSpace(input) == "" {
+		return roots, nil
+	}
+
+	seen := make(map[string]bool)
+
+	for _, line := range strings.Split(input, "\n") {
+		p := strings.TrimSpace(line)
+		if p == "" {
+			continue
+		}
+
+		p = filepath.Clean(p)
+		if seen[p] {
+			continue
+		}
+
+		seen[p] = true
+
+		if pathWithinAny(p, roots) {
+			scan = append(scan, p)
+		} else {
+			rejected = append(rejected, p)
+		}
+	}
+
+	return collapseNestedPaths(scan), rejected
+}
+
+// pathWithinAny reports whether p equals or lies below one of roots.
+func pathWithinAny(p string, roots []string) bool {
+	for _, root := range roots {
+		rel, err := filepath.Rel(root, p)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // HandleAPITesting handles API testing requests.
 func HandleAPITesting(c *gin.Context) {
 	// This handler could be extended to provide additional server-side functionality
 	// For now, the frontend JavaScript handles most of the API testing functionality
 	c.String(http.StatusOK, renderAlert("API Testing functionality is handled client-side", "info"))
 }
+
+// missingEpisodesQualityOptions lists "default" (the series' own media
+// config quality) plus every configured quality profile name.
+func missingEpisodesQualityOptions() []string {
+	opts := []string{"default"}
+	for _, qc := range config.GetSettingsQualityAll() {
+		opts = append(opts, qc.Name)
+	}
+
+	return opts
+}
+
+// maxMissingEpisodeSearches caps how many episodes one "auto-download" run
+// of the missing-episodes finder queues; each is a full indexer search.
+const maxMissingEpisodeSearches = 100
 
 // HandleMissingEpisodes handles missing episodes finder requests.
 func HandleMissingEpisodes(c *gin.Context) {
@@ -2257,68 +2310,67 @@ func HandleMissingEpisodes(c *gin.Context) {
 		seasonNumber = 0
 	}
 
+	// "all" (or anything non-numeric) means no date range limit.
 	dateRangeDays, err := strconv.Atoi(dateRangeStr)
-	if err != nil {
-		dateRangeDays = 30
+	if err != nil || dateRangeDays < 0 {
+		dateRangeDays = 0
 	}
 
-	// Use variable to avoid "declared and not used" warning
-	_ = dateRangeDays
-
-	// Perform actual missing episodes search
 	startTime := time.Now()
 
-	// Query for missing episodes based on the provided filters
 	var (
 		queryWhere string
 		queryArgs  []any
 	)
 
-	// Base query for missing episodes
 	queryWhere = "serie_episodes.missing = 1"
 
-	// Add series name filter if provided
 	if seriesName != "" {
-		queryWhere += " AND series.seriename LIKE ?"
+		queryWhere += " AND dbseries.seriename LIKE ?"
 
 		queryArgs = append(queryArgs, "%"+seriesName+"%")
 	}
 
-	// Add season filter if provided
 	if seasonNumber > 0 {
 		queryWhere += " AND dbserie_episodes.season = ?"
 
-		queryArgs = append(queryArgs, fmt.Sprintf("%d", seasonNumber))
+		queryArgs = append(queryArgs, strconv.Itoa(seasonNumber))
 	}
 
-	// Add specials filter
 	if !includeSpecials {
 		queryWhere += " AND dbserie_episodes.season != '0'"
 	}
 
-	// Add status filter
-	if status != "all" {
-		switch status {
-		case "missing":
-			queryWhere += " AND serie_episodes.missing = 1"
-		case "wanted":
-			queryWhere += " AND serie_episodes.missing = 1 AND serie_episodes.dont_search = 0"
-		case "ignored":
-			queryWhere += " AND serie_episodes.dont_search = 1"
-		}
+	// Episodes without a known air date are kept by both date filters.
+	if onlyAired {
+		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired = '' OR DATE(dbserie_episodes.first_aired) <= ?)"
+
+		queryArgs = append(queryArgs, time.Now().Format("2006-01-02"))
 	}
 
-	// Execute query to get missing episodes
+	if dateRangeDays > 0 {
+		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired = '' OR DATE(dbserie_episodes.first_aired) >= ?)"
+
+		queryArgs = append(queryArgs, time.Now().AddDate(0, 0, -dateRangeDays).Format("2006-01-02"))
+	}
+
+	// The form's status select is the series status (continuing/ended/upcoming).
+	if status != "" && status != "all" {
+		queryWhere += " AND dbseries.status LIKE ?"
+
+		queryArgs = append(queryArgs, status)
+	}
+
 	missingEpisodes := database.StructscanT[database.SerieEpisode](false, 0,
 		"SELECT serie_episodes.* FROM serie_episodes "+
 			"INNER JOIN series ON series.id = serie_episodes.serie_id "+
+			"INNER JOIN dbseries ON dbseries.id = series.dbserie_id "+
 			"INNER JOIN dbserie_episodes ON dbserie_episodes.id = serie_episodes.dbserie_episode_id "+
 			"WHERE "+queryWhere,
 		queryArgs...)
 
 	totalMissing := len(missingEpisodes)
 
-	// Count unique series
 	seriesMap := make(map[uint]bool)
 	for i := range missingEpisodes {
 		seriesMap[missingEpisodes[i].SerieID] = true
@@ -2326,24 +2378,64 @@ func HandleMissingEpisodes(c *gin.Context) {
 
 	seriesScanned := len(seriesMap)
 
-	downloadTriggered := 0
+	downloadNote := ""
 
 	if autoDownload && totalMissing > 0 {
-		// triggerEpisodeDownloads (episodes_functions.go) runs a real search per
-		// episode via searcher.MediaSearch - this previously just set
-		// downloadTriggered = totalMissing without doing anything, silently
-		// reporting success for a search that never ran.
-		downloadResult, err := triggerEpisodeDownloads(missingEpisodes, qualityProfile, autoDownload)
-		if err != nil {
-			c.String(
-				http.StatusOK,
-				renderAlert("Failed to trigger episode downloads: "+err.Error(), "danger"),
-			)
+		toSearch := make([]database.SerieEpisode, 0, min(totalMissing, maxMissingEpisodeSearches))
+		ignored := 0
 
-			return
+		for i := range missingEpisodes {
+			if missingEpisodes[i].DontSearch {
+				ignored++
+				continue
+			}
+
+			if len(toSearch) < maxMissingEpisodeSearches {
+				toSearch = append(toSearch, missingEpisodes[i])
+			}
 		}
 
-		downloadTriggered = downloadResult.TriggeredDownloads
+		eligible := totalMissing - ignored
+
+		if len(toSearch) == 0 {
+			downloadNote = "No episodes queued (all matching episodes have searching disabled)"
+		} else {
+			profile := qualityProfile
+			jobEpisodes := toSearch
+
+			err := worker.Dispatch(
+				"missing_episodes_search_"+strconv.FormatInt(time.Now().UnixNano(), 10),
+				func(_ uint32, ctx context.Context) error {
+					res := triggerEpisodeDownloads(ctx, jobEpisodes, profile)
+					logger.Logtype("info", 0).
+						Int("total", res.TotalEpisodes).
+						Int("searched", res.TriggeredDownloads).
+						Int("failed", res.FailedDownloads).
+						Int("skipped", res.SkippedEpisodes).
+						Msg("missing episodes search finished")
+
+					return nil
+				},
+				"Search",
+			)
+			if err != nil {
+				c.String(
+					http.StatusOK,
+					renderAlert("Failed to queue episode searches: "+err.Error(), "danger"),
+				)
+
+				return
+			}
+
+			downloadNote = fmt.Sprintf("%d episodes queued for search (background job)", len(toSearch))
+			if eligible > len(toSearch) {
+				downloadNote += fmt.Sprintf(" - capped at %d of %d eligible, run again for the rest", maxMissingEpisodeSearches, eligible)
+			}
+		}
+
+		if ignored > 0 {
+			downloadNote += fmt.Sprintf("; %d episodes with searching disabled were not searched", ignored)
+		}
 	}
 
 	scanDuration := time.Since(startTime)
@@ -2457,11 +2549,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 				results,
 				html.Tr(
 					html.Td(gomponents.Text("Downloads Triggered:")),
-					html.Td(
-						gomponents.Text(
-							fmt.Sprintf("%d episodes queued for download", downloadTriggered),
-						),
-					),
+					html.Td(gomponents.Text(downloadNote)),
 				),
 				html.Tr(
 					html.Td(gomponents.Text("Quality Profile:")),
@@ -2494,16 +2582,16 @@ func HandleMissingEpisodes(c *gin.Context) {
 				"SELECT season, episode, title FROM dbserie_episodes WHERE id = ?",
 				episode.DbserieEpisodeID)
 
-			seriesDetails := database.StructscanT[database.Serie](false, 1,
-				"SELECT seriename FROM series WHERE id = ?",
-				episode.SerieID)
+			var seriesLabel string
+			database.Scanrowsdyn(false,
+				"SELECT dbseries.seriename || ' (' || series.listname || ')' FROM series INNER JOIN dbseries ON dbseries.id = series.dbserie_id WHERE series.id = ?",
+				&seriesLabel, episode.SerieID)
 
-			if len(episodeDetails) > 0 && len(seriesDetails) > 0 {
+			if len(episodeDetails) > 0 && seriesLabel != "" {
 				ep := episodeDetails[0]
-				series := seriesDetails[0]
 
 				tableRows = append(tableRows, html.Tr(
-					html.Td(gomponents.Text(series.Listname)),
+					html.Td(gomponents.Text(seriesLabel)),
 					html.Td(gomponents.Text(ep.Season)),
 					html.Td(gomponents.Text(ep.Episode)),
 					html.Td(gomponents.Text(ep.Title)),
@@ -2913,8 +3001,6 @@ func HandleStorageHealth(c *gin.Context) {
 	lowSpaceThresholdStr := c.PostForm("storage_LowSpaceThreshold")
 	criticalSpaceThresholdStr := c.PostForm("storage_CriticalSpaceThreshold")
 	slowIOThresholdStr := c.PostForm("storage_SlowIOThreshold")
-	enableAlerts := c.PostForm("storage_EnableAlerts") == "on" ||
-		c.PostForm("storage_EnableAlerts") == "true"
 
 	// Parse thresholds
 	lowSpaceThreshold, err := strconv.ParseFloat(lowSpaceThresholdStr, 64)
@@ -2967,13 +3053,6 @@ func HandleStorageHealth(c *gin.Context) {
 			html.Td(gomponents.Text("Critical Threshold:")),
 			html.Td(gomponents.Text(fmt.Sprintf("%.1f%%", criticalSpaceThreshold))),
 		),
-		html.Tr(html.Td(gomponents.Text("Enable Alerts:")), html.Td(gomponents.Text(func() string {
-			if enableAlerts {
-				return "Yes"
-			}
-
-			return "No"
-		}()))),
 		html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
 		html.Tr(
 			html.Td(html.Strong(gomponents.Text("Storage Status:"))),
@@ -3290,8 +3369,6 @@ func HandleServiceHealth(c *gin.Context) {
 		c.PostForm("service_DetailedTest") == "true"
 	measurePerformance := c.PostForm("service_MeasurePerformance") == "on" ||
 		c.PostForm("service_MeasurePerformance") == "true"
-	saveResults := c.PostForm("service_SaveResults") == "on" ||
-		c.PostForm("service_SaveResults") == "true"
 
 	// Parse numeric values
 	timeout, err := strconv.Atoi(timeoutStr)
@@ -3318,8 +3395,6 @@ func HandleServiceHealth(c *gin.Context) {
 		timeout,
 		retries,
 		detailedTest,
-		measurePerformance,
-		saveResults,
 	)
 
 	totalServices := healthResults.TotalServices
@@ -3419,11 +3494,11 @@ func HandleServiceHealth(c *gin.Context) {
 			avgResponseTime = fmt.Sprintf("%dms", avgMs)
 		}
 
-		successRate := float64(
-			healthResults.OnlineServices,
-		) / float64(
-			healthResults.TotalServices,
-		) * 100
+		var successRate float64
+		if healthResults.TotalServices > 0 {
+			successRate = float64(healthResults.OnlineServices) /
+				float64(healthResults.TotalServices) * 100
+		}
 
 		results = append(
 			results,
@@ -3515,16 +3590,6 @@ func HandleServiceHealth(c *gin.Context) {
 		),
 	)
 
-	if saveResults {
-		results = append(
-			results,
-			html.Tr(
-				html.Td(gomponents.Text("Results Saved:")),
-				html.Td(gomponents.Text("Yes - stored for trend analysis")),
-			),
-		)
-	}
-
 	// Determine overall health status
 	alertClass := "card border-0 shadow-sm border-success mb-4"
 
@@ -3598,6 +3663,35 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
+// previewCombinedReorder mirrors parser.handleCombinedReorder: the first
+// combined_res_qual rule whose "resolution,quality" name matches (split at the
+// first comma, case-insensitive, no trimming) sets the resolution priority and
+// zeroes the quality priority. matched reports whether a rule applied.
+func previewCombinedReorder(
+	qual *config.QualityConfig,
+	resolutionName, qualityName string,
+	prioReso, prioQual int,
+) (reso, quality int, matched bool) {
+	for idx := range qual.QualityReorder {
+		reorder := &qual.QualityReorder[idx]
+		if !strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
+			continue
+		}
+
+		reorderRes, reorderQual, ok := strings.Cut(reorder.Name, ",")
+		if !ok {
+			continue
+		}
+
+		if strings.EqualFold(reorderRes, resolutionName) &&
+			strings.EqualFold(reorderQual, qualityName) {
+			return reorder.Newpriority, 0, true
+		}
+	}
+
+	return prioReso, prioQual, false
+}
+
 func HandleQualityReorder(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to parse form data: "+err.Error(), "danger"))
@@ -3620,9 +3714,13 @@ func HandleQualityReorder(c *gin.Context) {
 	// Get reorder rule modifications (JSON)
 	reorderRulesJSON := c.PostForm("reorder_rules")
 
-	// Parse temporary reorder rules if provided
+	// The page sends the full (enabled) rule set once its rule editor is
+	// loaded; "" means the editor was never used, "[]" means all rules are
+	// disabled/removed and must not fall back to the configured ones.
+	rulesProvided := reorderRulesJSON != ""
+
 	var tempReorderRules []config.QualityReorderConfig
-	if reorderRulesJSON != "" && reorderRulesJSON != "[]" {
+	if rulesProvided && reorderRulesJSON != "[]" {
 		// Parse JSON array of reorder rules
 		type TempReorderRule struct {
 			Name        string `json:"name"`
@@ -3631,14 +3729,17 @@ func HandleQualityReorder(c *gin.Context) {
 		}
 
 		var tempRules []TempReorderRule
-		if err := json.Unmarshal([]byte(reorderRulesJSON), &tempRules); err == nil {
-			for _, tempRule := range tempRules {
-				tempReorderRules = append(tempReorderRules, config.QualityReorderConfig{
-					Name:        tempRule.Name,
-					ReorderType: tempRule.Type,
-					Newpriority: tempRule.NewPriority,
-				})
-			}
+		if err := json.Unmarshal([]byte(reorderRulesJSON), &tempRules); err != nil {
+			c.String(http.StatusOK, renderAlert("Invalid reorder rules: "+err.Error(), "danger"))
+			return
+		}
+
+		for _, tempRule := range tempRules {
+			tempReorderRules = append(tempReorderRules, config.QualityReorderConfig{
+				Name:        tempRule.Name,
+				ReorderType: tempRule.Type,
+				Newpriority: tempRule.NewPriority,
+			})
 		}
 	}
 
@@ -3658,7 +3759,7 @@ func HandleQualityReorder(c *gin.Context) {
 	*qualityConfig = *originalConfig
 
 	// Apply temporary reorder rule modifications
-	if len(tempReorderRules) > 0 {
+	if rulesProvided {
 		qualityConfig.QualityReorder = append([]config.QualityReorderConfig{}, tempReorderRules...)
 		qualityConfig.QualityReorderLen = len(tempReorderRules)
 	}
@@ -3782,25 +3883,13 @@ func HandleQualityReorder(c *gin.Context) {
 						)
 
 						// Apply original config reorder rules to original priorities
-						originalFinalResoPrio := originalResoPriority
-
-						originalFinalQualPrio := originalQualPriority
-						for idx := range originalConfig.QualityReorder {
-							reorder := &originalConfig.QualityReorder[idx]
-							if reorder.ReorderType == "combined_res_qual" ||
-								strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
-								if strings.ContainsRune(reorder.Name, ',') {
-									parts := strings.Split(reorder.Name, ",")
-									if len(parts) == 2 {
-										if (strings.TrimSpace(parts[0]) == getresolutions[idxreso].Name || strings.EqualFold(strings.TrimSpace(parts[0]), getresolutions[idxreso].Name)) &&
-											(strings.TrimSpace(parts[1]) == getqualities[idxqual].Name || strings.EqualFold(strings.TrimSpace(parts[1]), getqualities[idxqual].Name)) {
-											originalFinalResoPrio = reorder.Newpriority
-											originalFinalQualPrio = 0
-										}
-									}
-								}
-							}
-						}
+						originalFinalResoPrio, originalFinalQualPrio, _ := previewCombinedReorder(
+							originalConfig,
+							getresolutions[idxreso].Name,
+							getqualities[idxqual].Name,
+							originalResoPriority,
+							originalQualPriority,
+						)
 
 						// Calculate MODIFIED priorities (using modified config with temp rules)
 						modifiedResoPriority := getresolutions[idxreso].Gettypeidprioritysingle(
@@ -3825,27 +3914,13 @@ func HandleQualityReorder(c *gin.Context) {
 						)
 
 						// Apply modified config reorder rules to modified priorities
-						modifiedFinalResoPrio := modifiedResoPriority
-						modifiedFinalQualPrio := modifiedQualPriority
-
-						reorderApplied := false
-						for idx := range qualityConfig.QualityReorder {
-							reorder := &qualityConfig.QualityReorder[idx]
-							if reorder.ReorderType == "combined_res_qual" ||
-								strings.EqualFold(reorder.ReorderType, "combined_res_qual") {
-								if strings.ContainsRune(reorder.Name, ',') {
-									parts := strings.Split(reorder.Name, ",")
-									if len(parts) == 2 {
-										if (strings.TrimSpace(parts[0]) == getresolutions[idxreso].Name || strings.EqualFold(strings.TrimSpace(parts[0]), getresolutions[idxreso].Name)) &&
-											(strings.TrimSpace(parts[1]) == getqualities[idxqual].Name || strings.EqualFold(strings.TrimSpace(parts[1]), getqualities[idxqual].Name)) {
-											modifiedFinalResoPrio = reorder.Newpriority
-											modifiedFinalQualPrio = 0
-											reorderApplied = true
-										}
-									}
-								}
-							}
-						}
+						modifiedFinalResoPrio, modifiedFinalQualPrio, reorderApplied := previewCombinedReorder(
+							qualityConfig,
+							getresolutions[idxreso].Name,
+							getqualities[idxqual].Name,
+							modifiedResoPriority,
+							modifiedQualPriority,
+						)
 
 						// Check if priorities changed due to temporary rules
 						if modifiedFinalResoPrio != originalFinalResoPrio ||
@@ -4000,9 +4075,9 @@ func HandleQualityReorder(c *gin.Context) {
 	totalRulesCount := qualityConfig.QualityReorderLen
 
 	var rulesInfo string
-	if tempRulesCount > 0 {
-		rulesInfo = fmt.Sprintf("Reorder Rules: %d original + %d temporary = %d active",
-			originalRulesCount, tempRulesCount, totalRulesCount)
+	if rulesProvided {
+		rulesInfo = fmt.Sprintf("Reorder Rules: %d configured, %d active in this preview (%d from the editor)",
+			originalRulesCount, totalRulesCount, tempRulesCount)
 	} else if originalRulesCount > 0 {
 		rulesInfo = fmt.Sprintf("Reorder Rules: %d configured", originalRulesCount)
 	} else {

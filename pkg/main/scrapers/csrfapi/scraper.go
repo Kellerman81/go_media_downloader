@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,11 +30,18 @@ type Config struct {
 	// CSRF settings
 	CSRFCookieName string // Cookie name containing CSRF token (e.g., "_csrf")
 	CSRFHeaderName string // Header name to send token in (e.g., "csrf-token")
+	SkipCSRF       bool   // Skip CSRF token extraction entirely, for public APIs needing no auth
 
 	// API settings
-	APIURLPattern   string // API URL with {page} placeholder
-	PageStartIndex  int    // Starting page index (default: 1)
-	PaginationStyle string // "page" or "offset"
+	APIURLPattern string // API URL with {page} placeholder
+	// PageStartIndex is the first page number. 0 (unset) keeps the historical
+	// default of 1; a negative value selects 0-based pages, because a plain 0
+	// cannot be told apart from an unset field in existing configs.
+	PageStartIndex int
+	// PaginationStyle "offset" substitutes {page} with (page-start)*PageIncrement;
+	// anything else substitutes the page number itself.
+	PaginationStyle string
+	PageIncrement   int // Items per page for PaginationStyle "offset"
 
 	// JSON field paths for extracting data
 	ResultsArrayPath string // JSON path to array of results (e.g., "galleries")
@@ -58,6 +66,60 @@ type Scraper struct {
 	client    *http.Client
 	csrfToken string
 	cookieJar *cookiejar.Jar
+}
+
+const (
+	paginationOffset = "offset"
+
+	// statusCSRFExpired is the non-standard status Laravel-style backends
+	// return for an expired CSRF token ("419 Page Expired").
+	statusCSRFExpired = 419
+)
+
+// errDBWrite marks createEpisode failures caused by the database rather than
+// by the item's own data.
+var errDBWrite = errors.New("database write failed")
+
+// normalizePageStartIndex maps the configured start index to the real one:
+// 0 means unset (default 1), negative means 0-based.
+func normalizePageStartIndex(v int) int {
+	switch {
+	case v == 0:
+		return 1
+	case v < 0:
+		return 0
+	default:
+		return v
+	}
+}
+
+// isCSRFRejection reports whether status indicates the CSRF token (or the
+// session it belongs to) was rejected and a fresh token may help.
+func isCSRFRejection(status int) bool {
+	return status == http.StatusForbidden || status == statusCSRFExpired
+}
+
+// isMissingRuntime reports whether a runtime value is absent or the -1
+// "no runtime" marker. JSON numbers decode as float64, so a plain
+// comparison against the int -1 never matched.
+func isMissingRuntime(v any) bool {
+	switch r := v.(type) {
+	case nil:
+		return true
+	case float64:
+		return r == -1
+	case int:
+		return r == -1
+	case int64:
+		return r == -1
+	case json.Number:
+		f, err := r.Float64()
+		return err == nil && f == -1
+	case string:
+		return strings.TrimSpace(r) == "-1"
+	default:
+		return false
+	}
 }
 
 // NewScraper creates a new CSRF API scraper instance.
@@ -86,9 +148,8 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 		return nil, errors.New("api_url_pattern is required")
 	}
 
-	if cfg.ResultsArrayPath == "" {
-		return nil, errors.New("results_array_path is required")
-	}
+	// ResultsArrayPath is optional: leave it empty when the API response
+	// itself is a top-level JSON array rather than an object wrapping one.
 
 	// Set defaults
 	if cfg.BaseURL == "" {
@@ -103,12 +164,14 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 		cfg.CSRFHeaderName = "csrf-token"
 	}
 
-	if cfg.PageStartIndex == 0 {
-		cfg.PageStartIndex = 1
-	}
+	cfg.PageStartIndex = normalizePageStartIndex(cfg.PageStartIndex)
 
 	if cfg.PaginationStyle == "" {
 		cfg.PaginationStyle = "page"
+	}
+
+	if cfg.PaginationStyle == paginationOffset && cfg.PageIncrement <= 0 {
+		return nil, errors.New("page_increment is required for pagination_type \"offset\"")
 	}
 
 	if cfg.WaitSeconds == 0 {
@@ -231,18 +294,68 @@ func (s *Scraper) extractCSRFToken(ctx context.Context) error {
 // Returns:
 //   - map[string]interface{}: Parsed JSON response
 //   - error: Any errors during fetch or parse
-func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]any, error) {
-	// Build API URL
-	url := strings.ReplaceAll(s.config.APIURLPattern, "{page}", fmt.Sprintf("%d", pageNum))
+func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (any, error) {
+	apiURL := strings.ReplaceAll(
+		s.config.APIURLPattern,
+		"{page}",
+		strconv.Itoa(s.pageValue(pageNum)),
+	)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	data, status, err := s.getAPI(ctx, apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
+	}
+
+	// The token is fetched once per scrape; a long backfill can outlive it.
+	if !s.config.SkipCSRF && isCSRFRejection(status) {
+		logger.Logtype(logger.StatusInfo, 0).
+			Str("site", s.config.SiteName).
+			Int("status", status).
+			Msg("API rejected CSRF token, refreshing and retrying once")
+
+		if err := s.extractCSRFToken(ctx); err != nil {
+			return nil, fmt.Errorf("failed to refresh CSRF token after status %d: %w", status, err)
+		}
+
+		data, status, err = s.getAPI(ctx, apiURL)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", status)
+	}
+
+	var result any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode JSON: %w", err)
+	}
+
+	return result, nil
+}
+
+// pageValue returns what {page} is replaced with for the given page number.
+func (s *Scraper) pageValue(pageNum int) int {
+	if s.config.PaginationStyle == paginationOffset {
+		return (pageNum - s.config.PageStartIndex) * s.config.PageIncrement
+	}
+
+	return pageNum
+}
+
+// getAPI performs one throttled API GET and returns the body and status code.
+func (s *Scraper) getAPI(ctx context.Context, apiURL string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers including CSRF token
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	req.Header.Set(s.config.CSRFHeaderName, s.csrfToken)
+	if !s.config.SkipCSRF {
+		req.Header.Set(s.config.CSRFHeaderName, s.csrfToken)
+	}
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("sec-fetch-site", "same-origin")
 	req.Header.Set("sec-fetch-mode", "cors")
@@ -255,37 +368,47 @@ func (s *Scraper) fetchAPIPage(ctx context.Context, pageNum int) (map[string]any
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch API page: %w", err)
+		return nil, 0, fmt.Errorf("failed to fetch API page: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, resp.StatusCode, nil
 	}
 
-	// Parse JSON response
 	data, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return nil, fmt.Errorf("failed to read response: %w", readErr)
+		return nil, 0, fmt.Errorf("failed to read response: %w", readErr)
 	}
 
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode JSON: %w", err)
-	}
-
-	return result, nil
+	return data, resp.StatusCode, nil
 }
 
-// extractResults extracts the results array from the JSON response.
+// extractResults extracts the results array from the JSON response. When
+// ResultsArrayPath is empty, the response itself is expected to be a
+// top-level JSON array rather than an object wrapping one.
 //
 // Parameters:
 //   - data: Parsed JSON response
 //
 // Returns:
 //   - []interface{}: Array of results
-func (s *Scraper) extractResults(data map[string]any) []any {
-	resultsRaw, ok := data[s.config.ResultsArrayPath]
+func (s *Scraper) extractResults(data any) []any {
+	if s.config.ResultsArrayPath == "" {
+		results, ok := data.([]any)
+		if !ok {
+			return nil
+		}
+
+		return results
+	}
+
+	obj, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	resultsRaw, ok := obj[s.config.ResultsArrayPath]
 	if !ok {
 		return nil
 	}
@@ -316,12 +439,16 @@ func (*Scraper) extractStringField(obj map[string]any, fieldName string) string 
 		return ""
 	}
 
-	strVal, ok := val.(string)
-	if ok {
-		return strVal
+	switch v := val.(type) {
+	case string:
+		return v
+	case float64:
+		// JSON numbers decode as float64 (e.g. a numeric id used to build a
+		// URL, like Bellesa's "id" field). Format without a decimal point.
+		return strconv.FormatInt(int64(v), 10)
+	default:
+		return ""
 	}
-
-	return ""
 }
 
 // extractActors extracts actor names from a JSON array.
@@ -371,29 +498,41 @@ func (s *Scraper) extractActors(obj map[string]any) string {
 //   - time.Time: Parsed date
 //   - error: Parsing errors
 func (s *Scraper) parseDate(dateVal any) (time.Time, error) {
-	// Check if it's already a time.Time
-	if t, ok := dateVal.(time.Time); ok {
-		return t, nil
-	}
+	switch v := dateVal.(type) {
+	case time.Time:
+		return v, nil
+	case float64:
+		// JSON numbers decode as float64: a Unix timestamp, in milliseconds
+		// when it is too large to be seconds (1e12 s is ~33,000 years out).
+		if v > 1e12 || v < -1e12 {
+			return time.UnixMilli(int64(v)).UTC(), nil
+		}
 
-	// Try as string
-	dateStr, ok := dateVal.(string)
-	if !ok {
-		return time.Time{}, errors.New("date is not a string or time.Time")
-	}
+		return time.Unix(int64(v), 0).UTC(), nil
+	case string:
+		v = strings.TrimSpace(v)
 
-	// Try ISO 8601 format first
-	t, err := time.Parse(time.RFC3339, dateStr)
-	if err == nil {
-		return t, nil
-	}
+		t, err := time.Parse(time.RFC3339, v)
+		if err == nil {
+			return t, nil
+		}
 
-	// Try custom format if specified
-	if s.config.DateFormat != "" {
-		return time.Parse(s.config.DateFormat, dateStr)
-	}
+		if s.config.DateFormat != "" {
+			if t, err := time.Parse(s.config.DateFormat, v); err == nil {
+				return t, nil
+			}
+		}
 
-	return time.Time{}, fmt.Errorf("failed to parse date: %s", dateStr)
+		for _, layout := range []string{"2006-01-02", "2006-01-02 15:04:05"} {
+			if t, err := time.Parse(layout, v); err == nil {
+				return t, nil
+			}
+		}
+
+		return time.Time{}, fmt.Errorf("failed to parse date: %s", v)
+	default:
+		return time.Time{}, errors.New("date is not a string, number, or time.Time")
+	}
 }
 
 // createEpisode creates or updates an episode in the database.
@@ -476,7 +615,7 @@ func (s *Scraper) createEpisode(
 			existingID,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to update episode: %w", err)
+			return fmt.Errorf("failed to update episode: %w: %w", errDBWrite, err)
 		}
 
 		logger.Logtype(logger.StatusDebug, 0).
@@ -502,7 +641,7 @@ func (s *Scraper) createEpisode(
 		episode.ScraperURL,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create episode: %w", err)
+		return fmt.Errorf("failed to create episode: %w: %w", errDBWrite, err)
 	}
 
 	logger.Logtype(logger.StatusInfo, 0).
@@ -529,9 +668,11 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 		return 0, fmt.Errorf("failed to get or create series: %w", err)
 	}
 
-	// Extract CSRF token
-	if err := s.extractCSRFToken(ctx); err != nil {
-		return 0, fmt.Errorf("failed to extract CSRF token: %w", err)
+	// Extract CSRF token, unless this API needs no auth at all
+	if !s.config.SkipCSRF {
+		if err := s.extractCSRFToken(ctx); err != nil {
+			return 0, fmt.Errorf("failed to extract CSRF token: %w", err)
+		}
 	}
 
 	totalProcessed := 0
@@ -545,11 +686,15 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 		maxPages = 1
 	}
 
+	// Without a {page} placeholder every request returns the same page.
+	if !strings.Contains(s.config.APIURLPattern, "{page}") {
+		maxPages = 1
+	}
+
 	for page := s.config.PageStartIndex; page < s.config.PageStartIndex+maxPages; page++ {
-		select {
-		case <-ctx.Done():
-			return totalProcessed, ctx.Err()
-		case <-time.After(time.Duration(s.config.WaitSeconds) * time.Second):
+		// Page spacing is enforced per site in getAPI (sitethrottle).
+		if err := ctx.Err(); err != nil {
+			return totalProcessed, err
 		}
 
 		logger.Logtype(logger.StatusInfo, 0).
@@ -579,7 +724,7 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			Int("result_count", len(results)).
 			Msg("Processing results")
 
-		processedInPage := false
+		dbFailures := 0
 		for i := range results {
 			result, ok := results[i].(map[string]any)
 			if !ok {
@@ -588,9 +733,7 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 
 			// Check runtime filter if specified
 			if s.config.RuntimeField != "" {
-				runtime := result[s.config.RuntimeField]
-				// Skip if runtime is -1 or missing
-				if runtime == nil || runtime == -1 || runtime == "-1" {
+				if isMissingRuntime(result[s.config.RuntimeField]) {
 					continue
 				}
 			}
@@ -631,22 +774,23 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 					Str("title", title).
 					Msg("Failed to create episode")
 
+				if errors.Is(err, errDBWrite) {
+					dbFailures++
+				}
+
 				continue
 			}
 
 			totalProcessed++
-
-			processedInPage = true
 		}
 
-		// Break if no items were processed (might indicate end)
-		if !processedInPage {
-			logger.Logtype(logger.StatusInfo, 0).
-				Str("site", s.config.SiteName).
-				Int("page", page).
-				Msg("No valid items processed, stopping")
-
-			break
+		if dbFailures == len(results) {
+			return totalProcessed, fmt.Errorf(
+				"all %d episodes on page %d failed to save: %w",
+				len(results),
+				page,
+				errDBWrite,
+			)
 		}
 
 		// Break if first page only (defense in depth alongside maxPages above,

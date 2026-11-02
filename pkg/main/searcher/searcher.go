@@ -4,13 +4,13 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -23,11 +23,11 @@ import (
 	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/books"      // Register book handler
 	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/movies"     // Register movie handler
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
-	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/music"  // Register music handler
-	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/series" // Register series handler
+	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/music" // Register music handler
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/alitto/pond/v2"
@@ -36,10 +36,10 @@ import (
 // ConfigSearcher is a struct containing configuration and search results.
 type ConfigSearcher struct {
 	// Dl contains the search results
-	Raw apiexternal.NzbSlice
-	// Denied is a slice containing denied apiexternal.Nzbwithprio results
+	Raw apiexternal_v2.NzbSlice
+	// Denied is a slice containing denied apiexternal_v2.Nzbwithprio results
 	Denied []apiexternal_v2.Nzbwithprio
-	// Accepted is a slice containing accepted apiexternal.Nzbwithprio results
+	// Accepted is a slice containing accepted apiexternal_v2.Nzbwithprio results
 	Accepted []apiexternal_v2.Nzbwithprio
 	// searchActionType is a string indicating the search action type
 	searchActionType string // missing,upgrade,rss
@@ -209,7 +209,7 @@ func NewSearcher(
 	if s == nil {
 		// Pool exhausted, create new instance with optimized allocations
 		s = &ConfigSearcher{
-			Raw: apiexternal.NzbSlice{
+			Raw: apiexternal_v2.NzbSlice{
 				Arr: make([]apiexternal_v2.Nzbwithprio, 0, defaultRawCapacity),
 			},
 			Denied:           make([]apiexternal_v2.Nzbwithprio, 0, defaultDeniedCapacity),
@@ -460,9 +460,9 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 	var pl pond.TaskGroup
 
 	if p.searchtype == searchTypeRSS {
-		pl = worker.WorkerPoolIndexerRSS.NewGroupContext(ctx)
+		pl = worker.WorkerPoolIndexerRSS().NewGroupContext(ctx)
 	} else {
-		pl = worker.WorkerPoolIndexer.NewGroupContext(ctx)
+		pl = worker.WorkerPoolIndexer().NewGroupContext(ctx)
 	}
 
 	atomic.StoreInt32(&s.Done, 0)
@@ -472,7 +472,7 @@ func (s *ConfigSearcher) searchindexers(ctx context.Context, userss bool, p *sea
 			defer logger.HandlePanic()
 
 			// Check rate limiter inside the pool to avoid blocking the main thread
-			if !apiexternal.NewznabCheckLimiter(indcfg) {
+			if providers.EnsureIndexer(indcfg).CheckFreeNonBlocking() != nil {
 				logger.Logtype("debug", 2).
 					Str(logger.StrIndexer, indcfg.Name).
 					Str("quality", s.Quality.Name).
@@ -545,7 +545,7 @@ func (s *ConfigSearcher) searchnameid(
 	// decisions (title fallback, first-found short-circuit) are per-indexer and
 	// race-free; merged into s.Raw once at the end. Reading len(s.Raw.Arr) here
 	// would race with sibling indexer goroutines appending concurrently.
-	var local apiexternal.NzbSlice
+	var local apiexternal_v2.NzbSlice
 
 	var err error
 
@@ -607,7 +607,7 @@ func (s *ConfigSearcher) performTitleSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
-	results *apiexternal.NzbSlice,
+	results *apiexternal_v2.NzbSlice,
 ) error {
 	var err error
 
@@ -632,7 +632,8 @@ func (s *ConfigSearcher) performTitleSearch(
 	if mediatype.SupportsAbsoluteEpisode(s.Cfgp.IsType) && p.e.Info.AbsoluteEpisode > 0 {
 		// Build search string with absolute episode number (e.g., "Series Name E643")
 		absoluteSearch := p.e.WantedTitle + " E" + strconv.Itoa(p.e.Info.AbsoluteEpisode)
-		if err = s.executeQuerySearch(
+		// A failed title search must not be masked by a later successful query.
+		if errsub := s.executeQuerySearch(
 			ctx,
 			p,
 			indcfg,
@@ -640,10 +641,12 @@ func (s *ConfigSearcher) performTitleSearch(
 			absoluteSearch,
 			"Absolute Episode",
 			results,
-		); err == nil {
+		); errsub == nil {
 			if s.Quality.CheckUntilFirstFound && len(results.Arr) > 0 {
-				return nil
+				return err
 			}
+		} else if err == nil {
+			err = errsub
 		}
 	}
 
@@ -694,7 +697,7 @@ func (s *ConfigSearcher) performTitleSearch(
 				if s.Quality.CheckUntilFirstFound && len(results.Arr) > 0 {
 					break
 				}
-			} else {
+			} else if err == nil {
 				err = errsub
 			}
 		}
@@ -722,6 +725,17 @@ func (s *ConfigSearcher) Download() {
 
 		entry := &s.Accepted[idx]
 
+		if acceptedMediaID(s.Cfgp.IsType, entry) == 0 {
+			logger.Logtype("warn", 0).
+				Uint(logger.StrSeries, s.Cfgp.IsType).
+				Str(logger.StrTitle, entry.NZB.Title).
+				Str("search_type", s.searchActionType).
+				Int(logger.StrPriority, entry.Info.Priority).
+				Msg("NZB accepted but has no media ID - skipping download")
+
+			continue
+		}
+
 		qualcfg := s.getentryquality(&entry.Info)
 		if qualcfg == nil {
 			logger.Logtype("info", 5).
@@ -743,38 +757,52 @@ func (s *ConfigSearcher) Download() {
 		}
 
 		// Download based on media type using appropriate handler
+		var err error
 		switch s.Cfgp.IsType {
 		case config.MediaTypeMovie:
-			if entry.NzbmovieID != 0 {
-				s.downloadedMap[entry.NzbmovieID] = struct{}{} // O(1) duplicate tracking
-				downloader.DownloadMovie(s.Cfgp, entry)
-			}
-
+			err = downloader.DownloadMovie(s.Cfgp, entry)
 		case config.MediaTypeSeries:
-			if entry.NzbepisodeID != 0 {
-				s.downloadedMap[entry.NzbepisodeID] = struct{}{} // O(1) duplicate tracking
-				downloader.DownloadSeriesEpisode(s.Cfgp, entry)
-			}
-
+			err = downloader.DownloadSeriesEpisode(s.Cfgp, entry)
 		case config.MediaTypeBook:
-			if entry.NzbbookID != 0 {
-				s.downloadedMap[entry.NzbbookID] = struct{}{}
-				downloader.DownloadBook(s.Cfgp, entry)
-			}
-
+			err = downloader.DownloadBook(s.Cfgp, entry)
 		case config.MediaTypeAudiobook:
-			if entry.NzbaudiobookID != 0 {
-				s.downloadedMap[entry.NzbaudiobookID] = struct{}{}
-				downloader.DownloadAudiobook(s.Cfgp, entry)
-			}
-
+			err = downloader.DownloadAudiobook(s.Cfgp, entry)
 		case config.MediaTypeMusic:
-			if entry.NzbalbumID != 0 {
-				s.downloadedMap[entry.NzbalbumID] = struct{}{}
-				downloader.DownloadAlbum(s.Cfgp, entry)
-			}
+			err = downloader.DownloadAlbum(s.Cfgp, entry)
 		}
+
+		if err != nil {
+			// Not marked as downloaded, so the next-best release for the same
+			// media is tried in this run.
+			logger.Logtype("error", 0).
+				Err(err).
+				Str(logger.StrTitle, entry.NZB.Title).
+				Str("search_type", s.searchActionType).
+				Msg("Download failed")
+
+			continue
+		}
+
+		s.downloadedMap[acceptedMediaID(s.Cfgp.IsType, entry)] = struct{}{}
 	}
+}
+
+// acceptedMediaID returns the media ID Download keys on for the given media type.
+func acceptedMediaID(isType uint, entry *apiexternal_v2.Nzbwithprio) uint {
+	switch isType {
+	case config.MediaTypeMovie:
+		return entry.NzbmovieID
+	case config.MediaTypeSeries:
+		return entry.NzbepisodeID
+	case config.MediaTypeBook:
+		return entry.NzbbookID
+	case config.MediaTypeAudiobook:
+		return entry.NzbaudiobookID
+	case config.MediaTypeMusic:
+		return entry.NzbalbumID
+	}
+
+	return 0
 }
 
 // Close closes the ConfigSearcher, including closing any open connections and clearing resources.
@@ -826,6 +854,10 @@ func (s *ConfigSearcher) searchparse(
 			continue
 		}
 
+		if s.checksingletrack(entry) {
+			continue
+		}
+
 		if !isRSS && s.checkcorrectid(e, entry) {
 			continue
 		}
@@ -850,12 +882,12 @@ func (s *ConfigSearcher) searchparse(
 		// has no explicit resolution indicator.
 		if (s.Cfgp.IsType == config.MediaTypeMovie || s.Cfgp.IsType == config.MediaTypeSeries) &&
 			entry.Info.Resolution == "" && entry.NZB.Category != "" && entry.NZB.Indexer != nil {
-			provider := apiexternal.Getnewznabclient(entry.NZB.Indexer)
-
-			entry.Info.Resolution = resolutionFromCategory(
-				entry.NZB.Category,
-				provider.SupportedCategories,
-			)
+			if provider := providers.EnsureIndexer(entry.NZB.Indexer); provider != nil {
+				entry.Info.Resolution = resolutionFromCategory(
+					entry.NZB.Category,
+					provider.SupportedCategories,
+				)
+			}
 		}
 
 		if handler != nil {
@@ -931,10 +963,17 @@ func (s *ConfigSearcher) searchparse(
 	}
 
 	if len(s.Accepted) > 1 {
-		slices.SortFunc(s.Accepted, func(a, b apiexternal_v2.Nzbwithprio) int {
-			return cmp.Compare(a.Info.Priority, b.Info.Priority)
-		})
+		sortAcceptedByPriority(s.Accepted)
 	}
+}
+
+// sortAcceptedByPriority orders accepted releases best-first (highest priority),
+// keeping indexer order for equal priorities, because Download takes the first
+// entry per media and skips the rest.
+func sortAcceptedByPriority(accepted []apiexternal_v2.Nzbwithprio) {
+	slices.SortStableFunc(accepted, func(a, b apiexternal_v2.Nzbwithprio) int {
+		return cmp.Compare(b.Info.Priority, a.Info.Priority)
+	})
 }
 
 // executeQuerySearch performs a Newznab query search for media content
@@ -954,9 +993,9 @@ func (s *ConfigSearcher) executeQuerySearch(
 	indcfg *config.IndexersConfig,
 	cats int,
 	searchTerm, searchType string,
-	results *apiexternal.NzbSlice,
+	results *apiexternal_v2.NzbSlice,
 ) error {
-	_, _, err := apiexternal.QueryNewznabQuery(
+	_, _, err := providers.EnsureIndexer(indcfg).QueryTitle(
 		ctx, s.Cfgp, &p.e, indcfg, s.Quality, searchTerm, cats, results,
 	)
 
@@ -1082,7 +1121,7 @@ func (s *ConfigSearcher) performIDSearch(
 	p *searchParams,
 	indcfg *config.IndexersConfig,
 	cats int,
-	results *apiexternal.NzbSlice,
+	results *apiexternal_v2.NzbSlice,
 ) error {
 	// Query-only media types (books, audiobooks, music) don't support ID-based search
 	// as they don't have IMDB/TVDB IDs. Return nil to fall through to title search.
@@ -1910,7 +1949,8 @@ func calculateFilePriority(
 	return prio
 }
 
-// GetpriobyfilesAudio returns the highest priority and old file locations for audio media (music/audiobooks).
+// GetpriobyfilesAudio returns the highest priority and old file locations for
+// non-video media (music/audiobooks, and books with their own format scorer).
 // It calculates priority based on audio attributes: format, bitrate, sample rate, and bit depth.
 // If useall is true it will include all files. If wantedprio is -1 it will not return any file paths.
 func GetpriobyfilesAudio(
@@ -1936,10 +1976,32 @@ func GetpriobyfilesAudio(
 		return 0, nil
 	}
 
-	return calcPrioFromFiles(len(arr), wantedprio, getold,
-		func(i int) int { return calculateAudioFilePriority(&arr[i], qualcfg, useall) },
+	score := func(i int) int { return calculateAudioFilePriority(&arr[i], qualcfg, useall) }
+	if isType == config.MediaTypeBook {
+		// Books are scored on the release scale (parser.BookFormatPriority);
+		// the audio-format table knows no ebook formats and returned ~0.
+		score = func(i int) int { return parser.BookFormatPriority(arr[i].Format) }
+	}
+
+	return calcPrioFromFiles(len(arr), wantedprio, getold, score,
 		func(i int) string { return arr[i].Location },
 	)
+}
+
+// AudioFilesPriority returns the highest priority among files, scored exactly
+// like GetpriobyfilesAudio scores database rows. It lets callers score files
+// that are not in the database yet (e.g. an incoming album) on the same scale.
+func AudioFilesPriority(files []database.AudioFilePrio, qualcfg *config.QualityConfig) int {
+	if len(files) == 0 || qualcfg == nil {
+		return 0
+	}
+
+	prio, _ := calcPrioFromFiles(len(files), -1, false,
+		func(i int) int { return calculateAudioFilePriority(&files[i], qualcfg, false) },
+		func(i int) string { return files[i].Location },
+	)
+
+	return prio
 }
 
 // calculateAudioFilePriority determines the priority of an audio file based on format, bitrate,
@@ -2032,15 +2094,20 @@ func (s *ConfigSearcher) validateBasicEntry(entry *apiexternal_v2.Nzbwithprio) b
 }
 
 // setupIndexerConfig creates a custom indexer configuration.
-func setupIndexerConfig(listentry *config.MediaListsConfig) *config.IndexersConfig {
-	customindexer := *config.GetSettingsIndexer(listentry.TemplateList)
+func setupIndexerConfig(listentry *config.MediaListsConfig) (*config.IndexersConfig, error) {
+	template := config.GetSettingsIndexer(listentry.TemplateList)
+	if template == nil {
+		return nil, fmt.Errorf("indexer config %q: %w", listentry.TemplateList, logger.ErrNotFound)
+	}
+
+	customindexer := *template
 
 	customindexer.Name = listentry.TemplateList
 	customindexer.Customrssurl = listentry.CfgList.URL
 	customindexer.URL = listentry.CfgList.URL
 	customindexer.MaxEntries = logger.StringToUInt16(listentry.CfgList.Limit)
 
-	return &customindexer
+	return &customindexer, nil
 }
 
 // getentryquality returns the quality config for the given entry.

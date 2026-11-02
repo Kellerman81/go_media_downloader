@@ -82,9 +82,29 @@ func (m *Manager) IsSupported(path string) bool {
 	return ok
 }
 
+// recoverRead turns a panic in a format parser (malformed or hostile file)
+// into a logged read error, so a bad file can never crash the app.
+func recoverRead(path string, err *error) {
+	r := recover()
+	if r == nil {
+		return
+	}
+
+	logger.Logtype("error", 1).
+		Str("file", path).
+		Str("panic", fmt.Sprint(r)).
+		Msg("tags: recovered panic while reading audio file")
+
+	if err != nil {
+		*err = &ErrReadFailed{Path: path, Reason: fmt.Sprintf("parser panic: %v", r)}
+	}
+}
+
 // ReadTags reads metadata tags from an audio file.
 // The appropriate handler is selected based on the file extension.
-func (m *Manager) ReadTags(path string) (*AudioTags, error) {
+func (m *Manager) ReadTags(path string) (tags *AudioTags, err error) {
+	defer recoverRead(path, &err)
+
 	ext := logger.FileExt(path)
 
 	m.mu.RLock()
@@ -119,17 +139,17 @@ func (m *Manager) WriteTags(ctx context.Context, path string, tags *AudioTags) e
 // ReadCoverData returns the embedded cover art already present in the file
 // at path, if any, using ReadTagsWithCover when the format's handler
 // supports it. Returns (nil, "") if the format has no cover-reading
-// support (e.g. OGG/Opus currently) or the file has no embedded cover.
+// support or the file has no embedded cover.
 //
 // Callers that write new tags onto an already-tagged file without an
 // explicit replacement cover (e.g. structure.TagAlbumFiles when no new
-// cover was fetched for the album) must call this first and carry the
-// result into AudioTags.CoverData/CoverMIME - WriteTags's underlying
-// libraries can drop the existing embedded cover on save otherwise
-// (confirmed for MP3: id3v2's ParseFrames option, used here to avoid
-// loading cover bytes on writes that don't need them, discards frames not
-// in its list entirely rather than round-tripping them unmodified).
-func (m *Manager) ReadCoverData(path string) ([]byte, string) {
+// cover was fetched for the album) may call this and carry the result into
+// AudioTags.CoverData/CoverMIME. All writers keep an existing embedded cover
+// when CoverData is empty, and replace (never duplicate) a cover passed back, so
+// either way is safe.
+func (m *Manager) ReadCoverData(path string) (data []byte, mime string) {
+	defer recoverRead(path, nil)
+
 	ext := logger.FileExt(path)
 
 	m.mu.RLock()

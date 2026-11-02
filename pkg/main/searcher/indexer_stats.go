@@ -4,8 +4,8 @@ import (
 	"cmp"
 	"slices"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 // indexerSuccessRate returns the historical success rate for the indexer
@@ -13,7 +13,7 @@ import (
 // records for every request. Indexers without history default to 1.0 so
 // new indexers are tried first rather than penalized.
 func indexerSuccessRate(indcfg *config.IndexersConfig) float64 {
-	provider := apiexternal.Getnewznabclient(indcfg)
+	provider := providers.EnsureIndexer(indcfg)
 	if provider == nil {
 		return 1.0
 	}

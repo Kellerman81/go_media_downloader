@@ -3,11 +3,15 @@ package csrfapi
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 // TestCSRFAPIIntegration tests the actual CSRF API scraper integration
@@ -187,7 +191,11 @@ func TestCSRFAPIIntegration(t *testing.T) {
 			return
 		}
 
-		t.Logf("Successfully fetched API page, response has %d top-level keys", len(data))
+		if obj, ok := data.(map[string]any); ok {
+			t.Logf("Successfully fetched API page, response has %d top-level keys", len(obj))
+		} else {
+			t.Log("Successfully fetched API page")
+		}
 
 		// Check for results array
 		results := scraper.extractResults(data)
@@ -282,6 +290,14 @@ func TestCSRFAPIIntegration(t *testing.T) {
 			{
 				name:       "TimeObject",
 				dateVal:    time.Now(),
+				shouldFail: false,
+			},
+			{
+				// JSON numbers decode as float64 (e.g. goccy/go-json unmarshaling
+				// into `any`); this is what a Unix-timestamp date field like
+				// Bellesa's "posted_on" looks like once parsed.
+				name:       "UnixTimestampFloat64",
+				dateVal:    float64(1710498600),
 				shouldFail: false,
 			},
 			{
@@ -388,16 +404,6 @@ func TestCSRFAPIIntegration(t *testing.T) {
 				},
 				errMsg: "api_url_pattern is required",
 			},
-			{
-				name: "MissingResultsArrayPath",
-				config: &Config{
-					SiteName:      "test",
-					StartURL:      "https://example.com",
-					SerieName:     "test",
-					APIURLPattern: "https://api.example.com/{page}",
-				},
-				errMsg: "results_array_path is required",
-			},
 		}
 
 		for _, tc := range invalidConfigs {
@@ -493,6 +499,19 @@ func TestCSRFAPIIntegration(t *testing.T) {
 				runtimeField: "runtime",
 			},
 			{
+				// What JSON decoding actually produces for -1.
+				name:         "InvalidRuntimeNegativeFloat",
+				result:       map[string]any{"runtime": float64(-1)},
+				shouldSkip:   true,
+				runtimeField: "runtime",
+			},
+			{
+				name:         "ValidRuntimeFloat",
+				result:       map[string]any{"runtime": float64(1200)},
+				shouldSkip:   false,
+				runtimeField: "runtime",
+			},
+			{
 				name:         "InvalidRuntimeString",
 				result:       map[string]any{"runtime": "-1"},
 				shouldSkip:   true,
@@ -516,10 +535,7 @@ func TestCSRFAPIIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				shouldSkip := false
 				if tc.runtimeField != "" {
-					runtime := tc.result[tc.runtimeField]
-					if runtime == nil || runtime == -1 || runtime == "-1" {
-						shouldSkip = true
-					}
+					shouldSkip = isMissingRuntime(tc.result[tc.runtimeField])
 				}
 
 				if shouldSkip != tc.shouldSkip {
@@ -580,6 +596,13 @@ func TestCSRFAPIHelperFunctions(t *testing.T) {
 				field:    "title",
 				expected: "",
 			},
+			{
+				// JSON numbers decode as float64 (e.g. Bellesa's numeric "id"
+				// field, used to build the episode URL).
+				obj:      map[string]any{"id": float64(13508)},
+				field:    "id",
+				expected: "13508",
+			},
 		}
 
 		for _, tt := range tests {
@@ -630,4 +653,265 @@ func TestCSRFAPIHelperFunctions(t *testing.T) {
 			})
 		}
 	})
+
+	// A ResultsArrayPath of "" means the API response itself is a top-level
+	// JSON array (e.g. Bellesa's videos endpoint), not an object wrapping one.
+	t.Run("ExtractResults_RootArray", func(t *testing.T) {
+		rootArrayScraper, err := NewScraper(&Config{
+			SiteName:      "test",
+			StartURL:      "https://example.com",
+			SerieName:     "test",
+			APIURLPattern: "https://api.example.com/videos",
+		})
+		if err != nil {
+			t.Fatalf("Failed to create scraper: %v", err)
+		}
+
+		tests := []struct {
+			name     string
+			data     any
+			expected int
+		}{
+			{
+				name: "ValidRootArray",
+				data: []any{
+					map[string]any{"id": 1},
+					map[string]any{"id": 2},
+					map[string]any{"id": 3},
+				},
+				expected: 3,
+			},
+			{
+				name:     "WrongTypeObject",
+				data:     map[string]any{"results": []any{map[string]any{"id": 1}}},
+				expected: 0,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				results := rootArrayScraper.extractResults(tt.data)
+				if len(results) != tt.expected {
+					t.Errorf("Expected %d results, got %d", tt.expected, len(results))
+				}
+			})
+		}
+	})
+}
+
+func TestResolveURL(t *testing.T) {
+	base := "https://example.com/shows/list/page.html"
+
+	for ref, want := range map[string]string{
+		"":                          "",
+		"episode/1":                 "https://example.com/shows/list/episode/1",
+		"/img/poster.jpg":           "https://example.com/img/poster.jpg",
+		"https://cdn.example.org/x": "https://cdn.example.org/x",
+		"//cdn.example.org/y":       "https://cdn.example.org/y",
+		"?page=2":                   "https://example.com/shows/list/page.html?page=2",
+	} {
+		if got := resolveURL(base, ref); got != want {
+			t.Errorf("resolveURL(%q) = %q, want %q", ref, got, want)
+		}
+	}
+
+	// An unparsable base leaves the reference unchanged.
+	if got := resolveURL("http://[::1", "x/y"); got != "x/y" {
+		t.Errorf("bad base = %q", got)
+	}
+}
+
+func TestIsMissingRuntime(t *testing.T) {
+	tests := []struct {
+		v    any
+		want bool
+	}{
+		{nil, true},
+		{float64(-1), true},
+		{-1, true},
+		{json.Number("-1"), true},
+		{"-1", true},
+		{" -1 ", true},
+		{float64(0), false},
+		{float64(1200), false},
+		{"1200", false},
+		{json.Number("1200"), false},
+	}
+
+	for _, tt := range tests {
+		if got := isMissingRuntime(tt.v); got != tt.want {
+			t.Errorf("isMissingRuntime(%#v) = %v, want %v", tt.v, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizePageStartIndex(t *testing.T) {
+	for in, want := range map[int]int{0: 1, 1: 1, 2: 2, -1: 0, -5: 0} {
+		if got := normalizePageStartIndex(in); got != want {
+			t.Errorf("normalizePageStartIndex(%d) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestParseDateFormats(t *testing.T) {
+	s := &Scraper{config: &Config{}}
+
+	tests := []struct {
+		in   any
+		want string
+	}{
+		{"2024-03-15T10:30:00Z", "2024-03-15"},
+		{"2024-03-15", "2024-03-15"},
+		{"2024-03-15 10:30:00", "2024-03-15"},
+		{float64(1710498600), "2024-03-15"},    // seconds
+		{float64(1710498600000), "2024-03-15"}, // milliseconds
+	}
+
+	for _, tt := range tests {
+		got, err := s.parseDate(tt.in)
+		if err != nil {
+			t.Errorf("parseDate(%v): %v", tt.in, err)
+			continue
+		}
+
+		if got.Format("2006-01-02") != tt.want {
+			t.Errorf("parseDate(%v) = %s, want %s", tt.in, got.Format("2006-01-02"), tt.want)
+		}
+	}
+
+	custom := &Scraper{config: &Config{DateFormat: "02.01.2006"}}
+	if got, err := custom.parseDate("15.03.2024"); err != nil || got.Format("2006-01-02") != "2024-03-15" {
+		t.Errorf("custom DateFormat: got %v, %v", got, err)
+	}
+
+	// A configured DateFormat must not prevent the ISO fallbacks.
+	if _, err := custom.parseDate("2024-03-15"); err != nil {
+		t.Errorf("ISO fallback with DateFormat set: %v", err)
+	}
+}
+
+func TestPageValueAndOffsetValidation(t *testing.T) {
+	base := Config{
+		SiteName:      "t",
+		StartURL:      "https://example.com",
+		SerieName:     "t",
+		APIURLPattern: "https://example.com/api?offset={page}",
+	}
+
+	noSize := base
+	noSize.PaginationStyle = "offset"
+
+	if _, err := NewScraper(&noSize); err == nil {
+		t.Error("expected error for offset pagination without page_increment")
+	}
+
+	off := base
+	off.PaginationStyle = "offset"
+	off.PageIncrement = 24
+
+	s, err := NewScraper(&off)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for page, want := range map[int]int{1: 0, 2: 24, 3: 48} {
+		if got := s.pageValue(page); got != want {
+			t.Errorf("offset pageValue(%d) = %d, want %d", page, got, want)
+		}
+	}
+
+	seq := base
+	seq.PaginationStyle = "sequential"
+
+	s, err = NewScraper(&seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.pageValue(3); got != 3 {
+		t.Errorf("sequential pageValue(3) = %d, want 3", got)
+	}
+
+	zeroBased := base
+	zeroBased.PageStartIndex = -1
+
+	s, err = NewScraper(&zeroBased)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s.config.PageStartIndex != 0 {
+		t.Errorf("PageStartIndex -1 should become 0, got %d", s.config.PageStartIndex)
+	}
+}
+
+// csrfServer issues a new token on every start-page visit and rejects API
+// calls carrying any token other than the latest one with rejectStatus.
+func csrfServer(t *testing.T, rejectStatus int, body string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+
+	var tokens atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/start":
+			n := tokens.Add(1)
+			http.SetCookie(w, &http.Cookie{Name: "_csrf", Value: "tok" + string(rune('0'+n)), Path: "/"})
+			w.WriteHeader(http.StatusOK)
+		case strings.HasPrefix(r.URL.Path, "/api"):
+			want := "tok" + string(rune('0'+tokens.Load()))
+			// First token is treated as expired.
+			if tokens.Load() < 2 || r.Header.Get("csrf-token") != want {
+				w.WriteHeader(rejectStatus)
+				return
+			}
+
+			_, _ = w.Write([]byte(body))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv, &tokens
+}
+
+func TestFetchAPIPageRefreshesCSRFToken(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, statusCSRFExpired} {
+		srv, tokens := csrfServer(t, status, `{"results":[{"title":"a"}]}`)
+
+		s, err := NewScraper(&Config{
+			SiteName:         "t",
+			StartURL:         srv.URL + "/start",
+			SerieName:        "t",
+			APIURLPattern:    srv.URL + "/api?page={page}",
+			ResultsArrayPath: "results",
+			WaitSeconds:      -1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+		if err := s.extractCSRFToken(ctx); err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+
+		data, err := s.fetchAPIPage(ctx, 1)
+		cancel()
+
+		if err != nil {
+			t.Fatalf("status %d: expected retry with fresh token to succeed, got %v", status, err)
+		}
+
+		if got := len(s.extractResults(data)); got != 1 {
+			t.Errorf("status %d: expected 1 result, got %d", status, got)
+		}
+
+		if tokens.Load() != 2 {
+			t.Errorf("status %d: expected exactly one token refresh, got %d fetches", status, tokens.Load())
+		}
+	}
 }

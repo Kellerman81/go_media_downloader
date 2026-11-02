@@ -3,16 +3,14 @@ package importfeed
 import (
 	"context"
 	"errors"
-	"sync"
+	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
 
@@ -21,31 +19,27 @@ import (
 // -----------------------------------------------------------------------------
 
 var (
-	errBookIgnored              = errors.New("book ignored")
-	errAudiobookIgnored         = errors.New("audiobook ignored")
-	errAlbumIgnored             = errors.New("album ignored")
-	errArtistIgnored            = errors.New("artist ignored")
-	errAuthorIgnored            = errors.New("author ignored")
-	errIsbnEmpty                = errors.New("isbn empty")
-	errBookNotFoundInDatabase   = errors.New("book not found in database")
-	errAuthorIdentifierEmpty    = errors.New("author identifier empty")
-	errAuthorNotFoundInDatabase = errors.New("author not found in database")
+	errBookIgnored      = errors.New("book ignored")
+	errAudiobookIgnored = errors.New("audiobook ignored")
+	errAlbumIgnored     = errors.New("album ignored")
+	errArtistIgnored    = errors.New("artist ignored")
+	//errAuthorIgnored            = errors.New("author ignored")
+	errIsbnEmpty              = errors.New("isbn empty")
+	errBookNotFoundInDatabase = errors.New("book not found in database")
+	//errAuthorIdentifierEmpty    = errors.New("author identifier empty")
+	//errAuthorNotFoundInDatabase = errors.New("author not found in database")
 	errAsinEmpty                = errors.New("asin empty")
 	errAudiobookNotFoundInDB    = errors.New("audiobook not found in database")
 	errAlbumIdentifierEmpty     = errors.New("album identifier empty")
 	errAlbumNotFoundInDatabase  = errors.New("album not found in database")
 	errArtistIdentifierEmpty    = errors.New("artist identifier empty")
 	errArtistNotFoundInDatabase = errors.New("artist not found in database")
-	errUseJobImportDBSeries     = errors.New("use JobImportDBSeries for series")
-	errUnsupportedMediaType     = errors.New("unsupported media type")
+	//errUseJobImportDBSeries     = errors.New("use JobImportDBSeries for series")
+	//errUnsupportedMediaType     = errors.New("unsupported media type")
 
-	// Provider singletons. sync.OnceValue makes the lazy initialization safe for
-	// concurrent imports - the previous nil-check-then-assign pattern was a data
-	// race and could construct duplicate providers, each with its own rate
-	// limiter (defeating e.g. MusicBrainz's 1 request/second limit).
-	getOpenLibraryProvider = sync.OnceValue(openlibrary.NewProvider)
-	getAudibleProvider     = sync.OnceValue(audible.NewProvider)
-	getMusicBrainzProvider = sync.OnceValue(musicbrainz.NewProvider)
+	// The registry's shared instance, so imports, metadata refreshes and the web
+	// UI all go through one MusicBrainz rate limiter.
+	getMusicBrainzProvider = providers.SharedMusicBrainz
 )
 
 // -----------------------------------------------------------------------------
@@ -165,6 +159,9 @@ type mediaListEntrySpec struct {
 	itemInsertSQL   string // full INSERT INTO audiobooks/albums SQL
 	idFieldName     string // "asin" / "identifier" (for logs)
 	cacheKey        string // "CacheAudiobook" / "CacheAlbum"
+	// trackedParentID, when set, is used as the item's tracked parent instead
+	// of resolving the first linked author/artist.
+	trackedParentID uint
 }
 
 // checkaddMediaEntry is the shared implementation for CheckaddAudiobookEntry and
@@ -206,6 +203,10 @@ func checkaddMediaEntry(
 		}
 	}
 
+	if replaceListEntries(s.table, s.idCol, dbid, cfgplist) {
+		database.RefreshMediaCacheList(cfgp.IsType, true)
+	}
+
 	// Deny a second insert from a sibling list of the same media group config.
 	getcount = 0
 	if existsInConfigList(s.table, s.idCol, dbid, cfgp) {
@@ -228,11 +229,12 @@ func checkaddMediaEntry(
 			Uint(s.parentLabel+"_id", parentID).
 			Msg(s.fnLabel + ": Found " + s.parentLabel + " from " + s.joinTable)
 
-		var trackedParentID uint
-		if parentID > 0 {
-			database.Scanrowsdyn(false,
-				"SELECT id FROM "+s.parentTable+" WHERE "+s.parentIDCol+" = ? AND listname = ?",
-				&trackedParentID, &parentID, &cfgplist.Name)
+		trackedParentID := s.trackedParentID
+		if trackedParentID == 0 && parentID > 0 {
+			// One tracked parent per media group config: reuse a sibling list's row.
+			trackedParentID = trackedIDInConfigList(
+				s.parentTable, s.parentIDCol, &parentID, cfgp, cfgplist.Name,
+			)
 
 			if trackedParentID == 0 {
 				result, err := database.ExecNid(
@@ -412,8 +414,13 @@ func JobImportBooks(
 				Str("job", isbn).
 				Msg("Insert dbbook for")
 
+			isbnCol := "isbn_13"
+			if len(strings.ReplaceAll(isbn, "-", "")) == 10 {
+				isbnCol = "isbn_10"
+			}
+
 			dbresult, err := database.ExecNid(
-				"insert into dbbooks (isbn_13) VALUES (?)",
+				"insert into dbbooks ("+isbnCol+") VALUES (?)",
 				&isbn,
 			)
 			if err != nil {
@@ -445,7 +452,11 @@ func JobImportBooks(
 		}
 
 		if dbbook.ISBN13 == "" && dbbook.ISBN10 == "" {
-			dbbook.ISBN13 = isbn
+			if len(strings.ReplaceAll(isbn, "-", "")) == 10 {
+				dbbook.ISBN10 = isbn
+			} else {
+				dbbook.ISBN13 = isbn
+			}
 		}
 
 		if !dbbookadded && !shouldUpdateMetadata(dbbook.UpdatedAt) {
@@ -499,75 +510,34 @@ func CheckaddBookEntry(
 	cfgplist *config.MediaListsConfig,
 	isbn string,
 ) error {
-	if cfgplist == nil || cfgplist.Name == "" {
-		return logger.ErrListnameEmpty
+	return checkaddMediaEntry(dbid, cfgp, cfgplist, isbn, bookEntrySpec())
+}
+
+func bookEntrySpec() mediaListEntrySpec {
+	return mediaListEntrySpec{
+		table:           "books",
+		idCol:           "dbbook_id",
+		ignoredErr:      errBookIgnored,
+		joinTable:       "dbbook_authors",
+		joinParentCol:   "dbauthor_id",
+		parentTable:     "authors",
+		parentIDCol:     "dbauthor_id",
+		parentTrackMode: "books",
+		parentLabel:     "author",
+		fnLabel:         "CheckaddBookEntry",
+		logItemType:     "Book",
+		itemInsertSQL:   "Insert into books (missing, listname, dbbook_id, quality_profile, author_id) values (1, ?, ?, ?, ?)",
+		idFieldName:     "isbn",
+		cacheKey:        "CacheBook",
 	}
-
-	var getcount uint
-
-	// Check ignore lists
-	if cfgplist.IgnoreMapListsLen >= 1 {
-		args := logger.PLArrAny.Get()
-		for idx := range cfgplist.IgnoreMapLists {
-			args.Arr = append(args.Arr, &cfgplist.IgnoreMapLists[idx])
-		}
-
-		args.Arr = append(args.Arr, dbid)
-		database.ScanrowsNArr(
-			false,
-			logger.JoinStrings(
-				"select count() from books where listname in (?",
-				cfgplist.IgnoreMapListsQu,
-				") and dbbook_id = ?",
-			),
-			&getcount,
-			args.Arr,
-		)
-		logger.PLArrAny.Put(args)
-
-		if getcount >= 1 {
-			return errBookIgnored
-		}
-	}
-
-	// Check if already present under any sibling list of this media group config
-	getcount = 0
-	if existsInConfigList("books", "dbbook_id", dbid, cfgp) {
-		getcount = 1
-	}
-
-	if getcount == 0 {
-		logger.Logtype("debug", 1).
-			Str("isbn", isbn).
-			Msg("Insert Book for")
-
-		bookid, err := database.ExecNid(
-			"Insert into books (missing, listname, dbbook_id, quality_profile) values (1, ?, ?, ?)",
-			&cfgplist.Name,
-			dbid,
-			&cfgplist.TemplateQuality,
-		)
-		if err != nil {
-			return err
-		}
-
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoInt(
-				"CacheBook",
-				syncops.DbstaticOneStringTwoInt{
-					Str:  cfgplist.Name,
-					Num1: *dbid,
-					Num2: logger.Int64ToUint(bookid),
-				},
-			)
-		}
-	}
-
-	return nil
 }
 
 // updateDbbook updates the dbbook record in the database.
 func updateDbbook(dbbook *database.Dbbook) {
+	if dbbook.Slug == "" {
+		dbbook.Slug = logger.StringToSlugCached(dbbook.Title)
+	}
+
 	database.ExecN(
 		"update dbbooks SET title = ?, original_title = ?, isbn_13 = ?, isbn_10 = ?, asin = ?, openlibrary_id = ?, goodreads_id = ?, description = ?, publisher = ?, publish_date = ?, page_count = ?, language = ?, genres = ?, cover_url = ?, dbauthor_id = ?, dbbook_series_id = ?, series_position = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ? where id = ?",
 		&dbbook.Title,
@@ -622,9 +592,11 @@ func CheckaddAuthorEntry(
 
 // updateDbauthor updates the dbauthor record in the database.
 func updateDbauthor(dbauthor *database.Dbauthor) {
+	slug := logger.StringToSlugCached(dbauthor.Name)
 	database.ExecN(
-		"update dbauthors SET name = ?, aliases = ?, bio = ?, birth_date = ?, death_date = ?, goodreads_id = ?, openlibrary_id = ?, website = ?, image_url = ? where id = ?",
+		"update dbauthors SET name = ?, slug = ?, aliases = ?, bio = ?, birth_date = ?, death_date = ?, goodreads_id = ?, openlibrary_id = ?, website = ?, image_url = ? where id = ?",
 		&dbauthor.Name,
+		&slug,
 		&dbauthor.Aliases,
 		&dbauthor.Bio,
 		&dbauthor.BirthDate,
@@ -810,7 +782,11 @@ func CheckaddAudiobookEntry(
 	cfgplist *config.MediaListsConfig,
 	asin string,
 ) error {
-	return checkaddMediaEntry(dbid, cfgp, cfgplist, asin, mediaListEntrySpec{
+	return checkaddMediaEntry(dbid, cfgp, cfgplist, asin, audiobookEntrySpec())
+}
+
+func audiobookEntrySpec() mediaListEntrySpec {
+	return mediaListEntrySpec{
 		table:           "audiobooks",
 		idCol:           "dbaudiobook_id",
 		ignoredErr:      errAudiobookIgnored,
@@ -825,13 +801,17 @@ func CheckaddAudiobookEntry(
 		itemInsertSQL:   "Insert into audiobooks (missing, listname, dbaudiobook_id, quality_profile, author_id) values (1, ?, ?, ?, ?)",
 		idFieldName:     "asin",
 		cacheKey:        "CacheAudiobook",
-	})
+	}
 }
 
 // updateDbaudiobook updates the dbaudiobook record in the database.
 func updateDbaudiobook(dbaudiobook *database.Dbaudiobook) {
+	if dbaudiobook.Slug == "" {
+		dbaudiobook.Slug = logger.StringToSlugCached(dbaudiobook.Title)
+	}
+
 	database.ExecN(
-		"update dbaudiobooks SET title = ?, asin = ?, audible_id = ?, runtime_minutes = ?, chapter_count = ?, release_date = ?, publisher = ?, language = ?, abridged = ?, cover_url = ?, sample_url = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ?, dbbook_id = ?, description = ? where id = ?",
+		"update dbaudiobooks SET title = ?, asin = ?, audible_id = ?, runtime_minutes = ?, chapter_count = ?, release_date = ?, publisher = ?, language = ?, abridged = ?, cover_url = ?, sample_url = ?, average_rating = ?, ratings_count = ?, year = ?, slug = ?, dbbook_id = ?, description = ?, series_name = ?, series_position = ? where id = ?",
 		&dbaudiobook.Title,
 		&dbaudiobook.ASIN,
 		&dbaudiobook.AudibleID,
@@ -849,6 +829,8 @@ func updateDbaudiobook(dbaudiobook *database.Dbaudiobook) {
 		&dbaudiobook.Slug,
 		&dbaudiobook.DbbookID,
 		&dbaudiobook.Description,
+		&dbaudiobook.SeriesName,
+		&dbaudiobook.SeriesPosition,
 		&dbaudiobook.ID,
 	)
 }
@@ -1060,7 +1042,11 @@ func CheckaddAlbumEntry(
 	cfgplist *config.MediaListsConfig,
 	identifier string,
 ) error {
-	return checkaddMediaEntry(dbid, cfgp, cfgplist, identifier, mediaListEntrySpec{
+	return checkaddMediaEntry(dbid, cfgp, cfgplist, identifier, albumEntrySpec())
+}
+
+func albumEntrySpec() mediaListEntrySpec {
+	return mediaListEntrySpec{
 		table:           "albums",
 		idCol:           "dbalbum_id",
 		ignoredErr:      errAlbumIgnored,
@@ -1075,11 +1061,15 @@ func CheckaddAlbumEntry(
 		itemInsertSQL:   "Insert into albums (missing, listname, dbalbum_id, quality_profile, artist_id) values (1, ?, ?, ?, ?)",
 		idFieldName:     "identifier",
 		cacheKey:        "CacheAlbum",
-	})
+	}
 }
 
 // updateDbalbum updates the dbalbum record in the database.
 func updateDbalbum(dbalbum *database.Dbalbum) {
+	if dbalbum.Slug == "" {
+		dbalbum.Slug = logger.StringToSlugCached(dbalbum.Title)
+	}
+
 	database.ExecN(
 		"update dbalbums SET title = ?, musicbrainz_release_group_id = ?, musicbrainz_release_id = ?, discogs_master_id = ?, discogs_release_id = ?, spotify_id = ?, upc = ?, release_date = ?, release_type = ?, format = ?, label = ?, country = ?, total_tracks = ?, total_runtime_ms = ?, genres = ?, styles = ?, cover_url = ?, year = ?, slug = ? where id = ?",
 		&dbalbum.Title,
@@ -1172,12 +1162,16 @@ func JobImportArtist(
 
 	if dbartist.ID == 0 && artistConfig.Name != "" {
 		artistSlug := logger.StringToSlugCached(artistConfig.Name)
+		// With a known MBID, a same-named row carrying a different MBID is a
+		// different artist (e.g. two bands called "Nirvana") and must not match.
 		database.Scanrowsdyn(
 			false,
-			"select id from dbartists where name = ? COLLATE NOCASE or slug = ?",
+			`select id from dbartists where (name = ? COLLATE NOCASE or slug = ?)
+			   and (? = '' or musicbrainz_id is null or musicbrainz_id = '')`,
 			&dbartist.ID,
 			&artistConfig.Name,
 			&artistSlug,
+			&artistConfig.MusicBrainzID,
 		)
 	}
 
@@ -1273,9 +1267,11 @@ func CheckaddArtistEntry(
 
 // updateDbartist updates the dbartist record in the database.
 func updateDbartist(dbartist *database.Dbartist) {
+	slug := logger.StringToSlugCached(dbartist.Name)
 	database.ExecN(
-		"update dbartists SET name = ?, sort_name = ?, musicbrainz_id = ?, discogs_id = ?, spotify_id = ?, artist_type = ?, country = ?, begin_date = ?, end_date = ?, disambiguation = ?, bio = ?, image_url = ?, genres = ? where id = ?",
+		"update dbartists SET name = ?, slug = ?, sort_name = ?, musicbrainz_id = ?, discogs_id = ?, spotify_id = ?, artist_type = ?, country = ?, begin_date = ?, end_date = ?, disambiguation = ?, bio = ?, image_url = ?, genres = ? where id = ?",
 		&dbartist.Name,
+		&slug,
 		&dbartist.SortName,
 		&dbartist.MusicbrainzID,
 		&dbartist.DiscogsID,

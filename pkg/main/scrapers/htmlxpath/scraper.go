@@ -274,6 +274,23 @@ func (*Scraper) extractActors(node *html.Node, xpath string) string {
 	return logger.JoinStringsSep(actors, ", ")
 }
 
+// pageKey identifies a page by the URLs and titles of its scene nodes.
+func (s *Scraper) pageKey(sceneNodes []*html.Node) string {
+	var b strings.Builder
+
+	for _, n := range sceneNodes {
+		if s.config.URLXPath != "" {
+			b.WriteString(s.extractText(n, s.config.URLXPath, s.config.URLAttribute))
+		}
+
+		b.WriteByte('\x1f')
+		b.WriteString(s.extractText(n, s.config.TitleXPath, s.config.TitleAttribute))
+		b.WriteByte('\x1e')
+	}
+
+	return b.String()
+}
+
 // parseDate parses a date string using the configured format.
 //
 // Parameters:
@@ -284,7 +301,12 @@ func (*Scraper) extractActors(node *html.Node, xpath string) string {
 //   - error: Parsing errors
 func (s *Scraper) parseDate(dateStr string) (time.Time, error) {
 	if s.config.DateFormat == "" {
-		// Try to parse as YYYY-MM-DD
+		// RFC3339 covers machine-readable values such as <time datetime="...">
+		// selected with a "/@datetime" DateXPath.
+		if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
+			return t, nil
+		}
+
 		return time.Parse("2006-01-02", dateStr)
 	}
 
@@ -433,6 +455,13 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 		maxPages = 1
 	}
 
+	// Without a page pattern every "page" is StartURL again.
+	if s.config.PageURLPattern == "" {
+		maxPages = 1
+	}
+
+	var prevPageKey string
+
 	for page := range maxPages {
 		// Per-page spacing is enforced per site in fetchPage (sitethrottle), so it
 		// also coordinates with other configs hitting the same site.
@@ -456,6 +485,20 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 
 			break
 		}
+
+		// Sites often serve the last page (or page 1) again for out-of-range
+		// page numbers instead of an empty list.
+		pageKey := s.pageKey(sceneNodes)
+		if page > 0 && pageKey == prevPageKey {
+			logger.Logtype(logger.StatusInfo, 0).
+				Str("site", s.config.SiteName).
+				Int("page", page).
+				Msg("Page repeats the previous page, stopping")
+
+			break
+		}
+
+		prevPageKey = pageKey
 
 		logger.Logtype(logger.StatusInfo, 0).
 			Str("site", s.config.SiteName).

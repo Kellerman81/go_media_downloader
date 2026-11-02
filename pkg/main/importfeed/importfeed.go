@@ -6,13 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
@@ -25,10 +24,11 @@ var (
 	errIncludedGenreNotFound = errors.New("included genre not found")
 	errSeriesSkipped         = errors.New("series skip for")
 	errListidNotSet          = errors.New("listid not set")
-	errLoadingConfig         = errors.New("loading config")
-	errJobnameMissing        = errors.New("jobname missing")
-	importJobRunning         = syncops.NewSyncMap[struct{}](10)
-	defaultproviders         = []string{"imdb", "tmdb", "omdb"}
+	//errLoadingConfig         = errors.New("loading config")
+	errJobnameMissing     = errors.New("jobname missing")
+	errTvdbNotInitialized = errors.New("tvdb provider not initialized")
+	importJobRunning      = syncops.NewSyncMap[struct{}](10)
+	defaultproviders      = []string{"imdb", "tmdb", "omdb"}
 )
 
 // checkimdbyearsingle checks if the year from IMDB matches the year
@@ -49,19 +49,27 @@ func checkimdbyearsingle(
 	}
 
 	if haveyear == int(m.Year+1) || haveyear == int(m.Year-1) {
-		m.TempID = MovieFindDBIDByImdb(imdb)
-		if cfgp.GetMediaQualityConfigStr(
-			database.Getdatarow[string](
-				false,
-				mtstrings.GetStringsMap(cfgp.IsType, logger.DBQualityMediaByID),
-				&m.TempID,
-			),
-		).CheckYear1 {
+		if qual := importQualityConfig(m, cfgp); qual != nil && qual.CheckYear1 {
 			return true
 		}
 	}
 
 	return false
+}
+
+// importQualityConfig returns the quality profile that governs the entry being
+// imported: the profile of the list it came from, else the media config default.
+func importQualityConfig(m *database.ParseInfo, cfgp *config.MediaTypeConfig) *config.QualityConfig {
+	if cfgp == nil {
+		return nil
+	}
+
+	if m != nil && m.ListID >= 0 && m.ListID < len(cfgp.Lists) &&
+		cfgp.Lists[m.ListID].CfgQuality != nil {
+		return cfgp.Lists[m.ListID].CfgQuality
+	}
+
+	return cfgp.CfgQuality
 }
 
 // MovieFindDBIDByImdb looks up the database ID for a movie by its IMDB ID.
@@ -152,6 +160,42 @@ func MovieFindImdbIDByTitle(
 	m.Cleanimdbdbmovie()
 }
 
+// imdbMovieTitleTypes restricts imdb_titles lookups to movie-like entries so
+// TV series/episodes and shorts with the same name don't win.
+const imdbMovieTitleTypes = "('movie', 'tvMovie', 'video')"
+
+// pickImdbYearCandidate returns the index of the candidate (tconst, start
+// year) to use for m: an exact year match first, then one within a year when
+// the quality profile allows it. Without a year on m only a single,
+// unambiguous candidate is accepted. -1 when nothing qualifies.
+func pickImdbYearCandidate(
+	arr []database.DbstaticOneStringOneInt,
+	m *database.ParseInfo,
+	cfgp *config.MediaTypeConfig,
+) int {
+	if m.Year == 0 {
+		if len(arr) == 1 {
+			return 0
+		}
+
+		return -1
+	}
+
+	for idx := range arr {
+		if arr[idx].Num != 0 && arr[idx].Num == int(m.Year) {
+			return idx
+		}
+	}
+
+	for idx := range arr {
+		if checkimdbyearsingle(m, cfgp, &arr[idx].Str, arr[idx].Num) {
+			return idx
+		}
+	}
+
+	return -1
+}
+
 // processprovider is a helper function that processes a given provider to search for a movie's IMDB ID based on its title.
 // It first checks the IMDB database, then the TMDB database, and finally the OMDB database, depending on the configured settings.
 // It populates the provided ParseInfo struct with the found IMDB ID and other data.
@@ -166,26 +210,26 @@ func processprovider(
 	switch provider {
 	case logger.StrImdb:
 		if config.GetSettingsGeneral().MovieMetaSourceImdb {
+			// Only movie-like title types; most-voted first so a well-known
+			// film beats an obscure same-named one.
 			arr := database.GetrowsN[database.DbstaticOneStringOneInt](
 				true,
 				database.Getdatarow[uint](
 					false,
-					"select count() from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)",
+					"select count() from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?) and title_type in "+imdbMovieTitleTypes,
 					&m.Title,
 					&m.Title,
 					slug,
 				),
-				"select tconst,start_year from imdb_titles where (primary_title = ? COLLATE NOCASE or original_title = ? COLLATE NOCASE or slug = ?)",
+				"select t.tconst, coalesce(t.start_year, 0) from imdb_titles t left join imdb_ratings r on r.tconst = t.tconst where (t.primary_title = ? COLLATE NOCASE or t.original_title = ? COLLATE NOCASE or t.slug = ?) and t.title_type in "+imdbMovieTitleTypes+" order by coalesce(r.num_votes, 0) desc",
 				&m.Title,
 				&m.Title,
 				slug,
 			)
-			for idx := range arr {
-				if checkimdbyearsingle(m, cfgp, &arr[idx].Str, arr[idx].Num) {
-					m.Imdb = arr[idx].Str
-					m.MovieFindDBIDByImdbParser()
-					return true
-				}
+			if idx := pickImdbYearCandidate(arr, m, cfgp); idx != -1 {
+				m.Imdb = arr[idx].Str
+				m.MovieFindDBIDByImdbParser()
+				return true
 			}
 
 			arr2 := database.Getrowssize[string](
@@ -196,9 +240,10 @@ func processprovider(
 				slug,
 			)
 			for idx := range arr2 {
+				haveyear = 0
 				database.Scanrowsdyn(
 					true,
-					"select start_year from imdb_titles where tconst = ?",
+					"select coalesce(start_year, 0) from imdb_titles where tconst = ? and title_type in "+imdbMovieTitleTypes,
 					&haveyear,
 					&arr2[idx],
 				)
@@ -220,7 +265,13 @@ func processprovider(
 				return true
 			}
 
-			tbl, err := apiexternal.SearchTmdbMovie(m.Title)
+			tmdbp := providers.GetTMDB()
+			if tmdbp == nil {
+				m.Cleanimdbdbmovie()
+				return false
+			}
+
+			tbl, err := tmdbp.SearchMovies(context.Background(), m.Title, 0)
 			if err != nil {
 				// API failure: fall through to the next provider in the chain
 				// instead of aborting the whole lookup.
@@ -228,22 +279,22 @@ func processprovider(
 				return false
 			}
 
-			for idx := range tbl.Results {
+			for idx := range tbl {
 				m.Imdb = ""
 				database.Scanrowsdyn(
 					false,
 					"select imdb_id from dbmovies where moviedb_id = ?",
 					&m.Imdb,
-					&tbl.Results[idx].ID,
+					&tbl[idx].ID,
 				)
 
 				if m.Imdb == "" {
-					moviedbexternal, err := apiexternal.GetTmdbMovieExternal(tbl.Results[idx].ID)
-					if err != nil || moviedbexternal.ImdbID == "" {
+					moviedbexternal, err := tmdbp.GetMovieExternalIDs(context.Background(), tbl[idx].ID)
+					if err != nil || moviedbexternal.IMDbID == "" {
 						continue
 					}
 
-					m.Imdb = moviedbexternal.ImdbID
+					m.Imdb = moviedbexternal.IMDbID
 				}
 
 				haveyear = 0
@@ -273,21 +324,27 @@ func processprovider(
 
 	case "omdb":
 		if config.GetSettingsGeneral().MovieMetaSourceOmdb {
-			tbl, err := apiexternal.SearchOmdbMovie(m.Title, "")
+			omdbp := providers.GetOMDB()
+			if omdbp == nil || m.Title == "" {
+				m.Cleanimdbdbmovie()
+				return false
+			}
+
+			tbl, err := omdbp.SearchByTitle(context.Background(), m.Title, 0, "")
 			if err != nil {
 				// API failure: fall through to the next provider in the chain.
 				m.Cleanimdbdbmovie()
 				return false
 			}
 
-			for idx := range tbl.Search {
+			for idx := range tbl {
 				if checkimdbyearsingle(
 					m,
 					cfgp,
-					&tbl.Search[idx].ImdbID,
-					logger.StringToInt(tbl.Search[idx].Year),
+					&tbl[idx].ImdbID,
+					logger.StringToInt(tbl[idx].Year),
 				) {
-					m.Imdb = tbl.Search[idx].ImdbID
+					m.Imdb = tbl[idx].ImdbID
 					m.MovieFindDBIDByImdbParser()
 					return true
 				}
@@ -512,6 +569,105 @@ func existsInConfigList(table, idCol string, dbid *uint, cfgp *config.MediaTypeC
 	logger.PLArrAny.Put(args)
 
 	return cnt >= 1
+}
+
+// trackedIDInConfigList returns the id of the row in table (a tracked
+// author/artist table) for dbid under any list of cfgp, preferring the row of
+// preferList. 0 when there is none.
+func trackedIDInConfigList(
+	table, idCol string,
+	dbid *uint,
+	cfgp *config.MediaTypeConfig,
+	preferList string,
+) uint {
+	if dbid == nil || *dbid == 0 {
+		return 0
+	}
+
+	if cfgp == nil || cfgp.ListsLen == 0 {
+		return database.Getdatarow[uint](
+			false,
+			"select id from "+table+" where "+idCol+" = ? and listname = ? COLLATE NOCASE",
+			dbid,
+			&preferList,
+		)
+	}
+
+	args := logger.PLArrAny.Get()
+
+	args.Arr = append(args.Arr, dbid)
+
+	for idx := range cfgp.ListsNames {
+		args.Arr = append(args.Arr, &cfgp.ListsNames[idx])
+	}
+
+	args.Arr = append(args.Arr, &preferList)
+
+	var id uint
+
+	database.ScanrowsNArr(
+		false,
+		logger.JoinStrings(
+			"select id from ", table, " where ", idCol,
+			" = ? and listname in (?", cfgp.ListsQu,
+			") order by (listname = ? COLLATE NOCASE) desc, id limit 1",
+		),
+		&id,
+		args.Arr,
+	)
+	logger.PLArrAny.Put(args)
+
+	return id
+}
+
+// replaceListEntries moves the rows of table for dbid that live in one of
+// cfgplist's replace lists over to cfgplist (and its quality profile).
+// Returns true when a row was moved.
+func replaceListEntries(
+	table, idCol string,
+	dbid *uint,
+	cfgplist *config.MediaListsConfig,
+) bool {
+	if cfgplist == nil || cfgplist.ReplaceMapListsLen == 0 {
+		return false
+	}
+
+	arr := database.Getrowssize[string](
+		false,
+		"select count() from "+table+" where "+idCol+" = ? and listname != ? COLLATE NOCASE",
+		"select listname from "+table+" where "+idCol+" = ? and listname != ? COLLATE NOCASE",
+		dbid,
+		&cfgplist.Name,
+	)
+
+	var replaced bool
+
+	for idx := range arr {
+		if !logger.SlicesContainsI(cfgplist.ReplaceMapLists, arr[idx]) {
+			continue
+		}
+
+		if cfgplist.TemplateQuality == "" {
+			database.ExecN(
+				"update "+table+" SET listname = ? where "+idCol+" = ? and listname = ? COLLATE NOCASE",
+				&cfgplist.Name,
+				dbid,
+				&arr[idx],
+			)
+		} else {
+			database.ExecN(
+				"update "+table+" SET listname = ?, quality_profile = ? where "+idCol+" = ? and listname = ? COLLATE NOCASE",
+				&cfgplist.Name,
+				&cfgplist.TemplateQuality,
+				dbid,
+				&arr[idx],
+			)
+		}
+
+		replaced = true
+	}
+
+	return replaced
 }
 
 // Checkaddmovieentry checks if a movie with the given ID should be added to
@@ -956,12 +1112,7 @@ func jobImportDBSeries(
 	)
 
 	if strings.EqualFold(serieconfig.Source, "none") {
-		database.Scanrowsdyn(
-			false,
-			"select id from dbseries where seriename = ? COLLATE NOCASE",
-			&dbserie.ID,
-			&serieconfig.Name,
-		)
+		dbserie.ID = findDbserieByName(serieconfig.Name, serieconfig.TvdbID)
 
 		if addnew {
 			if dbserie.ID == 0 {
@@ -986,12 +1137,7 @@ func jobImportDBSeries(
 
 	if strings.EqualFold(serieconfig.Source, "scraper") {
 		// Look up existing series by name
-		database.Scanrowsdyn(
-			false,
-			"select id from dbseries where seriename = ? COLLATE NOCASE",
-			&dbserie.ID,
-			&serieconfig.Name,
-		)
+		dbserie.ID = findDbserieByName(serieconfig.Name, serieconfig.TvdbID)
 
 		if addnew {
 			if dbserie.ID == 0 {
@@ -1048,12 +1194,17 @@ func jobImportDBSeries(
 	}
 
 	if serieconfig.Source == "" || strings.EqualFold(serieconfig.Source, logger.StrTvdb) {
-		database.Scanrowsdyn(
-			false,
-			"select count() from dbseries where thetvdb_id = ?",
-			&count,
-			&serieconfig.TvdbID,
-		)
+		// 0 is "no TVDB id" (scraper/none rows), not an id to match on.
+		if serieconfig.TvdbID != 0 {
+			database.Scanrowsdyn(
+				false,
+				"select count() from dbseries where thetvdb_id = ?",
+				&count,
+				&serieconfig.TvdbID,
+			)
+		} else if dbserie.ID = findDbserieByName(serieconfig.Name, 0); dbserie.ID != 0 {
+			count = 1
+		}
 
 		if count == 0 {
 			if addnew {
@@ -1065,7 +1216,7 @@ func jobImportDBSeries(
 			} else {
 				return logger.ErrNotAllowed
 			}
-		} else if count >= 1 {
+		} else if count >= 1 && serieconfig.TvdbID != 0 {
 			database.Scanrowsdyn(
 				false,
 				database.QueryDbseriesGetIDByTvdb,
@@ -1193,7 +1344,7 @@ func jobImportDBSeries(
 
 				if config.GetSettingsGeneral().SerieAlternateTitleMetaSourceTrakt &&
 					(dbserie.TraktID != 0 || dbserie.ImdbID != "") {
-					tbl := apiexternal.GetTraktSerieAliases(&dbserie)
+					tbl := providers.TraktSerieAliases(context.Background(), dbserie.TraktID)
 					for idx := range tbl {
 						if database.GetDBStaticOneStringOneIntIdx(titles, tbl[idx].Title) != -1 {
 							continue
@@ -1204,7 +1355,7 @@ func jobImportDBSeries(
 						}
 
 						if cfgp.MetadataTitleLanguagesLen == 0 ||
-							logger.SlicesContainsI(cfgp.MetadataTitleLanguages, tbl[idx].Country) {
+							logger.SlicesContainsI(cfgp.MetadataTitleLanguages, tbl[idx].ISO3166_1) {
 							titles = append(
 								titles,
 								database.DbstaticOneStringOneUInt{
@@ -1212,7 +1363,7 @@ func jobImportDBSeries(
 									Str: tbl[idx].Title,
 								},
 							)
-							addalternateserietitle(&dbserie.ID, &tbl[idx].Title, &tbl[idx].Country)
+							addalternateserietitle(&dbserie.ID, &tbl[idx].Title, &tbl[idx].ISO3166_1)
 						}
 					}
 				}
@@ -1258,11 +1409,11 @@ func jobImportDBSeries(
 						Msg("Get episodes for")
 
 					// Collect episodes from TVDB first (primary source)
-					var episodes map[string]*apiexternal.CollectedEpisode
+					var episodes map[string]*collectedEpisode
 					if dbserie.ThetvdbID != 0 {
 						var err error
 
-						episodes, err = apiexternal.CollectTvdbSeriesEpisodes(
+						episodes, err = collectTvdbSeriesEpisodes(
 							dbserie.ThetvdbID,
 							cfgp.MetadataLanguage,
 						)
@@ -1280,16 +1431,16 @@ func jobImportDBSeries(
 							return err
 						}
 					} else {
-						episodes = make(map[string]*apiexternal.CollectedEpisode)
+						episodes = make(map[string]*collectedEpisode)
 					}
 
 					// Merge Trakt data (fills gaps and adds missing episodes)
 					if config.GetSettingsGeneral().SerieMetaSourceTrakt && dbserie.ImdbID != "" {
-						apiexternal.MergeTraktIntoCollectedEpisodes(dbserie.ImdbID, episodes)
+						mergeTraktIntoCollectedEpisodes(dbserie.ImdbID, episodes)
 					}
 
 					// Write all collected episodes to the database
-					apiexternal.WriteCollectedEpisodesToDB(episodes, &dbserie.ID)
+					writeCollectedEpisodesToDB(episodes, &dbserie.ID)
 				}
 			}
 		}
@@ -1311,19 +1462,41 @@ func jobImportDBSeries(
 			"select lower(listname), id from series where dbserie_id = ?",
 			&dbserie.ID,
 		)
+		// Check every ignore list before replacing anything, so a skip can't
+		// leave the rows seen before it already moved to this list.
 		for idx := range arr {
 			if logger.SlicesContainsI(cfgp.Lists[listid].IgnoreMapLists, arr[idx].Str) {
 				return errSeriesSkipped
 			}
+		}
 
-			if logger.SlicesContainsI(cfgp.Lists[listid].ReplaceMapLists, arr[idx].Str) {
+		var replaced bool
+
+		for idx := range arr {
+			if !logger.SlicesContainsI(cfgp.Lists[listid].ReplaceMapLists, arr[idx].Str) {
+				continue
+			}
+
+			if cfgp.Lists[listid].TemplateQuality == "" {
 				database.ExecN(
-					"update series SET listname = ?, dbserie_id = ? where id = ?",
+					"update series SET listname = ? where id = ?",
 					&cfgp.Lists[listid].Name,
-					&dbserie.ID,
+					&arr[idx].Num,
+				)
+			} else {
+				database.ExecN(
+					"update series SET listname = ?, quality_profile = ? where id = ?",
+					&cfgp.Lists[listid].Name,
+					&cfgp.Lists[listid].TemplateQuality,
 					&arr[idx].Num,
 				)
 			}
+
+			replaced = true
+		}
+
+		if replaced {
+			database.RefreshMediaCacheList(config.MediaTypeSeries, true)
 		}
 
 		if !existsInConfigList("series", "dbserie_id", &dbserie.ID, cfgp) {
@@ -1370,7 +1543,7 @@ func jobImportDBSeries(
 		} else {
 			serieAliases := logger.JoinStringsSep(serieconfig.AlternateName, ",")
 			database.ExecN(
-				"update series SET aliases=?, search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ?",
+				"update series SET aliases=?, search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ? COLLATE NOCASE",
 				&serieAliases,
 				&serieconfig.SearchSpecials,
 				&serieconfig.DontSearch,
@@ -1466,18 +1639,52 @@ func jobImportDBSeries(
 	return nil
 }
 
+// findDbserieByName looks up a dbseries row by name. When tvdbID is set, rows
+// carrying a different TVDB id are excluded so remakes/same-named shows with
+// their own TVDB entry are not collapsed into one; a row with the same id wins.
+func findDbserieByName(name string, tvdbID int) uint {
+	if name == "" {
+		return 0
+	}
+
+	return database.Getdatarow[uint](
+		false,
+		`select id from dbseries where seriename = ? COLLATE NOCASE
+		 and (? = 0 or thetvdb_id = 0 or thetvdb_id is null or thetvdb_id = ?)
+		 order by (thetvdb_id = ?) desc, id limit 1`,
+		&name,
+		&tvdbID,
+		&tvdbID,
+		&tvdbID,
+	)
+}
+
 // insertdbserie inserts a new dbseries row into the dbseries table.
 // It takes the name, aliases slice, TheTVDB ID and identifiedby string as parameters.
 // It inserts a new row into the dbseries table with those values.
 // It returns the auto generated uint ID for the new row.
 // It also handles caching and inserting alternate names.
 func insertdbserie(serieconfig *config.ManualConfig, dbserie *database.Dbserie) {
-	database.Scanrowsdyn(
-		false,
-		"select id from dbseries where seriename = ? COLLATE NOCASE",
-		&dbserie.ID,
-		&serieconfig.Name,
-	)
+	if serieconfig.TvdbID != 0 {
+		database.Scanrowsdyn(
+			false,
+			database.QueryDbseriesGetIDByTvdb,
+			&dbserie.ID,
+			&serieconfig.TvdbID,
+		)
+	}
+
+	if dbserie.ID == 0 {
+		dbserie.ID = findDbserieByName(serieconfig.Name, serieconfig.TvdbID)
+		if dbserie.ID != 0 && serieconfig.TvdbID != 0 {
+			// Claim a same-named row that had no TVDB id yet.
+			database.ExecN(
+				"update dbseries set thetvdb_id = ? where id = ? and (thetvdb_id = 0 or thetvdb_id is null)",
+				&serieconfig.TvdbID,
+				&dbserie.ID,
+			)
+		}
+	}
 
 	if dbserie.ID >= 1 {
 		return

@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 // Sentinel errors for the IRC announce feed.
@@ -23,6 +23,9 @@ var (
 	errIRCNickEmpty     = errors.New("irc_nick is required for irc list type")
 	errIRCChannelsEmpty = errors.New("irc_channels is required for irc list type")
 	errIRCRegexEmpty    = errors.New("irc_announce_regex is required for irc list type")
+	errIRCNoResponse    = errors.New("irc server stopped responding")
+	errIRCNotRegistered = errors.New("irc registration not accepted in time")
+	errIRCNickInUse     = errors.New("irc nick and alternatives in use")
 )
 
 const (
@@ -32,23 +35,42 @@ const (
 	// ircBufferMax caps the number of buffered announce lines per session so a
 	// busy channel cannot grow memory without bound between drains.
 	ircBufferMax = 5000
+	// ircMaxAttempts is how many failed runs a drained announce line survives
+	// before it is dropped instead of requeued, so a line that breaks the
+	// import every time is not retried forever.
+	ircMaxAttempts = 3
 	// ircIdleStop closes a background session whose buffer has not been drained
 	// for this long (e.g. the list was disabled or removed).
 	ircIdleStop = time.Hour
 	// ircReconnectMin / ircReconnectMax bound the reconnect backoff.
 	ircReconnectMin = 5 * time.Second
 	ircReconnectMax = 5 * time.Minute
-	// ircDialTimeout bounds establishing a single connection.
+	// ircDialTimeout bounds establishing a single connection (TCP and TLS).
 	ircDialTimeout = 30 * time.Second
+	// ircHealthyConn is how long a connection must have lasted for the next
+	// reconnect to start again from ircReconnectMin.
+	ircHealthyConn = ircReconnectMax
+	// ircMaxNickRetries bounds the alternative nicks tried on a collision.
+	ircMaxNickRetries = 3
+)
+
+var (
 	// ircReadIdle is the per-read deadline; on expiry the session sends a
-	// keepalive PING and re-checks for shutdown.
+	// keepalive PING. A second expiry in a row means the PING went
+	// unanswered and the connection is treated as dead.
 	ircReadIdle = 90 * time.Second
+	// ircRegisterTimeout bounds the wait for RPL_WELCOME after NICK/USER.
+	ircRegisterTimeout = 2 * time.Minute
+	// ircIdentifyTimeout bounds the wait for NickServ to confirm IDENTIFY
+	// before the channels are joined anyway.
+	ircIdentifyTimeout = 15 * time.Second
 )
 
 // ircSession is a long-lived background connection to an IRC network that
 // continuously buffers matching announce lines. The poll-based Feeds() pipeline
 // drains the buffer on each scheduled run.
 type ircSession struct {
+	key         string // registry key: media config + list name
 	listName    string
 	fingerprint string
 	cancel      context.CancelFunc
@@ -56,6 +78,8 @@ type ircSession struct {
 	mu        sync.Mutex
 	buffer    []string
 	lastDrain time.Time
+	// attempts counts failed runs per requeued line.
+	attempts map[string]uint8
 }
 
 var (
@@ -93,7 +117,10 @@ func (d *feedResults) getirc(
 		return errors.New("invalid irc_announce_regex: " + err.Error())
 	}
 
-	session, created := ensureIRCSession(cfglist.Name, cl)
+	// Keyed per media config: same-named lists in different configs must not
+	// share (and drain) one session's buffer.
+	key := cfgp.NamePrefix + "\x00" + cfglist.Name
+	session, created := ensureIRCSession(key, cfglist.Name, cl)
 
 	// On the very first run the connection was just opened, so give it a brief
 	// window to receive initial announcements before draining.
@@ -112,6 +139,18 @@ func (d *feedResults) getirc(
 		Int("lines", len(lines)).
 		Msg("irc announce lines collected")
 
+	// The caller settles the lines (commitIRC/requeueIRC) once it knows
+	// whether the import went through.
+	d.ircKey, d.ircLines = key, lines
+
+	parsed := false
+
+	defer func() {
+		if !parsed { // panicking: hand the lines back, charged as a failure
+			d.requeueIRC(true)
+		}
+	}()
+
 	seen := make(map[string]struct{}, len(lines))
 	for idx := range lines {
 		m := namedSubmatches(re, lines[idx])
@@ -122,7 +161,45 @@ func (d *feedResults) getirc(
 		d.addIRCMatch(cfgp.IsType, m, cfglist, seen)
 	}
 
+	parsed = true
+
 	return nil
+}
+
+// commitIRC forgets the IRC announce lines this feed drained, once they were
+// imported.
+func (d *feedResults) commitIRC() {
+	if d == nil || d.ircKey == "" {
+		return
+	}
+
+	if s := ircSessionFor(d.ircKey); s != nil {
+		s.commit(d.ircLines)
+	}
+
+	d.ircKey, d.ircLines = "", nil
+}
+
+// requeueIRC hands the IRC announce lines this feed drained back to their
+// session for the next run. failed charges each line one attempt.
+func (d *feedResults) requeueIRC(failed bool) {
+	if d == nil || d.ircKey == "" {
+		return
+	}
+
+	// Looked up again: a config change may have replaced the session since.
+	if s := ircSessionFor(d.ircKey); s != nil {
+		s.requeue(d.ircLines, failed)
+	}
+
+	d.ircKey, d.ircLines = "", nil
+}
+
+func ircSessionFor(key string) *ircSession {
+	ircSessionsMu.Lock()
+	defer ircSessionsMu.Unlock()
+
+	return ircSessions[key]
 }
 
 // addIRCMatch dispatches a single parsed announcement to the correct
@@ -216,7 +293,7 @@ func resolveMovieImdb(title string, year int) string {
 		return ""
 	}
 
-	imdb, err := apiexternal.SearchTMDBMovieImdbID(title, year)
+	imdb, err := providers.TMDBMovieIMDbID(context.Background(), title, year)
 	if err != nil || imdb == "" {
 		return ""
 	}
@@ -232,22 +309,25 @@ func resolveSeriesTvdb(name string, year int) int {
 		return 0
 	}
 
-	res, err := apiexternal.SearchTmdbTV(name)
-	if err != nil || res == nil {
+	provider := providers.GetTMDB()
+	if provider == nil {
+		return 0
+	}
+
+	res, err := provider.SearchSeries(context.Background(), name, 0)
+	if err != nil {
 		return 0
 	}
 
 	best := 0
-	for i := range res.Results {
-		r := &res.Results[i]
+	for i := range res {
+		r := &res[i]
 		if !strings.EqualFold(r.Name, name) && !strings.EqualFold(r.OriginalName, name) {
 			continue
 		}
 
-		if year > 0 && len(r.FirstAirDate) >= 4 {
-			if y, _ := strconv.Atoi(r.FirstAirDate[:4]); y != year {
-				continue
-			}
+		if year > 0 && !r.FirstAirDate.IsZero() && r.FirstAirDate.Year() != year {
+			continue
 		}
 
 		best = r.ID
@@ -259,12 +339,7 @@ func resolveSeriesTvdb(name string, year int) int {
 		return 0
 	}
 
-	ext, err := apiexternal.GetTVExternal(best)
-	if err != nil || ext == nil {
-		return 0
-	}
-
-	return ext.TvdbID
+	return tmdbSerieTVDbID(best)
 }
 
 // normaliseImdbID trims whitespace and ensures a leading "tt" on a numeric IMDB id.
@@ -301,16 +376,16 @@ func namedSubmatches(re *regexp.Regexp, s string) map[string]string {
 	return out
 }
 
-// ensureIRCSession returns the running background session for listName, starting
+// ensureIRCSession returns the running background session for key, starting
 // one when absent or when the connection-relevant config changed. The second
 // return value reports whether a new session was created on this call.
-func ensureIRCSession(listName string, cl *config.ListsConfig) (*ircSession, bool) {
+func ensureIRCSession(key, listName string, cl *config.ListsConfig) (*ircSession, bool) {
 	fp := ircFingerprint(cl)
 
 	ircSessionsMu.Lock()
 	defer ircSessionsMu.Unlock()
 
-	if s := ircSessions[listName]; s != nil {
+	if s := ircSessions[key]; s != nil {
 		if s.fingerprint == fp {
 			return s, false
 		}
@@ -320,13 +395,14 @@ func ensureIRCSession(listName string, cl *config.ListsConfig) (*ircSession, boo
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &ircSession{
+		key:         key,
 		listName:    listName,
 		fingerprint: fp,
 		cancel:      cancel,
 		lastDrain:   time.Now(),
 	}
 
-	ircSessions[listName] = s
+	ircSessions[key] = s
 
 	clCopy := *cl // snapshot so later config edits don't race the goroutine
 	go s.run(ctx, &clCopy)
@@ -359,6 +435,8 @@ func (s *ircSession) run(ctx context.Context, cl *config.ListsConfig) {
 			return
 		}
 
+		started := time.Now()
+
 		err := s.connectAndListen(ctx, cl)
 		if ctx.Err() != nil {
 			s.remove()
@@ -386,7 +464,9 @@ func (s *ircSession) run(ctx context.Context, cl *config.ListsConfig) {
 			return
 		}
 
-		if err == nil {
+		// Only a connection that held up resets the backoff: one that is
+		// accepted and dropped right away (ban, throttle) must keep backing off.
+		if err == nil || time.Since(started) >= ircHealthyConn {
 			backoff = ircReconnectMin
 		}
 
@@ -405,8 +485,8 @@ func (s *ircSession) run(ctx context.Context, cl *config.ListsConfig) {
 // remove detaches this session from the registry (only if still the active one).
 func (s *ircSession) remove() {
 	ircSessionsMu.Lock()
-	if ircSessions[s.listName] == s {
-		delete(ircSessions, s.listName)
+	if ircSessions[s.key] == s {
+		delete(ircSessions, s.key)
 	}
 
 	ircSessionsMu.Unlock()
@@ -420,6 +500,12 @@ func (s *ircSession) connectAndListen(ctx context.Context, cl *config.ListsConfi
 		return err
 	}
 	defer conn.Close()
+
+	// A blocked read only notices ctx at its next deadline; close the
+	// connection on cancel so a stopped or replaced session leaves at once
+	// (and frees the nick for its successor).
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
 
 	writer := bufio.NewWriter(conn)
 	reader := bufio.NewReader(conn)
@@ -439,6 +525,31 @@ func (s *ircSession) connectAndListen(ctx context.Context, cl *config.ListsConfi
 	announceNicks := lowerSet(cl.IRCAnnounceNicks)
 	channels := lowerSet(cl.IRCChannels)
 	joined := false
+	nick := cl.IRCNick
+	nickRetries := 0
+	registerBy := time.Now().Add(ircRegisterTimeout)
+	idleReads := 0
+
+	// identifyBy is set while waiting for NickServ to confirm IDENTIFY;
+	// channels (often +r) are joined only after that, or once it expires.
+	var identifyBy time.Time
+
+	identified := func(ok bool, reason string) {
+		identifyBy = time.Time{}
+
+		if !ok {
+			logger.Logtype("warn", 1).
+				Str(logger.StrListname, s.listName).
+				Str("reason", reason).
+				Msg("irc NickServ identification not confirmed, joining channels anyway")
+		}
+
+		s.joinChannels(send, cl)
+	}
+
+	// pending holds a line cut by a read deadline; the rest follows on the
+	// next read.
+	var pending string
 
 	for {
 		if ctx.Err() != nil {
@@ -456,13 +567,36 @@ func (s *ircSession) connectAndListen(ctx context.Context, cl *config.ListsConfi
 			return nil
 		}
 
-		_ = conn.SetReadDeadline(time.Now().Add(ircReadIdle))
+		readBy := time.Now().Add(ircReadIdle)
+		if !identifyBy.IsZero() && identifyBy.Before(readBy) {
+			readBy = identifyBy
+		}
+
+		_ = conn.SetReadDeadline(readBy)
 
 		line, rerr := reader.ReadString('\n')
 		if rerr != nil {
-			// Idle read timeout: send a keepalive and keep listening; a failed
-			// write means the connection is dead and we should reconnect.
+			pending += line
+
+			if isTimeout(rerr) && ctx.Err() == nil && !identifyBy.IsZero() &&
+				!time.Now().Before(identifyBy) {
+				identified(false, "timeout")
+				continue
+			}
+
+			// Idle read timeout: send a keepalive and keep listening. A failed
+			// write, or a second timeout without any data since the PING, means
+			// the connection is dead and we should reconnect.
 			if isTimeout(rerr) && ctx.Err() == nil {
+				idleReads++
+				if idleReads > 1 {
+					return errIRCNoResponse
+				}
+
+				if !joined && time.Now().After(registerBy) {
+					return errIRCNotRegistered
+				}
+
 				if perr := send("PING :keepalive"); perr != nil {
 					return perr
 				}
@@ -473,7 +607,10 @@ func (s *ircSession) connectAndListen(ctx context.Context, cl *config.ListsConfi
 			return rerr
 		}
 
-		line = strings.TrimRight(line, "\r\n")
+		idleReads = 0
+		line = strings.TrimRight(pending+line, "\r\n")
+		pending = ""
+
 		if line == "" {
 			continue
 		}
@@ -483,12 +620,49 @@ func (s *ircSession) connectAndListen(ctx context.Context, cl *config.ListsConfi
 			continue
 		}
 
-		if !joined && ircIsWelcome(line) {
-			s.onWelcome(send, cl)
+		if !identifyBy.IsZero() {
+			if done, ok := ircIdentifyResult(line); done {
+				identified(ok, line)
+				continue
+			}
 
-			joined = true
+			if !time.Now().Before(identifyBy) {
+				identified(false, "timeout")
+			}
+		}
 
-			continue
+		if !joined {
+			if ircIsWelcome(line) {
+				if cl.IRCNickServPassword != "" {
+					_ = send("PRIVMSG NickServ :IDENTIFY " + cl.IRCNickServPassword)
+					identifyBy = time.Now().Add(ircIdentifyTimeout)
+				} else {
+					s.joinChannels(send, cl)
+				}
+
+				joined = true
+
+				continue
+			}
+
+			if ircIsNickInUse(line) {
+				if nickRetries >= ircMaxNickRetries {
+					return errIRCNickInUse
+				}
+
+				nickRetries++
+				nick += "_"
+
+				if err := send("NICK " + nick); err != nil {
+					return err
+				}
+
+				continue
+			}
+
+			if time.Now().After(registerBy) {
+				return errIRCNotRegistered
+			}
 		}
 
 		msg, ok := ircPrivmsg(line)
@@ -506,17 +680,14 @@ func (s *ircSession) connectAndListen(ctx context.Context, cl *config.ListsConfi
 			}
 		}
 
-		s.appendLine(msg.text)
+		s.appendLine(stripIRCFormatting(msg.text))
 	}
 }
 
-// onWelcome authenticates, requests invites and joins channels after the server
-// has accepted registration (RPL_WELCOME).
-func (*ircSession) onWelcome(send func(string) error, cl *config.ListsConfig) {
-	if cl.IRCNickServPassword != "" {
-		_ = send("PRIVMSG NickServ :IDENTIFY " + cl.IRCNickServPassword)
-	}
-
+// joinChannels requests invites and joins the channels once the server has
+// accepted registration and, with a NickServ password, NickServ has confirmed
+// the identification (or its wait expired).
+func (*ircSession) joinChannels(send func(string) error, cl *config.ListsConfig) {
 	if cl.IRCInviteCommand != "" {
 		_ = send(cl.IRCInviteCommand)
 	}
@@ -531,6 +702,7 @@ func (*ircSession) onWelcome(send func(string) error, cl *config.ListsConfig) {
 func (s *ircSession) appendLine(text string) {
 	s.mu.Lock()
 	if len(s.buffer) >= ircBufferMax {
+		delete(s.attempts, s.buffer[0])
 		copy(s.buffer, s.buffer[1:])
 
 		s.buffer = s.buffer[:ircBufferMax-1]
@@ -555,6 +727,74 @@ func (s *ircSession) drain() []string {
 	s.buffer = nil
 
 	return out
+}
+
+// requeue puts lines back at the front of the buffer, ahead of anything that
+// arrived meanwhile, keeping at most ircBufferMax lines (oldest dropped first,
+// as in appendLine). With failed set, each line is charged one attempt and a
+// line reaching ircMaxAttempts is dropped.
+func (s *ircSession) requeue(lines []string, failed bool) {
+	if len(lines) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+
+	merged := make([]string, 0, len(lines)+len(s.buffer))
+	dropped := 0
+
+	for _, l := range lines {
+		if failed {
+			if s.attempts == nil {
+				s.attempts = make(map[string]uint8)
+			}
+
+			s.attempts[l]++
+			if s.attempts[l] >= ircMaxAttempts {
+				delete(s.attempts, l)
+
+				dropped++
+
+				continue
+			}
+		}
+
+		merged = append(merged, l)
+	}
+
+	merged = append(merged, s.buffer...)
+	if over := len(merged) - ircBufferMax; over > 0 {
+		for _, l := range merged[:over] {
+			delete(s.attempts, l)
+		}
+
+		merged = merged[over:]
+	}
+
+	s.buffer = merged
+	s.mu.Unlock()
+
+	if dropped > 0 {
+		logger.Logtype("warn", 1).
+			Str(logger.StrListname, s.listName).
+			Int("lines", dropped).
+			Int("attempts", ircMaxAttempts).
+			Msg("irc announce lines dropped after repeated import failures")
+	}
+}
+
+// commit clears the failure count of lines that were imported.
+func (s *ircSession) commit(lines []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.attempts) == 0 {
+		return
+	}
+
+	for _, l := range lines {
+		delete(s.attempts, l)
+	}
 }
 
 // waitDrain polls the buffer up to window, returning as soon as lines arrive.
@@ -605,11 +845,17 @@ func dialIRC(
 		host = server
 	}
 
+	// Dialer.Deadline covers only the TCP connect; without a deadline here a
+	// server that accepts but never answers the handshake hangs the session.
+	_ = conn.SetDeadline(deadline)
+
 	tlsConn := tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
 	if err = tlsConn.HandshakeContext(ctx); err != nil {
 		conn.Close()
 		return nil, err
 	}
+
+	_ = conn.SetDeadline(time.Time{})
 
 	return tlsConn, nil
 }
@@ -647,6 +893,104 @@ func ircIsWelcome(line string) bool {
 
 	return len(fields) >= 2 && fields[1] == "001"
 }
+
+// ircIdentifyResult classifies line as the answer to NickServ IDENTIFY: done
+// is true for RPL_LOGGEDIN (900) / a NickServ NOTICE confirming the login (ok)
+// and for ERR_NICKLOCKED / SASL failures / a NickServ rejection (not ok).
+func ircIdentifyResult(line string) (done, ok bool) {
+	if !strings.HasPrefix(line, ":") {
+		return false, false
+	}
+
+	fields := strings.SplitN(line, " ", 4)
+	if len(fields) < 2 {
+		return false, false
+	}
+
+	switch fields[1] {
+	case "900", "903":
+		return true, true
+	case "902", "904":
+		return true, false
+	case "NOTICE":
+	default:
+		return false, false
+	}
+
+	if !logger.HasPrefixI(fields[0], ":NickServ!") || len(fields) < 4 {
+		return false, false
+	}
+
+	text := strings.ToLower(fields[3])
+	for _, s := range []string{"you are now identified", "you are now logged in", "password accepted", "you are now recognized"} {
+		if strings.Contains(text, s) {
+			return true, true
+		}
+	}
+
+	for _, s := range []string{"invalid password", "password incorrect", "incorrect password", "is not registered", "isn't registered", "not a registered"} {
+		if strings.Contains(text, s) {
+			return true, false
+		}
+	}
+
+	return false, false
+}
+
+// ircIsNickInUse reports whether line rejects the requested nick
+// (ERR_NICKNAMEINUSE 433 / ERR_NICKCOLLISION 436).
+func ircIsNickInUse(line string) bool {
+	if !strings.HasPrefix(line, ":") {
+		return false
+	}
+
+	fields := strings.SplitN(line, " ", 3)
+
+	return len(fields) >= 2 && (fields[1] == "433" || fields[1] == "436")
+}
+
+// stripIRCFormatting removes mIRC bold/colour/italic/underline/reverse/reset
+// control codes, which announce bots commonly use and which would otherwise
+// sit between the words an announce regex expects.
+func stripIRCFormatting(s string) string {
+	if strings.IndexFunc(s, func(r rune) bool { return r < 0x20 }) < 0 {
+		return s
+	}
+
+	var b strings.Builder
+
+	b.Grow(len(s))
+
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case 0x02, 0x0F, 0x11, 0x16, 0x1D, 0x1E, 0x1F:
+		case 0x03: // colour: \x03[fg[,bg]] with up to two digits each
+			fg := ircColorDigits(s, i+1)
+			i += fg
+
+			if fg > 0 && i+2 < len(s) && s[i+1] == ',' && isASCIIDigit(s[i+2]) {
+				i++
+				i += ircColorDigits(s, i+1)
+			}
+		default:
+			b.WriteByte(c)
+		}
+	}
+
+	return b.String()
+}
+
+// ircColorDigits counts the colour-number digits (at most two) at s[from:].
+func ircColorDigits(s string, from int) int {
+	n := 0
+	for n < 2 && from+n < len(s) && isASCIIDigit(s[from+n]) {
+		n++
+	}
+
+	return n
+}
+
+func isASCIIDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // ircMessage holds the parsed parts of a PRIVMSG line.
 type ircMessage struct {

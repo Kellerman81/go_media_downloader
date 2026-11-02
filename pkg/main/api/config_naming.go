@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -76,6 +77,8 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 		html.Form(
 			html.Class("config-form"),
 			html.ID("namingTestForm"),
+			// The shared Choices.js dropdown init reads its CSRF token from here.
+			html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
 
 			html.Div(
 				html.Class("row"),
@@ -118,58 +121,39 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 					html.P(
 						html.Class("text-muted"),
 						gomponents.Text(
-							"Select existing media from your database to test naming conventions:",
+							"Search for existing media from the selected media config to test naming conventions:",
 						),
 					),
 
 					html.Div(
 						html.ID("movieFields"),
-						html.Style("display: block;"),
-						renderFormGroup("naming", map[string]string{
-							"MovieID": "Enter the database ID of an existing movie",
-						}, map[string]string{
-							"MovieID": "Movie ID",
-						}, "MovieID", "number", "1", nil),
+						searchItemSelect("naming_MovieID", "Movie", "movies", "-- Select Movie --", "naming_ConfigKey"),
 					),
-
 					html.Div(
 						html.ID("serieFields"),
 						html.Style("display: none;"),
-						renderFormGroup("naming", map[string]string{
-							"SerieID": "Enter the database ID of an existing TV series",
-						}, map[string]string{
-							"SerieID": "Series ID",
-						}, "SerieID", "number", "1", nil),
+						searchItemSelect("naming_SerieID", "Series", "series", "-- Select Series --", "naming_ConfigKey"),
 					),
-
 					html.Div(
 						html.ID("bookFields"),
 						html.Style("display: none;"),
-						renderFormGroup("naming", map[string]string{
-							"BookID": "Enter the database ID of an existing book (books.id)",
-						}, map[string]string{
-							"BookID": "Book ID",
-						}, "BookID", "number", "1", nil),
+						searchItemSelect("naming_BookID", "Book", "books", "-- Select Book --", "naming_ConfigKey"),
 					),
-
 					html.Div(
 						html.ID("audiobookFields"),
 						html.Style("display: none;"),
-						renderFormGroup("naming", map[string]string{
-							"AudiobookID": "Enter the database ID of an existing audiobook (audiobooks.id)",
-						}, map[string]string{
-							"AudiobookID": "Audiobook ID",
-						}, "AudiobookID", "number", "1", nil),
+						searchItemSelect(
+							"naming_AudiobookID",
+							"Audiobook",
+							"audiobooks",
+							"-- Select Audiobook --",
+							"naming_ConfigKey",
+						),
 					),
-
 					html.Div(
 						html.ID("musicFields"),
 						html.Style("display: none;"),
-						renderFormGroup("naming", map[string]string{
-							"AlbumID": "Enter the database ID of an existing album (albums.id)",
-						}, map[string]string{
-							"AlbumID": "Album ID",
-						}, "AlbumID", "number", "1", nil),
+						searchItemSelect("naming_AlbumID", "Album", "albums", "-- Select Album --", "naming_ConfigKey"),
 					),
 				),
 			),
@@ -235,7 +219,7 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 					html.Class("mb-3 list-unstyled"),
 					html.Li(
 						html.Class("mb-2"),
-						gomponents.Text("1. Select the media type (Movie or TV Series)"),
+						gomponents.Text("1. Select the media type"),
 					),
 					html.Li(
 						html.Class("mb-2"),
@@ -250,7 +234,7 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 					html.Li(
 						html.Class("mb-2"),
 						gomponents.Text(
-							"4. Provide the database ID of an existing movie or series",
+							"4. Search for and select an existing item of that media config",
 						),
 					),
 					html.Li(
@@ -275,7 +259,7 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 						html.Div(
 							html.Strong(html.Style("color: #0d6efd;"), gomponents.Text("Note: ")),
 							gomponents.Text(
-								"The movie or series ID must exist in your database. You can find these IDs in the database management interface.",
+								"Only items on the lists of the selected media config are offered.",
 							),
 						),
 					),
@@ -283,22 +267,52 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 			),
 		),
 
-		// Toggle which ID field is shown based on the selected media type.
+		// Show the item picker of the selected media type, limit Media Config to
+		// that type, and rescope the pickers when the config changes.
 		html.Script(gomponents.Raw(`
 			(function(){
+				var pickers = {movie: 'naming_MovieID', serie: 'naming_SerieID', book: 'naming_BookID', audiobook: 'naming_AudiobookID', music: 'naming_AlbumID'};
 				function show(id,on){var e=document.getElementById(id); if(e) e.style.display = on ? '' : 'none';}
-				function upd(){
-					var sel=document.getElementById('naming_MediaType'); if(!sel) return;
-					var t=sel.value;
-					show('movieFields', t==='movie');
-					show('serieFields', t==='serie');
-					show('bookFields', t==='book');
-					show('audiobookFields', t==='audiobook');
-					show('musicFields', t==='music');
+				function filterConfigs(type, cfg){
+					var first=null, keep=false;
+					Array.from(cfg.options).forEach(function(opt){
+						if (!opt.value) { return; }
+						var match = opt.value.indexOf(type + '_') === 0;
+						opt.hidden = !match;
+						opt.disabled = !match;
+						if (match) {
+							if (first === null) first = opt.value;
+							if (opt.value === cfg.value) keep = true;
+						}
+					});
+					if (!keep) {
+						cfg.value = first || '';
+						cfg.dispatchEvent(new Event('change'));
+					}
 				}
-				var sel=document.getElementById('naming_MediaType');
-				if(sel){ sel.addEventListener('change', upd); upd(); }
-				else { document.addEventListener('DOMContentLoaded', function(){ var s=document.getElementById('naming_MediaType'); if(s){ s.addEventListener('change', upd); upd(); } }); }
+				function reloadPickers(){
+					Object.keys(pickers).forEach(function(t){
+						var el=document.getElementById(pickers[t]);
+						if (el && typeof el.choicesReload === 'function') { el.choicesReload(); }
+					});
+				}
+				function init(){
+					var sel=document.getElementById('naming_MediaType'), cfg=document.getElementById('naming_ConfigKey');
+					if (!sel) return;
+					function upd(){
+						var t=sel.value;
+						show('movieFields', t==='movie');
+						show('serieFields', t==='serie');
+						show('bookFields', t==='book');
+						show('audiobookFields', t==='audiobook');
+						show('musicFields', t==='music');
+						if (cfg) filterConfigs(t, cfg);
+					}
+					sel.addEventListener('change', upd);
+					if (cfg) cfg.addEventListener('change', reloadPickers);
+					upd();
+				}
+				if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
 			})();
 		`)),
 	)
@@ -310,7 +324,7 @@ func renderNamingTestPage(csrfToken string) gomponents.Node {
 // result. All three types use GenerateNamingTemplate keyed by their db id.
 func namingTestByDBID(c *gin.Context, cfg apiNameInput, idStr, perListTable, fkColumn string) {
 	if idStr == "" {
-		c.String(200, renderAlert("Please enter an ID", "warning"))
+		c.String(200, renderAlert("Please select an item", "warning"))
 		return
 	}
 
@@ -388,9 +402,34 @@ func namingTestByDBID(c *gin.Context, cfg apiNameInput, idStr, perListTable, fkC
 	s.GenerateNamingTemplate(&o, m, &dbid)
 
 	c.String(200, renderNamingResults(
-		map[string]any{"foldername": o.Foldername, "filename": o.Filename, "m": m},
-		cfg.GroupType, cfg.CfgMedia, cfg.FilePath, 0, 0,
+		map[string]any{
+			"foldername":    o.Foldername,
+			"filename":      o.Filename,
+			"m":             m,
+			"complete_path": namingCompletePath(cfgp, rootpath, &o, cfg.FilePath),
+		},
+		cfg.GroupType, cfg.CfgMedia, cfg.FilePath, namingIDLabel(cfg.GroupType), id,
 	))
+}
+
+// namingPreviewProbe is the read-only part of Organizer.ParseFileAdditional:
+// quality priorities plus the video probe that feeds {{.Source.*}} tokens.
+// ParseFileAdditional itself deletes the source file when the probe finds no
+// tracks, which a preview must never do. A failed probe still leaves the
+// filename-parsed values usable, so its error is not fatal here.
+func namingPreviewProbe(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	m *database.ParseInfo,
+	path string,
+	cfgQuality *config.QualityConfig,
+) {
+	parser.GetPriorityMapQual(m, cfgp, cfgQuality, true, true)
+
+	m.File = path
+	if err := parser.ParseVideoFile(ctx, m, cfgQuality); err != nil {
+		logger.Logtype("debug", 0).Err(err).Str(logger.StrFile, path).Msg("naming preview probe")
+	}
 }
 
 // HandleNamingTest handles naming convention test requests.
@@ -441,7 +480,7 @@ func HandleNamingTest(c *gin.Context) {
 	if mediaType == "movie" {
 		movieIDStr := c.PostForm("naming_MovieID")
 		if movieIDStr == "" {
-			c.String(200, renderAlert("Please enter a Movie ID", "warning"))
+			c.String(200, renderAlert("Please select a movie", "warning"))
 			return
 		}
 
@@ -453,7 +492,7 @@ func HandleNamingTest(c *gin.Context) {
 	} else {
 		serieIDStr := c.PostForm("naming_SerieID")
 		if serieIDStr == "" {
-			c.String(200, renderAlert("Please enter a Series ID", "warning"))
+			c.String(200, renderAlert("Please select a series", "warning"))
 			return
 		}
 
@@ -487,15 +526,21 @@ func HandleNamingTest(c *gin.Context) {
 			return
 		}
 
+		if len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
+			c.String(200, renderAlert("Media config has no data/data_import templates", "danger"))
+			return
+		}
+
 		s := structure.NewStructure(
 			cfgp,
-			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
-			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath, false, false, 0)
-		// defer s.Close()
+			cfgp.DataImport[0].TemplatePath,
+			cfgp.Data[0].TemplatePath, false, false, 0)
 		if s == nil {
 			c.String(200, renderAlert("Movie Structure failed", "danger"))
 			return
 		}
+
+		defer s.Close()
 
 		to := filepath.Dir(cfg.FilePath)
 
@@ -523,22 +568,23 @@ func HandleNamingTest(c *gin.Context) {
 		}
 
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(c, &orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		namingPreviewProbe(c, cfgp, m, cfg.FilePath, cfgp.Lists[m.ListID].CfgQuality)
 
 		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
 		c.String(
 			200,
 			renderNamingResults(
 				map[string]any{
-					"foldername": orgadata2.Foldername,
-					"filename":   orgadata2.Filename,
-					"m":          m,
+					"foldername":    orgadata2.Foldername,
+					"filename":      orgadata2.Filename,
+					"m":             m,
+					"complete_path": namingCompletePath(cfgp, movie.Rootpath, &orgadata2, cfg.FilePath),
 				},
 				cfg.GroupType,
 				cfg.CfgMedia,
 				cfg.FilePath,
+				namingIDLabel(cfg.GroupType),
 				cfg.MovieID,
-				cfg.SerieID,
 			),
 		)
 	} else {
@@ -558,10 +604,15 @@ func HandleNamingTest(c *gin.Context) {
 			return
 		}
 
+		if len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
+			c.String(200, renderAlert("Media config has no data/data_import templates", "danger"))
+			return
+		}
+
 		s := structure.NewStructure(
 			cfgp,
-			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
-			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath,
+			cfgp.DataImport[0].TemplatePath,
+			cfgp.Data[0].TemplatePath,
 			false, false, 0,
 		)
 		if s == nil {
@@ -569,7 +620,8 @@ func HandleNamingTest(c *gin.Context) {
 			return
 		}
 
-		// defer s.Close()
+		defer s.Close()
+
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
@@ -578,7 +630,7 @@ func HandleNamingTest(c *gin.Context) {
 		orgadata2.Folder = to
 		orgadata2.Rootpath = series.Rootpath
 
-		m := parser.ParseFile(
+		m := parser_v2.ParseFile(
 			cfg.FilePath,
 			true,
 			true,
@@ -596,42 +648,92 @@ func HandleNamingTest(c *gin.Context) {
 		}
 
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(c, &orgadata2, m, 0, false, false, s.Cfgp.Lists[m.ListID].CfgQuality)
+		namingPreviewProbe(c, cfgp, m, cfg.FilePath, cfgp.Lists[m.ListID].CfgQuality)
 
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID
-		s.GetSeriesEpisodes(&orgadata2, m, true, s.Cfgp.Lists[orgadata2.Listid].CfgQuality)
-
-		var firstepiid uint
-		for _, entry := range m.Episodes {
-			firstepiid = entry.Num1
-			break
+		// Resolve episodes like PreviewOrganizeFile does: GetSeriesEpisodes would
+		// clear them (ErrNotAllowed) when an existing file has a better quality,
+		// leaving the preview with an unexplained empty name.
+		if err := m.Getepisodestoimport(); err != nil || len(m.Episodes) == 0 {
+			c.String(200, renderAlert("No matching episode found for this file in the selected series", "danger"))
+			return
 		}
 
-		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid)
+		s.GenerateNamingTemplate(&orgadata2, m, &m.Episodes[0].Num1)
 		c.String(
 			200,
 			renderNamingResults(
 				map[string]any{
-					"foldername": orgadata2.Foldername,
-					"filename":   orgadata2.Filename,
-					"m":          m,
+					"foldername":    orgadata2.Foldername,
+					"filename":      orgadata2.Filename,
+					"m":             m,
+					"complete_path": namingCompletePath(cfgp, series.Rootpath, &orgadata2, cfg.FilePath),
 				},
 				cfg.GroupType,
 				cfg.CfgMedia,
 				cfg.FilePath,
-				cfg.MovieID,
+				namingIDLabel(cfg.GroupType),
 				cfg.SerieID,
 			),
 		)
 	}
 }
 
+// namingIDLabel names the id the naming test was run with for each media type.
+func namingIDLabel(mediaType string) string {
+	switch mediaType {
+	case "movie":
+		return "Movie ID"
+	case "book":
+		return "Book ID"
+	case "audiobook":
+		return "Audiobook ID"
+	case "music":
+		return "Album ID"
+	default:
+		return "Series ID"
+	}
+}
+
+// namingCompletePath builds the absolute target file path the organizer
+// would use (setTargetPath without presort): music/audiobooks use a non-default
+// rootpath as the full album folder, other types append the folder name.
+func namingCompletePath(
+	cfgp *config.MediaTypeConfig,
+	rootpath string,
+	o *structure.Organizerdata,
+	sourceFile string,
+) string {
+	if o.Filename == "" {
+		return ""
+	}
+
+	var targetRoot string
+	if pathCfg := config.GetSettingsPath(cfgp.Data[0].TemplatePath); pathCfg != nil {
+		targetRoot = pathCfg.Path
+	}
+
+	var folder string
+	switch {
+	case rootpath != "" && rootpath != targetRoot &&
+		(cfgp.IsType == config.MediaTypeMusic || cfgp.IsType == config.MediaTypeAudiobook):
+		folder = rootpath
+	case rootpath != "" && rootpath != targetRoot:
+		folder = filepath.Join(rootpath, o.Foldername)
+	default:
+		folder = filepath.Join(targetRoot, o.Foldername)
+	}
+
+	return filepath.Join(folder, o.Filename+filepath.Ext(sourceFile))
+}
+
 // renderNamingResults renders the naming test results.
 func renderNamingResults(
 	result map[string]any,
 	mediaType, configKey, filePath string,
-	movieID, serieID int,
+	idLabel string,
+	id int,
 ) string {
 	// Check if there's an error in the result
 	if errMsg, ok := result["error"]; ok {
@@ -700,19 +802,10 @@ func renderNamingResults(
 		html.Tr(html.Td(gomponents.Text("Media Type:")), html.Td(gomponents.Text(mediaType))),
 		html.Tr(html.Td(gomponents.Text("Config Used:")), html.Td(gomponents.Text(configKey))),
 		html.Tr(html.Td(gomponents.Text("File Path:")), html.Td(gomponents.Text(filePath))),
-		func() gomponents.Node {
-			if mediaType == "movie" {
-				return html.Tr(
-					html.Td(gomponents.Text("Movie ID:")),
-					html.Td(gomponents.Text(fmt.Sprintf("%d", movieID))),
-				)
-			}
-
-			return html.Tr(
-				html.Td(gomponents.Text("Series ID:")),
-				html.Td(gomponents.Text(fmt.Sprintf("%d", serieID))),
-			)
-		}(),
+		html.Tr(
+			html.Td(gomponents.Text(idLabel+":")),
+			html.Td(gomponents.Text(strconv.Itoa(id))),
+		),
 		html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
 
 		html.Tr(
@@ -740,6 +833,10 @@ func renderNamingResults(
 			html.Td(gomponents.Text("")),
 		),
 		html.Tr(html.Td(gomponents.Text("Complete Path:")), html.Td(gomponents.Text(func() string {
+			if completePath, _ := result["complete_path"].(string); completePath != "" {
+				return completePath
+			}
+
 			if foldername != "" && filename != "" {
 				return foldername + "/" + filename
 			}

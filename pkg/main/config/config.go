@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -82,25 +83,33 @@ func LoadCfgDB(reload bool) error {
 	return Loadallsettings(reload)
 }
 
-// Loadallsettings loads all configuration settings from the TOML configuration file.
-// It performs a thread-safe reload of configuration by reading the TOML file,
-// clearing existing settings, and repopulating them with fresh data.
-// The reload parameter controls whether scheduler settings are preserved during reload.
-func Loadallsettings(reload bool) error {
+// Loadallsettings loads all configuration settings from the TOML configuration file
+// and atomically publishes the resulting snapshot. It holds the config mutex so
+// file reloads, UI updates and resets never interleave their builds/stores.
+// The reload flag is kept for callers; every section, schedulers included, is
+// always rebuilt from the file.
+func Loadallsettings(_ bool) error {
+	mu.Lock()
+	defer mu.Unlock()
+
 	defaultConfig, err := Readconfigtoml()
 	if err != nil {
 		fmt.Println(err) //nolint:forbidigo // logger not initialized yet during config loading
 		return err
 	}
 
-	// Build snapshot from default config
-	snapshot, err := buildConfigSnapshot(defaultConfig, reload)
+	snapshot, err := buildConfigSnapshot(defaultConfig)
 	if err != nil {
 		fmt.Println(err) //nolint:forbidigo // logger not initialized yet
 		return err
 	}
 
-	// Store the default snapshot
+	// At startup the logger is not initialized yet and would drop these.
+	for _, is := range snapshot.issues {
+		fmt.Println("Config warning:", is.msg) //nolint:forbidigo // logger may not be initialized yet
+	}
+
+	logIssues(snapshot.issues)
 	configSnapshot.Store(snapshot)
 
 	return nil
@@ -133,42 +142,45 @@ func setupMediaTypeConfig(
 	prefix string,
 	isMediaType uint,
 	snapshot *ConfigSnapshot,
+	refs *refResolver,
 ) {
+	owner := prefix + mediaConfig.Name
+
 	// Initialize maps
 	mediaConfig.DataMap = make(map[int]*MediaDataConfig, len(mediaConfig.Data))
 	mediaConfig.DataImportMap = make(map[int]*MediaDataImportConfig, len(mediaConfig.DataImport))
 
 	// Setup Data configs
 	for idx2 := range mediaConfig.Data {
-		mediaConfig.Data[idx2].CfgPath = snapshot.Path[mediaConfig.Data[idx2].TemplatePath]
-		if isMediaType == 0 && mediaConfig.Data[idx2].AddFoundList != "" {
-			mediaConfig.Data[idx2].AddFoundListCfg = snapshot.List[mediaConfig.Data[idx2].AddFoundList]
-		}
-
-		mediaConfig.DataMap[idx2] = &mediaConfig.Data[idx2]
+		data := &mediaConfig.Data[idx2]
+		data.CfgPath = resolveRef(refs, snapshot.Path, "path", data.TemplatePath, owner)
+		mediaConfig.DataMap[idx2] = data
 	}
 
 	// Setup DataImport configs
 	for idx2 := range mediaConfig.DataImport {
-		mediaConfig.DataImport[idx2].CfgPath = snapshot.Path[mediaConfig.DataImport[idx2].TemplatePath]
-		mediaConfig.DataImportMap[idx2] = &mediaConfig.DataImport[idx2]
+		data := &mediaConfig.DataImport[idx2]
+		data.CfgPath = resolveRef(refs, snapshot.Path, "path", data.TemplatePath, owner)
+		mediaConfig.DataImportMap[idx2] = data
 	}
 
 	// Setup Notification configs
 	for idx2 := range mediaConfig.Notification {
-		mediaConfig.Notification[idx2].CfgNotification = snapshot.Notification[mediaConfig.Notification[idx2].MapNotification]
+		n := &mediaConfig.Notification[idx2]
+		n.CfgNotification = resolveRef(refs, snapshot.Notification, "notification", n.MapNotification, owner)
 	}
 
 	// Setup main configs
-	mediaConfig.CfgQuality = snapshot.Quality[mediaConfig.TemplateQuality]
-	mediaConfig.CfgScheduler = snapshot.Scheduler[mediaConfig.TemplateScheduler]
-	mediaConfig.NamePrefix = prefix + mediaConfig.Name
+	mediaConfig.CfgQuality = resolveRef(refs, snapshot.Quality, "quality", mediaConfig.TemplateQuality, owner)
+	mediaConfig.CfgScheduler = resolveRef(refs, snapshot.Scheduler, "scheduler", mediaConfig.TemplateScheduler, owner)
+	mediaConfig.NamePrefix = owner
 	mediaConfig.IsType = isMediaType
 
 	// Setup Lists maps and related fields
 	mediaConfig.ListsMap = make(map[string]*MediaListsConfig, len(mediaConfig.Lists))
 
 	mediaConfig.ListsMapIdx = make(map[string]int, len(mediaConfig.Lists))
+	mediaConfig.ListsQu = ""
 	if len(mediaConfig.Lists) >= 1 {
 		mediaConfig.ListsQu = strings.Repeat(",?", len(mediaConfig.Lists)-1)
 	}
@@ -191,11 +203,14 @@ func setupMediaListConfig(
 	mediaConfig *MediaTypeConfig,
 	idxsub int,
 	snapshot *ConfigSnapshot,
+	refs *refResolver,
 ) {
-	listConfig.CfgList = snapshot.List[listConfig.TemplateList]
-	listConfig.CfgQuality = snapshot.Quality[listConfig.TemplateQuality]
-	listConfig.CfgScheduler = snapshot.Scheduler[listConfig.TemplateScheduler]
+	owner := mediaConfig.NamePrefix + " list " + listConfig.Name
+	listConfig.CfgList = resolveRef(refs, snapshot.List, "list", listConfig.TemplateList, owner)
+	listConfig.CfgQuality = resolveRef(refs, snapshot.Quality, "quality", listConfig.TemplateQuality, owner)
+	listConfig.CfgScheduler = resolveRef(refs, snapshot.Scheduler, "scheduler", listConfig.TemplateScheduler, owner)
 
+	listConfig.IgnoreMapListsQu = ""
 	if len(listConfig.IgnoreMapLists) >= 1 {
 		listConfig.IgnoreMapListsQu = strings.Repeat(",?", len(listConfig.IgnoreMapLists)-1)
 	}
@@ -203,20 +218,23 @@ func setupMediaListConfig(
 	listConfig.IgnoreMapListsLen = len(listConfig.IgnoreMapLists)
 	listConfig.ReplaceMapListsLen = len(listConfig.ReplaceMapLists)
 
-	// Add quality to ListsQualities if not already present
+	// Unnamed and duplicate (case-insensitive) lists stay in Lists so the file
+	// round-trips, but are not indexed by name.
+	if !putFirst(mediaConfig.ListsMap, listConfig.Name, listConfig) {
+		return
+	}
+
+	mediaConfig.ListsMapIdx[listConfig.Name] = idxsub
+
 	if !slices.Contains(mediaConfig.ListsQualities, listConfig.TemplateQuality) {
 		mediaConfig.ListsQualities = append(mediaConfig.ListsQualities, listConfig.TemplateQuality)
 	}
-
-	// Setup maps
-	mediaConfig.ListsMap[listConfig.Name] = listConfig
-	mediaConfig.ListsMapIdx[listConfig.Name] = idxsub
 }
 
 // setupMediaConfigLists processes all lists for a media configuration.
-func setupMediaConfigLists(mediaConfig *MediaTypeConfig, snapshot *ConfigSnapshot) {
+func setupMediaConfigLists(mediaConfig *MediaTypeConfig, snapshot *ConfigSnapshot, refs *refResolver) {
 	for idxsub := range mediaConfig.Lists {
-		setupMediaListConfig(&mediaConfig.Lists[idxsub], mediaConfig, idxsub, snapshot)
+		setupMediaListConfig(&mediaConfig.Lists[idxsub], mediaConfig, idxsub, snapshot, refs)
 	}
 }
 
@@ -263,95 +281,45 @@ func populateConfigsInMap(configMap map[string]any,
 	}
 }
 
-// getTemplateOptionsForType returns template options for a specific config type.
+// namesWithEmpty returns "" followed by the entry names in config-file order.
+func namesWithEmpty[T any](items []T, name func(*T) string) []string {
+	options := make([]string, 0, len(items)+1)
+	options = append(options, "")
+	for i := range items {
+		options = append(options, name(&items[i]))
+	}
+
+	return options
+}
+
+// getTemplateOptionsForType returns template options for a specific config
+// type, in config-file order so dropdowns are stable.
 func getTemplateOptionsForType(configType string) []string {
 	currentSnapshot := getCurrentConfig()
 	if currentSnapshot == nil {
 		return nil
 	}
 
-	var options []string
+	t := &currentSnapshot.cachetoml
 	switch configType {
 	case "downloader":
-		options = make([]string, 0, len(currentSnapshot.Downloader)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Downloader {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Downloader, func(c *DownloaderConfig) string { return c.Name })
 	case "indexer":
-		options = make([]string, 0, len(currentSnapshot.Indexer)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Indexer {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Indexers, func(c *IndexersConfig) string { return c.Name })
 	case "list":
-		options = make([]string, 0, len(currentSnapshot.List)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.List {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Lists, func(c *ListsConfig) string { return c.Name })
 	case "notification":
-		options = make([]string, 0, len(currentSnapshot.Notification)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Notification {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Notification, func(c *NotificationConfig) string { return c.Name })
 	case "path":
-		options = make([]string, 0, len(currentSnapshot.Path)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Path {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Paths, func(c *PathsConfig) string { return c.Name })
 	case "quality":
-		options = make([]string, 0, len(currentSnapshot.Quality)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Quality {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Quality, func(c *QualityConfig) string { return c.Name })
 	case "regex":
-		options = make([]string, 0, len(currentSnapshot.Regex)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Regex {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Regex, func(c *RegexConfig) string { return c.Name })
 	case "scheduler":
-		options = make([]string, 0, len(currentSnapshot.Scheduler)+1)
-
-		options = append(options, "")
-		for _, cfg := range currentSnapshot.Scheduler {
-			options = append(options, cfg.Name)
-		}
-
+		return namesWithEmpty(t.Scheduler, func(c *SchedulerConfig) string { return c.Name })
 	default:
 		return nil
-	}
-
-	return options
-}
-
-// UpdateCfg updates the application configuration settings based on the
-// provided Conf struct. It iterates through the configIn slice, checks
-// the prefix of the Name field to determine the config type, casts the
-// Data field to the appropriate config struct, and saves the config
-// values to the respective global settings maps. This allows the config
-// system to be extended by adding new config types.
-func UpdateCfg(configIn []Conf) {
-	for _, val := range configIn {
-		UpdateCfgEntry(val)
 	}
 }
 
@@ -390,574 +358,346 @@ func GetCfgAllJson() map[string]any {
 	return GetCfgAll()
 }
 
+// confData extracts the typed payload of a Conf, accepting a value or a pointer.
+func confData[T any](val Conf) (T, error) {
+	switch d := val.Data.(type) {
+	case T:
+		return d, nil
+	case *T:
+		if d != nil {
+			return *d, nil
+		}
+	}
+
+	var zero T
+
+	return zero, fmt.Errorf("config entry %q: expected %T, got %T", val.Name, zero, val.Data)
+}
+
+func setEntry[T any](dst *T, val Conf) error {
+	data, err := confData[T](val)
+	if err != nil {
+		return err
+	}
+
+	*dst = data
+
+	return nil
+}
+
+// upsertEntry replaces the entry with the same (case-insensitive) name or
+// appends it. Callers operate on a cloned MainConfig, so in-place assignment
+// never touches a published snapshot.
+func upsertEntry[T any](s *[]T, val Conf, name func(*T) string) error {
+	data, err := confData[T](val)
+	if err != nil {
+		return err
+	}
+
+	for i := range *s {
+		if strings.EqualFold(name(&(*s)[i]), name(&data)) {
+			(*s)[i] = data
+			return nil
+		}
+	}
+
+	*s = append(*s, data)
+
+	return nil
+}
+
+// removeEntry builds a new slice without the named entry.
+func removeEntry[T any](s *[]T, entry string, name func(*T) string) error {
+	for i := range *s {
+		if !strings.EqualFold(name(&(*s)[i]), entry) {
+			continue
+		}
+
+		out := make([]T, 0, len(*s)-1)
+		out = append(out, (*s)[:i]...)
+		*s = append(out, (*s)[i+1:]...)
+
+		return nil
+	}
+
+	return fmt.Errorf("config entry %q: %w", entry, logger.ErrNotFound)
+}
+
+func mediaName(c *MediaTypeConfig) string { return c.Name }
+
+// mediaSliceFor maps a media entry key (e.g. "movie_EN") to its slice and prefix.
+func mediaSliceFor(t *MainConfig, name string) (*[]MediaTypeConfig, string) {
+	switch {
+	case strings.HasPrefix(name, logger.StrSerie):
+		return &t.Media.Series, "serie_"
+	case strings.HasPrefix(name, logger.StrMovie):
+		return &t.Media.Movies, "movie_"
+	case strings.HasPrefix(name, "book_"):
+		return &t.Media.Books, "book_"
+	case strings.HasPrefix(name, "audiobook_"):
+		return &t.Media.AudioBooks, "audiobook_"
+	case strings.HasPrefix(name, "music_"):
+		return &t.Media.Music, "music_"
+	}
+
+	return nil, ""
+}
+
 // updateTomlEntry updates a specific entry in the MainConfig TOML structure.
-func updateTomlEntry(toml *MainConfig, val Conf) {
+func updateTomlEntry(t *MainConfig, val Conf) error {
 	switch {
 	case strings.HasPrefix(val.Name, "general"):
-		if data, ok := val.Data.(GeneralConfig); ok {
-			toml.General = data
-		}
-
+		return setEntry(&t.General, val)
 	case strings.HasPrefix(val.Name, "downloader_"):
-		data, ok := val.Data.(DownloaderConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the downloader in the slice
-		found := false
-		for i := range toml.Downloader {
-			if toml.Downloader[i].Name != data.Name {
-				continue
-			}
-
-			toml.Downloader[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Downloader = append(toml.Downloader, data)
-		}
-
+		return upsertEntry(&t.Downloader, val, func(c *DownloaderConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, logger.StrImdb):
-		if data, ok := val.Data.(ImdbConfig); ok {
-			toml.Imdbindexer = data
-		}
-
+		return setEntry(&t.Imdbindexer, val)
 	case strings.HasPrefix(val.Name, "indexer"):
-		data, ok := val.Data.(IndexersConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the indexer in the slice
-		found := false
-		for i := range toml.Indexers {
-			if toml.Indexers[i].Name != data.Name {
-				continue
-			}
-
-			toml.Indexers[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Indexers = append(toml.Indexers, data)
-		}
-
+		return upsertEntry(&t.Indexers, val, func(c *IndexersConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, "list"):
-		data, ok := val.Data.(ListsConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the list in the slice
-		found := false
-		for i := range toml.Lists {
-			if toml.Lists[i].Name != data.Name {
-				continue
-			}
-
-			toml.Lists[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Lists = append(toml.Lists, data)
-		}
-
-	case strings.HasPrefix(val.Name, logger.StrSerie):
-		data, ok := val.Data.(MediaTypeConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the series in the slice
-		found := false
-		for i := range toml.Media.Series {
-			if toml.Media.Series[i].Name != data.Name {
-				continue
-			}
-
-			toml.Media.Series[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Media.Series = append(toml.Media.Series, data)
-		}
-
-	case strings.HasPrefix(val.Name, logger.StrMovie):
-		data, ok := val.Data.(MediaTypeConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the movie in the slice
-		found := false
-		for i := range toml.Media.Movies {
-			if toml.Media.Movies[i].Name != data.Name {
-				continue
-			}
-
-			toml.Media.Movies[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Media.Movies = append(toml.Media.Movies, data)
-		}
-
+		return upsertEntry(&t.Lists, val, func(c *ListsConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, "notification"):
-		data, ok := val.Data.(NotificationConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the notification in the slice
-		found := false
-		for i := range toml.Notification {
-			if toml.Notification[i].Name != data.Name {
-				continue
-			}
-
-			toml.Notification[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Notification = append(toml.Notification, data)
-		}
-
+		return upsertEntry(&t.Notification, val, func(c *NotificationConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, "path"):
-		data, ok := val.Data.(PathsConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the path in the slice
-		found := false
-		for i := range toml.Paths {
-			if toml.Paths[i].Name != data.Name {
-				continue
-			}
-
-			toml.Paths[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Paths = append(toml.Paths, data)
-		}
-
+		return upsertEntry(&t.Paths, val, func(c *PathsConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, "quality"):
-		data, ok := val.Data.(QualityConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the quality in the slice
-		found := false
-		for i := range toml.Quality {
-			if toml.Quality[i].Name != data.Name {
-				continue
-			}
-
-			toml.Quality[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Quality = append(toml.Quality, data)
-		}
-
+		return upsertEntry(&t.Quality, val, func(c *QualityConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, "regex"):
-		data, ok := val.Data.(RegexConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the regex in the slice
-		found := false
-		for i := range toml.Regex {
-			if toml.Regex[i].Name != data.Name {
-				continue
-			}
-
-			toml.Regex[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Regex = append(toml.Regex, data)
-		}
-
+		return upsertEntry(&t.Regex, val, func(c *RegexConfig) string { return c.Name })
 	case strings.HasPrefix(val.Name, "scheduler"):
-		data, ok := val.Data.(SchedulerConfig)
-		if !ok {
-			break
-		}
-
-		// Find and update the scheduler in the slice
-		found := false
-		for i := range toml.Scheduler {
-			if toml.Scheduler[i].Name != data.Name {
-				continue
-			}
-
-			toml.Scheduler[i] = data
-			found = true
-
-			break
-		}
-
-		// If not found, append it
-		if !found {
-			toml.Scheduler = append(toml.Scheduler, data)
-		}
-	}
-}
-
-// UpdateCfgEntry updates the application configuration settings
-// based on the provided Conf struct. It saves the config values to
-// the config database.
-func UpdateCfgEntry(configIn Conf) error {
-	// Acquire config lock BEFORE opening database to maintain consistent lock ordering
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Get current snapshot
-	currentSnapshot := getCurrentConfig()
-	if currentSnapshot == nil {
-		return &ConfigurationError{
-			Type:    "update",
-			Message: "no configuration snapshot available",
-		}
+		return upsertEntry(&t.Scheduler, val, func(c *SchedulerConfig) string { return c.Name })
 	}
 
-	// Create a copy of the TOML config to modify
-	updatedToml := currentSnapshot.cachetoml
-
-	// Update the specific entry in the TOML structure
-	updateTomlEntry(&updatedToml, configIn)
-
-	// Marshal to TOML and write to file
-	cnt, err := toml.Marshal(&updatedToml)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error marshaling config")
-		return err
+	if media, _ := mediaSliceFor(t, val.Name); media != nil {
+		return upsertEntry(media, val, mediaName)
 	}
 
-	err = os.WriteFile(Configfile, cnt, 0o600)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error writing config file")
-		return err
-	}
-
-	// Rebuild the snapshot from the updated TOML to fix all pointer links
-	newSnapshot, err := buildConfigSnapshot(&updatedToml, true)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error rebuilding config snapshot")
-		return err
-	}
-
-	// Update the global snapshot atomically
-	configSnapshot.Store(newSnapshot)
-
-	logger.Logtype(logger.StatusInfo, 0).
-		Str("entry", configIn.Name).
-		Msg("Configuration entry updated, snapshot rebuilt, and written to file")
-
-	return nil
-}
-
-func UpdateCfgEntryAny(configIn any) error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Get current snapshot
-	currentSnapshot := getCurrentConfig()
-	if currentSnapshot == nil {
-		return &ConfigurationError{
-			Type:    "update",
-			Message: "no configuration snapshot available",
-		}
-	}
-
-	// Create a copy of the TOML config to modify
-	updatedToml := currentSnapshot.cachetoml
-
-	// Update the appropriate field based on type
-	switch data := configIn.(type) {
-	case GeneralConfig:
-		updatedToml.General = data
-	case *GeneralConfig:
-		updatedToml.General = *data
-	case []DownloaderConfig:
-		updatedToml.Downloader = data
-	case ImdbConfig:
-		updatedToml.Imdbindexer = data
-	case *ImdbConfig:
-		updatedToml.Imdbindexer = *data
-	case []IndexersConfig:
-		updatedToml.Indexers = data
-	case []ListsConfig:
-		updatedToml.Lists = data
-	case MediaConfig:
-		updatedToml.Media = data
-	case *MediaConfig:
-		updatedToml.Media = *data
-	case []NotificationConfig:
-		updatedToml.Notification = data
-	case []PathsConfig:
-		updatedToml.Paths = data
-	case []QualityConfig:
-		updatedToml.Quality = data
-	case []RegexConfig:
-		updatedToml.Regex = data
-	case []SchedulerConfig:
-		updatedToml.Scheduler = data
-	}
-
-	// Marshal to TOML and write to file
-	cnt, err := toml.Marshal(&updatedToml)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error marshaling config")
-		return err
-	}
-
-	err = os.WriteFile(Configfile, cnt, 0o600)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error writing config file")
-		return err
-	}
-
-	// Rebuild the snapshot from the updated TOML to fix all pointer links
-	newSnapshot, err := buildConfigSnapshot(&updatedToml, true)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error rebuilding config snapshot")
-		return err
-	}
-
-	// Update the global snapshot atomically
-	configSnapshot.Store(newSnapshot)
-
-	// Update legacy global settings for backward compatibility (we already hold the lock)
-	// updateLegacySettingsNoLock(newSnapshot)
-
-	logger.Logtype(logger.StatusInfo, 0).
-		Msg("Configuration updated, snapshot rebuilt, and written to file")
-
-	return nil
+	return fmt.Errorf("unknown config entry type %q", val.Name)
 }
 
 // deleteTomlEntry removes a specific entry from the MainConfig TOML structure.
-func deleteTomlEntry(toml *MainConfig, name string) {
+func deleteTomlEntry(t *MainConfig, name string) error {
 	switch {
 	case strings.HasPrefix(name, "general"):
-		toml.General = GeneralConfig{}
-
+		t.General = GeneralConfig{}
+		return nil
 	case strings.HasPrefix(name, "downloader_"):
-		// Extract the actual name from the prefix
-		actualName := strings.TrimPrefix(name, "downloader_")
-		// Find and remove from slice
-		for i := range toml.Downloader {
-			if toml.Downloader[i].Name == actualName {
-				toml.Downloader = append(toml.Downloader[:i], toml.Downloader[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Downloader, strings.TrimPrefix(name, "downloader_"),
+			func(c *DownloaderConfig) string { return c.Name })
 	case strings.HasPrefix(name, logger.StrImdb):
-		toml.Imdbindexer = ImdbConfig{}
-
+		t.Imdbindexer = ImdbConfig{}
+		return nil
 	case strings.HasPrefix(name, "indexer"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "indexer_")
-		for i := range toml.Indexers {
-			if toml.Indexers[i].Name == actualName {
-				toml.Indexers = append(toml.Indexers[:i], toml.Indexers[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Indexers, strings.TrimPrefix(name, "indexer_"),
+			func(c *IndexersConfig) string { return c.Name })
 	case strings.HasPrefix(name, "list"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "list_")
-		for i := range toml.Lists {
-			if toml.Lists[i].Name == actualName {
-				toml.Lists = append(toml.Lists[:i], toml.Lists[i+1:]...)
-				break
-			}
-		}
-
-	case strings.HasPrefix(name, logger.StrSerie):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "serie_")
-		for i := range toml.Media.Series {
-			if toml.Media.Series[i].Name == actualName {
-				toml.Media.Series = append(toml.Media.Series[:i], toml.Media.Series[i+1:]...)
-				break
-			}
-		}
-
-	case strings.HasPrefix(name, logger.StrMovie):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "movie_")
-		for i := range toml.Media.Movies {
-			if toml.Media.Movies[i].Name == actualName {
-				toml.Media.Movies = append(toml.Media.Movies[:i], toml.Media.Movies[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Lists, strings.TrimPrefix(name, "list_"),
+			func(c *ListsConfig) string { return c.Name })
 	case strings.HasPrefix(name, "notification"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "notification_")
-		for i := range toml.Notification {
-			if toml.Notification[i].Name == actualName {
-				toml.Notification = append(toml.Notification[:i], toml.Notification[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Notification, strings.TrimPrefix(name, "notification_"),
+			func(c *NotificationConfig) string { return c.Name })
 	case strings.HasPrefix(name, "path"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "path_")
-		for i := range toml.Paths {
-			if toml.Paths[i].Name == actualName {
-				toml.Paths = append(toml.Paths[:i], toml.Paths[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Paths, strings.TrimPrefix(name, "path_"),
+			func(c *PathsConfig) string { return c.Name })
 	case strings.HasPrefix(name, "quality"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "quality_")
-		for i := range toml.Quality {
-			if toml.Quality[i].Name == actualName {
-				toml.Quality = append(toml.Quality[:i], toml.Quality[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Quality, strings.TrimPrefix(name, "quality_"),
+			func(c *QualityConfig) string { return c.Name })
 	case strings.HasPrefix(name, "regex"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "regex_")
-		for i := range toml.Regex {
-			if toml.Regex[i].Name == actualName {
-				toml.Regex = append(toml.Regex[:i], toml.Regex[i+1:]...)
-				break
-			}
-		}
-
+		return removeEntry(&t.Regex, strings.TrimPrefix(name, "regex_"),
+			func(c *RegexConfig) string { return c.Name })
 	case strings.HasPrefix(name, "scheduler"):
-		// Extract the actual name
-		actualName := strings.TrimPrefix(name, "scheduler_")
-		for i := range toml.Scheduler {
-			if toml.Scheduler[i].Name == actualName {
-				toml.Scheduler = append(toml.Scheduler[:i], toml.Scheduler[i+1:]...)
-				break
-			}
-		}
+		return removeEntry(&t.Scheduler, strings.TrimPrefix(name, "scheduler_"),
+			func(c *SchedulerConfig) string { return c.Name })
 	}
+
+	if media, prefix := mediaSliceFor(t, name); media != nil {
+		return removeEntry(media, strings.TrimPrefix(name, prefix), mediaName)
+	}
+
+	return fmt.Errorf("unknown config entry type %q", name)
 }
 
-// DeleteCfgEntry deletes the configuration entry with the given name from
-// the config database and clears the corresponding value in the in-memory
-// config maps. It handles entries for all major configuration categories like
-// general, downloader, indexer etc.
-func DeleteCfgEntry(name string) error {
-	// Acquire config lock BEFORE opening database to maintain consistent lock
-	// ordering - UpdateCfgEntry/UpdateCfgEntryAny already do this; without it,
-	// a concurrent update and delete (e.g. two requests to the external
-	// config API) can race, each reading the same pre-change snapshot and
-	// then overwriting the other's write to Configfile/configSnapshot with
-	// its own, silently discarding whichever change lost the race.
+// applyConfigChange runs mutate on a deep copy of the current TOML, validates
+// it by building a snapshot, and only then writes the file and publishes the
+// snapshot. An invalid change leaves both the file and the live config as-is.
+func applyConfigChange(op, entry string, mutate func(*MainConfig) error) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Get current snapshot
 	currentSnapshot := getCurrentConfig()
 	if currentSnapshot == nil {
 		return &ConfigurationError{
-			Type:    "delete",
+			Type:    op,
 			Message: "no configuration snapshot available",
 		}
 	}
 
-	// Create a copy of the TOML config to modify
-	updatedToml := currentSnapshot.cachetoml
+	candidate := cloneMainConfig(&currentSnapshot.cachetoml)
+	if err := mutate(candidate); err != nil {
+		return &ConfigurationError{Type: op, Message: err.Error(), Cause: err}
+	}
 
-	// Delete the specific entry from the TOML structure
-	deleteTomlEntry(&updatedToml, name)
-
-	// Marshal to TOML and write to file
-	cnt, err := toml.Marshal(&updatedToml)
+	cnt, err := toml.Marshal(candidate)
 	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error marshaling config")
+		logger.Logtype(logger.StatusError, 2).Err(err).Msg("Error marshaling config")
 		return err
 	}
 
-	err = os.WriteFile(Configfile, cnt, 0o600)
+	newSnapshot, err := buildConfigSnapshot(candidate)
 	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error writing config file")
+		logger.Logtype(logger.StatusError, 2).Err(err).Str("entry", entry).Msg("Rejected invalid configuration change")
 		return err
 	}
 
-	// Rebuild the snapshot from the updated TOML to fix all pointer links
-	newSnapshot, err := buildConfigSnapshot(&updatedToml, true)
-	if err != nil {
-		logger.Logtype(logger.StatusError, 1).Err(err).Msg("Error rebuilding config snapshot")
+	// Only problems this change introduces block it; problems already in the
+	// file elsewhere must not make every save fail.
+	introduced, preexisting := newIssues(currentSnapshot.issues, newSnapshot.issues)
+	logIssues(preexisting)
+
+	if len(introduced) > 0 {
+		msgs := make([]string, len(introduced))
+		for i := range introduced {
+			msgs[i] = introduced[i].msg
+		}
+
+		err := &ConfigurationError{Type: "validation", Message: strings.Join(msgs, "; ")}
+		logger.Logtype(logger.StatusError, 2).Err(err).Str("entry", entry).Msg("Rejected invalid configuration change")
+
 		return err
 	}
 
-	// Update the global snapshot atomically
+	if err := writeConfigFile(cnt); err != nil {
+		logger.Logtype(logger.StatusError, 2).Err(err).Msg("Error writing config file")
+		return err
+	}
+
 	configSnapshot.Store(newSnapshot)
 
-	logger.Logtype(logger.StatusInfo, 0).
-		Str("entry", name).
-		Msg("Configuration entry deleted, snapshot rebuilt, and written to file")
+	logger.Logtype(logger.StatusInfo, 2).
+		Str("entry", entry).
+		Str("operation", op).
+		Msg("Configuration changed, snapshot rebuilt, and written to file")
 
 	return nil
 }
 
-// GetToml returns the cached main configuration settings as a mainConfig struct.
-// This function provides read-only access to the current configuration state.
+// writeConfigFile replaces Configfile atomically (temp file + rename in the
+// same directory) so the fsnotify watcher never reads a half-written file.
+// The temp name deliberately does not contain "config.toml", which the
+// watcher matches on.
+func writeConfigFile(cnt []byte) error {
+	// Renaming over a symlink would replace the link itself.
+	target := Configfile
+	if resolved, err := filepath.EvalSymlinks(Configfile); err == nil {
+		target = resolved
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".cfgwrite-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp config file: %w", err)
+	}
+
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+
+	if _, err := tmp.Write(cnt); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp config file: %w", err)
+	}
+
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp config file: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config file: %w", err)
+	}
+
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		return fmt.Errorf("chmod temp config file: %w", err)
+	}
+
+	if err := os.Rename(tmpName, target); err != nil {
+		// A file bind-mounted on its own (docker -v file:file) cannot be
+		// replaced by rename (EBUSY); fall back to rewriting it in place.
+		logger.Logtype("warn", 0).Err(err).Str(logger.StrFile, target).
+			Msg("Atomic config replace failed, rewriting in place")
+
+		if werr := os.WriteFile(target, cnt, 0o600); werr != nil {
+			return fmt.Errorf("replace config file: %w", errors.Join(err, werr))
+		}
+	}
+
+	return nil
+}
+
+// UpdateCfgEntry updates (or adds) one configuration entry, validates the
+// result, writes it to the config file and publishes the new snapshot.
+func UpdateCfgEntry(configIn Conf) error {
+	return applyConfigChange("update", configIn.Name, func(t *MainConfig) error {
+		return updateTomlEntry(t, configIn)
+	})
+}
+
+// UpdateCfgEntryAny replaces a whole config section with configIn.
+func UpdateCfgEntryAny(configIn any) error {
+	return applyConfigChange("update", fmt.Sprintf("%T", configIn), func(t *MainConfig) error {
+		switch data := configIn.(type) {
+		case GeneralConfig:
+			t.General = data
+		case *GeneralConfig:
+			t.General = *data
+		case []DownloaderConfig:
+			t.Downloader = data
+		case ImdbConfig:
+			t.Imdbindexer = data
+		case *ImdbConfig:
+			t.Imdbindexer = *data
+		case []IndexersConfig:
+			t.Indexers = data
+		case []ListsConfig:
+			t.Lists = data
+		case MediaConfig:
+			t.Media = data
+		case *MediaConfig:
+			t.Media = *data
+		case []NotificationConfig:
+			t.Notification = data
+		case []PathsConfig:
+			t.Paths = data
+		case []QualityConfig:
+			t.Quality = data
+		case []RegexConfig:
+			t.Regex = data
+		case []SchedulerConfig:
+			t.Scheduler = data
+		default:
+			return fmt.Errorf("unsupported config section type %T", configIn)
+		}
+
+		return nil
+	})
+}
+
+// DeleteCfgEntry deletes the configuration entry with the given name (e.g.
+// "quality_HD", "music_Main"), validates the result, writes the config file
+// and publishes the new snapshot.
+func DeleteCfgEntry(name string) error {
+	return applyConfigChange("delete", name, func(t *MainConfig) error {
+		return deleteTomlEntry(t, name)
+	})
+}
+
+// GetToml returns a copy of the current main configuration. The copy shares no
+// slice backing arrays with the live snapshot, so callers may modify it freely.
 func GetToml() MainConfig {
 	currentSnapshot := getCurrentConfig()
 	if currentSnapshot == nil {
 		return MainConfig{}
 	}
 
-	return currentSnapshot.cachetoml
+	return *cloneMainConfig(&currentSnapshot.cachetoml)
 }
 
 // ClearCfg clears all configuration settings by deleting the config database file,
@@ -1049,6 +789,7 @@ func ClearCfg() {
 				Data:              []MediaDataConfig{{TemplatePath: "initial"}},
 				DataImport:        []MediaDataImportConfig{{TemplatePath: "initial"}},
 				Lists: []MediaListsConfig{{
+					Name:              "initial",
 					TemplateList:      "initial",
 					TemplateQuality:   "initial",
 					TemplateScheduler: "Default",
@@ -1062,6 +803,7 @@ func ClearCfg() {
 				Data:              []MediaDataConfig{{TemplatePath: "initial"}},
 				DataImport:        []MediaDataImportConfig{{TemplatePath: "initial"}},
 				Lists: []MediaListsConfig{{
+					Name:              "initial",
 					TemplateList:      "initial",
 					TemplateQuality:   "initial",
 					TemplateScheduler: "Default",
@@ -1094,7 +836,7 @@ func ClearCfg() {
 	}
 
 	// Build snapshot from default config
-	snapshot, err := buildConfigSnapshot(defaultConfig, false)
+	snapshot, err := buildConfigSnapshot(defaultConfig)
 	if err != nil {
 		logger.Logtype(logger.StatusError, 0).
 			Err(err).
@@ -1102,31 +844,41 @@ func ClearCfg() {
 		return
 	}
 
-	// Store the default snapshot
+	logIssues(snapshot.issues)
 	configSnapshot.Store(snapshot)
 
 	logger.Logtype(logger.StatusInfo, 0).
 		Msg("Configuration reset to defaults")
 }
 
-// WriteCfg marshals the application configuration structs into a TOML
-// configuration file. It gathers all the global configuration structs,
-// assembles them into a MainConfig struct, marshals to TOML and writes
-// to the Configfile location.
-func WriteCfg() {
-	bla := GetMainConfig()
+// WriteCfg writes the current configuration to Configfile. It marshals the
+// snapshot's TOML data as loaded/updated - every section, all media types,
+// in config-file order - and replaces the file atomically.
+func WriteCfg() error {
+	mu.Lock()
+	defer mu.Unlock()
 
-	cnt, err := toml.Marshal(bla)
-	if err != nil {
-		logger.Logtype("error", 1).Err(err).Msg("Error loading config")
+	settings := getCurrentConfig()
+	if settings == nil {
+		return &ConfigurationError{Type: "write", Message: "no configuration snapshot available"}
 	}
 
-	if err := os.WriteFile(Configfile, cnt, 0o600); err != nil {
+	cnt, err := toml.Marshal(&settings.cachetoml)
+	if err != nil {
+		logger.Logtype("error", 1).Err(err).Msg("Error marshaling config")
+		return err
+	}
+
+	if err := writeConfigFile(cnt); err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrFile, Configfile).
 			Err(err).
 			Msg("Failed to write config file")
+
+		return err
 	}
+
+	return nil
 }
 
 // BackupConfig copies the current config.toml to ./backup/ with a timestamp
@@ -1150,74 +902,6 @@ func BackupConfig() (string, error) {
 	}
 
 	return dest, nil
-}
-
-// GetMainConfig assembles and returns a complete MainConfig structure.
-// It collects all configuration settings from global maps and structures
-// them into a single MainConfig that can be marshaled to TOML format.
-func GetMainConfig() MainConfig {
-	var bla MainConfig
-
-	settings := getCurrentConfig()
-	if settings == nil {
-		return MainConfig{}
-	}
-
-	bla.General = *settings.General
-
-	bla.Imdbindexer = *settings.Imdb
-	for _, cfgdata := range settings.Downloader {
-		bla.Downloader = append(bla.Downloader, *cfgdata)
-	}
-
-	for _, cfgdata := range settings.Indexer {
-		bla.Indexers = append(bla.Indexers, *cfgdata)
-	}
-
-	for _, cfgdata := range settings.List {
-		bla.Lists = append(bla.Lists, *cfgdata)
-	}
-
-	for _, cfgdata := range settings.cachetoml.Media.Series {
-		if !strings.HasPrefix(cfgdata.NamePrefix, logger.StrSerie) {
-			continue
-		}
-
-		bla.Media.Series = append(bla.Media.Series, cfgdata)
-	}
-
-	for _, cfgdata := range settings.cachetoml.Media.Movies {
-		if !strings.HasPrefix(cfgdata.NamePrefix, logger.StrMovie) {
-			continue
-		}
-
-		bla.Media.Movies = append(bla.Media.Movies, cfgdata)
-	}
-
-	for _, cfgdata := range settings.Notification {
-		bla.Notification = append(bla.Notification, *cfgdata)
-	}
-
-	for _, cfgdata := range settings.Path {
-		bla.Paths = append(bla.Paths, *cfgdata)
-	}
-
-	for _, cfgdata := range settings.Quality {
-		bla.Quality = append(bla.Quality, *cfgdata)
-	}
-
-	for _, cfgdata := range settings.Regex {
-		bla.Regex = append(
-			bla.Regex,
-			RegexConfig{Name: cfgdata.Name, Required: cfgdata.Required, Rejected: cfgdata.Rejected},
-		)
-	}
-
-	for _, cfgdata := range settings.Scheduler {
-		bla.Scheduler = append(bla.Scheduler, *cfgdata)
-	}
-
-	return bla
 }
 
 // CheckGroup checks if a setting key exists in the given settings group.

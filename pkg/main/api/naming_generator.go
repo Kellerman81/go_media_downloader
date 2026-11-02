@@ -811,6 +811,10 @@ func HandleNamingPreview(ctx *gin.Context) {
 		{
 			outstr, err = structure.TestParsertype(template)
 		}
+
+	default:
+		sendJSONError(ctx, http.StatusBadRequest, "Unknown data type")
+		return
 	}
 
 	response := map[string]any{
@@ -3051,6 +3055,24 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 			verification.Errors,
 			"Template appears to be plain text - use Go template syntax with {{ }} for dynamic content",
 		)
+	}
+
+	// The brace/field heuristics above miss real parse and execution errors
+	// (e.g. an unterminated {{if}}), so render against the same sample data the
+	// preview uses.
+	if verification.Valid {
+		var err error
+		switch dataType {
+		case "parser":
+			_, err = structure.TestParsertype(templateStr)
+		case "notification":
+			_, err = structure.TestInputnotifier(templateStr)
+		}
+
+		if err != nil {
+			verification.Valid = false
+			verification.Errors = append(verification.Errors, "Template error: "+err.Error())
+		}
 	}
 
 	if verification.Valid && len(verification.Errors) == 0 {

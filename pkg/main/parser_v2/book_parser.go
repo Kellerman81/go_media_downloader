@@ -3,6 +3,7 @@ package parser_v2
 import (
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -24,6 +25,10 @@ type bookPatterns struct {
 	seriesNum  *regexp.Regexp
 	author     *regexp.Regexp
 	retail     *regexp.Regexp
+	format     *regexp.Regexp
+	formatTag  *regexp.Regexp
+	proper     *regexp.Regexp
+	repack     *regexp.Regexp
 	group      *regexp.Regexp
 	authorDash *regexp.Regexp
 }
@@ -37,15 +42,22 @@ func NewBookParser() *BookParser {
 
 // Book pattern strings as constants so they can be used as cache keys.
 const (
-	reBookISBN13     = `(?i)(?:isbn[:\s-]*)?((?:978|979)[\d\s-]{10,16})`
-	reBookISBN10     = `(?i)(?:isbn[:\s-]?)?\d[\s-]?\d{2}[\s-]?\d{5}[\s-]?\d{2}[\s-]?[\dxX]`
-	reBookASIN       = `(?i)(?:asin[:\s-]?)?B0[A-Z0-9]{8}`
-	reBookYear       = `[\(\[]?((?:19|20)\d{2})[\)\]]?`
-	reBookSeries     = `(?i)(?:\(|\[)?\s*([^()\[\]]+?)\s*(?:book|#|,?\s*no\.?|,?\s*vol\.?|,?\s*volume)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?`
-	reBookSeriesNum  = `(?i)(?:book|#|no\.?|vol\.?|volume)\s*(\d+(?:\.\d+)?)`
-	reBookAuthor     = `^([^-]+?)\s*-\s*`
-	reBookRetail     = `(?i)[\[\(]?retail[\]\)]?`
-	reBookGroup      = `(?i)[\[\(]([a-z0-9_-]+)[\]\)]$`
+	reBookISBN13    = `(?i)(?:isbn[:\s-]*)?(97[89](?:[\s-]?\d){10})`
+	reBookISBN10    = `(?i)(?:isbn[:\s-]?)?\d(?:[\s-]?\d){8}[\s-]?[\dxX]`
+	reBookASIN      = `(?i)(?:asin[:\s-]?)?B0[A-Z0-9]{8}`
+	reBookYear      = `[\(\[]?((?:19|20)\d{2})[\)\]]?`
+	reBookSeries    = `(?i)(?:\(|\[)?\s*([^()\[\]]+?)(?:(?:\s*,\s*|\s+)(?:book|no\.?|vol\.?|volume)|\s*,?\s*#)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?`
+	reBookSeriesNum = `(?i)(?:(?:^|[^a-z0-9])(?:book|no\.?|vol\.?|volume)|#)\s*(\d+(?:\.\d+)?)`
+	reBookAuthor    = `^([^-]+?)\s*-\s*`
+	reBookRetail    = `(?i)[\[\(]?retail[\]\)]?`
+	reBookGroup     = `(?i)[\[\(]([a-z0-9_-]+)[\]\)]$`
+	// Release titles carry no file extension, so the format comes from tokens
+	// like "RETAIL.EPUB-GRP" or "[epub]". doc/txt/rtf/lit are left out on purpose:
+	// as bare words they are too ambiguous in a title.
+	reBookFormat     = `(?i)\b(epub|azw3|azw|mobi|pdf|cbz|cbr|djvu|fb2)\b`
+	reBookFormatTag  = `(?i)[\[\(]\s*(?:epub|azw3|azw|mobi|pdf|cbz|cbr|djvu|fb2)\s*[\]\)]`
+	reBookProper     = `(?i)\bproper\b`
+	reBookRepack     = `(?i)\brepack\b`
 	reBookAuthorDash = `^(.+?)\s+-\s+(.+)$`
 	reBookStripASIN  = `(?i)asin[:\s-]*`
 )
@@ -62,6 +74,10 @@ func compileBookPatterns() *bookPatterns {
 		seriesNum:  database.GetCachedRegexp(reBookSeriesNum),
 		author:     database.GetCachedRegexp(reBookAuthor),
 		retail:     database.GetCachedRegexp(reBookRetail),
+		format:     database.GetCachedRegexp(reBookFormat),
+		formatTag:  database.GetCachedRegexp(reBookFormatTag),
+		proper:     database.GetCachedRegexp(reBookProper),
+		repack:     database.GetCachedRegexp(reBookRepack),
 		group:      database.GetCachedRegexp(reBookGroup),
 		authorDash: database.GetCachedRegexp(reBookAuthorDash),
 	}
@@ -77,11 +93,9 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 	}
 
 	// Get extension and base name
-	ext := filepath.Ext(filename)
+	name, ext := splitKnownExt(filename)
 
 	result.Format = logger.ExtToFormat(ext)
-
-	name := strings.TrimSuffix(filename, ext)
 
 	// Clean common separators
 	name = strings.ReplaceAll(name, "_", " ")
@@ -89,7 +103,7 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 	cleanedName := name
 
 	// Extract ISBN-13
-	if match := bp.patterns.isbn13.FindString(name); match != "" {
+	if match := findISBN(bp.patterns.isbn13, name, ValidateISBN13); match != "" {
 		result.ISBN13 = normalizeISBN(match)
 		cleanedName = strings.Replace(cleanedName, match, "", 1)
 
@@ -97,7 +111,8 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 	}
 
 	// Extract ISBN-10
-	if match := bp.patterns.isbn10.FindString(name); match != "" && result.ISBN13 == "" {
+	if match := findISBN(bp.patterns.isbn10, name, ValidateISBN10); match != "" &&
+		result.ISBN13 == "" {
 		result.ISBN10 = normalizeISBN(match)
 		cleanedName = strings.Replace(cleanedName, match, "", 1)
 
@@ -107,6 +122,8 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 	// Extract ASIN
 	if match := bp.patterns.asin.FindString(name); match != "" {
 		result.ASIN = bp.extractASIN(match)
+		cleanedName = strings.Replace(cleanedName, "["+match+"]", "", 1)
+		cleanedName = strings.Replace(cleanedName, "("+match+")", "", 1)
 		cleanedName = strings.Replace(cleanedName, match, "", 1)
 
 		result.Confidence += 0.2
@@ -117,6 +134,15 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 		result.IsRetail = true
 		cleanedName = bp.patterns.retail.ReplaceAllLiteralString(cleanedName, "")
 	}
+
+	if result.Format == "" {
+		result.Format = bp.formatFromTokens(name)
+	}
+
+	cleanedName = bp.patterns.formatTag.ReplaceAllLiteralString(cleanedName, "")
+
+	result.Proper = bp.patterns.proper.MatchString(name)
+	result.Repack = bp.patterns.repack.MatchString(name)
 
 	// Extract year BEFORE release group (group pattern matches digits too,
 	// e.g. reBookGroup's [a-z0-9_-]+ matches a bare "(2020)" and would
@@ -139,10 +165,8 @@ func (bp *BookParser) Parse(filename string) *BookParseResult {
 	}
 
 	// Extract series information
-	if loc := bp.patterns.series.FindStringSubmatchIndex(cleanedName); len(loc) > 4 {
-		result.Series = strings.TrimSpace(cleanedName[loc[2]:loc[3]])
-		result.SeriesPosition = cleanedName[loc[4]:loc[5]]
-		cleanedName = bp.patterns.series.ReplaceAllLiteralString(cleanedName, "")
+	if series, pos, rest, ok := extractSeries(bp.patterns.series, cleanedName); ok {
+		result.Series, result.SeriesPosition, cleanedName = series, pos, rest
 	} else if loc := bp.patterns.seriesNum.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
 		result.SeriesPosition = cleanedName[loc[2]:loc[3]]
 		cleanedName = bp.patterns.seriesNum.ReplaceAllLiteralString(cleanedName, "")
@@ -195,6 +219,30 @@ func (bp *BookParser) ParseWithPath(fullpath string) *BookParseResult {
 	}
 
 	return result
+}
+
+// formatFromTokens returns the best-scoring ebook format named in name, so a
+// multi-format pack ("EPUB.MOBI.PDF") is scored by the best format it contains.
+func (bp *BookParser) formatFromTokens(name string) string {
+	var best string
+
+	bestRank := -1
+
+	for _, m := range bp.patterns.format.FindAllStringSubmatch(name, -1) {
+		format := strings.ToLower(m[1])
+		if rank := slices.Index(bookFormatPreference, format); rank != -1 &&
+			(bestRank == -1 || rank < bestRank) {
+			best, bestRank = format, rank
+		}
+	}
+
+	return best
+}
+
+// bookFormatPreference orders the token formats best-first; it mirrors the
+// format scores in parser.calculateBookFormatPriority.
+var bookFormatPreference = []string{
+	"epub", "azw3", "azw", "mobi", "cbz", "cbr", "pdf", "djvu", "fb2",
 }
 
 // extractAuthorTitle attempts to separate author from title in the cleaned name.
@@ -309,6 +357,55 @@ func (*BookParser) calculateConfidence(result *BookParseResult) float64 {
 	}
 
 	return conf
+}
+
+// extractSeries applies a series pattern (group 1 name, group 2 position) to
+// name. Group 1 starts at the beginning of an unbracketed name, so it would
+// also swallow the "Author - " part; the series name is therefore cut at the
+// last " - ", and only the marker ("Vol. 3", "#2") is removed from the name so
+// author and title stay available. A bracketed series ("(Mistborn Book 1)")
+// is removed as a whole.
+func extractSeries(re *regexp.Regexp, name string) (series, pos, rest string, ok bool) {
+	loc := re.FindStringSubmatchIndex(name)
+	if len(loc) < 6 || loc[2] == -1 || loc[4] == -1 {
+		return "", "", name, false
+	}
+
+	series = name[loc[2]:loc[3]]
+	if idx := strings.LastIndex(series, " - "); idx != -1 {
+		series = series[idx+3:]
+	}
+
+	pos = name[loc[4]:loc[5]]
+
+	cut := loc[3]
+	if name[loc[0]] == '(' || name[loc[0]] == '[' {
+		cut = loc[0]
+	}
+
+	return strings.TrimSpace(series), pos, name[:cut] + " " + name[loc[1]:], true
+}
+
+// findISBN returns the first match of re in s that is not part of a longer
+// digit run and whose checksum is valid. Without these checks a 13-digit ISBN
+// followed by a year was read as a 17-digit "ISBN", and any digit run of the
+// right length was accepted.
+func findISBN(re *regexp.Regexp, s string, valid func(string) bool) string {
+	for _, loc := range re.FindAllStringIndex(s, -1) {
+		if loc[0] > 0 && s[loc[0]-1] >= '0' && s[loc[0]-1] <= '9' {
+			continue
+		}
+
+		if loc[1] < len(s) && isDigitOrLetter(s[loc[1]]) {
+			continue
+		}
+
+		if match := s[loc[0]:loc[1]]; valid(normalizeISBN(match)) {
+			return match
+		}
+	}
+
+	return ""
 }
 
 // ValidateISBN13 validates an ISBN-13 checksum.

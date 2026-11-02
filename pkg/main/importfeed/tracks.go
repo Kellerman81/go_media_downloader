@@ -3,6 +3,7 @@ package importfeed
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,14 +86,6 @@ func audnexChaptersToDbTracks(
 	return result
 }
 
-// resolveTracksForMatching returns DbtrackWithArtist records for the given album,
-// falling back to the appropriate external API when the database has no track rows:
-//
-//   - music albums:  falls back to MusicBrainz GetReleaseByID (mbReleaseID required)
-//   - audiobooks:    falls back to Audnex GetChaptersByASIN (asin required)
-//
-// Returns nil when no data is available from any source.
-
 const (
 	rateLimitSleep      = 20 * time.Second
 	rateLimitMaxRetries = 3
@@ -134,12 +127,30 @@ func retryOnRateLimit[T any](ctx context.Context, fn func() (T, error)) (T, erro
 	}
 }
 
+// audnexChaptersTotalMs sums the chapter runtimes the same way
+// audnexChaptersToDbTracks reads them.
+func audnexChaptersTotalMs(chapters []apiexternal_v2.AudiobookChapter) int64 {
+	var total int64
+	for i := range chapters {
+		if chapters[i].LengthMs > 0 {
+			total += chapters[i].LengthMs
+		} else {
+			total += chapters[i].Duration.Milliseconds()
+		}
+	}
+
+	return total
+}
+
+// resolveTracksForMatching returns the track list of a music album: dbtracks
+// first, then MusicBrainz (mbReleaseID), then Last.fm/Discogs/Deezer by
+// artist+title. Returns nil when no source has data. Audiobooks use
+// resolveChaptersForMatching instead.
 func resolveTracksForMatching(
 	ctx context.Context,
 	albumID uint,
-	mbReleaseID string, // music: MusicBrainz release ID (empty for audiobooks)
-	asin, region string, // audiobook: Audnex ASIN + region (empty for music)
-	albumTitle, artist string, // music: used for Last.fm/Discogs fallback when MB is absent
+	mbReleaseID string,
+	albumTitle, artist string, // used for the Last.fm/Discogs/Deezer fallback when MB is absent
 ) []database.DbtrackWithArtist {
 	// Always try the database first — it's free and already populated for known releases.
 	if albumID > 0 {
@@ -237,22 +248,67 @@ func resolveTracksForMatching(
 		}
 	}
 
-	// Audiobook fallback: fetch chapter listing from Audnex.
-	if asin != "" {
-		audnexProvider := providers.GetAudnex()
-		if audnexProvider != nil {
-			if chapters, err := audnexProvider.GetChaptersByASIN(
-				ctx,
-				asin,
-				region,
-			); err == nil &&
-				len(chapters) > 0 {
-				return audnexChaptersToDbTracks(chapters)
+	return nil
+}
+
+// resolveChaptersForMatching returns an audiobook's chapters as match tracks:
+// dbaudiobook_chapters first, then Audnex by ASIN. Audiobook IDs must never be
+// looked up in dbtracks — the same numeric ID there belongs to an unrelated
+// music album, whose track list then gets matched against the chapter files.
+func resolveChaptersForMatching(
+	ctx context.Context,
+	audiobookID uint,
+	asin, region string,
+) []database.DbtrackWithArtist {
+	if audiobookID > 0 {
+		chapters := database.StructscanT[database.DbaudiobookChapter](
+			false,
+			database.Getdatarow[uint](
+				false,
+				"SELECT count() FROM dbaudiobook_chapters WHERE dbaudiobook_id = ?",
+				&audiobookID,
+			),
+			`SELECT title, chapter_number, runtime_ms FROM dbaudiobook_chapters
+			  WHERE dbaudiobook_id = ? ORDER BY position, chapter_number`,
+			&audiobookID,
+		)
+
+		// Rows without runtimes can't verify anything; Audnex may have them.
+		if slices.ContainsFunc(chapters, func(c database.DbaudiobookChapter) bool {
+			return c.RuntimeMs > 0
+		}) {
+			out := make([]database.DbtrackWithArtist, len(chapters))
+			for i := range chapters {
+				num := chapters[i].ChapterNumber
+				if num == 0 {
+					num = uint16(i + 1) //nolint:gosec // safe: chapter counts fit in uint16
+				}
+
+				out[i].Title = chapters[i].Title
+				out[i].RuntimeMs = chapters[i].RuntimeMs
+				out[i].TrackNumber = num
+				out[i].DiscNumber = 1
 			}
+
+			return out
 		}
 	}
 
-	return nil
+	if asin == "" {
+		return nil
+	}
+
+	audnexProvider := providers.GetAudnex()
+	if audnexProvider == nil {
+		return nil
+	}
+
+	chapters, err := audnexProvider.GetChaptersByASIN(ctx, asin, region)
+	if err != nil || len(chapters) == 0 {
+		return nil
+	}
+
+	return audnexChaptersToDbTracks(chapters)
 }
 
 // GetExpectedTrackRuntimes retrieves expected track runtimes from the database.
@@ -304,7 +360,7 @@ func findASINByTitleAuthor(
 	region string,
 	fileCount int,
 ) string {
-	prov := getOrCreateAudibleProvider(region)
+	prov := providers.SharedAudible(region)
 
 	// Cache Audible results keyed by lowercase title to avoid duplicate API calls.
 	type cacheEntry struct {
@@ -351,8 +407,10 @@ func findASINByTitleAuthor(
 				continue
 			}
 
-			if !logger.ContainsI(entry.results[j].Title, titleKey) &&
-				!logger.ContainsI(titleKey, entry.results[j].Title) {
+			// An empty Audible title would pass ContainsI(titleKey, "") for every pair.
+			if entry.results[j].Title == "" ||
+				(!logger.ContainsI(entry.results[j].Title, titleKey) &&
+					!logger.ContainsI(titleKey, entry.results[j].Title)) {
 				continue
 			}
 
@@ -360,6 +418,10 @@ func findASINByTitleAuthor(
 				authorMatched := false
 				// Exact substring check against Authors.
 				for k := range entry.results[j].Authors {
+					if entry.results[j].Authors[k] == "" {
+						continue
+					}
+
 					if logger.ContainsI(entry.results[j].Authors[k], authorLower) ||
 						logger.ContainsI(authorLower, entry.results[j].Authors[k]) {
 						authorMatched = true
@@ -466,47 +528,29 @@ func findASINByTitleAuthor(
 	return candidates[0]
 }
 
-// luceneEscapeTo writes the Lucene-escaped form of s into buf.
-// Special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /.
-func luceneEscapeTo(buf *logger.AddBuffer, s string) {
-	for _, c := range s {
-		switch c {
-		case '+', '-', '!', '(', ')', '{', '}', '[', ']', '^', '"', '~', '*', '?', ':', '\\', '/':
-			buf.WriteByte('\\')
-		case '&', '|':
-			// && and || are two-character operators; escape each rune individually.
-			buf.WriteByte('\\')
-		}
-
-		buf.WriteRune(c)
-	}
-}
-
-// LuceneEscape escapes all Lucene special characters in s so the value is safe
-// to embed inside a quoted phrase or unquoted term in a MusicBrainz search query.
-func LuceneEscape(s string) string {
-	buf := logger.PlAddBuffer.Get()
-	defer logger.PlAddBuffer.Put(buf)
-
-	luceneEscapeTo(buf, s)
-
-	return buf.String()
-}
-
 // BuildArtistAlbumSearch builds a MusicBrainz Lucene query for a release title
 // and optional artist. For non-VA artists it appends a slop-2 phrase filter
 // (artist:"Name"~2) which outperforms exact-phrase and per-word-AND in live API
 // tests (including edge cases like Deep Purple "Machine Head" and AC/DC).
+//
+// The title is matched as a boosted exact phrase OR all of its words inside the
+// release field: an unquoted `release:Greatest Hits` binds only the first word
+// to the field ("Greatest Video Hits 2" ranked first), while an exact phrase
+// alone misses folder titles with extra words ("… 25th Anniversary"). Checked
+// live against eight albums including both cases.
 func BuildArtistAlbumSearch(album, artist string) []byte {
 	buf := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(buf)
 
-	buf.WriteString("release:")
-	luceneEscapeTo(buf, album)
+	buf.WriteString(`(release:"`)
+	logger.LuceneEscapeTo(buf, album)
+	buf.WriteString(`"^4 OR release:(`)
+	logger.LuceneEscapeTo(buf, album)
+	buf.WriteString(`))`)
 
 	if artist != "" && !IsVariousArtists(artist) {
 		buf.WriteString(` AND artist:"`)
-		luceneEscapeTo(buf, artist)
+		logger.LuceneEscapeTo(buf, artist)
 		buf.WriteString(`"~2`)
 	}
 
@@ -553,7 +597,7 @@ func addAudiobookFilesToDatabase(
 		listname = cfgp.Lists[listid].Name
 	}
 
-	audiobookListID := database.GetAudiobookListEntryID(album.DatabaseID, listname)
+	audiobookListID := database.GetAudiobookListEntryID(&album.DatabaseID, &listname)
 	if audiobookListID == 0 {
 		// logger.Logtype("error", 1).
 		// 	Str("folder", folder).
@@ -655,7 +699,7 @@ func addAlbumFilesToDatabase(
 		listname = cfgp.Lists[listid].Name
 	}
 
-	albumListID := database.GetAlbumListEntryID(album.DatabaseID, listname)
+	albumListID := database.GetAlbumListEntryID(&album.DatabaseID, &listname)
 	if albumListID == 0 {
 		logger.Logtype("warn", 1).
 			Str("folder", folder).
@@ -784,7 +828,8 @@ func majorityRelease(releaseCounts map[string]int, total int) string {
 	best, bestCount := "", 0
 
 	for id, count := range releaseCounts {
-		if count >= threshold && count > bestCount {
+		// Ties break on the smaller ID so the result doesn't depend on map order.
+		if count >= threshold && (count > bestCount || (count == bestCount && id < best)) {
 			best, bestCount = id, count
 		}
 	}

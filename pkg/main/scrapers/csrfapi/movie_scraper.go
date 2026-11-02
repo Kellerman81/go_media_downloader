@@ -12,8 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/sitethrottle"
 	"github.com/goccy/go-json"
 )
 
@@ -29,7 +30,7 @@ type MovieConfig struct {
 
 	// API settings
 	APIURLPattern    string // URL pattern with {page} placeholder
-	PageStartIndex   int    // Starting page index (0 or 1)
+	PageStartIndex   int    // Starting page index: 0/unset = 1, negative = 0-based (see Config)
 	ResultsArrayPath string // JSON path to results array (e.g., "movies" or "data.results")
 
 	// JSON field mappings
@@ -105,9 +106,7 @@ func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 		cfg.BaseURL = cfg.StartURL
 	}
 
-	if cfg.PageStartIndex == 0 {
-		cfg.PageStartIndex = 1 // Default to 1-based pagination
-	}
+	cfg.PageStartIndex = normalizePageStartIndex(cfg.PageStartIndex)
 
 	if cfg.WaitSeconds == 0 {
 		cfg.WaitSeconds = 2
@@ -163,12 +162,18 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 
 		movies, err := s.scrapePage(ctx, apiURL)
 		if err != nil {
-			logger.Logtype("warn", 1).
-				Err(err).
-				Int("page", page+1).
-				Msg("Failed to scrape page, stopping")
+			if page == 0 {
+				return nil, fmt.Errorf("failed to scrape page 1: %w", err)
+			}
 
-			break
+			// Hand back what earlier pages produced; the caller decides
+			// whether a partial list is usable.
+			return imdbIDs, fmt.Errorf(
+				"failed to scrape page %d (%d ids from earlier pages kept): %w",
+				page+1,
+				len(imdbIDs),
+				err,
+			)
 		}
 
 		if len(movies) == 0 {
@@ -178,36 +183,13 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 			break
 		}
 
-		// Process movies from this page
 		for idx := range movies {
-			// If IMDB ID is directly available, use it
-			if movies[idx].ImdbID != "" && !seenIDs[movies[idx].ImdbID] {
-				imdbIDs = append(imdbIDs, movies[idx].ImdbID)
-				seenIDs[movies[idx].ImdbID] = true
-			} else if movies[idx].Title != "" && movies[idx].Year > 0 {
-				// Search for IMDB ID using title and year
-				imdbID, err := s.searchIMDBID(movies[idx].Title, movies[idx].Year)
-				if err == nil && imdbID != "" && !seenIDs[imdbID] {
-					logger.Logtype("debug", 1).
-						Str("title", movies[idx].Title).
-						Int("year", movies[idx].Year).
-						Str("imdb_id", imdbID).
-						Msg("Found IMDB ID via search")
-
-					imdbIDs = append(imdbIDs, imdbID)
-					seenIDs[imdbID] = true
-				} else {
-					logger.Logtype("debug", 1).
-						Str("title", movies[idx].Title).
-						Int("year", movies[idx].Year).
-						Msg("Could not find IMDB ID for movie")
-				}
-			}
+			imdbIDs = s.appendMovieImdbID(imdbIDs, seenIDs, &movies[idx])
 		}
 
-		// Wait between requests
-		if page < maxPages-1 && s.config.WaitSeconds > 0 {
-			time.Sleep(time.Duration(s.config.WaitSeconds) * time.Second)
+		// Page spacing is enforced per site in getAPI (sitethrottle).
+		if err := ctx.Err(); err != nil {
+			return imdbIDs, err
 		}
 	}
 
@@ -216,6 +198,101 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 		Msg("CSRF API movie scrape completed")
 
 	return imdbIDs, nil
+}
+
+// normalizeImdbID turns a scraped IMDb id - "tt1234567", a bare 7-9 digit
+// number, or a URL/path such as "/title/tt1234567/?ref_=x" - into
+// "tt"+digits. Anything else is rejected (ok=false, empty id).
+func normalizeImdbID(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+
+	s = strings.TrimRight(s, "/")
+
+	hadPath := false
+	if i := strings.LastIndexByte(s, '/'); i >= 0 {
+		s = s[i+1:]
+		hadPath = true
+	}
+
+	digits := s
+	if len(s) >= 2 && strings.EqualFold(s[:2], "tt") {
+		digits = s[2:]
+	} else if hadPath {
+		// A bare number in some other URL is not an IMDb title id.
+		return "", false
+	}
+
+	if len(digits) < 7 || len(digits) > 9 {
+		return "", false
+	}
+
+	for i := range len(digits) {
+		if digits[i] < '0' || digits[i] > '9' {
+			return "", false
+		}
+	}
+
+	return "tt" + digits, true
+}
+
+// appendMovieImdbID appends the movie's IMDb id - taken directly, or found via
+// a TMDB title/year search when the item carries none - unless already seen.
+func (s *MovieScraper) appendMovieImdbID(
+	imdbIDs []string,
+	seenIDs map[string]bool,
+	movie *MovieData,
+) []string {
+	if movie.ImdbID != "" {
+		id, ok := normalizeImdbID(movie.ImdbID)
+		if ok {
+			if !seenIDs[id] {
+				imdbIDs = append(imdbIDs, id)
+				seenIDs[id] = true
+			}
+
+			return imdbIDs
+		}
+
+		// Unusable id: treat the item as carrying none and try the search below.
+		logger.Logtype("debug", 1).
+			Str("imdb_id", movie.ImdbID).
+			Str("title", movie.Title).
+			Msg("Ignoring invalid scraped IMDB ID")
+	}
+
+	if movie.Title == "" || movie.Year <= 0 {
+		return imdbIDs
+	}
+
+	imdbID, err := s.searchIMDBID(movie.Title, movie.Year)
+	if err == nil {
+		imdbID, _ = normalizeImdbID(imdbID)
+	}
+
+	if err != nil || imdbID == "" {
+		logger.Logtype("debug", 1).
+			Str("title", movie.Title).
+			Int("year", movie.Year).
+			Msg("Could not find IMDB ID for movie")
+
+		return imdbIDs
+	}
+
+	if !seenIDs[imdbID] {
+		logger.Logtype("debug", 1).
+			Str("title", movie.Title).
+			Int("year", movie.Year).
+			Str("imdb_id", imdbID).
+			Msg("Found IMDB ID via search")
+
+		imdbIDs = append(imdbIDs, imdbID)
+		seenIDs[imdbID] = true
+	}
+
+	return imdbIDs
 }
 
 // extractCSRFToken visits the start URL and extracts the CSRF token from cookies.
@@ -262,28 +339,30 @@ func (s *MovieScraper) extractCSRFToken(ctx context.Context) error {
 
 // scrapePage fetches and parses a single API page, returning movie data.
 func (s *MovieScraper) scrapePage(ctx context.Context, apiURL string) ([]MovieData, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	body, status, err := s.getAPI(ctx, apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-	req.Header.Set(s.config.CSRFHeaderName, s.csrfToken)
+	// The token is fetched once per scrape and can expire mid-run.
+	if isCSRFRejection(status) {
+		logger.Logtype("info", 1).
+			Str("site", s.config.SiteName).
+			Int("status", status).
+			Msg("API rejected CSRF token, refreshing and retrying once")
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch API page: %w", err)
+		if err := s.extractCSRFToken(ctx); err != nil {
+			return nil, fmt.Errorf("failed to refresh CSRF token after status %d: %w", status, err)
+		}
+
+		body, status, err = s.getAPI(ctx, apiURL)
+		if err != nil {
+			return nil, err
+		}
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	// Parse JSON response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", status)
 	}
 
 	var data map[string]any
@@ -306,6 +385,38 @@ func (s *MovieScraper) scrapePage(ctx context.Context, apiURL string) ([]MovieDa
 	}
 
 	return movies, nil
+}
+
+// getAPI performs one API GET and returns the body and status code.
+func (s *MovieScraper) getAPI(ctx context.Context, apiURL string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set(s.config.CSRFHeaderName, s.csrfToken)
+
+	// Enforce the configured delay per site (host), shared across all scraper
+	// configs targeting the same site. Mirrors Scraper.getAPI.
+	sitethrottle.Wait(ctx, req.URL.Host, time.Duration(s.config.WaitSeconds)*time.Second)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to fetch API page: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, resp.StatusCode, nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return body, resp.StatusCode, nil
 }
 
 // extractResultsArray extracts the results array from JSON data using the configured path.
@@ -459,8 +570,7 @@ func (*MovieScraper) searchIMDBID(title string, year int) (string, error) {
 		Int("year", year).
 		Msg("Searching for IMDB ID via TMDB")
 
-	// Use the apiexternal package to search TMDB
-	imdbID, err := apiexternal.SearchTMDBMovieImdbID(title, year)
+	imdbID, err := providers.TMDBMovieIMDbID(context.Background(), title, year)
 	if err != nil {
 		return "", err
 	}

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"errors"
 	"os"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 )
 
@@ -207,6 +209,7 @@ func TestGenerateAllQualityPriorities(t *testing.T) {
 		general.WorkerMetadata,
 		general.WorkerRSS,
 		general.WorkerIndexer,
+		general.WorkerParse,
 	)
 	logger.InitLogger(logger.Config{
 		LogLevel:      general.LogLevel,
@@ -497,5 +500,172 @@ func TestSplitByFull(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func bookRelease(t *testing.T, title string, cfgp *config.MediaTypeConfig, qual *config.QualityConfig) *database.ParseInfo {
+	t.Helper()
+
+	m := &database.ParseInfo{ListID: -1}
+	parser_v2.ParseFileP(title, false, false, cfgp, -1, m)
+	GetPriorityMapQual(m, cfgp, qual, false, true)
+
+	return m
+}
+
+func TestBookPriorityReleaseVsFile(t *testing.T) {
+	cfgp := &config.MediaTypeConfig{IsType: config.MediaTypeBook}
+	qual := &config.QualityConfig{Name: "books", UseForPriorityOther: true}
+
+	tests := []struct {
+		name        string
+		release     string
+		wantFormat  string
+		wantRetail  bool
+		fileExt     string // existing book_files.extension
+		wantUpgrade bool
+	}{
+		{"retail epub vs epub file", "Jane Doe - Some Book (2020) RETAIL EPUB-GRP", "epub", true, ".epub", false},
+		{"proper epub vs epub file", "Jane.Doe.Some.Book.2020.PROPER.EPUB-GRP", "epub", false, ".epub", false},
+		{"repack retail epub vs epub file", "Jane Doe - Some Book [retail] [epub] REPACK", "epub", true, ".epub", false},
+		{"epub release vs pdf file", "Jane Doe - Some Book (2020) [epub]", "epub", false, ".pdf", true},
+		{"pdf release vs epub file", "Jane Doe - Some Book (2020) PDF", "pdf", false, ".epub", false},
+		{"multi-format pack picks best", "Jane Doe - Some Book PDF.MOBI.EPUB", "epub", false, ".mobi", true},
+		{"filename extension", "Jane Doe - Some Book.azw3", "azw3", false, ".mobi", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := bookRelease(t, tt.release, cfgp, qual)
+			if m.Quality != tt.wantFormat {
+				t.Fatalf("format = %q, want %q", m.Quality, tt.wantFormat)
+			}
+
+			if m.Retail != tt.wantRetail {
+				t.Fatalf("retail = %v, want %v", m.Retail, tt.wantRetail)
+			}
+
+			// The same file with the release's format scores exactly the
+			// release's comparable priority (release/file scale parity).
+			if got, want := BookFormatPriority("."+tt.wantFormat), ComparablePriority(m, cfgp); got != want {
+				t.Fatalf("file score %d != release comparable score %d", got, want)
+			}
+
+			existing := BookFormatPriority(tt.fileExt)
+			if upgrade := ComparablePriority(m, cfgp) > existing; upgrade != tt.wantUpgrade {
+				t.Fatalf("upgrade = %v (release %d, file %d), want %v",
+					upgrade, ComparablePriority(m, cfgp), existing, tt.wantUpgrade)
+			}
+		})
+	}
+}
+
+func TestBookPriorityBonusesRankReleases(t *testing.T) {
+	cfgp := &config.MediaTypeConfig{IsType: config.MediaTypeBook}
+	qual := &config.QualityConfig{Name: "books", UseForPriorityOther: true}
+
+	plain := bookRelease(t, "Jane Doe - Some Book EPUB", cfgp, qual)
+	retail := bookRelease(t, "Jane Doe - Some Book RETAIL EPUB", cfgp, qual)
+	proper := bookRelease(t, "Jane Doe - Some Book PROPER EPUB", cfgp, qual)
+
+	if retail.Priority <= plain.Priority || proper.Priority <= plain.Priority {
+		t.Fatalf("bonuses must rank releases: plain %d retail %d proper %d",
+			plain.Priority, retail.Priority, proper.Priority)
+	}
+
+	if ComparablePriority(retail, cfgp) != ComparablePriority(plain, cfgp) {
+		t.Fatal("retail must not change the comparable (upgrade) priority")
+	}
+}
+
+func TestComparablePriorityNonBook(t *testing.T) {
+	m := &database.ParseInfo{Priority: 1234, Quality: "epub"}
+	if got := ComparablePriority(m, &config.MediaTypeConfig{IsType: config.MediaTypeMovie}); got != 1234 {
+		t.Fatalf("got %d, want 1234", got)
+	}
+}
+
+// ensureMediaEnv loads config + DB (codec/resolution/audio lists, priorities) so
+// the end-to-end test can resolve codec/resolution/audio IDs. It is idempotent
+// and skips the test when the environment isn't available.
+func ensureMediaEnv(t *testing.T) {
+	t.Helper()
+
+	if config.GetSettingsGeneral() != nil && len(database.DBConnect.GetcodecsIn) > 0 {
+		return // already initialized by another test in this run
+	}
+
+	if _, err := os.Stat("config"); err != nil {
+		if err := os.Chdir(".."); err != nil {
+			t.Skip("cannot locate config dir")
+		}
+	}
+
+	if err := config.LoadCfgDB(false); err != nil {
+		t.Skip("config not available: ", err)
+	}
+
+	database.InitCache()
+
+	general := config.GetSettingsGeneral()
+	if general == nil {
+		t.Skip("settings not available")
+	}
+
+	worker.InitWorkerPools(
+		general.WorkerSearch, general.WorkerFiles, general.WorkerMetadata,
+		general.WorkerRSS, general.WorkerIndexer, general.WorkerParse,
+	)
+	logger.InitLogger(logger.Config{LogLevel: general.LogLevel, LogToFileOnly: true})
+
+	if err := database.InitDB(general.DBLogLevel); err != nil {
+		t.Skip("database not available: ", err)
+	}
+
+	_ = database.InitImdbdb()
+	database.SetVars()
+	GenerateAllQualityPriorities()
+	LoadDBPatterns()
+}
+
+// TestNativeProbeEndToEnd proves the native probe feeds codec/width/height/audio
+// through the same updateVideo/updateAudio path: after ParseVideoFile the
+// ParseInfo has codec, resolution and audio populated (with resolved DB IDs).
+func TestNativeProbeEndToEnd(t *testing.T) {
+	if _, err := os.Stat(sampleMKV); err != nil {
+		t.Skip("sample MKV not available")
+	}
+
+	ensureMediaEnv(t)
+
+	m := &database.ParseInfo{File: sampleMKV}
+
+	// A non-nil quality config (any name) so the priority lookup doesn't panic.
+	if err := ParseVideoFile(context.Background(), m, &config.QualityConfig{Name: "native-test"}); err != nil {
+		t.Fatalf("ParseVideoFile: %v", err)
+	}
+
+	t.Logf("codec=%q(id %d) %dx%d res=%q(id %d) audio=%q(id %d) runtime=%d langs=%v",
+		m.Codec, m.CodecID, m.Width, m.Height, m.Resolution, m.ResolutionID,
+		m.Audio, m.AudioID, m.Runtime, m.Languages)
+
+	if m.Codec != "h264" {
+		t.Errorf("Codec = %q, want h264", m.Codec)
+	}
+
+	if m.Width != 1280 || m.Height != 720 {
+		t.Errorf("dimensions = %dx%d, want 1280x720", m.Width, m.Height)
+	}
+
+	if m.Resolution != "720p" {
+		t.Errorf("Resolution = %q, want 720p", m.Resolution)
+	}
+
+	if m.Audio != "aac" {
+		t.Errorf("Audio = %q, want aac", m.Audio)
+	}
+
+	if m.CodecID == 0 || m.ResolutionID == 0 {
+		t.Errorf("expected resolved DB ids, got codecID=%d resolutionID=%d", m.CodecID, m.ResolutionID)
 	}
 }

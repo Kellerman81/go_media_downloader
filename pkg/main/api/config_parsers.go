@@ -1,347 +1,21 @@
 package api
 
 import (
+	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/gin-gonic/gin"
 )
 
-// ConfigParser is a generic config parsing pattern to reduce code duplication.
-type ConfigParser[T any] struct {
-	Prefix       string
-	CreateConfig func(string, *gin.Context) T
-	Validate     func([]T) error
-	Save         func([]T) error
-}
-
-// ParseAndSave performs the complete config parsing, validation, and saving workflow.
-func (cp *ConfigParser[T]) ParseAndSave(c *gin.Context) error {
-	if err := c.Request.ParseForm(); err != nil {
-		return fmt.Errorf("failed to parse form data: %w", err)
-	}
-
-	// Extract form keys
-	formKeys := extractFormKeys(c, cp.Prefix+"_", "_Name")
-	configs := make([]T, 0, len(formKeys))
-
-	// Create configs from form data
-	for index := range formKeys {
-		config := cp.CreateConfig(index, c)
-
-		configs = append(configs, config)
-	}
-
-	// Validate all configs
-	if cp.Validate != nil {
-		if err := cp.Validate(configs); err != nil {
-			return err
-		}
-	}
-
-	// Save configs
-	if cp.Save != nil {
-		return cp.Save(configs)
-	}
-
-	return nil
-}
-
-// Pre-configured parsers for common config types.
-func createDownloaderParser() *ConfigParser[config.DownloaderConfig] {
-	return &ConfigParser[config.DownloaderConfig]{
-		Prefix: "downloader",
-		CreateConfig: func(index string, c *gin.Context) config.DownloaderConfig {
-			builder := NewOptimizedConfigBuilder(c, "downloader", index)
-
-			return config.DownloaderConfig{
-				Name:            builder.getString("Name"),
-				DlType:          builder.getString("DLType"),
-				Hostname:        builder.getString("Hostname"),
-				Port:            builder.getInt("Port", 0),
-				Username:        builder.getString("Username"),
-				Password:        builder.getString("Password"),
-				DelugeDlTo:      builder.getString("DelugeDlTo"),
-				DelugeMoveTo:    builder.getString("DelugeMoveTo"),
-				Priority:        builder.getInt("Priority", 0),
-				AddPaused:       builder.getBool("AddPaused"),
-				DelugeMoveAfter: builder.getBool("DelugeMoveAfter"),
-				Enabled:         builder.getBool("Enabled"),
-			}
-		},
-		Validate: func(configs []config.DownloaderConfig) error {
-			return validateBatch(downloaderValidator, configs)
-		},
-		Save: func(configs []config.DownloaderConfig) error {
-			return saveConfig(configs)
-		},
-	}
-}
-
-// Create indexer parser using the optimized pattern.
-func createIndexerParser() *ConfigParser[config.IndexersConfig] {
-	return &ConfigParser[config.IndexersConfig]{
-		Prefix: "indexers",
-		CreateConfig: func(index string, c *gin.Context) config.IndexersConfig {
-			builder := NewOptimizedConfigBuilder(c, "indexers", index)
-
-			return config.IndexersConfig{
-				Name:                   builder.getString("Name"),
-				IndexerType:            builder.getString("IndexerType"),
-				URL:                    builder.getString("URL"),
-				Apikey:                 builder.getString("Apikey"),
-				Userid:                 builder.getString("Userid"),
-				Enabled:                builder.getBool("Enabled"),
-				Rssenabled:             builder.getBool("Rssenabled"),
-				Addquotesfortitlequery: builder.getBool("Addquotesfortitlequery"),
-				MaxEntries: uint16(
-					builder.getInt("MaxEntries", 0),
-				),
-				MaxEntriesStr: builder.getString("MaxEntriesStr"),
-				RssEntriesloop: uint8(
-					builder.getInt("RssEntriesloop", 0),
-				),
-				OutputAsJSON:      builder.getBool("OutputAsJSON"),
-				Customapi:         builder.getString("Customapi"),
-				Customurl:         builder.getString("Customurl"),
-				Customrssurl:      builder.getString("Customrssurl"),
-				Customrsscategory: builder.getString("Customrsscategory"),
-				Limitercalls:      builder.getInt("Limitercalls", 0),
-				Limiterseconds: uint8(
-					builder.getInt("Limiterseconds", 0),
-				),
-				LimitercallsDaily: builder.getInt("LimitercallsDaily", 0),
-				MaxAge: uint16(
-					builder.getInt("MaxAge", 0),
-				),
-				DisableTLSVerify:   builder.getBool("DisableTLSVerify"),
-				DisableCompression: builder.getBool("DisableCompression"),
-				TimeoutSeconds: uint16(
-					builder.getInt("TimeoutSeconds", 0),
-				),
-				TrustWithIMDBIDs:     builder.getBool("TrustWithIMDBIDs"),
-				TrustWithTVDBIDs:     builder.getBool("TrustWithTVDBIDs"),
-				CheckTitleOnIDSearch: builder.getBool("CheckTitleOnIDSearch"),
-			}
-		},
-		Validate: func(configs []config.IndexersConfig) error {
-			return validateBatch(indexerValidator, configs)
-		},
-		Save: func(configs []config.IndexersConfig) error {
-			return saveConfig(configs)
-		},
-	}
-}
-
-// Create paths parser using the optimized pattern.
-func createPathsParser() *ConfigParser[config.PathsConfig] {
-	return &ConfigParser[config.PathsConfig]{
-		Prefix: "paths",
-		CreateConfig: func(index string, c *gin.Context) config.PathsConfig {
-			builder := NewOptimizedConfigBuilder(c, "paths", index)
-
-			return config.PathsConfig{
-				Name:                   builder.getString("Name"),
-				Path:                   builder.getString("Path"),
-				AllowedVideoExtensions: builder.getStringArray("AllowedVideoExtensions"),
-				AllowedOtherExtensions: builder.getStringArray("AllowedOtherExtensions"),
-				AllowedVideoExtensionsNoRename: builder.getStringArray(
-					"AllowedVideoExtensionsNoRename",
-				),
-				AllowedOtherExtensionsNoRename: builder.getStringArray(
-					"AllowedOtherExtensionsNoRename",
-				),
-				Blocked:                   builder.getStringArray("Blocked"),
-				Disallowed:                builder.getStringArray("Disallowed"),
-				AllowedLanguages:          builder.getStringArray("AllowedLanguages"),
-				MaxSize:                   builder.getInt("MaxSize", 0),
-				MinSize:                   builder.getInt("MinSize", 0),
-				MinVideoSize:              builder.getInt("MinVideoSize", 0),
-				CleanupsizeMB:             builder.getInt("CleanupsizeMB", 0),
-				UpgradeScanInterval:       builder.getInt("UpgradeScanInterval", 0),
-				MissingScanInterval:       builder.getInt("MissingScanInterval", 0),
-				MissingScanReleaseDatePre: builder.getInt("MissingScanReleaseDatePre", 0),
-				MaxRuntimeDifference:      builder.getInt("MaxRuntimeDifference", 0),
-				PresortFolderPath:         builder.getString("PresortFolderPath"),
-				MoveReplacedTargetPath:    builder.getString("MoveReplacedTargetPath"),
-				SetChmod:                  builder.getString("SetChmod"),
-				SetChmodFolder:            builder.getString("SetChmodFolder"),
-				Upgrade:                   builder.getBool("Upgrade"),
-				Replacelower:              builder.getBool("Replacelower"),
-				Usepresort:                builder.getBool("Usepresort"),
-				DeleteWrongLanguage:       builder.getBool("DeleteWrongLanguage"),
-				DeleteDisallowed:          builder.getBool("DeleteDisallowed"),
-				CheckRuntime:              builder.getBool("CheckRuntime"),
-				DeleteWrongRuntime:        builder.getBool("DeleteWrongRuntime"),
-				MoveReplaced:              builder.getBool("MoveReplaced"),
-			}
-		},
-		Validate: func(configs []config.PathsConfig) error {
-			return validatePathsConfig(configs)
-		},
-		Save: func(configs []config.PathsConfig) error {
-			return saveConfig(configs)
-		},
-	}
-}
-
-// Create lists parser using the optimized pattern.
-func createListsParser() *ConfigParser[config.ListsConfig] {
-	return &ConfigParser[config.ListsConfig]{
-		Prefix: "lists",
-		CreateConfig: func(index string, c *gin.Context) config.ListsConfig {
-			builder := NewOptimizedConfigBuilder(c, "lists", index)
-
-			return config.ListsConfig{
-				Name:             builder.getString("Name"),
-				ListType:         builder.getString("ListType"),
-				URL:              builder.getString("URL"),
-				IMDBCSVFile:      builder.getString("IMDBCSVFile"),
-				ManualConfigFile: builder.getString("ManualConfigFile"),
-				TraktUsername:    builder.getString("TraktUsername"),
-				TraktListName:    builder.getString("TraktListName"),
-				TraktListType:    builder.getString("TraktListType"),
-				Excludegenre:     builder.getStringArray("ExcludeGenre"),
-				Includegenre:     builder.getStringArray("IncludeGenre"),
-				TmdbDiscover:     builder.getStringArray("TmdbDiscover"),
-				TmdbList:         builder.getIntArray("TmdbList"),
-				Limit:            builder.getString("Limit"),
-				MinVotes:         builder.getInt("MinVotes", 0),
-				MinRating:        builder.getFloat32("MinRating", 0),
-				RemoveFromList:   builder.getBool("RemoveFromList"),
-				SkipEmptySize:    builder.getBool("SkipEmptySize"),
-				Enabled:          builder.getBool("Enabled"),
-
-				// Plex
-				PlexServerURL: builder.getString("PlexServerURL"),
-				PlexToken:     builder.getString("PlexToken"),
-				PlexUsername:  builder.getString("PlexUsername"),
-
-				// Jellyfin
-				JellyfinServerURL: builder.getString("JellyfinServerURL"),
-				JellyfinToken:     builder.getString("JellyfinToken"),
-				JellyfinUsername:  builder.getString("JellyfinUsername"),
-
-				// Movie scraper - basic
-				MovieScraperType:     builder.getString("MovieScraperType"),
-				MovieScraperStartURL: builder.getString("MovieScraperStartURL"),
-				MovieScraperSiteURL:  builder.getString("MovieScraperSiteURL"),
-				MovieScraperSiteID:   uint(builder.getInt("MovieScraperSiteID", 0)),
-
-				// Movie scraper - HTML/XPath
-				MovieSceneNodeXPath:   builder.getString("MovieSceneNodeXPath"),
-				MovieTitleXPath:       builder.getString("MovieTitleXPath"),
-				MovieYearXPath:        builder.getString("MovieYearXPath"),
-				MovieImdbIDXPath:      builder.getString("MovieImdbIDXPath"),
-				MovieURLXPath:         builder.getString("MovieURLXPath"),
-				MovieRatingXPath:      builder.getString("MovieRatingXPath"),
-				MovieGenreXPath:       builder.getString("MovieGenreXPath"),
-				MovieReleaseDateXPath: builder.getString("MovieReleaseDateXPath"),
-				MovieTitleAttribute:   builder.getString("MovieTitleAttribute"),
-				MovieURLAttribute:     builder.getString("MovieURLAttribute"),
-
-				// Movie scraper - pagination
-				MoviePaginationType: builder.getString("MoviePaginationType"),
-				MoviePageIncrement:  builder.getInt("MoviePageIncrement", 0),
-				MoviePageURLPattern: builder.getString("MoviePageURLPattern"),
-
-				// Movie scraper - CSRF API
-				MovieCSRFCookieName:   builder.getString("MovieCSRFCookieName"),
-				MovieCSRFHeaderName:   builder.getString("MovieCSRFHeaderName"),
-				MovieAPIURLPattern:    builder.getString("MovieAPIURLPattern"),
-				MoviePageStartIndex:   builder.getInt("MoviePageStartIndex", 0),
-				MovieResultsArrayPath: builder.getString("MovieResultsArrayPath"),
-				MovieTitleField:       builder.getString("MovieTitleField"),
-				MovieYearField:        builder.getString("MovieYearField"),
-				MovieImdbIDField:      builder.getString("MovieImdbIDField"),
-				MovieURLField:         builder.getString("MovieURLField"),
-				MovieRatingField:      builder.getString("MovieRatingField"),
-				MovieGenreField:       builder.getString("MovieGenreField"),
-				MovieReleaseDateField: builder.getString("MovieReleaseDateField"),
-
-				// Movie scraper - common
-				MovieDateFormat:  builder.getString("MovieDateFormat"),
-				MovieWaitSeconds: builder.getInt("MovieWaitSeconds", 0),
-
-				// Chart / bestseller scraper
-				ChartEntryNodeXPath:  builder.getString("ChartEntryNodeXPath"),
-				ChartTitleXPath:      builder.getString("ChartTitleXPath"),
-				ChartArtistXPath:     builder.getString("ChartArtistXPath"),
-				ChartTitleAttribute:  builder.getString("ChartTitleAttribute"),
-				ChartArtistAttribute: builder.getString("ChartArtistAttribute"),
-				ChartDefaultArtist:   builder.getString("ChartDefaultArtist"),
-				ChartDateURLPattern:  builder.getString("ChartDateURLPattern"),
-				ChartDateFormat:      builder.getString("ChartDateFormat"),
-			}
-		},
-		Validate: func(configs []config.ListsConfig) error {
-			return validateListsConfig(configs)
-		},
-		Save: func(configs []config.ListsConfig) error {
-			return saveConfig(configs)
-		},
-	}
-}
-
-// Create notification parser using the optimized pattern.
-func createNotificationParser() *ConfigParser[config.NotificationConfig] {
-	return &ConfigParser[config.NotificationConfig]{
-		Prefix: "notifications",
-		CreateConfig: func(index string, c *gin.Context) config.NotificationConfig {
-			builder := NewOptimizedConfigBuilder(c, "notifications", index)
-
-			return config.NotificationConfig{
-				Name:             builder.getString("Name"),
-				NotificationType: builder.getString("NotificationType"),
-				Apikey:           builder.getString("Apikey"),
-				Recipient:        builder.getString("Recipient"),
-				Outputto:         builder.getString("Outputto"),
-				ServerURL:        builder.getString("ServerURL"),
-				AppriseURLs:      builder.getString("AppriseURLs"),
-				SMTPServer:       builder.getString("SMTPServer"),
-				SMTPPort:         builder.getString("SMTPPort"),
-				SMTPFromEmail:    builder.getString("SMTPFromEmail"),
-				SMTPToEmail:      builder.getString("SMTPToEmail"),
-				SMTPUsername:     builder.getString("SMTPUsername"),
-				SMTPPassword:     builder.getString("SMTPPassword"),
-			}
-		},
-		Validate: func(configs []config.NotificationConfig) error {
-			return validateNotificationConfig(configs)
-		},
-		Save: func(configs []config.NotificationConfig) error {
-			return saveConfig(configs)
-		},
-	}
-}
-
-// Create regex parser using the optimized pattern.
-func createRegexParser() *ConfigParser[config.RegexConfig] {
-	return &ConfigParser[config.RegexConfig]{
-		Prefix: "regex",
-		CreateConfig: func(index string, c *gin.Context) config.RegexConfig {
-			builder := NewOptimizedConfigBuilder(c, "regex", index)
-
-			return config.RegexConfig{
-				Name:     builder.getString("Name"),
-				Required: builder.getStringArray("Required"),
-				Rejected: builder.getStringArray("Rejected"),
-			}
-		},
-		Validate: func(configs []config.RegexConfig) error {
-			return validateRegexConfig(configs)
-		},
-		Save: func(configs []config.RegexConfig) error {
-			return saveConfig(configs)
-		},
-	}
-}
-
 // parseDownloaderConfigs parses form data into DownloaderConfig slice.
 func parseDownloaderConfigs(c *gin.Context) ([]config.DownloaderConfig, error) {
-	configs := parseConfigFromForm(c, "downloader", createDownloaderConfig)
+	configs, err := parseConfigFromForm(c, "downloader", createDownloaderConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validateDownloaderConfig(configs); err != nil {
 		return nil, err
 	}
@@ -351,7 +25,11 @@ func parseDownloaderConfigs(c *gin.Context) ([]config.DownloaderConfig, error) {
 
 // parseListsConfigs parses form data into ListsConfig slice.
 func parseListsConfigs(c *gin.Context) ([]config.ListsConfig, error) {
-	configs := parseConfigFromForm(c, "lists", createListsConfig)
+	configs, err := parseConfigFromForm(c, "lists", createListsConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validateListsConfig(configs); err != nil {
 		return nil, err
 	}
@@ -361,7 +39,11 @@ func parseListsConfigs(c *gin.Context) ([]config.ListsConfig, error) {
 
 // parseIndexersConfigs parses form data into IndexersConfig slice.
 func parseIndexersConfigs(c *gin.Context) ([]config.IndexersConfig, error) {
-	configs := parseConfigFromForm(c, "indexers", createIndexersConfig)
+	configs, err := parseConfigFromForm(c, "indexers", createIndexersConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validateIndexersConfig(configs); err != nil {
 		return nil, err
 	}
@@ -371,7 +53,11 @@ func parseIndexersConfigs(c *gin.Context) ([]config.IndexersConfig, error) {
 
 // parsePathsConfigs parses form data into PathsConfig slice.
 func parsePathsConfigs(c *gin.Context) ([]config.PathsConfig, error) {
-	configs := parseConfigFromForm(c, "paths", createPathsConfig)
+	configs, err := parseConfigFromForm(c, "paths", createPathsConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validatePathsConfig(configs); err != nil {
 		return nil, err
 	}
@@ -381,7 +67,11 @@ func parsePathsConfigs(c *gin.Context) ([]config.PathsConfig, error) {
 
 // parseNotificationConfigs parses form data into NotificationConfig slice.
 func parseNotificationConfigs(c *gin.Context) ([]config.NotificationConfig, error) {
-	configs := parseConfigFromForm(c, "notifications", createNotificationConfig)
+	configs, err := parseConfigFromForm(c, "notifications", createNotificationConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validateNotificationConfig(configs); err != nil {
 		return nil, err
 	}
@@ -391,13 +81,9 @@ func parseNotificationConfigs(c *gin.Context) ([]config.NotificationConfig, erro
 
 // parseRegexConfigs parses form data into RegexConfig slice.
 func parseRegexConfigs(c *gin.Context) ([]config.RegexConfig, error) {
-	formKeys := extractFormKeys(c, "regex_", "_Name")
-	configs := make([]config.RegexConfig, 0, len(formKeys))
-
-	for index := range formKeys {
-		if config := createRegexConfig(index, c); config.Name != "" {
-			configs = append(configs, config)
-		}
+	configs, err := parseConfigFromForm(c, "regex", createRegexConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	return configs, validateRegexConfig(configs)
@@ -405,20 +91,9 @@ func parseRegexConfigs(c *gin.Context) ([]config.RegexConfig, error) {
 
 // parseQualityConfigs parses form data into QualityConfig slice.
 func parseQualityConfigs(c *gin.Context) ([]config.QualityConfig, error) {
-	formKeys := make(map[string]bool)
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_Name") || !strings.Contains(key, "quality_main_") {
-			continue
-		}
-
-		formKeys[strings.Split(key, "_")[2]] = true
-	}
-
-	configs := make([]config.QualityConfig, 0, len(formKeys))
-	for index := range formKeys {
-		if config := createQualityConfig(index, c); config.Name != "" {
-			configs = append(configs, config)
-		}
+	configs, err := parseConfigFromForm(c, "quality_main", createQualityConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	return configs, validateQualityConfig(configs)
@@ -426,32 +101,29 @@ func parseQualityConfigs(c *gin.Context) ([]config.QualityConfig, error) {
 
 // parseSchedulerConfigs parses form data into SchedulerConfig slice.
 func parseSchedulerConfigs(c *gin.Context) ([]config.SchedulerConfig, error) {
-	formKeys := extractFormKeys(c, "scheduler_", "_Name")
-	configs := make([]config.SchedulerConfig, 0, len(formKeys))
-
-	for index := range formKeys {
-		if config := createSchedulerConfig(index, c); config.Name != "" {
-			configs = append(configs, config)
-		}
+	configs, err := parseConfigFromForm(
+		c,
+		"scheduler",
+		func(index string, c *gin.Context) (config.SchedulerConfig, error) {
+			return createSchedulerConfig(index, c), nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	return configs, validateSchedulerConfig(configs)
 }
 
-func parseMediaTypeConfig[T any](
+func parseMediaTypeConfig(
 	c *gin.Context,
 	mediaType, index string,
-	builder *ConfigBuilder,
-) config.MediaTypeConfig {
+) (config.MediaTypeConfig, error) {
 	var cfg config.MediaTypeConfig
 
-	group := fmt.Sprintf("media_main_%s_%s", mediaType, index)
+	builder := NewConfigBuilder(c, fmt.Sprintf("media_main_%s_%s", mediaType, index), "")
 
-	builder.context = c
-	builder.prefix = group
-	builder.index = "" // Set to empty since prefix already includes the index
-
-	builder.SetString(&cfg.Name, "Name").
+	builder.SetStringRequired(&cfg.Name, "Name").
 		SetString(&cfg.DefaultQuality, "DefaultQuality").
 		SetString(&cfg.DefaultResolution, "DefaultResolution").
 		SetString(&cfg.Naming, "Naming").
@@ -464,352 +136,149 @@ func parseMediaTypeConfig[T any](
 		SetUint16(&cfg.SearchupgradeIncremental, "SearchupgradeIncremental").
 		SetString(&cfg.AudibleRegion, "AudibleRegion")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
-func parseMediaDataConfigs(c *gin.Context, mediaType, index string) []config.MediaDataConfig {
+func parseMediaDataConfigs(
+	c *gin.Context,
+	mediaType, index string,
+) ([]config.MediaDataConfig, error) {
 	prefix := fmt.Sprintf("media_%s_%s_data", mediaType, index)
-	subformKeys := make(map[string]bool)
 
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_TemplatePath") || !strings.Contains(key, prefix+"_") {
+	var (
+		configs []config.MediaDataConfig
+		errs    []error
+	)
+
+	for _, subIndex := range formRowIndexes(c.Request.PostForm, prefix+"_", "_TemplatePath") {
+		builder := NewConfigBuilder(c, prefix+"_"+subIndex, "")
+
+		var cfg config.MediaDataConfig
+
+		builder.SetStringRequired(&cfg.TemplatePath, "TemplatePath")
+
+		if cfg.TemplatePath == "" {
 			continue
 		}
 
-		subformKeys[strings.Split(key, "_")[4]] = true
-	}
+		builder.SetBool(&cfg.AddFound, "AddFound").
+			SetString(&cfg.AddFoundList, "AddFoundList").
+			SetBool(&cfg.EnableUnpacking, "EnableUnpacking").
+			SetBool(&cfg.WriteRenameLog, "WriteRenameLog").
+			SetBool(&cfg.EmbedArt, "EmbedArt").
+			SetBool(&cfg.EmbedLyrics, "EmbedLyrics").
+			SetBool(&cfg.SkipSeriesTrackMatch, "SkipSeriesTrackMatch").
+			SetBool(&cfg.AllowAlternativeReleases, "AllowAlternativeReleases").
+			SetStringArrayFromForm(&cfg.AllowedReleaseTypes, "AllowedReleaseTypes").
+			SetStringArrayFromForm(&cfg.MBMediaFormats, "MBMediaFormats").
+			SetBool(&cfg.AllowAllFormatsWhenStructuring, "AllowAllFormatsWhenStructuring").
+			SetInt(&cfg.PerTrackToleranceSeconds, "PerTrackToleranceSeconds").
+			SetInt(&cfg.PerTrackToleranceSecondsMax, "PerTrackToleranceSecondsMax").
+			SetInt(&cfg.MaxTotalDifferenceSeconds, "MaxTotalDifferenceSeconds").
+			SetBool(&cfg.AllowMissingTracks, "AllowMissingTracks").
+			SetBool(&cfg.ExceedToleranceIfTotalMatch, "ExceedToleranceIfTotalMatch").
+			SetFloat64(&cfg.StrongRecThresh, "StrongRecThresh").
+			SetFloat64(&cfg.MediumRecThresh, "MediumRecThresh").
+			SetFloat64(&cfg.TrackTitleWeight, "TrackTitleWeight").
+			SetFloat64(&cfg.TrackIndexWeight, "TrackIndexWeight").
+			SetFloat64(&cfg.TrackLengthWeight, "TrackLengthWeight").
+			SetFloat64(&cfg.TrackArtistWeight, "TrackArtistWeight").
+			SetFloat64(&cfg.TrackIdWeight, "TrackIdWeight").
+			SetBool(&cfg.DiscoverSeriesAlbums, "DiscoverSeriesAlbums")
 
-	var configs []config.MediaDataConfig
-	for subIndex := range subformKeys {
-		nameField := fmt.Sprintf("%s_%s_TemplatePath", prefix, subIndex)
-
-		name := c.PostForm(nameField)
-		if name == "" {
-			continue
-		}
-
-		cfg := config.MediaDataConfig{TemplatePath: name}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFound", prefix, subIndex)); val != "" {
-			cfg.AddFound, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFoundList", prefix, subIndex)); val != "" {
-			cfg.AddFoundList = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)); val != "" {
-			cfg.EnableUnpacking, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_WriteRenameLog", prefix, subIndex)); val != "" {
-			cfg.WriteRenameLog, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedArt", prefix, subIndex)); val != "" {
-			cfg.EmbedArt, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedLyrics", prefix, subIndex)); val != "" {
-			cfg.EmbedLyrics, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_SkipSeriesTrackMatch", prefix, subIndex),
-		); val != "" {
-			cfg.SkipSeriesTrackMatch, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_AllowAlternativeReleases", prefix, subIndex),
-		); val != "" {
-			cfg.AllowAlternativeReleases, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostFormArray(
-			fmt.Sprintf("%s_%s_AllowedReleaseTypes", prefix, subIndex),
-		); len(
-			val,
-		) != 0 {
-			cfg.AllowedReleaseTypes = val
-		}
-
-		if val := c.PostFormArray(
-			fmt.Sprintf("%s_%s_MBMediaFormats", prefix, subIndex),
-		); len(
-			val,
-		) != 0 {
-			cfg.MBMediaFormats = val
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_AllowAllFormatsWhenStructuring", prefix, subIndex),
-		); val != "" {
-			cfg.AllowAllFormatsWhenStructuring = val == "true" || val == "1"
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_PerTrackToleranceSeconds", prefix, subIndex),
-		); val != "" {
-			n, _ := strconv.Atoi(val)
-
-			cfg.PerTrackToleranceSeconds = n
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_PerTrackToleranceSecondsMax", prefix, subIndex),
-		); val != "" {
-			n, _ := strconv.Atoi(val)
-
-			cfg.PerTrackToleranceSecondsMax = n
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_MaxTotalDifferenceSeconds", prefix, subIndex),
-		); val != "" {
-			n, _ := strconv.Atoi(val)
-
-			cfg.MaxTotalDifferenceSeconds = n
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_AllowMissingTracks", prefix, subIndex)); val != "" {
-			cfg.AllowMissingTracks, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_ExceedToleranceIfTotalMatch", prefix, subIndex),
-		); val != "" {
-			cfg.ExceedToleranceIfTotalMatch, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackTitleWeight", prefix, subIndex)); val != "" {
-			cfg.TrackTitleWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIndexWeight", prefix, subIndex)); val != "" {
-			cfg.TrackIndexWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackLengthWeight", prefix, subIndex)); val != "" {
-			cfg.TrackLengthWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackArtistWeight", prefix, subIndex)); val != "" {
-			cfg.TrackArtistWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIdWeight", prefix, subIndex)); val != "" {
-			cfg.TrackIdWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex),
-		); val != "" {
-			cfg.DiscoverSeriesAlbums, _ = strconv.ParseBool(val)
+		if err := builder.Err(); err != nil {
+			errs = append(errs, err)
 		}
 
 		configs = append(configs, cfg)
 	}
 
-	return configs
+	return configs, errors.Join(errs...)
 }
 
 func parseMediaDataImportConfigs(
 	c *gin.Context,
 	mediaType, index string,
-) []config.MediaDataImportConfig {
+) ([]config.MediaDataImportConfig, error) {
 	prefix := fmt.Sprintf("media_%s_%s_dataimport", mediaType, index)
-	subformKeys := make(map[string]bool)
 
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_TemplatePath") || !strings.Contains(key, prefix+"_") {
+	var (
+		configs []config.MediaDataImportConfig
+		errs    []error
+	)
+
+	for _, subIndex := range formRowIndexes(c.Request.PostForm, prefix+"_", "_TemplatePath") {
+		builder := NewConfigBuilder(c, prefix+"_"+subIndex, "")
+
+		var cfg config.MediaDataImportConfig
+
+		builder.SetStringRequired(&cfg.TemplatePath, "TemplatePath")
+
+		if cfg.TemplatePath == "" {
 			continue
 		}
 
-		subformKeys[strings.Split(key, "_")[4]] = true
-	}
+		builder.SetBool(&cfg.EnableUnpacking, "EnableUnpacking").
+			SetBool(&cfg.AddFound, "AddFound").
+			SetString(&cfg.AddFoundList, "AddFoundList").
+			SetBool(&cfg.AllowAlternativeReleases, "AllowAlternativeReleases").
+			SetStringRequired(&cfg.MoveUnprocessed, "MoveUnprocessed").
+			SetBool(&cfg.EmbedArt, "EmbedArt").
+			SetBool(&cfg.AllowAllFormatsWhenStructuring, "AllowAllFormatsWhenStructuring").
+			SetStringArrayFromForm(&cfg.AllowedReleaseTypes, "AllowedReleaseTypes").
+			SetStringArrayFromForm(&cfg.MBMediaFormats, "MBMediaFormats").
+			SetInt(&cfg.PerTrackToleranceSeconds, "PerTrackToleranceSeconds").
+			SetInt(&cfg.PerTrackToleranceSecondsMax, "PerTrackToleranceSecondsMax").
+			SetInt(&cfg.MaxTotalDifferenceSeconds, "MaxTotalDifferenceSeconds").
+			SetBool(&cfg.AllowMissingTracks, "AllowMissingTracks").
+			SetBool(&cfg.ExceedToleranceIfTotalMatch, "ExceedToleranceIfTotalMatch").
+			SetFloat64(&cfg.StrongRecThresh, "StrongRecThresh").
+			SetFloat64(&cfg.MediumRecThresh, "MediumRecThresh").
+			SetFloat64(&cfg.TrackTitleWeight, "TrackTitleWeight").
+			SetFloat64(&cfg.TrackIndexWeight, "TrackIndexWeight").
+			SetFloat64(&cfg.TrackLengthWeight, "TrackLengthWeight").
+			SetFloat64(&cfg.TrackArtistWeight, "TrackArtistWeight").
+			SetFloat64(&cfg.TrackIdWeight, "TrackIdWeight").
+			SetBool(&cfg.DiscoverSeriesAlbums, "DiscoverSeriesAlbums")
 
-	var configs []config.MediaDataImportConfig
-	for subIndex := range subformKeys {
-		nameField := fmt.Sprintf("%s_%s_TemplatePath", prefix, subIndex)
-
-		name := c.PostForm(nameField)
-		if name == "" {
-			continue
-		}
-
-		cfg := config.MediaDataImportConfig{TemplatePath: name}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_EnableUnpacking", prefix, subIndex)); val != "" {
-			cfg.EnableUnpacking, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFound", prefix, subIndex)); val != "" {
-			cfg.AddFound, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_AddFoundList", prefix, subIndex)); val != "" {
-			cfg.AddFoundList = val
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_AllowAlternativeReleases", prefix, subIndex),
-		); val != "" {
-			cfg.AllowAlternativeReleases, _ = strconv.ParseBool(val)
-		}
-
-		cfg.MoveUnprocessed = c.PostForm(fmt.Sprintf("%s_%s_MoveUnprocessed", prefix, subIndex))
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_EmbedArt", prefix, subIndex)); val != "" {
-			cfg.EmbedArt, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_AllowAllFormatsWhenStructuring", prefix, subIndex),
-		); val != "" {
-			cfg.AllowAllFormatsWhenStructuring = val == "true" || val == "1"
-		}
-
-		if val := c.PostFormArray(
-			fmt.Sprintf("%s_%s_AllowedReleaseTypes", prefix, subIndex),
-		); len(val) != 0 {
-			cfg.AllowedReleaseTypes = val
-		}
-
-		if val := c.PostFormArray(
-			fmt.Sprintf("%s_%s_MBMediaFormats", prefix, subIndex),
-		); len(val) != 0 {
-			cfg.MBMediaFormats = val
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_PerTrackToleranceSeconds", prefix, subIndex),
-		); val != "" {
-			n, _ := strconv.Atoi(val)
-
-			cfg.PerTrackToleranceSeconds = n
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_PerTrackToleranceSecondsMax", prefix, subIndex),
-		); val != "" {
-			n, _ := strconv.Atoi(val)
-
-			cfg.PerTrackToleranceSecondsMax = n
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_MaxTotalDifferenceSeconds", prefix, subIndex),
-		); val != "" {
-			n, _ := strconv.Atoi(val)
-
-			cfg.MaxTotalDifferenceSeconds = n
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_AllowMissingTracks", prefix, subIndex)); val != "" {
-			cfg.AllowMissingTracks, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_ExceedToleranceIfTotalMatch", prefix, subIndex),
-		); val != "" {
-			cfg.ExceedToleranceIfTotalMatch, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_StrongRecThresh", prefix, subIndex)); val != "" {
-			cfg.StrongRecThresh, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_MediumRecThresh", prefix, subIndex)); val != "" {
-			cfg.MediumRecThresh, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackTitleWeight", prefix, subIndex)); val != "" {
-			cfg.TrackTitleWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIndexWeight", prefix, subIndex)); val != "" {
-			cfg.TrackIndexWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackLengthWeight", prefix, subIndex)); val != "" {
-			cfg.TrackLengthWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackArtistWeight", prefix, subIndex)); val != "" {
-			cfg.TrackArtistWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TrackIdWeight", prefix, subIndex)); val != "" {
-			cfg.TrackIdWeight, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if val := c.PostForm(
-			fmt.Sprintf("%s_%s_DiscoverSeriesAlbums", prefix, subIndex),
-		); val != "" {
-			cfg.DiscoverSeriesAlbums, _ = strconv.ParseBool(val)
+		if err := builder.Err(); err != nil {
+			errs = append(errs, err)
 		}
 
 		configs = append(configs, cfg)
 	}
 
-	return configs
+	return configs, errors.Join(errs...)
 }
 
-func parseMediaListsConfigs(c *gin.Context, mediaType, index string) []config.MediaListsConfig {
+func parseMediaListsConfigs(
+	c *gin.Context,
+	mediaType, index string,
+) []config.MediaListsConfig {
 	prefix := fmt.Sprintf("media_%s_%s_lists", mediaType, index)
-	subformKeys := make(map[string]bool)
-
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_Name") || !strings.Contains(key, prefix+"_") {
-			continue
-		}
-
-		subformKeys[strings.Split(key, "_")[4]] = true
-	}
 
 	var configs []config.MediaListsConfig
-	for subIndex := range subformKeys {
-		nameField := fmt.Sprintf("%s_%s_Name", prefix, subIndex)
 
-		name := c.PostForm(nameField)
-		if name == "" {
+	for _, subIndex := range formRowIndexes(c.Request.PostForm, prefix+"_", "_Name") {
+		builder := NewConfigBuilder(c, prefix+"_"+subIndex, "")
+
+		var cfg config.MediaListsConfig
+
+		builder.SetStringRequired(&cfg.Name, "Name")
+
+		// Sub-rows without a name are dropped as before: the default config
+		// ships an unnamed placeholder list row.
+		if cfg.Name == "" {
 			continue
 		}
 
-		cfg := config.MediaListsConfig{Name: name}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TemplateList", prefix, subIndex)); val != "" {
-			cfg.TemplateList = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TemplateQuality", prefix, subIndex)); val != "" {
-			cfg.TemplateQuality = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_TemplateScheduler", prefix, subIndex)); val != "" {
-			cfg.TemplateScheduler = val
-		}
-
-		if val := c.PostFormArray(fmt.Sprintf("%s_%s_IgnoreMapLists", prefix, subIndex)); len(
-			val,
-		) != 0 {
-			cfg.IgnoreMapLists = val
-		}
-
-		if val := c.PostFormArray(fmt.Sprintf("%s_%s_ReplaceMapLists", prefix, subIndex)); len(
-			val,
-		) != 0 {
-			cfg.ReplaceMapLists = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_Enabled", prefix, subIndex)); val != "" {
-			cfg.Enabled, _ = strconv.ParseBool(val)
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_Addfound", prefix, subIndex)); val != "" {
-			cfg.Addfound, _ = strconv.ParseBool(val)
-		}
+		builder.SetString(&cfg.TemplateList, "TemplateList").
+			SetString(&cfg.TemplateQuality, "TemplateQuality").
+			SetString(&cfg.TemplateScheduler, "TemplateScheduler").
+			SetStringArrayFromForm(&cfg.IgnoreMapLists, "IgnoreMapLists").
+			SetStringArrayFromForm(&cfg.ReplaceMapLists, "ReplaceMapLists").
+			SetBool(&cfg.Enabled, "Enabled").
+			SetBool(&cfg.Addfound, "Addfound")
 
 		configs = append(configs, cfg)
 	}
@@ -822,42 +291,24 @@ func parseMediaNotificationConfigs(
 	mediaType, index string,
 ) []config.MediaNotificationConfig {
 	prefix := fmt.Sprintf("media_%s_%s_notification", mediaType, index)
-	subformKeys := make(map[string]bool)
-
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_MapNotification") || !strings.Contains(key, prefix+"_") {
-			continue
-		}
-
-		subformKeys[strings.Split(key, "_")[4]] = true
-	}
 
 	var configs []config.MediaNotificationConfig
-	for subIndex := range subformKeys {
-		nameField := fmt.Sprintf("%s_%s_MapNotification", prefix, subIndex)
 
-		name := c.PostForm(nameField)
-		if name == "" {
+	for _, subIndex := range formRowIndexes(c.Request.PostForm, prefix+"_", "_MapNotification") {
+		builder := NewConfigBuilder(c, prefix+"_"+subIndex, "")
+
+		var cfg config.MediaNotificationConfig
+
+		builder.SetStringRequired(&cfg.MapNotification, "MapNotification")
+
+		if cfg.MapNotification == "" {
 			continue
 		}
 
-		cfg := config.MediaNotificationConfig{MapNotification: name}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_Event", prefix, subIndex)); val != "" {
-			cfg.Event = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_Title", prefix, subIndex)); val != "" {
-			cfg.Title = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_Message", prefix, subIndex)); val != "" {
-			cfg.Message = val
-		}
-
-		if val := c.PostForm(fmt.Sprintf("%s_%s_ReplacedPrefix", prefix, subIndex)); val != "" {
-			cfg.ReplacedPrefix = val
-		}
+		builder.SetString(&cfg.Event, "Event").
+			SetString(&cfg.Title, "Title").
+			SetString(&cfg.Message, "Message").
+			SetString(&cfg.ReplacedPrefix, "ReplacedPrefix")
 
 		configs = append(configs, cfg)
 	}
@@ -865,45 +316,42 @@ func parseMediaNotificationConfigs(
 	return configs
 }
 
-func parseMediaConfigs(c *gin.Context, mediaType string) []config.MediaTypeConfig {
-	formKeys := make(map[string]bool)
-	searchKey := fmt.Sprintf("media_main_%s_", mediaType)
-
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_Name") || !strings.Contains(key, searchKey) {
-			continue
-		}
-
-		// Extract the index part (e.g., "new0" from "media_main_series_new0_Name")
-		parts := strings.Split(key, "_")
-		if len(parts) >= 4 {
-			formKeys[parts[3]] = true
-		}
-	}
-
+func parseMediaConfigs(c *gin.Context, mediaType string) ([]config.MediaTypeConfig, error) {
 	var (
 		configs []config.MediaTypeConfig
-		builder ConfigBuilder
+		errs    []error
 	)
 
-	for index := range formKeys {
-		cfg := parseMediaTypeConfig[config.MediaTypeConfig](c, mediaType, index, &builder)
+	for _, index := range formRowIndexes(c.Request.PostForm, "media_main_"+mediaType+"_", "_Name") {
+		cfg, err := parseMediaTypeConfig(c, mediaType, index)
+		if err != nil {
+			errs = append(errs, err)
+		}
+
 		if cfg.Name == "" {
+			errs = append(errs, fmt.Errorf("%s entry %s: name must not be empty", mediaType, index))
 			continue
 		}
 
-		cfg.Data = parseMediaDataConfigs(c, mediaType, index)
-		cfg.DataImport = parseMediaDataImportConfigs(c, mediaType, index)
+		if cfg.Data, err = parseMediaDataConfigs(c, mediaType, index); err != nil {
+			errs = append(errs, err)
+		}
+
+		if cfg.DataImport, err = parseMediaDataImportConfigs(c, mediaType, index); err != nil {
+			errs = append(errs, err)
+		}
+
 		cfg.Lists = parseMediaListsConfigs(c, mediaType, index)
+
 		cfg.Notification = parseMediaNotificationConfigs(c, mediaType, index)
 
 		configs = append(configs, cfg)
 	}
 
-	return configs
+	return configs, errors.Join(errs...)
 }
 
-func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
+func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 	updatedConfig := config.GetToml().General
 
 	builder := &ConfigBuilder{context: c, prefix: "general"}
@@ -1045,34 +493,40 @@ func parseGeneralConfig(c *gin.Context) config.GeneralConfig {
 		// Music metadata source penalties (provider -> penalty weight)
 		SetStringFloatMap(&updatedConfig.MusicMetaSourcePenalties, "MusicMetaSourcePenalties")
 
-	return updatedConfig
+	return updatedConfig, builder.Err()
 }
 
 // parseConfigFromForm is a generic helper to parse form data into config structs.
+// Rows are identified by the numeric index in "<prefix>_<index>_Name" keys and
+// returned in index order, which is the order they appear in the form.
 func parseConfigFromForm[T any](
 	c *gin.Context,
 	prefix string,
-	createConfig func(string, *gin.Context) T,
-) []T {
+	createConfig func(string, *gin.Context) (T, error),
+) ([]T, error) {
 	if err := c.Request.ParseForm(); err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to parse form data: %w", err)
 	}
 
-	formKeys := extractFormKeys(c, prefix, "_Name")
-	configs := make([]T, 0, len(formKeys))
+	indexes := formRowIndexes(c.Request.PostForm, prefix+"_", "_Name")
+	configs := make([]T, 0, len(indexes))
 
-	for i := range formKeys {
-		nameField := fmt.Sprintf("%s_%s_Name", prefix, i)
+	var errs []error
 
-		name := c.PostForm(nameField)
-		if name == "" {
-			continue // Skip entries without names
+	for _, i := range indexes {
+		if strings.TrimSpace(c.PostForm(fmt.Sprintf("%s_%s_Name", prefix, i))) == "" {
+			errs = append(errs, fmt.Errorf("%s entry %s: name must not be empty", prefix, i))
+			continue
 		}
 
-		config := createConfig(i, c)
+		cfg, err := createConfig(i, c)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
 
-		configs = append(configs, config)
+		configs = append(configs, cfg)
 	}
 
-	return configs
+	return configs, errors.Join(errs...)
 }

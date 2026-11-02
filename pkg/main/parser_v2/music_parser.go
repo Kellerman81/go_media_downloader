@@ -1,11 +1,7 @@
 package parser_v2
 
 import (
-	"context"
-	"path/filepath"
 	"regexp"
-	"slices"
-	"sort"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -62,14 +58,18 @@ func NewMusicParserWithMatcher(rm *RuntimeMatcher) *MusicParser {
 const (
 	reMusicYear        = `[\(\[]?((?:19|20)\d{2})[\)\]]?`
 	reMusicTrackNumber = `(?i)(?:track[\s._-]?)?(\d{1,3})[\s._-]`
-	reMusicDiscNumber  = `(?i)(?:\[|\()?(?:disc|disk|cd|d)[\s._-]?(\d+)(?:\]|\))?`
+	// A left boundary keeps the markers from matching inside words ("Cloud 9",
+	// "Road 66" read as disc 9/66); the bare "d"
+	// form must additionally be a standalone "d1"/"d01" token. Group 1 holds
+	// the disc/disk/cd number, group 2 the bare "d" number.
+	reMusicDiscNumber  = `(?i)(?:^|[^a-z0-9])[\[\(]?(?:(?:disc|disk|cd)[\s._-]?(\d+)|d(\d{1,2}))[\]\)]?(?:$|[^a-z0-9])`
 	reMusicDiscTrack   = `^(\d{1,2})[-.](\d{2,3})\s`
 	reMusicCatalogNum  = `(?i)[\[\(]([A-Z]{2,}[\s-]?\d+(?:[A-Z])?|[A-Z]+\d{2,}[A-Z]*)[\]\)]`
 	reMusicFormat      = `(?i)(?:[\[\(\s-])(flac|mp3|m4a|ogg|opus|wav|alac|aac|ape|wma|aiff|wv|320|256|192|128|v0|v2|24bit|16bit|24-bit|16-bit)(?:[\]\)\s-]|$)`
 	reMusicBitrate     = `(?i)(\d{2,4})\s*(?:kbps|kb\/s|kbit)`
 	reMusicSampleRate  = `(?i)(\d{2,3}(?:\.\d)?)\s*(?:khz)`
 	reMusicBitDepth    = `(?i)(\d{2})[\s-]?bit`
-	reMusicReleaseType = `(?i)[\[\(\s](album|ep|single|compilation|soundtrack|ost|live|bootleg|demo|mixtape|remix|deluxe|remaster(?:ed)?|limited\s*edition)[\]\)\s]`
+	reMusicReleaseType = `(?i)[\[\(\s](album|ep|single|compilation|soundtrack|ost|live|bootleg|demo|mixtape|remix|deluxe|remaster(?:ed)?|limited\s*edition)(?:[\]\)\s]|$)`
 	reMusicGroup       = `(?i)-([a-z0-9_]+)$`
 	reMusicArtistDash  = `^(.+?)\s+-\s+(.+)$`
 	reMusicArtistTitle = `^(.+?)[-_](.+)$`
@@ -128,11 +128,9 @@ func (mp *MusicParser) Parse(filename string) *MusicParseResult {
 	}
 
 	// Get extension and base name
-	ext := filepath.Ext(filename)
+	name, ext := splitKnownExt(filename)
 
 	result.Format = logger.ExtToFormat(ext)
-
-	name := strings.TrimSuffix(filename, ext)
 
 	// Check if lossless
 	result.IsLossless = IsLosslessAudioExtension(ext)
@@ -160,9 +158,14 @@ func (mp *MusicParser) Parse(filename string) *MusicParseResult {
 
 	// Extract disc number if not already found
 	if trackInfo.DiscNumber == 0 {
-		if loc := mp.patterns.discNumber.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
-			trackInfo.DiscNumber = parseInt(cleanedName[loc[2]:loc[3]])
-			cleanedName = mp.patterns.discNumber.ReplaceAllLiteralString(cleanedName, "")
+		if loc := mp.patterns.discNumber.FindStringSubmatchIndex(cleanedName); len(loc) > 5 {
+			if loc[2] != -1 {
+				trackInfo.DiscNumber = parseInt(cleanedName[loc[2]:loc[3]])
+			} else {
+				trackInfo.DiscNumber = parseInt(cleanedName[loc[4]:loc[5]])
+			}
+
+			cleanedName = mp.patterns.discNumber.ReplaceAllLiteralString(cleanedName, " ")
 		}
 	}
 
@@ -192,109 +195,6 @@ func (mp *MusicParser) Parse(filename string) *MusicParseResult {
 
 	// Calculate basic confidence
 	result.Confidence = mp.calculateTrackConfidence(trackInfo)
-
-	return result
-}
-
-// ParseAlbum parses an album from a directory of files.
-func (mp *MusicParser) ParseAlbum(dirPath string, files []string) *MusicParseResult {
-	if len(files) == 0 {
-		return nil
-	}
-
-	result := &MusicParseResult{
-		ParseResult: ParseResult{
-			SourcePath: dirPath,
-			MediaType:  MediaTypeMusic,
-		},
-	}
-
-	// Parse directory name for album info
-	dirName := filepath.Base(dirPath)
-	mp.parseAlbumName(dirName, result)
-
-	// Parse parent directory for artist info if needed
-	if result.Artist == "" {
-		parentDir := filepath.Base(filepath.Dir(dirPath))
-		if parentDir != "." && parentDir != "" && looksLikeArtistName(parentDir) {
-			result.Artist = cleanTitle(parentDir)
-		}
-	}
-
-	// Parse all track files
-	result.Tracks = make([]TrackInfo, 0, len(files))
-
-	discSet := make(map[int]bool)
-	formatCounts := make(map[string]int)
-	var formatOrder []string
-
-	for i := range files {
-		ext := filepath.Ext(files[i])
-		if !IsAudioExtension(ext) {
-			continue
-		}
-
-		trackResult := mp.Parse(filepath.Base(files[i]))
-		if len(trackResult.Tracks) == 0 {
-			continue
-		}
-
-		track := trackResult.Tracks[0]
-
-		track.Filename = files[i]
-		result.Tracks = append(result.Tracks, track)
-
-		if track.DiscNumber > 0 {
-			discSet[track.DiscNumber] = true
-		}
-
-		if trackResult.Format != "" {
-			if formatCounts[trackResult.Format] == 0 {
-				formatOrder = append(formatOrder, trackResult.Format)
-			}
-
-			formatCounts[trackResult.Format]++
-		}
-	}
-
-	// Sort tracks by disc and track number
-	sort.Slice(result.Tracks, func(i, j int) bool {
-		if result.Tracks[i].DiscNumber != result.Tracks[j].DiscNumber {
-			return result.Tracks[i].DiscNumber < result.Tracks[j].DiscNumber
-		}
-
-		return result.Tracks[i].TrackNumber < result.Tracks[j].TrackNumber
-	})
-
-	// Determine format: most common, ties broken by first-encountered order.
-	// formatOrder makes this deterministic - ranging a map here (the
-	// previous approach) picks a random format across runs of the same
-	// on-disk album, since Go intentionally randomizes map iteration order.
-	if len(formatOrder) > 0 {
-		best := formatOrder[0]
-		for _, format := range formatOrder[1:] {
-			if formatCounts[format] > formatCounts[best] {
-				best = format
-			}
-		}
-
-		result.Format = best
-		result.IsLossless = IsLosslessAudioExtension("." + best)
-	}
-
-	// Calculate totals
-	result.TotalTracks = len(result.Tracks)
-
-	result.TotalDiscs = len(discSet)
-	if result.TotalDiscs == 0 && result.TotalTracks > 0 {
-		result.TotalDiscs = 1
-	}
-
-	// Check completeness
-	mp.checkCompleteness(result)
-
-	// Calculate confidence
-	result.Confidence = mp.calculateAlbumConfidence(result)
 
 	return result
 }
@@ -334,13 +234,22 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 
 	// Extract release type - only extract for metadata, don't strip from title
 	// if it's in parentheses (e.g., "(Live)" is often part of the album name)
-	if loc := mp.patterns.releaseType.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+	// Release-type words are ordinary English ("Live and Let Die", "Album"),
+	// so a bare one only counts as a tag when it ends the name.
+	for _, loc := range mp.patterns.releaseType.FindAllStringSubmatchIndex(cleanedName, -1) {
+		matchStr := cleanedName[loc[0]:loc[1]]
+		bracketed := matchStr[0] == '(' || matchStr[0] == '['
+		if !bracketed && strings.TrimSpace(cleanedName[loc[3]:]) != "" {
+			continue
+		}
+
 		result.ReleaseType = normalizeReleaseType(cleanedName[loc[2]:loc[3]])
 		// Only strip release type if it's NOT in parentheses/brackets
-		matchStr := cleanedName[loc[0]:loc[1]]
-		if !strings.HasPrefix(matchStr, "(") && !strings.HasPrefix(matchStr, "[") {
+		if !bracketed {
 			cleanedName = strings.Replace(cleanedName, matchStr, " ", 1)
 		}
+
+		break
 	}
 
 	// Extract catalog number
@@ -350,7 +259,7 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 	}
 
 	// Extract format indicators
-	if loc := mp.patterns.format.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
+	if loc := mp.findFormatTag(cleanedName); len(loc) > 2 {
 		formatIndicator := strings.ToLower(cleanedName[loc[2]:loc[3]])
 		switch formatIndicator {
 		case "flac", "wav", "alac", "aiff":
@@ -367,7 +276,10 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 			result.Bitrate = 245 // Approximate VBR V0
 		}
 
-		cleanedName = mp.patterns.format.ReplaceAllLiteralString(cleanedName, " ")
+		for loc != nil {
+			cleanedName = cleanedName[:loc[0]] + " " + cleanedName[loc[1]:]
+			loc = mp.findFormatTag(cleanedName)
+		}
 	}
 
 	// Extract bitrate
@@ -442,6 +354,28 @@ func (mp *MusicParser) parseAlbumName(name string, result *MusicParseResult) {
 	}
 
 	result.Title = result.Album
+}
+
+// findFormatTag returns the submatch indices of the first format indicator in
+// name that is really a tag. "opus" and "ape" are also ordinary title words
+// ("Magnum Opus"), so outside brackets they only count when written in
+// uppercase the way scene/NZB names spell tags.
+func (mp *MusicParser) findFormatTag(name string) []int {
+	for _, loc := range mp.patterns.format.FindAllStringSubmatchIndex(name, -1) {
+		word := name[loc[2]:loc[3]]
+		if name[loc[0]] == '(' || name[loc[0]] == '[' {
+			return loc
+		}
+
+		if (strings.EqualFold(word, "opus") || strings.EqualFold(word, "ape")) &&
+			word != strings.ToUpper(word) {
+			continue
+		}
+
+		return loc
+	}
+
+	return nil
 }
 
 // extractArtistAlbum attempts to separate artist from album title.
@@ -731,62 +665,6 @@ func StripReleaseType(album *string) string {
 	return strings.TrimSpace(*album)
 }
 
-// checkCompleteness determines if an album has all expected tracks.
-func (*MusicParser) checkCompleteness(result *MusicParseResult) {
-	if len(result.Tracks) == 0 {
-		return
-	}
-
-	// Group tracks by disc
-	discTracks := make(map[int][]int)
-	for i := range result.Tracks {
-		disc := result.Tracks[i].DiscNumber
-		if disc == 0 {
-			disc = 1
-		}
-
-		discTracks[disc] = append(discTracks[disc], result.Tracks[i].TrackNumber)
-	}
-
-	// Check each disc for missing tracks
-	result.MissingTracks = nil
-	for disc := range discTracks {
-		if len(discTracks[disc]) == 0 {
-			continue
-		}
-
-		// Find max track number
-		maxTrack := 0
-
-		trackSet := make(map[int]bool)
-		for i := range discTracks[disc] {
-			if discTracks[disc][i] > maxTrack {
-				maxTrack = discTracks[disc][i]
-			}
-
-			trackSet[discTracks[disc][i]] = true
-		}
-
-		// Check for gaps (only if reasonable track count)
-		if maxTrack > 50 {
-			continue
-		}
-
-		for i := 1; i <= maxTrack; i++ {
-			if !trackSet[i] {
-				// Encode as disc*100 + track for multi-disc support
-				if result.TotalDiscs > 1 {
-					result.MissingTracks = append(result.MissingTracks, disc*100+i)
-				} else {
-					result.MissingTracks = append(result.MissingTracks, i)
-				}
-			}
-		}
-	}
-
-	result.IsComplete = len(result.MissingTracks) == 0
-}
-
 // calculateTrackConfidence calculates confidence for a single track parse.
 func (*MusicParser) calculateTrackConfidence(track TrackInfo) float64 {
 	var conf float64
@@ -814,233 +692,9 @@ func (*MusicParser) calculateTrackConfidence(track TrackInfo) float64 {
 	return conf
 }
 
-// calculateAlbumConfidence calculates confidence for an album parse.
-func (*MusicParser) calculateAlbumConfidence(result *MusicParseResult) float64 {
-	var conf float64
-
-	// Album title
-	if result.Album != "" {
-		conf += 0.2
-	}
-
-	// Artist
-	if result.Artist != "" {
-		conf += 0.2
-	}
-
-	// Year
-	if result.Year > 0 {
-		conf += 0.1
-	}
-
-	// Track information
-	if len(result.Tracks) > 0 {
-		conf += 0.15
-
-		// Tracks have numbers
-		hasNumbers := false
-		for i := range result.Tracks {
-			if result.Tracks[i].TrackNumber > 0 {
-				hasNumbers = true
-				break
-			}
-		}
-
-		if hasNumbers {
-			conf += 0.1
-		}
-	}
-
-	// Completeness
-	if result.IsComplete && len(result.Tracks) > 0 {
-		conf += 0.1
-	}
-
-	// External identifiers
-	if result.MusicBrainzReleaseID != "" {
-		conf += 0.1
-	}
-
-	if result.CatalogNumber != "" {
-		conf += 0.05
-	}
-
-	if conf > 1.0 {
-		conf = 1.0
-	}
-
-	return conf
-}
-
 // MatchByRuntime attempts to match an album to a database entry by total runtime.
 func (mp *MusicParser) MatchByRuntime(expectedRuntimeMS int64, tracks []TrackInfo) (bool, float64) {
 	return mp.runtimeMatcher.MatchTotalRuntime(expectedRuntimeMS, tracks)
-}
-
-// UpdateTrackRuntimes updates the runtime information for tracks.
-func (*MusicParser) UpdateTrackRuntimes(result *MusicParseResult, runtimes map[string]int64) {
-	var totalRuntime int64
-	for i := range result.Tracks {
-		if runtime, ok := runtimes[result.Tracks[i].Filename]; ok {
-			result.Tracks[i].RuntimeMS = runtime
-
-			totalRuntime += runtime
-		}
-	}
-
-	result.TotalRuntimeMS = totalRuntime
-}
-
-// ParseAlbumWithTags parses an album using both filename parsing and audio tags.
-// Tags take precedence over filename-derived information.
-func (mp *MusicParser) ParseAlbumWithTags(dirPath string, files []string) *MusicParseResult {
-	// First parse from filenames
-	result := mp.ParseAlbum(dirPath, files)
-	if result == nil {
-		return nil
-	}
-
-	// Read tags from files
-	tagResult, err := ReadAlbumTags(files)
-	if err != nil || tagResult == nil {
-		return result
-	}
-
-	// Merge tag info, preferring tag data over filename data
-	mp.mergeTagInfo(result, tagResult)
-
-	return result
-}
-
-// ParseAlbumWithAnalysis parses an album with full media analysis.
-func (mp *MusicParser) ParseAlbumWithAnalysis(
-	ctx context.Context,
-	dirPath string,
-	files []string,
-	analyzer *MediaAnalyzer,
-) *MusicParseResult {
-	// Parse with tags first
-	result := mp.ParseAlbumWithTags(dirPath, files)
-	if result == nil {
-		return nil
-	}
-
-	// Analyze files for runtime info
-	if analyzer != nil {
-		_ = analyzer.AnalyzeMusic(ctx, files, result)
-	}
-
-	return result
-}
-
-// mergeTagInfo merges tag information into the parse result.
-func (mp *MusicParser) mergeTagInfo(result, tagResult *MusicParseResult) {
-	// Album-level info from tags takes precedence
-	if tagResult.Album != "" {
-		result.Album = tagResult.Album
-		result.Title = tagResult.Album
-	}
-
-	if tagResult.Artist != "" {
-		result.Artist = tagResult.Artist
-	}
-
-	if tagResult.AlbumArtist != "" {
-		result.AlbumArtist = tagResult.AlbumArtist
-	}
-
-	if tagResult.Year > 0 {
-		result.Year = tagResult.Year
-	}
-
-	if tagResult.Genre != "" {
-		result.Genre = tagResult.Genre
-	}
-
-	if tagResult.Label != "" {
-		result.Label = tagResult.Label
-	}
-
-	if tagResult.CatalogNumber != "" {
-		result.CatalogNumber = tagResult.CatalogNumber
-	}
-
-	if tagResult.MusicBrainzReleaseID != "" {
-		result.MusicBrainzReleaseID = tagResult.MusicBrainzReleaseID
-	}
-
-	if tagResult.MusicBrainzReleaseGroupID != "" {
-		result.MusicBrainzReleaseGroupID = tagResult.MusicBrainzReleaseGroupID
-	}
-
-	if tagResult.TotalTracks > 0 {
-		result.TotalTracks = tagResult.TotalTracks
-	}
-
-	if tagResult.TotalDiscs > 0 {
-		result.TotalDiscs = tagResult.TotalDiscs
-	}
-
-	// Merge track info
-	tagTrackMap := make(map[string]*TrackInfo)
-	for i := range tagResult.Tracks {
-		tagTrackMap[tagResult.Tracks[i].Filename] = &tagResult.Tracks[i]
-	}
-
-	for i := range result.Tracks {
-		tagTrack, ok := tagTrackMap[result.Tracks[i].Filename]
-		if !ok {
-			continue
-		}
-
-		// Merge track-level info
-		if tagTrack.Title != "" {
-			result.Tracks[i].Title = tagTrack.Title
-		}
-
-		if tagTrack.TrackNumber > 0 {
-			result.Tracks[i].TrackNumber = tagTrack.TrackNumber
-		}
-
-		if tagTrack.DiscNumber > 0 {
-			result.Tracks[i].DiscNumber = tagTrack.DiscNumber
-		}
-
-		if tagTrack.Artist != "" {
-			result.Tracks[i].Artist = tagTrack.Artist
-		}
-
-		if tagTrack.ISRC != "" {
-			result.Tracks[i].ISRC = tagTrack.ISRC
-		}
-
-		if tagTrack.AcoustID != "" {
-			result.Tracks[i].AcoustID = tagTrack.AcoustID
-		}
-
-		if tagTrack.MusicBrainzRecordingID != "" {
-			result.Tracks[i].MusicBrainzRecordingID = tagTrack.MusicBrainzRecordingID
-		}
-
-		if tagTrack.RuntimeMS > 0 {
-			result.Tracks[i].RuntimeMS = tagTrack.RuntimeMS
-		}
-	}
-
-	// Recalculate totals from merged data
-	mp.checkCompleteness(result)
-
-	// Update confidence based on merged data
-	result.Confidence = mp.calculateAlbumConfidence(result)
-
-	if tagResult.MusicBrainzReleaseID == "" {
-		return
-	}
-
-	result.Confidence += 0.1
-	if result.Confidence > 1.0 {
-		result.Confidence = 1.0
-	}
 }
 
 // normalizeReleaseType normalizes release type strings.
@@ -1056,34 +710,6 @@ func normalizeReleaseType(s string) string {
 	default:
 		return s
 	}
-}
-
-// looksLikeArtistName checks if a string looks like an artist name.
-func looksLikeArtistName(s string) bool {
-	s = strings.TrimSpace(s)
-	if len(s) < 2 {
-		return false
-	}
-
-	// Exclude common non-artist directory names
-	excludes := []string{
-		"music", "albums", "flac", "mp3", "lossless", "cd", "disc",
-		"downloads", "torrents", "complete", "collection",
-	}
-	if slices.ContainsFunc(excludes, func(e string) bool { return strings.EqualFold(s, e) }) {
-		return false
-	}
-
-	// Should have at least one letter
-	hasLetter := false
-	for _, c := range s {
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-			hasLetter = true
-			break
-		}
-	}
-
-	return hasLetter
 }
 
 // splitArtists splits an artist string by common separators.

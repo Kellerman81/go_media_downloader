@@ -23,6 +23,13 @@ const (
 	defaultBaseURL = "https://api.discogs.com"
 )
 
+// errDiscogsSearchNeedsToken is returned instead of letting /database/search
+// fail with a 401: Discogs only allows authenticated searches.
+var errDiscogsSearchNeedsToken = fmt.Errorf(
+	"discogs search requires a personal access token (none configured): %w",
+	logger.ErrDisabled,
+)
+
 // Provider implements the music metadata provider for Discogs.
 type Provider struct {
 	*base.BaseClient
@@ -39,6 +46,17 @@ func NewProviderWithConfig(cfg base.ClientConfig, token string) *Provider {
 
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
+	}
+
+	// The configured Discogs limits apply to every instance; the built-in
+	// limits below are only the fallback for 0.
+	general := config.GetSettingsGeneral()
+	if cfg.RateLimitCalls == 0 {
+		cfg.RateLimitCalls = general.DiscogsLimiterCalls
+	}
+
+	if cfg.RateLimitSeconds == 0 {
+		cfg.RateLimitSeconds = int(general.DiscogsLimiterSeconds)
 	}
 
 	// Discogs rate limits: 60/min authenticated, 25/min unauthenticated
@@ -104,6 +122,10 @@ func (p *Provider) Search(
 	limit int,
 	page int,
 ) (*discogsSearchResponse, error) {
+	if p.token == "" {
+		return nil, errDiscogsSearchNeedsToken
+	}
+
 	if limit <= 0 {
 		limit = 50
 	}

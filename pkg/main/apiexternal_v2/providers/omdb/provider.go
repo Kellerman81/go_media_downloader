@@ -205,12 +205,14 @@ func (p *Provider) SearchByTitle(
 
 // Helper function to parse year from string.
 func parseYear(yearStr string) int {
-	// Handle formats like "2020", "2020-2023", "2020-"
-	parts := strings.Split(yearStr, "-")
-	if len(parts) > 0 && parts[0] != "" {
-		if year, err := strconv.Atoi(parts[0]); err == nil {
-			return year
-		}
+	// Handle formats like "2020", "2020-2023", "2020-"; series ranges use an
+	// en dash ("2011–2019").
+	if idx := strings.IndexAny(yearStr, "-–"); idx >= 0 {
+		yearStr = yearStr[:idx]
+	}
+
+	if year, err := strconv.Atoi(strings.TrimSpace(yearStr)); err == nil {
+		return year
 	}
 
 	return 0

@@ -4,7 +4,11 @@
 // multi-file collections (music albums, audiobooks), and enhanced metadata extraction.
 package parser_v2
 
-import "time"
+import (
+	"path/filepath"
+	"strings"
+	"time"
+)
 
 // MediaType represents the type of media being parsed.
 type MediaType uint8
@@ -142,6 +146,10 @@ type BookParseResult struct {
 
 	// IsRetail indicates if this is a retail (non-scene) release.
 	IsRetail bool `json:"is_retail,omitempty"`
+	// Proper indicates if this is a proper release.
+	Proper bool `json:"proper,omitempty"`
+	// Repack indicates if this is a repack release.
+	Repack bool `json:"repack,omitempty"`
 	// ReleaseGroup is the release group for scene releases.
 	ReleaseGroup string `json:"release_group,omitempty"`
 }
@@ -468,6 +476,20 @@ var (
 		".flac", ".alac", ".wav", ".aiff", ".ape", ".wv",
 	}
 )
+
+// splitKnownExt splits filename into base name and extension, but only when
+// the extension is a known media/ebook/audio one. Parsers also receive folder
+// names and release titles, where filepath.Ext would take trailing dotted
+// content ("J.K. Rowling - ...", "Title Vol. 3") as an extension.
+func splitKnownExt(filename string) (string, string) {
+	ext := filepath.Ext(filename)
+	if IsVideoExtension(ext) || IsBookExtension(ext) || IsAudioExtension(ext) ||
+		IsAudiobookExtension(ext) {
+		return strings.TrimSuffix(filename, ext), ext
+	}
+
+	return filename, ""
+}
 
 // IsVideoExtension checks if the extension is a video extension.
 func IsVideoExtension(ext string) bool {

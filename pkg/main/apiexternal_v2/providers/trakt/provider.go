@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,22 +89,30 @@ func (*Provider) GetProviderName() string {
 // Request Method Override for Auto Token Refresh
 //
 
-// MakeRequest overrides the BaseClient MakeRequest to automatically refresh tokens before requests.
+// MakeRequest overrides the BaseClient MakeRequest. Public endpoints (search,
+// lookups, popular/trending/anticipated) only need the trakt-api-key header;
+// user endpoints need a valid OAuth token, which is refreshed here if needed.
 func (p *Provider) MakeRequest(
 	ctx context.Context,
 	method, endpoint string,
 	body io.Reader,
 	target any,
 ) error {
-	// For authenticated requests, ensure token is valid before making the request
-	// This will automatically refresh the token if it's expired or about to expire
-	if err := p.EnsureValidToken(ctx); err != nil {
-		// Fail silently without logging - authentication errors are expected when not authenticated
-		return err
+	auth := requiresAuth(endpoint)
+	if auth {
+		if err := p.EnsureValidToken(ctx); err != nil {
+			return fmt.Errorf("trakt endpoint %s requires OAuth authentication: %w", endpoint, err)
+		}
 	}
 
-	// Add Trakt-specific headers
-	return p.makeRequestWithHeaders(ctx, method, endpoint, body, target)
+	return p.makeRequestWithHeaders(ctx, method, endpoint, body, target, auth)
+}
+
+// requiresAuth reports whether a Trakt endpoint needs the user's OAuth token.
+func requiresAuth(endpoint string) bool {
+	return strings.HasPrefix(endpoint, "/users/") ||
+		strings.HasPrefix(endpoint, "/sync/") ||
+		strings.HasPrefix(endpoint, "/recommendations")
 }
 
 // makeRequestWithHeaders makes a request with Trakt-specific headers.
@@ -112,19 +121,25 @@ func (p *Provider) makeRequestWithHeaders(
 	method, endpoint string,
 	body io.Reader,
 	target any,
+	auth bool,
 ) error {
 	// Build custom headers for Trakt API
 	headers := map[string]string{
 		"trakt-api-version": "2",
 		"trakt-api-key":     p.clientID,
 		"Content-Type":      "application/json",
-		"User-Agent":        config.GetSettingsGeneral().UserAgent,
 	}
 
-	// Add authorization header if we have a token
-	token := p.GetCurrentToken()
-	if token != nil && token.AccessToken != "" {
-		headers["Authorization"] = fmt.Sprintf("Bearer %s", token.AccessToken)
+	if general := config.GetSettingsGeneral(); general != nil {
+		headers["User-Agent"] = general.UserAgent
+	}
+
+	// Public endpoints get no Authorization header: a stale token would turn
+	// a request that needs none into a 401.
+	if auth {
+		if token := p.GetCurrentToken(); token != nil && token.AccessToken != "" {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", token.AccessToken)
+		}
 	}
 
 	// Use BaseClient's MakeRequestWithHeaders for full infrastructure support
@@ -354,22 +369,6 @@ func (p *Provider) GetSeriesExternalIDs(
 // Episode Methods
 //
 
-// GetSeasonDetails retrieves detailed information about a season.
-func (p *Provider) GetSeasonDetails(
-	ctx context.Context,
-	seriesID int,
-	seasonNumber int,
-) (*apiexternal_v2.Season, error) {
-	endpoint := fmt.Sprintf("/shows/%d/seasons/%d?extended=full", seriesID, seasonNumber)
-
-	var response traktSeasonResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
-		return nil, err
-	}
-
-	return convertSeasonToDetails(&response), nil
-}
-
 // GetAllSeasons retrieves all seasons for a series.
 func (p *Provider) GetAllSeasons(
 	ctx context.Context,
@@ -440,10 +439,14 @@ func (p *Provider) GetSeasonEpisodes(
 // GetPopularMovies retrieves popular movies.
 func (p *Provider) GetPopularMovies(
 	ctx context.Context,
-	page int,
+	page, limit int,
 	extraParams string,
 ) (*apiexternal_v2.PopularMoviesResponse, error) {
-	endpoint := fmt.Sprintf("/movies/popular?page=%d&limit=20&extended=full", page)
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/movies/popular?page=%d&limit=%d&extended=full", page, limit)
 	if extraParams != "" {
 		endpoint += "&" + extraParams
 	}
@@ -459,10 +462,14 @@ func (p *Provider) GetPopularMovies(
 // GetPopularSeries retrieves popular TV series.
 func (p *Provider) GetPopularSeries(
 	ctx context.Context,
-	page int,
+	page, limit int,
 	extraParams string,
 ) (*apiexternal_v2.PopularSeriesResponse, error) {
-	endpoint := fmt.Sprintf("/shows/popular?page=%d&limit=20&extended=full", page)
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/shows/popular?page=%d&limit=%d&extended=full", page, limit)
 	if extraParams != "" {
 		endpoint += "&" + extraParams
 	}
@@ -478,10 +485,14 @@ func (p *Provider) GetPopularSeries(
 // GetTrendingMovies retrieves trending movies.
 func (p *Provider) GetTrendingMovies(
 	ctx context.Context,
-	page int,
+	page, limit int,
 	extraParams string,
 ) (*apiexternal_v2.PopularMoviesResponse, error) {
-	endpoint := fmt.Sprintf("/movies/trending?page=%d&limit=20&extended=full", page)
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/movies/trending?page=%d&limit=%d&extended=full", page, limit)
 	if extraParams != "" {
 		endpoint += "&" + extraParams
 	}
@@ -497,10 +508,14 @@ func (p *Provider) GetTrendingMovies(
 // GetTrendingSeries retrieves trending TV series.
 func (p *Provider) GetTrendingSeries(
 	ctx context.Context,
-	page int,
+	page, limit int,
 	extraParams string,
 ) (*apiexternal_v2.PopularSeriesResponse, error) {
-	endpoint := fmt.Sprintf("/shows/trending?page=%d&limit=20&extended=full", page)
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/shows/trending?page=%d&limit=%d&extended=full", page, limit)
 	if extraParams != "" {
 		endpoint += "&" + extraParams
 	}
@@ -516,10 +531,14 @@ func (p *Provider) GetTrendingSeries(
 // GetUpcomingMovies retrieves upcoming movies.
 func (p *Provider) GetUpcomingMovies(
 	ctx context.Context,
-	page int,
+	page, limit int,
 	extraParams string,
 ) (*apiexternal_v2.PopularMoviesResponse, error) {
-	endpoint := fmt.Sprintf("/movies/anticipated?page=%d&limit=20&extended=full", page)
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/movies/anticipated?page=%d&limit=%d&extended=full", page, limit)
 	if extraParams != "" {
 		endpoint += "&" + extraParams
 	}
@@ -643,6 +662,8 @@ func (p *Provider) GetSimilarSeries(
 			Overview:     s.Overview,
 			VoteAverage:  s.Rating,
 			ProviderName: "trakt",
+			TVDbID:       s.IDs.TVDB,
+			IMDbID:       s.IDs.IMDB,
 		}
 	}
 
@@ -698,6 +719,8 @@ func (p *Provider) GetSeriesRecommendations(
 			Overview:     s.Overview,
 			VoteAverage:  s.Rating,
 			ProviderName: "trakt",
+			TVDbID:       s.IDs.TVDB,
+			IMDbID:       s.IDs.IMDB,
 		}
 	}
 
@@ -757,10 +780,14 @@ func (p *Provider) GetTraktUserList(
 // This is a provider-specific method not in the base interface.
 func (p *Provider) GetTraktSerieAnticipated(
 	ctx context.Context,
-	page int,
+	page, limit int,
 	extraParams string,
 ) ([]traktAnticipatedItem, error) {
-	endpoint := fmt.Sprintf("/shows/anticipated?page=%d&limit=20&extended=full", page)
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/shows/anticipated?page=%d&limit=%d&extended=full", page, limit)
 	if extraParams != "" {
 		endpoint += "&" + extraParams
 	}

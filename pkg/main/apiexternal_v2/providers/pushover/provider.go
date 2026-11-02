@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
@@ -92,8 +93,8 @@ func (p *Provider) SendNotification(
 	params := url.Values{
 		"token":   {useAPIToken},
 		"user":    {useUserKey},
-		"title":   {request.Title},
-		"message": {request.Message},
+		"title":   {truncateRunes(request.Title, maxTitleLen)},
+		"message": {truncateRunes(request.Message, maxMessageLen)},
 	}
 
 	// Set priority
@@ -131,23 +132,24 @@ func (p *Provider) SendNotification(
 			params.Set("timestamp", timestamp)
 		}
 
-		// Emergency priority specific options
-		if priority == int(apiexternal_v2.PriorityEmergency) {
-			if retry, ok := request.Options["retry"]; ok && retry != "" {
-				params.Set("retry", retry)
-			} else {
-				params.Set("retry", "60") // Default retry interval
-			}
+	}
 
-			if expire, ok := request.Options["expire"]; ok && expire != "" {
-				params.Set("expire", expire)
-			} else {
-				params.Set("expire", "3600") // Default expiration
-			}
+	// Emergency priority requires retry and expire; Pushover rejects the
+	// message without them.
+	if priority == int(apiexternal_v2.PriorityEmergency) {
+		params.Set("retry", "60")
+		params.Set("expire", "3600")
 
-			if callback, ok := request.Options["callback"]; ok && callback != "" {
-				params.Set("callback", callback)
-			}
+		if retry := request.Options["retry"]; retry != "" {
+			params.Set("retry", retry)
+		}
+
+		if expire := request.Options["expire"]; expire != "" {
+			params.Set("expire", expire)
+		}
+
+		if callback := request.Options["callback"]; callback != "" {
+			params.Set("callback", callback)
 		}
 	}
 
@@ -278,9 +280,20 @@ func (p *Provider) GetSounds(ctx context.Context) (map[string]string, error) {
 	return soundsResp.Sounds, nil
 }
 
-// GetBaseURL returns the base URL for the Pushover API.
-func (*Provider) GetBaseURL() string {
-	return "https://api.pushover.net/1"
+// Pushover message limits, in characters.
+const (
+	maxTitleLen   = 250
+	maxMessageLen = 1024
+)
+
+// truncateRunes cuts s to at most n characters without splitting a UTF-8
+// sequence.
+func truncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+
+	return string([]rune(s)[:n])
 }
 
 //

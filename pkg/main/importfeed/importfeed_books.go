@@ -2,13 +2,10 @@ package importfeed
 
 import (
 	"context"
-	"slices"
+	"errors"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
@@ -96,6 +93,69 @@ func jobImportDBBook(
 	return nil
 }
 
+// goodreadsAuthorMaxPages bounds the author book-list pagination.
+const goodreadsAuthorMaxPages = 10
+
+// goodreadsAuthorBooksFetcher is the part of the Goodreads provider used for
+// paging through an author's books.
+type goodreadsAuthorBooksFetcher interface {
+	GetBooksByAuthor(ctx context.Context, authorID string, page int) ([]apiexternal_v2.BookSearchResult, error)
+}
+
+// fetchGoodreadsAuthorBooks pages through an author's book list until a page
+// is empty, fails, adds nothing new (guards against a server that ignores
+// the page parameter), or the page cap is reached.
+func fetchGoodreadsAuthorBooks(
+	ctx context.Context,
+	gr goodreadsAuthorBooksFetcher,
+	authorID string,
+) []apiexternal_v2.BookSearchResult {
+	var all []apiexternal_v2.BookSearchResult
+
+	seen := make(map[string]struct{})
+
+	for page := 1; page <= goodreadsAuthorMaxPages; page++ {
+		if logger.CheckContextEnded(ctx) != nil {
+			break
+		}
+
+		books, err := gr.GetBooksByAuthor(ctx, authorID, page)
+		if err != nil {
+			if page > 1 {
+				logger.Logtype("debug", 1).
+					Err(err).
+					Str("author_id", authorID).
+					Int("page", page).
+					Msg("Stopped Goodreads author pagination")
+			}
+
+			break
+		}
+
+		added := 0
+		for i := range books {
+			key := books[i].ID
+			if key == "" {
+				key = books[i].Title
+			}
+
+			if _, ok := seen[key]; ok {
+				continue
+			}
+
+			seen[key] = struct{}{}
+			all = append(all, books[i])
+			added++
+		}
+
+		if added == 0 {
+			break
+		}
+	}
+
+	return all
+}
+
 // importBooksByAuthor imports all books by an author.
 func importBooksByAuthor(
 	ctx context.Context,
@@ -123,8 +183,8 @@ func importBooksByAuthor(
 	// Try to get author's books from providers
 	if grProvider != nil && authorID != "" {
 		// Use Goodreads if we have an author ID
-		books, err := grProvider.GetBooksByAuthor(ctx, authorID, 1)
-		if err == nil && len(books) > 0 {
+		books := fetchGoodreadsAuthorBooks(ctx, grProvider, authorID)
+		if len(books) > 0 {
 			for i := range books {
 				if err := logger.CheckContextEnded(ctx); err != nil {
 					return err
@@ -149,6 +209,11 @@ func importBooksByAuthor(
 			for i := range books {
 				if err := logger.CheckContextEnded(ctx); err != nil {
 					return err
+				}
+
+				// An author search also returns books merely mentioning the name.
+				if !namesContain(books[i].Authors, authorName) {
+					continue
 				}
 
 				if err := addBookToDatabase(ctx, &books[i], cfgp, listid, authorName); err != nil {
@@ -246,20 +311,35 @@ func importSingleBook(
 	if book.Name != "" {
 		books, err := olProvider.SearchBooks(ctx, book.Name, "", 10)
 		if err == nil && len(books) > 0 {
-			// Add only the first (best) match
-			return addBookToDatabase(ctx, &books[0], cfgp, listid, "")
+			if best := bestBookMatch(books, book.Name, book.AuthorName); best != -1 {
+				return addBookToDatabase(ctx, &books[best], cfgp, listid, "")
+			}
 		}
 
 		// Try Goodreads as fallback
 		if grProvider != nil {
 			grBooks, err := grProvider.SearchBooks(ctx, book.Name, 1)
 			if err == nil && len(grBooks) > 0 {
-				return addBookToDatabase(ctx, &grBooks[0], cfgp, listid, "")
+				if best := bestBookMatch(grBooks, book.Name, book.AuthorName); best != -1 {
+					return addBookToDatabase(ctx, &grBooks[best], cfgp, listid, "")
+				}
 			}
 		}
+
+		logger.Logtype("info", 0).
+			Str("book", book.Name).
+			Msg("No search result matched the requested book title - skipping")
 	}
 
 	return logger.ErrNotFound
+}
+
+// bestBookMatch picks the search result whose title is closest to title (and,
+// when author is set, that lists a matching author). -1 when none is close enough.
+func bestBookMatch(books []apiexternal_v2.BookSearchResult, title, author string) int {
+	return bestNameMatch(title, len(books),
+		func(i int) string { return books[i].Title },
+		func(i int) bool { return author == "" || namesContain(books[i].Authors, author) })
 }
 
 // addBookToDatabase adds a book search result to the database.
@@ -294,13 +374,22 @@ func addBookToDatabase(
 		)
 	}
 
+	// OpenLibrary search results carry the full key ("/works/OL1W"); store
+	// the bare ID like the rest of the code base (and the provider) uses.
+	bookID := book.ID
+	if book.ProviderType == apiexternal_v2.ProviderOpenLibrary {
+		bookID = book.ID[strings.LastIndexByte(book.ID, '/')+1:]
+	}
+
 	if existingID == 0 && book.ID != "" {
-		// ID could be Goodreads ID or OpenLibrary ID depending on provider
+		// ID could be Goodreads ID or OpenLibrary ID depending on provider;
+		// older rows may still hold the full OpenLibrary key.
 		database.Scanrowsdyn(
 			false,
-			"SELECT id FROM dbbooks WHERE goodreads_id = ? OR openlibrary_id = ?",
+			"SELECT id FROM dbbooks WHERE goodreads_id = ? OR openlibrary_id = ? OR openlibrary_id = ?",
 			&existingID,
 			&book.ID,
+			&bookID,
 			&book.ID,
 		)
 	}
@@ -332,7 +421,7 @@ func addBookToDatabase(
 		case apiexternal_v2.ProviderGoodreads:
 			goodreadsID = book.ID
 		case apiexternal_v2.ProviderOpenLibrary:
-			openlibraryID = book.ID
+			openlibraryID = bookID
 		default:
 			// Other providers don't map to goodreads/openlibrary IDs
 		}
@@ -402,11 +491,11 @@ func addBookToDatabase(
 		}
 	}
 
-	// Also add the authorName parameter if provided and not already in Authors list
+	// Attribute authorName only when the result carries no author at all
+	// (e.g. Goodreads author-book listings); never add it to a book that names
+	// different authors.
 	if authorName != "" {
-		found := slices.Contains(book.Authors, authorName)
-
-		if !found {
+		if len(book.Authors) == 0 {
 			authorID := AddOrGetAuthor(authorName)
 			if authorID > 0 {
 				var existingRelation uint
@@ -473,15 +562,8 @@ func addBookToDatabase(
 				continue
 			}
 
-			// Check if tracked author already exists
-			var existingTrackedID uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM authors WHERE dbauthor_id = ? AND listname = ?",
-				&existingTrackedID,
-				&dbauthorID,
-				&listName,
-			)
+			// Check if tracked author already exists under any list of this config
+			existingTrackedID := trackedIDInConfigList("authors", "dbauthor_id", &dbauthorID, cfgp, listName)
 
 			// Determine if this is the primary author we want to track.
 			// When authorName names a specific author, only that author is
@@ -527,14 +609,7 @@ func addBookToDatabase(
 		dbauthorID := AddOrGetAuthor(authorName)
 
 		if dbauthorID > 0 {
-			var existingTrackedID uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM authors WHERE dbauthor_id = ? AND listname = ?",
-				&existingTrackedID,
-				&dbauthorID,
-				&listName,
-			)
+			existingTrackedID := trackedIDInConfigList("authors", "dbauthor_id", &dbauthorID, cfgp, listName)
 
 			if existingTrackedID == 0 {
 				result, err := database.ExecNid(
@@ -551,47 +626,23 @@ func addBookToDatabase(
 		}
 	}
 
-	// Check if tracked book already exists for this list
-	var trackedID uint
-	database.Scanrowsdyn(
-		false,
-		"SELECT id FROM books WHERE dbbook_id = ? AND listname = ?",
-		&trackedID,
-		&dbbookID,
-		&listName,
-	)
+	// Shared list-entry logic: ignore/replace lists and one entry per media config.
+	spec := bookEntrySpec()
+	spec.trackedParentID = trackedAuthorID
 
-	if trackedID == 0 {
-		// Add to tracked books
-		bookID, err := database.ExecNid(
-			`INSERT INTO books (dbbook_id, listname, missing, quality_profile, author_id)
-			 VALUES (?, ?, 1, ?, ?)`,
-			&dbbookID, &listName, &cfgp.Lists[listid].CfgQuality.Name, &trackedAuthorID,
-		)
-		if err != nil {
-			return err
+	if err := checkaddMediaEntry(&dbbookID, cfgp, &cfgp.Lists[listid], book.Title, spec); err != nil {
+		if errors.Is(err, errBookIgnored) {
+			return nil
 		}
 
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoInt(
-				logger.CacheBook,
-				syncops.DbstaticOneStringTwoInt{
-					Str:  listName,
-					Num1: dbbookID,
-					Num2: logger.Int64ToUint(bookID),
-				},
-			)
-		}
+		return err
+	}
 
-		logger.Logtype("info", 0).
-			Str("book", book.Title).
-			Str("list", listName).
-			Msg("Added book to tracking list")
-	} else if trackedAuthorID > 0 {
-		// Update existing book to link to author if not already linked
+	if trackedAuthorID > 0 {
+		// Link an existing book entry to the author if not already linked
 		_, _ = database.ExecNid(
-			`UPDATE books SET author_id = ? WHERE id = ? AND author_id = 0`,
-			&trackedAuthorID, &trackedID,
+			`UPDATE books SET author_id = ? WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE AND author_id = 0`,
+			&trackedAuthorID, &dbbookID, &listName,
 		)
 	}
 
@@ -650,47 +701,6 @@ func JobImportDBAudiobook(
 	return err
 }
 
-// audibleProviderMu serializes getOrCreateAudibleProvider's check-then-create
-// sequence. providers.GetAudible/SetAudible are each individually locked, but
-// without a lock spanning both, two concurrent first-uses of the same region
-// (this runs per-audiobook from a worker pool, see JobImportDBAudiobook) could
-// each construct their own provider with its own rate limiter, momentarily
-// exceeding the intended request rate to Audible - the same bug class already
-// fixed via sync.OnceValue for the single-instance providers above.
-var audibleProviderMu sync.Mutex
-
-// getOrCreateAudibleProvider returns an Audible provider for the specified region.
-// It creates and registers a new provider if one doesn't exist for the region.
-func getOrCreateAudibleProvider(region string) *audible.Provider {
-	if region == "" {
-		region = "us"
-	}
-
-	audibleProviderMu.Lock()
-	defer audibleProviderMu.Unlock()
-
-	// Try to get existing provider
-	provider := providers.GetAudible(region)
-	if provider != nil {
-		return provider
-	}
-
-	// Create new provider for this region
-	provider = audible.NewProviderWithConfig(base.ClientConfig{
-		Timeout:          30 * time.Second,
-		RateLimitCalls:   5,
-		RateLimitSeconds: 1,
-		UserAgent:        config.GetSettingsGeneral().UserAgent,
-	}, audible.Region(region))
-
-	providers.SetAudible(region, provider)
-	logger.Logtype(logger.StatusDebug, 0).
-		Str("region", region).
-		Msg("Created and registered Audible provider for region")
-
-	return provider
-}
-
 // jobImportDBAudiobook performs the actual audiobook import based on the import mode.
 func jobImportDBAudiobook(
 	ctx context.Context,
@@ -700,7 +710,7 @@ func jobImportDBAudiobook(
 	importMode string,
 ) error {
 	// Get Audible provider with region from config
-	audibleProvider := getOrCreateAudibleProvider(cfgp.AudibleRegion)
+	audibleProvider := providers.SharedAudible(cfgp.AudibleRegion)
 
 	// Use providers from registry
 	audnexProvider := providers.GetAudnex()
@@ -1204,16 +1214,28 @@ func importSingleAudiobook(
 	if audibleAvailable && audiobook.Name != "" {
 		audiobooks, err := audibleProvider.SearchAudiobooks(ctx, audiobook.Name, 10)
 		if err == nil && len(audiobooks) > 0 {
-			// Build complete audiobook record - pass search result to avoid redundant API calls
-			return importAndMergeAudiobook(
-				ctx,
-				audiobooks[0].ASIN,
-				&audiobooks[0],
-				audnexProvider,
-				grProvider,
-				cfgp,
-				listid,
-			)
+			best := bestNameMatch(audiobook.Name, len(audiobooks),
+				func(i int) string { return audiobooks[i].Title },
+				func(i int) bool {
+					return audiobook.AuthorName == "" ||
+						namesContain(audiobooks[i].Authors, audiobook.AuthorName)
+				})
+			if best != -1 {
+				// Build complete audiobook record - pass search result to avoid redundant API calls
+				return importAndMergeAudiobook(
+					ctx,
+					audiobooks[best].ASIN,
+					&audiobooks[best],
+					audnexProvider,
+					grProvider,
+					cfgp,
+					listid,
+				)
+			}
+
+			logger.Logtype("info", 0).
+				Str("name", audiobook.Name).
+				Msg("No Audible result matched the requested audiobook title, trying OpenLibrary fallback")
 		}
 
 		if err != nil {
@@ -1228,7 +1250,13 @@ func importSingleAudiobook(
 	if olProvider != nil && audiobook.Name != "" {
 		books, err := olProvider.SearchBooks(ctx, audiobook.Name, "", 10)
 		if err == nil && len(books) > 0 {
-			return addAudiobookFromBookToDatabase(ctx, &books[0], cfgp, listid)
+			if best := bestBookMatch(books, audiobook.Name, audiobook.AuthorName); best != -1 {
+				return addAudiobookFromBookToDatabase(ctx, &books[best], cfgp, listid)
+			}
+
+			logger.Logtype("info", 0).
+				Str("name", audiobook.Name).
+				Msg("No OpenLibrary result matched the requested audiobook title - skipping")
 		}
 	}
 
@@ -1283,7 +1311,7 @@ func AddOrGetNarrator(narratorName string) uint {
 	var narratorID uint
 	database.Scanrowsdyn(
 		false,
-		"SELECT id FROM dbnarrators WHERE name = ?",
+		"SELECT id FROM dbnarrators WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT 1",
 		&narratorID,
 		&narratorName,
 	)
@@ -1309,6 +1337,57 @@ func AddOrGetNarrator(narratorName string) uint {
 	return logger.Int64ToUint(result)
 }
 
+// audiobookLanguageCodes maps the language names Audible/Audnex report
+// ("english", "german") to the ISO language and region codes users put in
+// metadata_title_languages.
+var audiobookLanguageCodes = map[string][]string{
+	"english":          {"en", "us", "gb", "uk", "au", "ca", "ie", "nz"},
+	"german":           {"de", "at", "ch"},
+	"french":           {"fr", "be"},
+	"spanish":          {"es", "mx"},
+	"italian":          {"it"},
+	"dutch":            {"nl"},
+	"japanese":         {"ja", "jp"},
+	"portuguese":       {"pt", "br"},
+	"russian":          {"ru"},
+	"polish":           {"pl"},
+	"swedish":          {"sv", "se"},
+	"danish":           {"da", "dk"},
+	"norwegian":        {"no", "nb", "nn"},
+	"finnish":          {"fi"},
+	"chinese":          {"zh", "cn", "tw"},
+	"mandarin_chinese": {"zh", "cn", "tw"},
+	"korean":           {"ko", "kr"},
+	"hindi":            {"hi", "in"},
+	"turkish":          {"tr"},
+	"czech":            {"cs", "cz"},
+	"hungarian":        {"hu"},
+	"greek":            {"el", "gr"},
+	"hebrew":           {"he", "il"},
+	"arabic":           {"ar"},
+}
+
+// audiobookLanguageAllowed reports whether an audiobook language (a name like
+// "english" or a code like "en"/"en-US") matches one of the configured codes.
+// An empty config list means no filtering.
+func audiobookLanguageAllowed(language string, allowed []string) bool {
+	if len(allowed) == 0 || language == "" {
+		return true
+	}
+
+	codes := audiobookLanguageCodes[strings.ToLower(strings.TrimSpace(language))]
+
+	for i := range allowed {
+		if strings.EqualFold(language, allowed[i]) ||
+			logger.HasPrefixI(language, allowed[i]+"-") ||
+			logger.SlicesContainsI(codes, allowed[i]) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // addAudiobookDetailToDatabase adds an audiobook with full details (from Audnex/Audible) to the database.
 // This includes chapters, narrators, runtime, and other audiobook-specific metadata.
 func addAudiobookDetailToDatabase(
@@ -1324,17 +1403,7 @@ func addAudiobookDetailToDatabase(
 
 	// Language filtering - check if audiobook language matches configured languages
 	if details.Language != "" && cfgp.MetadataTitleLanguagesLen > 0 {
-		languageAllowed := false
-
-		for i := range cfgp.MetadataTitleLanguages {
-			if strings.EqualFold(details.Language, cfgp.MetadataTitleLanguages[i]) ||
-				logger.HasPrefixI(details.Language, cfgp.MetadataTitleLanguages[i]+"-") {
-				languageAllowed = true
-				break
-			}
-		}
-
-		if !languageAllowed {
+		if !audiobookLanguageAllowed(details.Language, cfgp.MetadataTitleLanguages) {
 			logger.Logtype("debug", 1).
 				Str("audiobook", details.Title).
 				Str("language", details.Language).
@@ -1593,15 +1662,8 @@ func addAudiobookDetailToDatabase(
 				continue
 			}
 
-			// Check if tracked author already exists
-			var existingTrackedID uint
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM authors WHERE dbauthor_id = ? AND listname = ?",
-				&existingTrackedID,
-				&dbauthorID,
-				&listName2,
-			)
+			// Check if tracked author already exists under any list of this config
+			existingTrackedID := trackedIDInConfigList("authors", "dbauthor_id", &dbauthorID, cfgp, listName2)
 
 			// Determine if this is the primary author we want to track
 			isPrimary := idx == 0 || !isMultiAuthor
@@ -1640,62 +1702,29 @@ func addAudiobookDetailToDatabase(
 		dbauthorID := AddOrGetAuthor(details.Authors[0])
 
 		if dbauthorID > 0 {
-			database.Scanrowsdyn(
-				false,
-				"SELECT id FROM authors WHERE dbauthor_id = ? AND listname = ?",
-				&trackedAuthorID,
-				&dbauthorID,
-				&listName2,
-			)
+			trackedAuthorID = trackedIDInConfigList("authors", "dbauthor_id", &dbauthorID, cfgp, listName2)
 		}
 	}
 
-	// Check if tracked audiobook already exists
-	listName := cfgp.Lists[listid].Name
+	// Shared list-entry logic: ignore/replace lists and one entry per media config.
+	spec := audiobookEntrySpec()
+	spec.trackedParentID = trackedAuthorID
 
-	var trackedID uint
-	database.Scanrowsdyn(
-		false,
-		"SELECT id FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ?",
-		&trackedID,
-		&dbaudiobookID,
-		&listName,
-	)
-
-	if trackedID == 0 {
-		// Note: book_series_id will remain 0 for now until we implement series tracking
-		audiobookID, err := database.ExecNid(
-			`INSERT INTO audiobooks (dbaudiobook_id, listname, missing, quality_profile, author_id, book_series_id)
-			 VALUES (?, ?, 1, ?, ?, 0)`,
-			&dbaudiobookID,
-			&listName,
-			&cfgp.Lists[listid].CfgQuality.Name,
-			&trackedAuthorID,
-		)
-		if err != nil {
-			return err
+	if err := checkaddMediaEntry(
+		&dbaudiobookID, cfgp, &cfgp.Lists[listid], details.ASIN, spec,
+	); err != nil {
+		if errors.Is(err, errAudiobookIgnored) {
+			return nil
 		}
 
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoInt(
-				logger.CacheAudiobook,
-				syncops.DbstaticOneStringTwoInt{
-					Str:  listName,
-					Num1: dbaudiobookID,
-					Num2: logger.Int64ToUint(audiobookID),
-				},
-			)
-		}
+		return err
+	}
 
-		logger.Logtype("info", 0).
-			Str("audiobook", details.Title).
-			Str("list", listName).
-			Msg("Added audiobook to tracking list")
-	} else if trackedAuthorID > 0 {
-		// Update existing audiobook to link to author if not already linked
+	if trackedAuthorID > 0 {
+		// Link an existing audiobook entry to the author if not already linked
 		_, _ = database.ExecNid(
-			`UPDATE audiobooks SET author_id = ? WHERE id = ? AND author_id = 0`,
-			&trackedAuthorID, &trackedID,
+			`UPDATE audiobooks SET author_id = ? WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE AND author_id = 0`,
+			&trackedAuthorID, &dbaudiobookID, &listName2,
 		)
 	}
 
@@ -1716,7 +1745,9 @@ func addAudiobookFromBookToDatabase(
 		return logger.ErrNotFound
 	}
 
-	// Check if audiobook already exists by various IDs
+	// Check if audiobook already exists. dbaudiobooks has no ISBN column, so
+	// rows from this path carry no ASIN; earlier versions stored the ISBN in
+	// asin, so those rows are still matched by it.
 	var existingID uint
 	if book.ISBN13 != "" {
 		database.Scanrowsdyn(
@@ -1734,6 +1765,10 @@ func addAudiobookFromBookToDatabase(
 			&existingID,
 			&book.ISBN10,
 		)
+	}
+
+	if existingID == 0 {
+		existingID = findAudiobookByTitleAuthor(book.Title, book.Authors)
 	}
 
 	// Don't check book.ID for audible_id since it's not an actual Audible ASIN (it's an OpenLibrary work ID)
@@ -1772,9 +1807,8 @@ func addAudiobookFromBookToDatabase(
 
 		result, err := database.ExecNid(
 			`INSERT INTO dbaudiobooks (title, asin, audible_id, slug, year, description, cover_url, language)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			 VALUES (?, '', ?, ?, ?, ?, ?, ?)`,
 			&book.Title,
-			&book.ISBN13,
 			audibleID,
 			&slug,
 			&year,
@@ -1798,7 +1832,6 @@ func addAudiobookFromBookToDatabase(
 				syncops.DbstaticThreeStringTwoInt{
 					Str1: book.Title,
 					Str2: slug,
-					Str3: book.ISBN13,
 					Num1: int(year),
 					Num2: dbaudiobookID,
 				},
@@ -1852,46 +1885,53 @@ func addAudiobookFromBookToDatabase(
 		return logger.ErrListnameEmpty
 	}
 
-	// Check if tracked audiobook already exists
-	listName := cfgp.Lists[listid].Name
-
-	var trackedID uint
-	database.Scanrowsdyn(
-		false,
-		"SELECT id FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ?",
-		&trackedID,
-		&dbaudiobookID,
-		&listName,
-	)
-
-	if trackedID == 0 {
-		audiobookID, err := database.ExecNid(
-			`INSERT INTO audiobooks (dbaudiobook_id, listname, missing, quality_profile)
-			 VALUES (?, ?, 1, ?)`,
-			&dbaudiobookID, &listName, &cfgp.Lists[listid].CfgQuality.Name,
-		)
-		if err != nil {
-			return err
-		}
-
-		if config.GetSettingsGeneral().UseMediaCache {
-			database.AppendCacheTwoInt(
-				logger.CacheAudiobook,
-				syncops.DbstaticOneStringTwoInt{
-					Str:  listName,
-					Num1: dbaudiobookID,
-					Num2: logger.Int64ToUint(audiobookID),
-				},
-			)
-		}
-
-		logger.Logtype("info", 0).
-			Str("audiobook", book.Title).
-			Str("list", listName).
-			Msg("Added audiobook to tracking list")
+	// Shared list-entry logic: ignore/replace lists, one entry per media
+	// config, and the tracked author link (audiobooks.author_id).
+	if err := CheckaddAudiobookEntry(
+		&dbaudiobookID, cfgp, &cfgp.Lists[listid], book.Title,
+	); err != nil && !errors.Is(err, errAudiobookIgnored) {
+		return err
 	}
 
 	return nil
+}
+
+// findAudiobookByTitleAuthor finds a dbaudiobooks row by case-insensitive
+// title plus one of the given authors. Without authors it only matches rows
+// that have no author either, so unrelated same-titled books are not merged.
+func findAudiobookByTitleAuthor(title string, authors []string) uint {
+	if title == "" {
+		return 0
+	}
+
+	var id uint
+
+	for i := range authors {
+		if authors[i] == "" {
+			continue
+		}
+
+		database.Scanrowsdyn(false,
+			`SELECT a.id FROM dbaudiobooks a WHERE a.title = ? COLLATE NOCASE
+			 AND EXISTS (SELECT 1 FROM dbaudiobook_authors da JOIN dbauthors au ON au.id = da.dbauthor_id
+			             WHERE da.dbaudiobook_id = a.id AND au.name = ? COLLATE NOCASE)
+			 ORDER BY a.id LIMIT 1`,
+			&id, &title, &authors[i])
+
+		if id != 0 {
+			return id
+		}
+	}
+
+	if len(authors) == 0 {
+		database.Scanrowsdyn(false,
+			`SELECT a.id FROM dbaudiobooks a WHERE a.title = ? COLLATE NOCASE
+			 AND NOT EXISTS (SELECT 1 FROM dbaudiobook_authors da WHERE da.dbaudiobook_id = a.id)
+			 ORDER BY a.id LIMIT 1`,
+			&id, &title)
+	}
+
+	return id
 }
 
 // DiscoverAndAddAuthorAudiobooks discovers other audiobooks by the same author and adds them to the database.
@@ -1932,13 +1972,23 @@ func DiscoverAndAddAuthorAudiobooks(
 		return 0
 	}
 
-	// Get the best match (first result)
-	authorASIN := authors[0].ID
+	best := bestNameMatch(authorName, len(authors),
+		func(i int) string { return authors[i].Name }, nil)
+	if best == -1 {
+		logger.Logtype("info", 1).
+			Str("author", authorName).
+			Str("candidate", authors[0].Name).
+			Msg("No Audnex author matched the requested name - skipping discovery")
+
+		return 0
+	}
+
+	authorASIN := authors[best].ID
 
 	logger.Logtype("debug", 1).
 		Str("author", authorName).
 		Str("asin", authorASIN).
-		Str("matched_name", authors[0].Name).
+		Str("matched_name", authors[best].Name).
 		Msg("Found author on Audnex")
 
 	// Get all audiobooks by this author

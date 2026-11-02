@@ -173,7 +173,7 @@ type AudiobookHistory struct {
 // GetDbaudiobookByIDP retrieves a Dbaudiobook by ID.
 func (audiobook *Dbaudiobook) GetDbaudiobookByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,title,asin,audible_id,runtime_minutes,chapter_count,release_date,publisher,language,abridged,cover_url,sample_url,average_rating,ratings_count,year,slug,dbbook_id,description from dbaudiobooks where id = ?",
+		"select id,created_at,updated_at,title,asin,audible_id,runtime_minutes,chapter_count,release_date,publisher,language,abridged,cover_url,sample_url,average_rating,ratings_count,year,slug,dbbook_id,description,series_name,series_position from dbaudiobooks where id = ?",
 		audiobook,
 		id,
 	)
@@ -211,56 +211,71 @@ type AudiobookSearchResult struct {
 }
 
 // FindAudiobookByTitleAuthor searches for an audiobook by title and author.
+// When author is given only audiobooks credited to that author (any part of a
+// multi-author string, matched by name or slug) qualify; the title-only search
+// is used only when no author is given.
 // Returns the best matching audiobook or an error if not found.
-func FindAudiobookByTitleAuthor(title, _ *string) (*AudiobookSearchResult, error) {
+func FindAudiobookByTitleAuthor(title, author *string) (*AudiobookSearchResult, error) {
 	if title == nil || *title == "" {
 		return nil, logger.ErrNotFoundDbaudiobook
 	}
 
-	// First try exact title match
 	var result AudiobookSearchResult
 
 	slug := logger.StringToSlugCachedP(title)
+	titlePattern := logger.JoinStrings("%", *title, "%")
+	slugPattern := logger.JoinStrings("%", slug, "%")
 
-	// Query for exact title or slug match
+	if author != nil && *author != "" {
+		resolved := resolveAuthorNames(*author)
+		for i := range resolved {
+			for j := range resolved[i].ids {
+				Scanrowsdyn(false,
+					`SELECT ab.id FROM dbaudiobooks ab
+					 JOIN dbaudiobook_authors aa ON aa.dbaudiobook_id = ab.id
+					 WHERE aa.dbauthor_id = ? AND (ab.title = ? COLLATE NOCASE OR ab.slug = NULLIF(?, ''))
+					 ORDER BY ab.id LIMIT 1`,
+					&result.ID, &resolved[i].ids[j], title, &slug)
+
+				if result.ID > 0 {
+					return fillAudiobookResult(&result), nil
+				}
+			}
+		}
+
+		for i := range resolved {
+			for j := range resolved[i].ids {
+				Scanrowsdyn(false,
+					`SELECT ab.id FROM dbaudiobooks ab
+					 JOIN dbaudiobook_authors aa ON aa.dbaudiobook_id = ab.id
+					 WHERE aa.dbauthor_id = ? AND (ab.title LIKE ? OR ab.slug LIKE NULLIF(?, '%%'))
+					 ORDER BY length(ab.title), ab.id LIMIT 1`,
+					&result.ID, &resolved[i].ids[j], &titlePattern, &slugPattern)
+
+				if result.ID > 0 {
+					return fillAudiobookResult(&result), nil
+				}
+			}
+		}
+
+		return nil, logger.ErrNotFoundDbaudiobook
+	}
+
 	Scanrowsdyn(false,
-		"SELECT id FROM dbaudiobooks WHERE title = ? OR slug = ? LIMIT 1",
+		"SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') ORDER BY id LIMIT 1",
 		&result.ID, title, &slug,
 	)
 
 	if result.ID > 0 {
-		// Fill in title info
-		var ab Dbaudiobook
-		if err := ab.GetDbaudiobookByIDP(&result.ID); err == nil {
-			result.Title = ab.Title
-			result.ASIN = ab.ASIN
-			result.AudibleID = ab.AudibleID
-			result.ChapterCount = ab.ChapterCount
-			result.Runtime = ab.RuntimeMinutes
-		}
-
-		return &result, nil
+		return fillAudiobookResult(&result), nil
 	}
 
-	// Try with LIKE pattern match on title
-	titlePattern := logger.JoinStrings("%", *title, "%")
-	slugPattern := logger.JoinStrings("%", slug, "%")
-
 	Scanrowsdyn(false,
-		"SELECT id FROM dbaudiobooks WHERE title LIKE ? OR slug LIKE ? LIMIT 1",
+		"SELECT id FROM dbaudiobooks WHERE title LIKE ? OR slug LIKE NULLIF(?, '%%') ORDER BY length(title), id LIMIT 1",
 		&result.ID, &titlePattern, &slugPattern)
 
 	if result.ID > 0 {
-		var ab Dbaudiobook
-		if err := ab.GetDbaudiobookByIDP(&result.ID); err == nil {
-			result.Title = ab.Title
-			result.ASIN = ab.ASIN
-			result.AudibleID = ab.AudibleID
-			result.ChapterCount = ab.ChapterCount
-			result.Runtime = ab.RuntimeMinutes
-		}
-
-		return &result, nil
+		return fillAudiobookResult(&result), nil
 	}
 
 	return nil, logger.ErrNotFoundDbaudiobook
@@ -286,7 +301,7 @@ func FindAudiobooksByTitleAuthor(
 	seenIDs := make(map[uint]bool)
 
 	addResult := func(id uint) {
-		if id > 0 && !seenIDs[id] {
+		if id > 0 && !seenIDs[id] && len(results) < maxResults {
 			seenIDs[id] = true
 			results = append(results, fillAudiobookResult(&AudiobookSearchResult{ID: id}))
 		}
@@ -306,8 +321,8 @@ func FindAudiobooksByTitleAuthor(
 		// Find author IDs (search by name or slug)
 		authorIDs := Getrowssize[uint](
 			false,
-			"SELECT count() FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
-			"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
+			"SELECT count() FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = NULLIF(?, '') COLLATE NOCASE",
+			"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = NULLIF(?, '') COLLATE NOCASE",
 			author,
 			&authorSlug,
 		)
@@ -323,7 +338,7 @@ func FindAudiobooksByTitleAuthor(
 				remaining(),
 				`SELECT ab.id FROM dbaudiobooks ab
 				JOIN dbaudiobook_authors aba ON ab.id = aba.dbaudiobook_id
-				WHERE aba.dbauthor_id = ? AND (ab.title = ? COLLATE NOCASE OR ab.slug = ? COLLATE NOCASE)`,
+				WHERE aba.dbauthor_id = ? AND (ab.title = ? COLLATE NOCASE OR ab.slug = NULLIF(?, '') COLLATE NOCASE)`,
 				&authorIDs[i], title, &slug)
 
 			for j := range ids {
@@ -346,8 +361,9 @@ func FindAudiobooksByTitleAuthor(
 					remaining(),
 					`SELECT ab.id FROM dbaudiobooks ab
 					JOIN dbaudiobook_authors aba ON ab.id = aba.dbaudiobook_id
-					WHERE aba.dbauthor_id = ? AND (ab.title LIKE ? OR ab.slug LIKE ?)`,
-					&authorIDs[i], &titlePattern, &slugPattern)
+					WHERE aba.dbauthor_id = ? AND (ab.title LIKE ? OR ab.slug LIKE NULLIF(?, '%%'))
+					ORDER BY length(ab.title), ab.id LIMIT ?`,
+					&authorIDs[i], &titlePattern, &slugPattern, uint(maxResults))
 
 				for j := range ids {
 					addResult(ids[j])
@@ -361,7 +377,7 @@ func FindAudiobooksByTitleAuthor(
 		ids := GetrowsN[uint](
 			false,
 			remaining(),
-			"SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE OR slug = ? COLLATE NOCASE",
+			"SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') COLLATE NOCASE",
 			title, slug)
 
 		for i := range ids {
@@ -377,8 +393,8 @@ func FindAudiobooksByTitleAuthor(
 		ids := GetrowsN[uint](
 			false,
 			remaining(),
-			"SELECT id FROM dbaudiobooks WHERE title LIKE ? OR slug LIKE ?",
-			&titlePattern, &slugPattern)
+			"SELECT id FROM dbaudiobooks WHERE title LIKE ? OR slug LIKE NULLIF(?, '%%') ORDER BY length(title), id LIMIT ?",
+			&titlePattern, &slugPattern, uint(maxResults))
 
 		for i := range ids {
 			addResult(ids[i])
@@ -390,9 +406,14 @@ func FindAudiobooksByTitleAuthor(
 	}
 
 	if len(results) > 1 {
+		var authorName string
+		if author != nil {
+			authorName = *author
+		}
+
 		logger.Logtype("debug", 0).
 			Str("title", *title).
-			Str("author", *author).
+			Str("author", authorName).
 			Int("count", len(results)).
 			Msg("DEBUG: FindAudiobooksByTitleAuthor - found multiple potential matches")
 	}
@@ -430,20 +451,11 @@ func FindAudiobookByASIN(asin string) (*AudiobookSearchResult, error) {
 
 	// Query for ASIN or audible_id match
 	Scanrowsdyn(false,
-		"SELECT id FROM dbaudiobooks WHERE asin = ? OR audible_id = ? LIMIT 1",
-		&result.ID, asin, asin)
+		"SELECT id FROM dbaudiobooks WHERE asin = ? OR audible_id = ? ORDER BY asin = ? DESC, id LIMIT 1",
+		&result.ID, asin, asin, asin)
 
 	if result.ID > 0 {
-		var ab Dbaudiobook
-		if err := ab.GetDbaudiobookByIDP(&result.ID); err == nil {
-			result.Title = ab.Title
-			result.ASIN = ab.ASIN
-			result.AudibleID = ab.AudibleID
-			result.ChapterCount = ab.ChapterCount
-			result.Runtime = ab.RuntimeMinutes
-		}
-
-		return &result, nil
+		return fillAudiobookResult(&result), nil
 	}
 
 	return nil, logger.ErrNotFoundDbaudiobook
@@ -533,14 +545,14 @@ func GetAudiobookByRootpath(rootpath string) (*Audiobook, error) {
 
 // GetAudiobookListEntryID looks up the audiobooks.id (list entry ID)
 // for a given dbaudiobook_id and listname. Returns 0 if not found.
-func GetAudiobookListEntryID(dbaudiobookID uint, listname string) uint {
-	if dbaudiobookID == 0 || listname == "" {
+func GetAudiobookListEntryID(dbaudiobookID *uint, listname *string) uint {
+	if *dbaudiobookID == 0 || *listname == "" {
 		return 0
 	}
 
 	return Getdatarow[uint](
 		false,
-		"SELECT id FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ?",
+		"SELECT id FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE",
 		dbaudiobookID,
 		listname,
 	)

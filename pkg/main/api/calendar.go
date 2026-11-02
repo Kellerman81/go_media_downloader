@@ -161,6 +161,14 @@ func getCalendarEventsFromQuery(c *gin.Context) []calendarEvent {
 		endDate = time.Now().AddDate(0, 0, 60)
 	}
 
+	if endDate.Before(startDate) {
+		endDate = startDate
+	}
+
+	if endDate.Sub(startDate) > maxCalendarRange {
+		endDate = startDate.Add(maxCalendarRange)
+	}
+
 	events := getCalendarEvents(startDate, endDate, eventType)
 
 	if events == nil {
@@ -169,6 +177,9 @@ func getCalendarEventsFromQuery(c *gin.Context) []calendarEvent {
 
 	return events
 }
+
+// maxCalendarRange bounds one calendar events request.
+const maxCalendarRange = 366 * 24 * time.Hour
 
 // CalendarICalHandler exports calendar events as iCal format.
 func CalendarICalHandler(c *gin.Context) {
@@ -243,12 +254,11 @@ func getMovieCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 
 	movieData := database.StructscanT[MovieCalendarQuery](false, 0, `
 		SELECT m.id, dm.title, dm.release_date, dm.year, dm.overview, dm.vote_average as imdb_rating, dm.runtime, dm.imdb_id, dm.moviedb_id, dm.trakt_id,
-			   CASE WHEN mf.id IS NOT NULL THEN 1 ELSE 0 END as downloaded,
+			   EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = m.id) as downloaded,
 			   CASE WHEN m.dont_search = 0 THEN 1 ELSE 0 END as monitored,
 			   m.listname
 		FROM movies m
 		INNER JOIN dbmovies dm ON dm.id = m.dbmovie_id
-		LEFT JOIN movie_files mf ON mf.movie_id = m.id
 		WHERE dm.release_date >= ? AND dm.release_date < ?
 		ORDER BY dm.release_date ASC
 	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
@@ -337,14 +347,13 @@ func getSeriesCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 		SELECT se.id, ds.seriename, dse.first_aired,
 			   CAST(dse.season AS INTEGER) as season, CAST(dse.episode AS INTEGER) as episode,
 			   dse.title as episode_title, dse.overview, ds.network, ds.thetvdb_id, ds.trakt_id,
-			   CASE WHEN sef.id IS NOT NULL THEN 1 ELSE 0 END as downloaded,
+			   EXISTS (SELECT 1 FROM serie_episode_files sef WHERE sef.serie_episode_id = se.id) as downloaded,
 			   CASE WHEN se.dont_search = 0 THEN 1 ELSE 0 END as monitored,
 			   s.listname
 		FROM serie_episodes se
 		INNER JOIN series s ON s.id = se.serie_id
 		INNER JOIN dbseries ds ON ds.id = s.dbserie_id
 		INNER JOIN dbserie_episodes dse ON dse.id = se.dbserie_episode_id
-		LEFT JOIN serie_episode_files sef ON sef.serie_episode_id = se.id
 		WHERE dse.first_aired >= ? AND dse.first_aired < ?
 		ORDER BY dse.first_aired ASC
 	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
@@ -426,11 +435,10 @@ func getAlbumCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 
 	albumData := database.StructscanT[AlbumCalendarQuery](false, 0, `
 		SELECT a.id, da.title, da.release_date, da.year, a.listname,
-			   CASE WHEN af.id IS NOT NULL THEN 1 ELSE 0 END as downloaded,
+			   EXISTS (SELECT 1 FROM album_files af WHERE af.album_id = a.id) as downloaded,
 			   CASE WHEN a.dont_search = 0 THEN 1 ELSE 0 END as monitored
 		FROM albums a
 		INNER JOIN dbalbums da ON da.id = a.dbalbum_id
-		LEFT JOIN album_files af ON af.album_id = a.id
 		WHERE da.release_date >= ? AND da.release_date < ?
 		ORDER BY da.release_date ASC
 	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))
@@ -491,11 +499,10 @@ func getAudiobookCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 
 	audiobookData := database.StructscanT[AudiobookCalendarQuery](false, 0, `
 		SELECT ab.id, dab.title, dab.release_date, dab.year, dab.description, dab.runtime_minutes, ab.listname,
-			   CASE WHEN abf.id IS NOT NULL THEN 1 ELSE 0 END as downloaded,
+			   EXISTS (SELECT 1 FROM audiobook_files abf WHERE abf.audiobook_id = ab.id) as downloaded,
 			   CASE WHEN ab.dont_search = 0 THEN 1 ELSE 0 END as monitored
 		FROM audiobooks ab
 		INNER JOIN dbaudiobooks dab ON dab.id = ab.dbaudiobook_id
-		LEFT JOIN audiobook_files abf ON abf.audiobook_id = ab.id
 		WHERE dab.release_date >= ? AND dab.release_date < ?
 		ORDER BY dab.release_date ASC
 	`, startDate.Format("2006-01-02"), endDate.AddDate(0, 0, 1).Format("2006-01-02"))

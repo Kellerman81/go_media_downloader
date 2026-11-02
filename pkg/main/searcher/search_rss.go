@@ -5,11 +5,11 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 var errListNotFound = errors.New("list not found")
@@ -69,7 +69,7 @@ func (s *ConfigSearcher) handleRSSSearch(
 		Str("quality", s.Quality.Name).
 		Msg("Starting RSS search")
 
-	firstid, err := apiexternal.QueryNewznabRSSLast(
+	firstid, err := providers.EnsureIndexer(indcfg).QueryRSS(
 		ctx,
 		indcfg,
 		s.Quality,
@@ -136,7 +136,7 @@ func (s *ConfigSearcher) handleSeasonSearch(
 		Str(logger.StrSeason, p.season).
 		Msg("Starting season search")
 
-	_, _, err := apiexternal.QueryNewznabTvTvdb(
+	_, _, err := providers.EnsureIndexer(indcfg).QueryTvTvdb(
 		ctx,
 		indcfg,
 		s.Quality,
@@ -218,19 +218,24 @@ func (s *ConfigSearcher) getRSSFeed(
 		return errOther
 	}
 
-	customindexer := setupIndexerConfig(listentry)
+	customindexer, err := setupIndexerConfig(listentry)
+	if err != nil {
+		return err
+	}
 
-	firstid, err := apiexternal.QueryNewznabRSSLastCustom(
+	// Key must match addrsshistory's upsert (config, list, indexer=feed URL).
+	firstid, err := providers.EnsureIndexer(customindexer).QueryRSS(
 		ctx,
 		customindexer,
 		s.Quality,
 		database.Getdatarow[string](
 			false,
-			"select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE",
+			"select last_id from r_sshistories where config = ? COLLATE NOCASE and list = ? COLLATE NOCASE and indexer = ? COLLATE NOCASE",
 			&listentry.TemplateList,
 			&s.Quality.Name,
+			&listentry.CfgList.URL,
 		),
-		-1,
+		intid,
 		&s.Raw,
 	)
 	if err != nil {
@@ -355,10 +360,32 @@ func SearchSeriesRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig
 			") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1",
 		),
 		database.Getdatarow[uint](false, "select count() from series"),
-		"select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )",
-		"select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )",
+		queryAllSeasons,
+		queryCountAllSeasons,
 		args,
 	)
+}
+
+// queryAllSeasons and queryCountAllSeasons select every season of a series
+// (specials only when the series searches them), missing episodes or not.
+// Args: dbserie_id, serie_id, serie_id, dbserie_id.
+const (
+	queryAllSeasons      = "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )"
+	queryCountAllSeasons = "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )"
+)
+
+// SearchSerieRSSSeasonsAll runs one RSS season search per season of a single
+// series, like SearchSeriesRSSSeasonsAll does for every series of a config.
+// Date-identified series get one name search instead.
+func SearchSerieRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig, serieid uint) error {
+	row := database.DbstaticTwoUint{Num1: serieid}
+	database.Scanrowsdyn(false, "select dbserie_id from series where id = ?", &row.Num2, &serieid)
+
+	if row.Num2 == 0 {
+		return logger.ErrNotFound
+	}
+
+	return searchseason(ctx, cfgp, &row, queryAllSeasons, queryCountAllSeasons)
 }
 
 // handleSeasonDateSearch performs a name-only RSS search for date-identified series.
@@ -387,7 +414,7 @@ func (s *ConfigSearcher) handleSeasonDateSearch(
 	// Pass an empty entry so getaddstr never appends a stale identifier to the query.
 	emptyEntry := searchParams{}
 
-	_, _, err := apiexternal.QueryNewznabQuery(
+	_, _, err := providers.EnsureIndexer(indcfg).QueryTitle(
 		ctx,
 		s.Cfgp,
 		&emptyEntry.e,

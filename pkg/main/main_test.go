@@ -23,7 +23,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -34,6 +33,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
@@ -81,27 +81,27 @@ func Init() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	apiexternal.NewOmdbClient(
+	providers.RegisterOMDB(
 		config.GetSettingsGeneral().OmdbAPIKey,
 		config.GetSettingsGeneral().OmdbLimiterSeconds,
 		config.GetSettingsGeneral().OmdbLimiterCalls,
 		config.GetSettingsGeneral().OmdbDisableTLSVerify,
 		config.GetSettingsGeneral().OmdbTimeoutSeconds,
 	)
-	apiexternal.NewTmdbClient(
+	providers.RegisterTMDB(
 		config.GetSettingsGeneral().TheMovieDBApiKey,
 		config.GetSettingsGeneral().TmdbLimiterSeconds,
 		config.GetSettingsGeneral().TmdbLimiterCalls,
 		config.GetSettingsGeneral().TheMovieDBDisableTLSVerify,
 		config.GetSettingsGeneral().TmdbTimeoutSeconds,
 	)
-	apiexternal.NewTvdbClient(
+	providers.RegisterTVDB(
 		config.GetSettingsGeneral().TvdbLimiterSeconds,
 		config.GetSettingsGeneral().TvdbLimiterCalls,
 		config.GetSettingsGeneral().TvdbDisableTLSVerify,
 		config.GetSettingsGeneral().TvdbTimeoutSeconds,
 	)
-	apiexternal.NewTraktClient(
+	providers.RegisterTrakt(
 		config.GetSettingsGeneral().TraktClientID,
 		config.GetSettingsGeneral().TraktClientSecret,
 		config.GetSettingsGeneral().TraktLimiterSeconds,
@@ -110,7 +110,7 @@ func Init() {
 		config.GetSettingsGeneral().TraktTimeoutSeconds,
 		config.GetSettingsGeneral().TraktRedirectUrl,
 	)
-	apiexternal.NewTVmazeClient(
+	providers.RegisterTVMaze(
 		config.GetSettingsGeneral().TvmazeLimiterSeconds,
 		config.GetSettingsGeneral().TvmazeLimiterCalls,
 		config.GetSettingsGeneral().TvmazeDisableTLSVerify,
@@ -122,6 +122,7 @@ func Init() {
 		config.GetSettingsGeneral().WorkerMetadata,
 		config.GetSettingsGeneral().WorkerRSS,
 		config.GetSettingsGeneral().WorkerIndexer,
+		config.GetSettingsGeneral().WorkerParse,
 	)
 
 	database.InitImdbdb()
@@ -135,27 +136,27 @@ func Init() {
 
 	parser.LoadDBPatterns()
 	parser.GenerateCutoffPriorities()
-	database.Refreshhistorycacheurl(config.MediaTypeSeries, true)
-	database.Refreshhistorycachetitle(config.MediaTypeSeries, true)
+	database.RefreshCached(logger.CacheHistoryURLSeries, true)
+	database.RefreshCached(logger.CacheHistoryTitleSeries, true)
 	database.RefreshMediaCacheList(config.MediaTypeSeries, true)
-	database.RefreshMediaCacheDB(config.MediaTypeSeries, true)
-	database.RefreshMediaCacheTitles(config.MediaTypeSeries, true)
+	database.RefreshCached(logger.CacheDBSeries, true)
+	database.RefreshCached(logger.CacheDBSeriesAlt, true)
 	database.Refreshunmatchedcached(config.MediaTypeSeries, true)
 	database.Refreshfilescached(config.MediaTypeSeries, true)
 
-	database.Refreshhistorycacheurl(config.MediaTypeMovie, true)
-	database.Refreshhistorycachetitle(config.MediaTypeMovie, true)
+	database.RefreshCached(logger.CacheHistoryURLMovie, true)
+	database.RefreshCached(logger.CacheHistoryTitleMovie, true)
 	database.RefreshMediaCacheList(config.MediaTypeMovie, true)
-	database.RefreshMediaCacheDB(config.MediaTypeMovie, true)
-	database.RefreshMediaCacheTitles(config.MediaTypeMovie, true)
+	database.RefreshCached(logger.CacheDBMovie, true)
+	database.RefreshCached(logger.CacheTitlesMovie, true)
 	database.Refreshunmatchedcached(config.MediaTypeMovie, true)
 	database.Refreshfilescached(config.MediaTypeMovie, true)
 }
 
 func TestCache(t *testing.T) {
 	Init()
-	database.RefreshMediaCacheDB(config.MediaTypeSeries, true)
-	database.RefreshMediaCacheTitles(config.MediaTypeSeries, true)
+	database.RefreshCached(logger.CacheDBSeries, true)
+	database.RefreshCached(logger.CacheDBSeriesAlt, true)
 
 	t.Log(
 		database.GetCachedThreeStringArr(
@@ -394,22 +395,16 @@ func TestGetTmdb(t *testing.T) {
 		// movie.ImdbID = "tt5971474"
 		// movie.MoviedbID = 447277
 		// metadata.Getmoviemetadata(&movie, true)
-		// tmdbfind, _ := apiexternal.TmdbAPI.FindImdb("tt7214954")
-		// t.Log(tmdbfind)
-		// tmdbtitle, _ := apiexternal.GetTmdbMovieTitles(585511)
-		// t.Log(tmdbtitle)
 		// movie.GetImdbTitle(true)
 		// t.Log(movie.Runtime)
-		// tmdbdetails, _ := apiexternal.GetTmdbMovie(447277)
-		// t.Log(tmdbdetails.Runtime)
-		// tt := "tt5971474"
-		// traktdetails, _ := apiexternal.GetTraktMovie(tt)
-		// t.Log(traktdetails.Runtime)
 
-		lst, err := apiexternal.GetTmdbList(8515441)
+		lst, err := providers.GetTMDB().GetTMDBList(context.Background(), 8515441, 1)
 		t.Log(err)
 		t.Log(lst)
-		t.Log(len(lst.Items))
+
+		if lst != nil {
+			t.Log(len(lst.Items))
+		}
 		// var dbserie database.Dbserie
 		// dbserie.ThetvdbID = 85352
 		// dbserie.GetMetadata("", true, true, true, true)
@@ -425,9 +420,9 @@ func TestGetTvdb(t *testing.T) {
 	Init()
 	t.Run("test", func(t *testing.T) {
 		var serie database.Dbserie
-		tvdbdetails, _ := apiexternal.GetTvdbSeries(85352, "")
-		if (serie.Seriename == "") && tvdbdetails.Data.SeriesName != "" {
-			serie.Seriename = tvdbdetails.Data.SeriesName
+		tvdbdetails, _ := providers.GetTVDB().GetSeriesByID(context.Background(), 85352, "")
+		if serie.Seriename == "" && tvdbdetails != nil && tvdbdetails.Name != "" {
+			serie.Seriename = tvdbdetails.Name
 		}
 		t.Log(serie.Seriename)
 		var dbserie database.Dbserie
@@ -540,7 +535,7 @@ func TestSQL(t *testing.T) {
 		t.Log(len(ab))
 		t.Log(cap(ab))
 
-		database.RefreshMediaCacheTitles(config.MediaTypeSeries, true)
+		database.RefreshCached(logger.CacheDBSeriesAlt, true)
 		c := database.GetCachedTwoStringArr(logger.CacheDBSeriesAlt, true, true)
 		t.Log(len(c))
 		t.Log(cap(c))
@@ -637,7 +632,7 @@ func TestQueryMovie(b *testing.T) {
 
 func TestTraktQuery(b *testing.T) {
 	Init()
-	data, err := apiexternal.Testaddtraktdbepisodes()
+	data, err := providers.TraktSerieByIMDb(context.Background(), "tt1183865")
 	b.Log(data)
 	b.Log(err)
 }
@@ -1055,7 +1050,7 @@ func TestParse(t *testing.T) {
 			}
 
 			// Parse the file
-			m := parser.ParseFile(tt.filename, false, false, cfgp, -1)
+			m := parser_v2.ParseFile(tt.filename, false, false, cfgp, -1)
 			if m == nil {
 				t.Fatal("ParseFile returned nil")
 			}
@@ -1520,7 +1515,6 @@ func BenchmarkQuery4(b *testing.B) {
 		searchresults.Close()
 		// clie.SearchWithIMDB(categories, "tt0120655", additional_query_params, "", 0, false)
 		// clie.LoadRSSFeed(categories, 100, additional_query_params, "", "", "", 0, false)
-		// apiexternal.QueryNewznabRSSLast(apiexternal.NzbIndexer{URL: apiBaseURL, Apikey: apikey, UserID: 0, AdditionalQueryParams: additional_query_params, LastRssId: "", Limitercalls: 10, Limiterseconds: 5}, 100, categories, 2)
 		// parser.NewVideoFile("", "Y:\\completed\\MoviesDE\\Uncharted.2022.German.AC3LD.5.1.BDRip.x264-PS\\Uncharted.2022.German.AC3LD.5.1.BDRip.x264-PS (tt1464335).mkv", false)
 		// searcher2 := searcher.NewSearcher("movie_EN", "SD")
 		// movie, _ := database.GetMovies(database.Query{Limit: 1})
@@ -1992,7 +1986,7 @@ func BenchmarkTestRange1(b *testing.B) {
 	Init()
 
 	b.ReportAllocs()
-	database.RefreshMediaCacheTitles(config.MediaTypeSeries, true)
+	database.RefreshCached(logger.CacheDBSeriesAlt, true)
 	for b.Loop() {
 		c := database.GetCachedTwoStringArr(logger.CacheDBSeriesAlt, true, true)
 		for idx := range c {
@@ -2006,7 +2000,7 @@ func BenchmarkTestRange2(b *testing.B) {
 	Init()
 
 	b.ReportAllocs()
-	database.RefreshMediaCacheTitles(config.MediaTypeSeries, true)
+	database.RefreshCached(logger.CacheDBSeriesAlt, true)
 	for b.Loop() {
 		for _, d := range database.GetCachedTwoStringArr(logger.CacheDBSeriesAlt, true, true) {
 			_ = d

@@ -29,16 +29,7 @@ func CalculateDiscID(files []string) (string, error) {
 		return "", fmt.Errorf("DiscID requires at least 2 tracks (got %d)", len(files))
 	}
 
-	if len(files) > 99 {
-		return "", fmt.Errorf("too many tracks: %d (max 99 for DiscID)", len(files))
-	}
-
-	type trackEntry struct {
-		trackNum int
-		sectors  int64 // duration in CD sectors (75/sec)
-	}
-
-	entries := make([]trackEntry, 0, len(files))
+	entries := make([]discIDTrack, 0, len(files))
 
 	for i := range files {
 		info := ReadTagsForFirstFile([]string{files[i]})
@@ -51,10 +42,58 @@ func CalculateDiscID(files []string) (string, error) {
 			return "", fmt.Errorf("invalid duration for %s", files[i])
 		}
 
-		entries = append(entries, trackEntry{
+		entries = append(entries, discIDTrack{
+			discNum:  info.DiscNumber,
 			trackNum: info.TrackNumber,
 			sectors:  sectors,
 		})
+	}
+
+	return discIDFromTracks(entries)
+}
+
+type discIDTrack struct {
+	discNum  int
+	trackNum int
+	sectors  int64 // duration in CD sectors (75/sec)
+}
+
+// discIDFromTracks computes the DiscID from per-track disc/track numbers and
+// durations in CD sectors.
+func discIDFromTracks(entries []discIDTrack) (string, error) {
+	// A DiscID identifies one physical disc. For a multi-disc folder use the
+	// first disc only: mixing discs interleaves per-disc track numbers and
+	// sums every disc into one leadout, which can never match a real TOC.
+	firstDisc := 0
+	multiDisc := false
+
+	for i := range entries {
+		switch d := entries[i].discNum; {
+		case d <= 0:
+		case firstDisc == 0:
+			firstDisc = d
+		case d != firstDisc:
+			multiDisc = true
+			firstDisc = min(firstDisc, d)
+		}
+	}
+
+	if multiDisc {
+		kept := entries[:0]
+		for i := range entries {
+			if entries[i].discNum == firstDisc {
+				kept = append(kept, entries[i])
+			}
+		}
+
+		entries = kept
+		if len(entries) < 2 {
+			return "", fmt.Errorf("DiscID requires at least 2 tracks on disc %d (got %d)", firstDisc, len(entries))
+		}
+	}
+
+	if len(entries) > 99 {
+		return "", fmt.Errorf("too many tracks: %d (max 99 for DiscID)", len(entries))
 	}
 
 	// Sort by track number only when EVERY entry has one - checking just

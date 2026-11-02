@@ -505,3 +505,99 @@ func TestHTMLXPathPaginationLogic(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveURL(t *testing.T) {
+	base := "https://example.com/shows/list/page.html"
+
+	for ref, want := range map[string]string{
+		"":                          "",
+		"episode/1":                 "https://example.com/shows/list/episode/1",
+		"/img/poster.jpg":           "https://example.com/img/poster.jpg",
+		"https://cdn.example.org/x": "https://cdn.example.org/x",
+		"//cdn.example.org/y":       "https://cdn.example.org/y",
+		"?page=2":                   "https://example.com/shows/list/page.html?page=2",
+	} {
+		if got := resolveURL(base, ref); got != want {
+			t.Errorf("resolveURL(%q) = %q, want %q", ref, got, want)
+		}
+	}
+
+	// An unparsable base leaves the reference unchanged.
+	if got := resolveURL("http://[::1", "x/y"); got != "x/y" {
+		t.Errorf("bad base = %q", got)
+	}
+}
+
+const fixturePage = `<html><body>
+<div class="item"><a href="/v/1">One</a><time datetime="2024-03-15T10:30:00Z">Mar 15</time></div>
+<div class="item"><a href="/v/2">Two</a><time datetime="2024-03-16T10:30:00Z">Mar 16</time></div>
+</body></html>`
+
+func newFixtureScraper(t *testing.T) *Scraper {
+	t.Helper()
+
+	s, err := NewScraper(&Config{
+		SiteName:       "t",
+		StartURL:       "https://example.com/",
+		SerieName:      "t",
+		SceneNodeXPath: `//div[@class="item"]`,
+		TitleXPath:     ".//a",
+		URLXPath:       ".//a",
+		DateXPath:      ".//time/@datetime",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return s
+}
+
+func TestDateXPathAttributeSelection(t *testing.T) {
+	s := newFixtureScraper(t)
+
+	doc, err := htmlquery.Parse(strings.NewReader(fixturePage))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodes := htmlquery.Find(doc, s.config.SceneNodeXPath)
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(nodes))
+	}
+
+	dateStr := s.extractText(nodes[0], s.config.DateXPath, "")
+	if dateStr != "2024-03-15T10:30:00Z" {
+		t.Fatalf("DateXPath with /@datetime = %q", dateStr)
+	}
+
+	date, err := s.parseDate(dateStr)
+	if err != nil {
+		t.Fatalf("parseDate(%q): %v", dateStr, err)
+	}
+
+	if date.Format("2006-01-02") != "2024-03-15" {
+		t.Errorf("parsed %s", date)
+	}
+}
+
+func TestPageKeyDetectsRepeatedPage(t *testing.T) {
+	s := newFixtureScraper(t)
+
+	parse := func(src string) string {
+		doc, err := htmlquery.Parse(strings.NewReader(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return s.pageKey(htmlquery.Find(doc, s.config.SceneNodeXPath))
+	}
+
+	a := parse(fixturePage)
+	if a != parse(fixturePage) {
+		t.Error("identical pages should have identical keys")
+	}
+
+	if a == parse(strings.Replace(fixturePage, "/v/2", "/v/3", 1)) {
+		t.Error("different pages should have different keys")
+	}
+}

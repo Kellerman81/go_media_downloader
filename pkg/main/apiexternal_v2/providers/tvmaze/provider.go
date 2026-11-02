@@ -2,14 +2,11 @@ package tvmaze
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
 //
@@ -66,6 +63,8 @@ func (p *Provider) FindMovieByIMDbID(
 				Overview:     stripHTML(response.Summary),
 				VoteAverage:  response.Rating.Average,
 				ProviderName: "tvmaze",
+				TVDbID:       response.Externals.TVDB,
+				IMDbID:       response.Externals.IMDB,
 			},
 		},
 	}
@@ -98,7 +97,7 @@ func (p *Provider) GetSeriesByID(
 	ctx context.Context,
 	id int,
 ) (*apiexternal_v2.SeriesDetails, error) {
-	endpoint := fmt.Sprintf("/shows/%d?embed[]=seasons&embed[]=episodes", id)
+	endpoint := fmt.Sprintf("/shows/%d", id)
 
 	var response tvmazeShow
 	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
@@ -129,190 +128,4 @@ func (p *Provider) FindSeriesByTVDbID(
 	}
 
 	return convertShowToDetails(&response), nil
-}
-
-// GetSeriesExternalIDs retrieves external IDs for a series.
-func (p *Provider) GetSeriesExternalIDs(
-	ctx context.Context,
-	id int,
-) (*apiexternal_v2.ExternalIDs, error) {
-	endpoint := fmt.Sprintf("/shows/%d", id)
-
-	var response tvmazeShow
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return convertExternalsToExternalIDs(response.Externals, id), nil
-}
-
-//
-// Episode Methods
-//
-
-// GetSeasonDetails retrieves detailed information about a season.
-func (p *Provider) GetSeasonDetails(
-	ctx context.Context,
-	seriesID int,
-	seasonNumber int,
-) (*apiexternal_v2.Season, error) {
-	endpoint := fmt.Sprintf("/shows/%d/seasons", seriesID)
-
-	var response tvmazeSeasonResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	// Find the specific season
-	for i := range response {
-		if response[i].Number == seasonNumber {
-			return convertSeasonToDetails(&response[i]), nil
-		}
-	}
-
-	return nil, errors.New(logger.JoinStrings("season ", strconv.Itoa(seasonNumber), " not found"))
-}
-
-// GetEpisodes retrieves all episodes for the given series.
-func (p *Provider) GetEpisodes(
-	ctx context.Context,
-	seriesID int,
-) ([]*apiexternal_v2.Episode, error) {
-	endpoint := fmt.Sprintf("/shows/%d/episodes", seriesID)
-
-	var response tvmazeEpisodeResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	episodes := make([]*apiexternal_v2.Episode, 0, len(response))
-	for idx := range response {
-		episodes = append(episodes, convertEpisodeToDetails(&response[idx]))
-	}
-
-	return episodes, nil
-}
-
-// GetSeasons retrieves detailed information about all seasons.
-func (p *Provider) GetSeasons(
-	ctx context.Context,
-	seriesID int,
-) ([]*apiexternal_v2.Season, error) {
-	endpoint := fmt.Sprintf("/shows/%d/seasons", seriesID)
-
-	var response tvmazeSeasonResponse
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	seasons := make([]*apiexternal_v2.Season, 0, len(response))
-	for idx := range response {
-		seasons = append(seasons, convertSeasonToDetails(&response[idx]))
-	}
-
-	return seasons, nil
-}
-
-// GetEpisodeDetails retrieves detailed information about an episode.
-func (p *Provider) GetEpisodeDetails(
-	ctx context.Context,
-	seriesID int,
-	seasonNumber int,
-	episodeNumber int,
-) (*apiexternal_v2.Episode, error) {
-	endpoint := fmt.Sprintf(
-		"/shows/%d/episodebynumber?season=%d&number=%d",
-		seriesID,
-		seasonNumber,
-		episodeNumber,
-	)
-
-	var response tvmazeEpisode
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return convertEpisodeToDetails(&response), nil
-}
-
-//
-// Popular/Trending (Not directly supported by TVMaze)
-//
-
-// GetPopularSeries - TVMaze doesn't have a direct popular endpoint.
-func (p *Provider) GetPopularSeries(
-	ctx context.Context,
-	page int,
-) (*apiexternal_v2.PopularSeriesResponse, error) {
-	// TVMaze has a "show index" that returns all shows
-	// We can use this with pagination to simulate popular shows
-	endpoint := fmt.Sprintf("/shows?page=%d", page)
-
-	var response []tvmazeShow
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	results := make([]apiexternal_v2.SeriesSearchResult, len(response))
-	for i, s := range response {
-		results[i] = apiexternal_v2.SeriesSearchResult{
-			ID:           s.ID,
-			Name:         s.Name,
-			FirstAirDate: parseTVMazeDate(s.Premiered),
-			Overview:     stripHTML(s.Summary),
-			VoteAverage:  s.Rating.Average,
-			ProviderName: "tvmaze",
-		}
-	}
-
-	return &apiexternal_v2.PopularSeriesResponse{
-		Page:         page,
-		Results:      results,
-		TotalPages:   1, // TVMaze doesn't provide total pages
-		TotalResults: len(results),
-	}, nil
-}
-
-//
-// Credits
-//
-
-// GetSeriesCredits retrieves cast information for a series.
-func (p *Provider) GetSeriesCredits(ctx context.Context, id int) (*apiexternal_v2.Credits, error) {
-	castEndpoint := fmt.Sprintf("/shows/%d/cast", id)
-	crewEndpoint := fmt.Sprintf("/shows/%d/crew", id)
-
-	var castResponse tvmazeCastResponse
-	if err := p.MakeRequest(ctx, "GET", castEndpoint, nil, &castResponse, nil); err != nil {
-		return nil, err
-	}
-
-	credits := convertCastToCredits(castResponse)
-
-	// Get crew separately
-	var crewResponse tvmazeCrewResponse
-	if err := p.MakeRequest(ctx, "GET", crewEndpoint, nil, &crewResponse, nil); err == nil {
-		credits.Crew = convertCrewToCredits(crewResponse)
-	}
-
-	return credits, nil
-}
-
-//
-// Media Resources
-//
-
-// GetSeriesImages retrieves images for a series.
-func (p *Provider) GetSeriesImages(
-	ctx context.Context,
-	id int,
-) (*apiexternal_v2.ImageCollection, error) {
-	endpoint := fmt.Sprintf("/shows/%d", id)
-
-	var response tvmazeShow
-	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
-		return nil, err
-	}
-
-	return convertImagesToCollection(response.Image), nil
 }

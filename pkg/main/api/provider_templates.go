@@ -187,6 +187,9 @@ var downloaderTemplates = []providerTemplate{
 }
 
 // ---- Indexer templates ----
+// Torznab endpoints also use IndexerType "newznab": the searcher only queries
+// indexers of that type (searcher.searchindexers), and the newznab provider
+// speaks Torznab too (it detects it from the URL).
 // Sourced from NZBHydra2's own preset list (core/ui-src/js/config/formly-indexers.js,
 // $scope.newznabPresets / $scope.torznabPresets), cross-checked against a real
 // production config.toml where the two disagreed.
@@ -199,7 +202,7 @@ var indexerTemplates = []providerTemplate{
 	},
 	{
 		Label:    "Torznab (Generic)",
-		Fields:   map[string]string{"IndexerType": "torznab"},
+		Fields:   map[string]string{"IndexerType": "newznab"},
 		Required: []string{"URL", "Apikey"},
 	},
 
@@ -250,14 +253,14 @@ var indexerTemplates = []providerTemplate{
 	{
 		Label: "Jackett/Cardigann (self-hosted)",
 		Fields: map[string]string{
-			"IndexerType": "torznab",
+			"IndexerType": "newznab",
 			"URL":         "http://localhost:9117/api/v2.0/indexers/YOURTRACKER/results/torznab/",
 		},
 		Required: []string{"URL", "Apikey"}, // URL still needs YOURTRACKER replaced
 	},
 	{
 		Label:    "Torbox (Torrents)",
-		Fields:   map[string]string{"IndexerType": "torznab", "URL": "https://search-api.torbox.app/torznab"},
+		Fields:   map[string]string{"IndexerType": "newznab", "URL": "https://search-api.torbox.app/torznab"},
 		Required: []string{"URL", "Apikey"},
 	},
 	{
@@ -267,7 +270,7 @@ var indexerTemplates = []providerTemplate{
 	},
 	{
 		Label:    "Prowlarr (self-hosted)",
-		Fields:   map[string]string{"IndexerType": "torznab", "URL": "http://localhost:9696"},
+		Fields:   map[string]string{"IndexerType": "newznab", "URL": "http://localhost:9696"},
 		Required: []string{"URL", "Apikey"},
 	},
 }

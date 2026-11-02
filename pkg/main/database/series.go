@@ -187,7 +187,7 @@ func (s *Dbserie) GetDbserieByIDP(id *uint) error {
 // Returns an error if there was a problem retrieving the data.
 func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,scraper_id,scraper_url,runtime,dbserie_id from dbserie_episodes where id = ?",
+		"select id,created_at,updated_at,episode,season,identifier,title,first_aired,overview,poster,scraper_id,scraper_url,runtime,absolute_episode,dbserie_id from dbserie_episodes where id = ?",
 		u,
 		id,
 	)
@@ -200,7 +200,7 @@ func (u *DbserieEpisode) GetDbserieEpisodesByIDP(id *uint) error {
 // Returns an error if there was a problem retrieving the data.
 func (u *Serie) GetSerieByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,listname,rootpath,aliases,dbserie_id,dont_upgrade,dont_search from series where id = ?",
+		"select id,created_at,updated_at,listname,rootpath,aliases,quality_profile,dbserie_id,dont_upgrade,dont_search,search_specials,ignore_runtime from series where id = ?",
 		u,
 		id,
 	)
@@ -213,59 +213,8 @@ func (u *Serie) GetSerieByIDP(id *uint) error {
 // Returns an error if there was a problem retrieving the data.
 func (u *SerieEpisode) GetSerieEpisodesByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?",
+		"select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,ignore_runtime,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?",
 		u,
 		id,
 	)
-}
-
-// InsertEpisodeFile inserts an episode file record into the database.
-func InsertEpisodeFile(
-	serieEpisodeID uint,
-	location, filename, extension string,
-	resolutionID, qualityID, codecID, audioID uint,
-) error {
-	if serieEpisodeID == 0 {
-		return nil
-	}
-
-	var (
-		proper, repack, extended             bool
-		serieID, dbserieID, dbserieEpisodeID uint
-		height, width                        int
-		qualityProfile                       string
-	)
-
-	// Get related IDs from serie_episode
-
-	GetdatarowArgs(
-		"SELECT serie_id, dbserie_id, dbserie_episode_id FROM serie_episodes WHERE id = ?",
-		&serieEpisodeID,
-		&serieID,
-		&dbserieID,
-		&dbserieEpisodeID,
-	)
-
-	ExecN(
-		"insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		&location,
-		&filename,
-		&extension,
-		&qualityProfile,
-		&resolutionID,
-		&qualityID,
-		&codecID,
-		&audioID,
-		&proper,
-		&repack,
-		&extended,
-		&serieID,
-		&serieEpisodeID,
-		&dbserieEpisodeID,
-		&dbserieID,
-		&height,
-		&width,
-	)
-
-	return nil
 }

@@ -72,7 +72,6 @@ func performStorageHealthCheck(
 			pathInfo.Accessible = false
 			pathInfo.Status = "error"
 			pathInfo.ErrorMessage = fmt.Sprintf("Path not accessible: %v", err)
-			results.ErrorPaths++
 		} else {
 			pathInfo.Exists = true
 			pathInfo.Accessible = stat.IsDir()
@@ -82,7 +81,9 @@ func performStorageHealthCheck(
 				if freeBytes, totalBytes, err := getDiskUsage(mediaPath); err != nil {
 					pathInfo.Status = "error"
 					pathInfo.ErrorMessage = fmt.Sprintf("Failed to get disk usage: %v", err)
-					results.ErrorPaths++
+				} else if totalBytes == 0 {
+					pathInfo.Status = "error"
+					pathInfo.ErrorMessage = "Failed to get disk usage: filesystem reports zero size"
 				} else {
 					pathInfo.FreeBytes = freeBytes
 					pathInfo.TotalBytes = totalBytes
@@ -91,13 +92,8 @@ func performStorageHealthCheck(
 					// Determine status based on free space
 					if pathInfo.FreePercent < criticalSpaceThreshold {
 						pathInfo.Status = "critical"
-						results.CriticalPaths++
 					} else if pathInfo.FreePercent < lowSpaceThreshold {
 						pathInfo.Status = "warning"
-						results.WarningPaths++
-					} else {
-						pathInfo.Status = "healthy"
-						results.HealthyPaths++
 					}
 				}
 			}
@@ -105,7 +101,10 @@ func performStorageHealthCheck(
 			if checkPermissions {
 				// Test read/write permissions
 				if !testPathPermissions(mediaPath) && pathInfo.Status != "error" {
-					pathInfo.Status = "warning"
+					if pathInfo.Status != "critical" {
+						pathInfo.Status = "warning"
+					}
+
 					pathInfo.ErrorMessage = "Limited permissions"
 				}
 			}
@@ -113,10 +112,25 @@ func performStorageHealthCheck(
 			if checkIOHealth {
 				// Perform I/O performance test
 				pathInfo.IOTest = performIOTest(mediaPath, slowIOThreshold)
-				if pathInfo.IOTest.Error != "" && pathInfo.Status == "healthy" {
+				if pathInfo.IOTest.Error != "" && pathInfo.Status == "" {
 					pathInfo.Status = "warning"
 				}
 			}
+		}
+
+		// Count only once every check has had its say; counting at the first
+		// verdict left later downgrades (permissions, I/O) out of the totals
+		// and paths with disk-space checking disabled out of them entirely.
+		switch pathInfo.Status {
+		case "error":
+			results.ErrorPaths++
+		case "critical":
+			results.CriticalPaths++
+		case "warning":
+			results.WarningPaths++
+		default:
+			pathInfo.Status = "healthy"
+			results.HealthyPaths++
 		}
 
 		results.PathsDetails = append(results.PathsDetails, pathInfo)
@@ -248,8 +262,9 @@ func testPathPermissions(path string) bool {
 	}
 }
 
-// performIOTest performs basic I/O performance tests.
-func performIOTest(path string, _ float64) IOTestResult {
+// performIOTest performs basic I/O performance tests. slowMBps is the
+// threshold below which a read or write is reported as slow.
+func performIOTest(path string, slowMBps float64) IOTestResult {
 	result := IOTestResult{}
 
 	testFile := filepath.Join(path, ".io_test_temp")
@@ -294,6 +309,21 @@ func performIOTest(path string, _ float64) IOTestResult {
 
 		result.ReadTime = time.Since(readStart)
 		result.ReadTest = true
+	}
+
+	testMB := float64(len(testData)) / (1024 * 1024)
+	if slowMBps > 0 {
+		for _, t := range []struct {
+			name string
+			d    time.Duration
+		}{{"Write", result.WriteTime}, {"Read", result.ReadTime}} {
+			if t.d > 0 {
+				if speed := testMB / t.d.Seconds(); speed < slowMBps {
+					result.Error = fmt.Sprintf("%s speed %.1f MB/s is below %.1f MB/s", t.name, speed, slowMBps)
+					break
+				}
+			}
+		}
 	}
 
 	return result

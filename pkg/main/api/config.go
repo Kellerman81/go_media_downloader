@@ -1,16 +1,21 @@
 package api
 
 import (
+	"errors"
 	"fmt"
+	"math"
+	"net/http"
+	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/goccy/go-json"
-
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
@@ -70,108 +75,14 @@ const (
 	DefaultLimit             = 0
 	MaxDisplayItems          = 20
 	DefaultProcessingTimeout = 30 * time.Second
+
+	// arrayPresentSuffix names the hidden marker input that array widgets
+	// render next to their entries, so a list emptied in the UI is still
+	// posted (and saved as empty) instead of looking like an absent field.
+	arrayPresentSuffix = "__present"
 )
 
 // Helper functions for common operations
-
-// OptimizedConfigBuilder is a config builder with form field caching.
-type OptimizedConfigBuilder struct {
-	c      *gin.Context
-	prefix string
-	index  string
-	cache  map[string]string // Cache form values to avoid repeated lookups
-}
-
-// NewOptimizedConfigBuilder creates a new optimized config builder.
-func NewOptimizedConfigBuilder(c *gin.Context, prefix, index string) *OptimizedConfigBuilder {
-	return &OptimizedConfigBuilder{
-		c:      c,
-		prefix: prefix,
-		index:  index,
-		cache:  make(map[string]string, 20), // Pre-allocate for common case
-	}
-}
-
-// getString gets a string value with caching.
-func (b *OptimizedConfigBuilder) getString(field string) string {
-	key := fmt.Sprintf("%s_%s_%s", b.prefix, b.index, field)
-	if cached, exists := b.cache[key]; exists {
-		return cached
-	}
-
-	value := b.c.PostForm(key)
-
-	b.cache[key] = value
-
-	return value
-}
-
-// getInt gets an int value with caching and default.
-func (b *OptimizedConfigBuilder) getInt(field string, defaultValue int) int {
-	str := b.getString(field)
-	if str == "" {
-		return defaultValue
-	}
-
-	if parsed, err := strconv.Atoi(str); err == nil {
-		return parsed
-	}
-
-	return defaultValue
-}
-
-// getBool gets a bool value with caching.
-func (b *OptimizedConfigBuilder) getBool(field string) bool {
-	str := b.getString(field)
-	return str == "on" || str == "true"
-}
-
-// getFloat32 gets a float32 value with caching and default.
-func (b *OptimizedConfigBuilder) getFloat32(field string, defaultValue float32) float32 {
-	str := b.getString(field)
-	if str == "" {
-		return defaultValue
-	}
-
-	if parsed, err := strconv.ParseFloat(str, 32); err == nil {
-		return float32(parsed)
-	}
-
-	return defaultValue
-}
-
-// getStringArray gets a string array value with efficient parsing.
-func (b *OptimizedConfigBuilder) getStringArray(field string) []string {
-	key := fmt.Sprintf("%s_%s_%s", b.prefix, b.index, field)
-	values := b.c.PostFormArray(key)
-
-	// Filter out empty strings
-	result := make([]string, 0, len(values))
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			result = append(result, strings.TrimSpace(v))
-		}
-	}
-
-	return result
-}
-
-// getIntArray gets an int array value with efficient parsing.
-func (b *OptimizedConfigBuilder) getIntArray(field string) []int {
-	key := fmt.Sprintf("%s_%s_%s", b.prefix, b.index, field)
-	values := b.c.PostFormArray(key)
-
-	result := make([]int, 0, len(values))
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			if parsed, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-				result = append(result, parsed)
-			}
-		}
-	}
-
-	return result
-}
 
 // Cache for expensive template and configuration lookups.
 // type configCache struct {
@@ -310,34 +221,79 @@ type RenderConfigOptions struct {
 	SubmitEndpoint string
 }
 
-// extractFormKeys extracts form keys based on a prefix and field suffix pattern
-// Returns a map of keys found in the form data.
-func extractFormKeys(c *gin.Context, prefix string, fieldSuffix string) map[string]bool {
-	formKeys := make(map[string]bool)
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, fieldSuffix) || !strings.Contains(key, prefix) {
+// formRowIndexes returns the distinct numeric row indexes n of form keys
+// shaped prefix+n+suffix, sorted ascending. Rows are rendered with increasing
+// indexes and added rows get max+1, so this is the order the rows appear in
+// the form. Keys whose middle part is not a number are ignored, which keeps
+// nested rows that share the prefix (e.g. "..._data_0_dataimport_...") out.
+func formRowIndexes(form url.Values, prefix, suffix string) []string {
+	seen := make(map[int]struct{})
+	for key := range form {
+		mid, ok := strings.CutPrefix(key, prefix)
+		if !ok {
 			continue
 		}
 
-		parts := strings.Split(key, "_")
-		if len(parts) > 1 {
-			keyIndex := ""
-			// Find the correct index position based on prefix structure
-			if strings.Contains(prefix, "media_main_") {
-				if len(parts) > 3 {
-					keyIndex = parts[3] // media_main_movies_X_Name -> X
-				}
-			} else {
-				keyIndex = parts[1] // downloader_X_Name -> X
-			}
+		mid, ok = strings.CutSuffix(mid, suffix)
+		if !ok {
+			continue
+		}
 
-			if keyIndex != "" {
-				formKeys[keyIndex] = true
-			}
+		n, err := strconv.Atoi(mid)
+		if err != nil || n < 0 {
+			continue
+		}
+
+		seen[n] = struct{}{}
+	}
+
+	ints := make([]int, 0, len(seen))
+	for n := range seen {
+		ints = append(ints, n)
+	}
+
+	slices.Sort(ints)
+
+	out := make([]string, len(ints))
+	for i, n := range ints {
+		out[i] = strconv.Itoa(n)
+	}
+
+	return out
+}
+
+// nextFormRowIndex returns an index that is not used by any posted row with
+// the given prefix/suffix (max existing + 1), so a newly added row never
+// collides with an existing one, even after rows were removed.
+func nextFormRowIndex(form url.Values, prefix, suffix string) int {
+	next := 0
+	for _, idx := range formRowIndexes(form, prefix, suffix) {
+		if n, _ := strconv.Atoi(idx); n >= next {
+			next = n + 1
 		}
 	}
 
-	return formKeys
+	return next
+}
+
+// nextRowIndexFromForm parses the posted form of an add-row request and returns
+// the index for the new row. On a parse error it writes an empty response and
+// returns false.
+func nextRowIndexFromForm(ctx *gin.Context, prefix, suffix string) (int, bool) {
+	if err := ctx.Request.ParseForm(); err != nil {
+		ctx.String(http.StatusOK, "")
+		return 0, false
+	}
+
+	return nextFormRowIndex(ctx.Request.PostForm, prefix, suffix), true
+}
+
+// renderAddedRow writes a rendered add-row fragment as HTML.
+func renderAddedRow(ctx *gin.Context, form gomponents.Node) {
+	var buf strings.Builder
+	form.Render(&buf)
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
 }
 
 // ConfigSectionOptions holds configuration for rendering config sections.
@@ -374,28 +330,49 @@ func getFormFieldArray(c *gin.Context, prefix string, index string, fieldName st
 	return c.PostFormArray(fieldKey)
 }
 
-// getFormFieldInt builds a form field name and retrieves its integer value.
-func getFormFieldInt(c *gin.Context, prefix string, index string, fieldName string) (int, error) {
-	value := getFormField(c, prefix, index, fieldName)
-	if value == "" {
-		return 0, nil
-	}
-
-	return strconv.Atoi(value)
-}
-
 // validateName checks if a name field is not empty
 
 // validateNonNegative checks if a value is not negative
 
+// formBool interprets a posted checkbox/toggle value. Checkboxes without an
+// explicit value attribute post "on".
+func formBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 // getFormFieldBool builds a form field name and retrieves its boolean value.
 func getFormFieldBool(c *gin.Context, prefix string, index string, fieldName string) bool {
-	value := getFormField(c, prefix, index, fieldName)
-	return value == "on" || value == "true" || value == "1"
+	return formBool(getFormField(c, prefix, index, fieldName))
+}
+
+// formFieldKey builds the posted key for a field, matching getFormField.
+func formFieldKey(prefix, index, fieldName string) string {
+	if index == "" {
+		return prefix + "_" + fieldName
+	}
+
+	return prefix + "_" + index + "_" + fieldName
+}
+
+// formFieldPresent reports whether the field (or the presence marker that
+// array widgets render, so an emptied list is still detectable) was posted.
+func formFieldPresent(c *gin.Context, key string) bool {
+	if _, ok := c.Request.PostForm[key]; ok {
+		return true
+	}
+
+	_, ok := c.Request.PostForm[key+arrayPresentSuffix]
+
+	return ok
 }
 
 // createDownloaderConfig creates a DownloaderConfig from form data.
-func createDownloaderConfig(index string, c *gin.Context) config.DownloaderConfig {
+func createDownloaderConfig(index string, c *gin.Context) (config.DownloaderConfig, error) {
 	var cfg config.DownloaderConfig
 
 	builder := NewConfigBuilder(c, fmt.Sprintf("downloader_%s", index), "")
@@ -414,16 +391,22 @@ func createDownloaderConfig(index string, c *gin.Context) config.DownloaderConfi
 		SetBool(&cfg.DelugeMoveAfter, "DelugeMoveAfter").
 		SetBool(&cfg.Enabled, "Enabled")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
 // saveDownloaderConfigs saves the downloader configurations.
 func saveDownloaderConfigs(configs []config.DownloaderConfig) error {
-	return saveConfig(configs)
+	if err := saveConfig(configs); err != nil {
+		return err
+	}
+
+	providers.ReloadClientProviders()
+
+	return nil
 }
 
 // createListsConfig creates a ListsConfig from form data.
-func createListsConfig(index string, c *gin.Context) config.ListsConfig {
+func createListsConfig(index string, c *gin.Context) (config.ListsConfig, error) {
 	var cfg config.ListsConfig
 
 	builder := NewConfigBuilder(c, fmt.Sprintf("lists_%s", index), "")
@@ -441,6 +424,7 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetStringArrayFromForm(&cfg.Includegenre, "Includegenre").
 		SetStringArrayFromForm(&cfg.TmdbDiscover, "TmdbDiscover").
 		SetIntArray(&cfg.TmdbList, "TmdbList").
+		SetInt(&cfg.TmdbPages, "TmdbPages").
 		SetString(&cfg.Limit, "Limit").
 		SetInt(&cfg.MinVotes, "MinVotes").
 		SetFloat32(&cfg.MinRating, "MinRating").
@@ -494,9 +478,18 @@ func createListsConfig(index string, c *gin.Context) config.ListsConfig {
 		SetString(&cfg.MovieGenreField, "MovieGenreField").
 		SetString(&cfg.MovieReleaseDateField, "MovieReleaseDateField").
 		SetString(&cfg.MovieDateFormat, "MovieDateFormat").
-		SetInt(&cfg.MovieWaitSeconds, "MovieWaitSeconds")
+		SetInt(&cfg.MovieWaitSeconds, "MovieWaitSeconds").
+		// Chart / bestseller scraper
+		SetString(&cfg.ChartEntryNodeXPath, "ChartEntryNodeXPath").
+		SetString(&cfg.ChartTitleXPath, "ChartTitleXPath").
+		SetString(&cfg.ChartArtistXPath, "ChartArtistXPath").
+		SetString(&cfg.ChartTitleAttribute, "ChartTitleAttribute").
+		SetString(&cfg.ChartArtistAttribute, "ChartArtistAttribute").
+		SetString(&cfg.ChartDefaultArtist, "ChartDefaultArtist").
+		SetString(&cfg.ChartDateURLPattern, "ChartDateURLPattern").
+		SetString(&cfg.ChartDateFormat, "ChartDateFormat")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
 // saveListsConfigs saves the lists configurations.
@@ -505,7 +498,7 @@ func saveListsConfigs(configs []config.ListsConfig) error {
 }
 
 // createIndexersConfig creates an IndexersConfig from form data.
-func createIndexersConfig(index string, c *gin.Context) config.IndexersConfig {
+func createIndexersConfig(index string, c *gin.Context) (config.IndexersConfig, error) {
 	var cfg config.IndexersConfig
 
 	builder := NewConfigBuilder(c, fmt.Sprintf("indexers_%s", index), "")
@@ -538,16 +531,22 @@ func createIndexersConfig(index string, c *gin.Context) config.IndexersConfig {
 		SetBool(&cfg.TrustWithTVDBIDs, "TrustWithTVDBIDs").
 		SetBool(&cfg.CheckTitleOnIDSearch, "CheckTitleOnIDSearch")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
 // saveIndexersConfigs saves the indexers configurations.
 func saveIndexersConfigs(configs []config.IndexersConfig) error {
-	return saveConfig(configs)
+	if err := saveConfig(configs); err != nil {
+		return err
+	}
+
+	providers.ReloadClientProviders()
+
+	return nil
 }
 
 // createPathsConfig creates a PathsConfig from form data.
-func createPathsConfig(index string, c *gin.Context) config.PathsConfig {
+func createPathsConfig(index string, c *gin.Context) (config.PathsConfig, error) {
 	var cfg config.PathsConfig
 
 	builder := NewConfigBuilder(c, fmt.Sprintf("paths_%s", index), "")
@@ -587,7 +586,7 @@ func createPathsConfig(index string, c *gin.Context) config.PathsConfig {
 		SetBool(&cfg.DeleteWrongRuntime, "DeleteWrongRuntime").
 		SetBool(&cfg.MoveReplaced, "MoveReplaced")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
 // savePathsConfigs saves the paths configurations.
@@ -596,7 +595,7 @@ func savePathsConfigs(configs []config.PathsConfig) error {
 }
 
 // createNotificationConfig creates a NotificationConfig from form data.
-func createNotificationConfig(index string, c *gin.Context) config.NotificationConfig {
+func createNotificationConfig(index string, c *gin.Context) (config.NotificationConfig, error) {
 	var cfg config.NotificationConfig
 
 	builder := NewConfigBuilder(c, fmt.Sprintf("notifications_%s", index), "")
@@ -616,12 +615,18 @@ func createNotificationConfig(index string, c *gin.Context) config.NotificationC
 		SetString(&cfg.SMTPUsername, "SMTPUsername").
 		SetString(&cfg.SMTPPassword, "SMTPPassword")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
 // saveNotificationConfigs saves the notification configurations.
 func saveNotificationConfigs(configs []config.NotificationConfig) error {
-	return saveConfig(configs)
+	if err := saveConfig(configs); err != nil {
+		return err
+	}
+
+	providers.RegisterNotificationProviders()
+
+	return nil
 }
 
 // fieldNameToUserFriendly converts field names like "LogFileSize" to "Log File Size".
@@ -681,19 +686,13 @@ func createCommentLines(comment string) []gomponents.Node {
 
 // Save function (implement according to your storage method).
 func saveConfig(configv any) error {
-	d, err := json.Marshal(configv)
-	if err != nil {
-		logger.Logtype("info", 0).Err(err).Msg("log struct failed")
-		return err
-	}
-
-	logger.Logtype("info", 1).Str("data", string(d)).Msg("log struct")
+	logger.Logtype("info", 1).Str("type", fmt.Sprintf("%T", configv)).Msg("saving configuration")
 
 	return config.UpdateCfgEntryAny(configv)
 }
 
 // createRegexConfig creates a RegexConfig from form data.
-func createRegexConfig(index string, c *gin.Context) config.RegexConfig {
+func createRegexConfig(index string, c *gin.Context) (config.RegexConfig, error) {
 	var cfg config.RegexConfig
 
 	builder := NewConfigBuilder(c, fmt.Sprintf("regex_%s", index), "")
@@ -703,7 +702,7 @@ func createRegexConfig(index string, c *gin.Context) config.RegexConfig {
 		SetStringArrayFromForm(&cfg.Required, "Required").
 		SetStringArrayFromForm(&cfg.Rejected, "Rejected")
 
-	return cfg
+	return cfg, builder.Err()
 }
 
 // saveRegexConfigs saves regex configurations.
@@ -727,122 +726,68 @@ func filterStringArray(input []string) []string {
 }
 
 // createQualityReorderConfigs creates QualityReorderConfig slice from form data.
-func createQualityReorderConfigs(index string, c *gin.Context) []config.QualityReorderConfig {
-	subformKeys := make(map[string]bool)
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_Name") || !strings.Contains(key, "quality_") ||
-			!strings.Contains(key, "_reorder_") {
+func createQualityReorderConfigs(
+	index string,
+	c *gin.Context,
+) ([]config.QualityReorderConfig, error) {
+	prefix := "quality_" + index + "_reorder"
+
+	var (
+		configs []config.QualityReorderConfig
+		errs    []error
+	)
+
+	for _, reorderIndex := range formRowIndexes(c.Request.PostForm, prefix+"_", "_Name") {
+		builder := NewConfigBuilder(c, prefix+"_"+reorderIndex, "")
+
+		var addConfig config.QualityReorderConfig
+
+		builder.SetStringRequired(&addConfig.Name, "Name")
+
+		// Unnamed rules are dropped as before: the default config ships one.
+		if addConfig.Name == "" {
 			continue
 		}
 
-		subformKeys[strings.Split(key, "_")[3]] = true
-	}
+		builder.SetString(&addConfig.ReorderType, "ReorderType").
+			SetInt(&addConfig.Newpriority, "Newpriority")
 
-	var configs []config.QualityReorderConfig
-	for reorderIndex := range subformKeys {
-		nameField := fmt.Sprintf("quality_%s_reorder_%s_Name", index, reorderIndex)
-
-		name := c.PostForm(nameField)
-		if name == "" {
-			continue
-		}
-
-		addConfig := config.QualityReorderConfig{
-			Name: name,
-		}
-
-		if reorderType := c.PostForm(
-			fmt.Sprintf("quality_%s_reorder_%s_ReorderType", index, reorderIndex),
-		); reorderType != "" {
-			addConfig.ReorderType = reorderType
-		}
-
-		if newPriority := c.PostForm(
-			fmt.Sprintf("quality_%s_reorder_%s_Newpriority", index, reorderIndex),
-		); newPriority != "" {
-			if priority, err := strconv.Atoi(newPriority); err == nil {
-				addConfig.Newpriority = priority
-			}
+		if err := builder.Err(); err != nil {
+			errs = append(errs, err)
 		}
 
 		configs = append(configs, addConfig)
 	}
 
-	return configs
+	return configs, errors.Join(errs...)
 }
 
 // createQualityIndexerConfigs creates QualityIndexerConfig slice from form data.
+// The slice order is the indexer search order, so it follows the form order.
 func createQualityIndexerConfigs(index string, c *gin.Context) []config.QualityIndexerConfig {
-	subformKeys := make(map[string]bool)
-	for key := range c.Request.PostForm {
-		if !strings.Contains(key, "_TemplateIndexer") || !strings.Contains(key, "quality_") ||
-			!strings.Contains(key, "_indexer_") {
-			continue
-		}
-
-		subformKeys[strings.Split(key, "_")[3]] = true
-	}
+	prefix := "quality_" + index + "_indexer"
 
 	var configs []config.QualityIndexerConfig
-	for indexerIndex := range subformKeys {
-		nameField := fmt.Sprintf("quality_%s_indexer_%s_TemplateIndexer", index, indexerIndex)
 
-		name := c.PostForm(nameField)
-		if name == "" {
+	for _, indexerIndex := range formRowIndexes(c.Request.PostForm, prefix+"_", "_TemplateIndexer") {
+		builder := NewConfigBuilder(c, prefix+"_"+indexerIndex, "")
+
+		var indexerConfig config.QualityIndexerConfig
+
+		builder.SetStringRequired(&indexerConfig.TemplateIndexer, "TemplateIndexer")
+
+		if indexerConfig.TemplateIndexer == "" {
 			continue
 		}
 
-		indexerConfig := config.QualityIndexerConfig{
-			TemplateIndexer: name,
-		}
-
-		if templateDownloader := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_TemplateDownloader", index, indexerIndex),
-		); templateDownloader != "" {
-			indexerConfig.TemplateDownloader = templateDownloader
-		}
-
-		if templateRegex := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_TemplateRegex", index, indexerIndex),
-		); templateRegex != "" {
-			indexerConfig.TemplateRegex = templateRegex
-		}
-
-		if templatePathNzb := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_TemplatePathNzb", index, indexerIndex),
-		); templatePathNzb != "" {
-			indexerConfig.TemplatePathNzb = templatePathNzb
-		}
-
-		if categoryDownloader := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_CategoryDownloader", index, indexerIndex),
-		); categoryDownloader != "" {
-			indexerConfig.CategoryDownloader = categoryDownloader
-		}
-
-		if additionalQueryParams := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_AdditionalQueryParams", index, indexerIndex),
-		); additionalQueryParams != "" {
-			indexerConfig.AdditionalQueryParams = additionalQueryParams
-		}
-
-		if skipEmptySize := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_SkipEmptySize", index, indexerIndex),
-		); skipEmptySize == "on" {
-			indexerConfig.SkipEmptySize = true
-		}
-
-		if historyCheckTitle := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_HistoryCheckTitle", index, indexerIndex),
-		); historyCheckTitle == "on" {
-			indexerConfig.HistoryCheckTitle = true
-		}
-
-		if categoriesIndexer := c.PostForm(
-			fmt.Sprintf("quality_%s_indexer_%s_CategoriesIndexer", index, indexerIndex),
-		); categoriesIndexer != "" {
-			indexerConfig.CategoriesIndexer = categoriesIndexer
-		}
+		builder.SetString(&indexerConfig.TemplateDownloader, "TemplateDownloader").
+			SetString(&indexerConfig.TemplateRegex, "TemplateRegex").
+			SetString(&indexerConfig.TemplatePathNzb, "TemplatePathNzb").
+			SetString(&indexerConfig.CategoryDownloader, "CategoryDownloader").
+			SetString(&indexerConfig.AdditionalQueryParams, "AdditionalQueryParams").
+			SetBool(&indexerConfig.SkipEmptySize, "SkipEmptySize").
+			SetBool(&indexerConfig.HistoryCheckTitle, "HistoryCheckTitle").
+			SetString(&indexerConfig.CategoriesIndexer, "CategoriesIndexer")
 
 		configs = append(configs, indexerConfig)
 	}
@@ -851,16 +796,12 @@ func createQualityIndexerConfigs(index string, c *gin.Context) []config.QualityI
 }
 
 // createQualityConfig creates a QualityConfig from form data.
-func createQualityConfig(index string, c *gin.Context) config.QualityConfig {
+func createQualityConfig(index string, c *gin.Context) (config.QualityConfig, error) {
 	builder := NewConfigBuilder(c, "quality_main", index)
 
 	var qualityConfig config.QualityConfig
 
 	builder.SetStringRequired(&qualityConfig.Name, "Name")
-
-	if qualityConfig.Name == "" {
-		return config.QualityConfig{}
-	}
 
 	builder.
 		SetStringArrayFromForm(&qualityConfig.WantedResolution, "WantedResolution").
@@ -894,10 +835,11 @@ func createQualityConfig(index string, c *gin.Context) config.QualityConfig {
 		SetInt(&qualityConfig.UseForPriorityMinDifference, "UseForPriorityMinDifference")
 
 	// Parse nested configurations
-	qualityConfig.QualityReorder = createQualityReorderConfigs(index, c)
+	reorder, err := createQualityReorderConfigs(index, c)
+	qualityConfig.QualityReorder = reorder
 	qualityConfig.Indexer = createQualityIndexerConfigs(index, c)
 
-	return qualityConfig
+	return qualityConfig, errors.Join(builder.Err(), err)
 }
 
 // saveQualityConfigs saves quality configurations.
@@ -936,6 +878,30 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 
 	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshMoviesFull"); val != "" {
 		addConfig.IntervalFeedsRefreshMoviesFull = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshBooks"); val != "" {
+		addConfig.IntervalFeedsRefreshBooks = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshBooksFull"); val != "" {
+		addConfig.IntervalFeedsRefreshBooksFull = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshAudiobooks"); val != "" {
+		addConfig.IntervalFeedsRefreshAudiobooks = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshAudiobooksFull"); val != "" {
+		addConfig.IntervalFeedsRefreshAudiobooksFull = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshMusic"); val != "" {
+		addConfig.IntervalFeedsRefreshMusic = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFeedsRefreshMusicFull"); val != "" {
+		addConfig.IntervalFeedsRefreshMusicFull = val
 	}
 
 	if val := getFormField(c, prefix, index, "IntervalIndexerMissing"); val != "" {
@@ -1037,6 +1003,30 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 
 	if val := getFormField(c, prefix, index, "CronFeedsRefreshMoviesFull"); val != "" {
 		addConfig.CronFeedsRefreshMoviesFull = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFeedsRefreshBooks"); val != "" {
+		addConfig.CronFeedsRefreshBooks = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFeedsRefreshBooksFull"); val != "" {
+		addConfig.CronFeedsRefreshBooksFull = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFeedsRefreshAudiobooks"); val != "" {
+		addConfig.CronFeedsRefreshAudiobooks = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFeedsRefreshAudiobooksFull"); val != "" {
+		addConfig.CronFeedsRefreshAudiobooksFull = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFeedsRefreshMusic"); val != "" {
+		addConfig.CronFeedsRefreshMusic = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFeedsRefreshMusicFull"); val != "" {
+		addConfig.CronFeedsRefreshMusicFull = val
 	}
 
 	if val := getFormField(c, prefix, index, "CronIndexerMissing"); val != "" {
@@ -1146,7 +1136,13 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 
 // saveSchedulerConfigs saves scheduler configurations.
 func saveSchedulerConfigs(configs []config.SchedulerConfig) error {
-	return saveConfig(configs)
+	if err := saveConfig(configs); err != nil {
+		return err
+	}
+
+	scheduler.Reload()
+
+	return nil
 }
 
 // ================================================================================
@@ -1154,10 +1150,13 @@ func saveSchedulerConfigs(configs []config.SchedulerConfig) error {
 // ================================================================================
 
 // ConfigBuilder provides a fluent interface for building config structs from form data.
+// Unparseable non-empty numeric input is collected and reported by Err instead
+// of silently saving 0.
 type ConfigBuilder struct {
 	context *gin.Context
 	prefix  string
 	index   string
+	errs    []error
 }
 
 // NewConfigBuilder creates a new ConfigBuilder instance.
@@ -1169,9 +1168,40 @@ func NewConfigBuilder(c *gin.Context, prefix, index string) *ConfigBuilder {
 	}
 }
 
-// SetString sets a string field if the form value is not empty.
+// Err returns all input errors collected while building, or nil.
+func (cb *ConfigBuilder) Err() error {
+	return errors.Join(cb.errs...)
+}
+
+func (cb *ConfigBuilder) key(fieldName string) string {
+	return formFieldKey(cb.prefix, cb.index, fieldName)
+}
+
+func (cb *ConfigBuilder) invalid(fieldName, value, want string) {
+	cb.errs = append(cb.errs, fmt.Errorf("%s: invalid value %q (expected %s)", cb.key(fieldName), value, want))
+}
+
+// parseIntField returns the trimmed int value of a field. ok is false when
+// the field is empty or invalid; invalid input is recorded as an error.
+func (cb *ConfigBuilder) parseIntField(fieldName string, minV, maxV int, want string) (int, bool) {
+	value := strings.TrimSpace(getFormField(cb.context, cb.prefix, cb.index, fieldName))
+	if value == "" {
+		return 0, false
+	}
+
+	n, err := strconv.Atoi(value)
+	if err != nil || n < minV || n > maxV {
+		cb.invalid(fieldName, value, want)
+		return 0, false
+	}
+
+	return n, true
+}
+
+// SetString sets a string field to the posted value. A field that was posted
+// empty clears the target; the target is kept only when the field is absent.
 func (cb *ConfigBuilder) SetString(target *string, fieldName string) *ConfigBuilder {
-	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
+	if value, ok := cb.context.GetPostForm(cb.key(fieldName)); ok {
 		*target = value
 	}
 
@@ -1184,10 +1214,16 @@ func (cb *ConfigBuilder) SetStringRequired(target *string, fieldName string) *Co
 	return cb
 }
 
-// SetInt sets an int field if the form value is valid.
+// SetInt sets an int field. Empty input sets 0.
 func (cb *ConfigBuilder) SetInt(target *int, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil {
-		*target = value
+	if !formFieldPresent(cb.context, cb.key(fieldName)) {
+		return cb
+	}
+
+	if n, ok := cb.parseIntField(fieldName, math.MinInt, math.MaxInt, "a whole number"); ok {
+		*target = n
+	} else if strings.TrimSpace(getFormField(cb.context, cb.prefix, cb.index, fieldName)) == "" {
+		*target = 0
 	}
 
 	return cb
@@ -1203,20 +1239,23 @@ func (cb *ConfigBuilder) SetStringMultiSelectArray(
 	target *[]string,
 	fieldName string,
 ) *ConfigBuilder {
-	value := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName)
-
-	(*target) = value
+	*target = filterStringArray(getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName))
 	return cb
 }
 
 // SetStringFloatMap sets a map[string]float64 field from the parallel
 // "<fieldName>_key" and "<fieldName>_value" form arrays produced by the
-// "floatmap" widget. Rows with an empty key or an unparseable value are skipped.
-// The target is only replaced when at least one valid pair is present.
+// "floatmap" widget. Rows with an empty key are skipped; a non-numeric value is
+// reported as an error. The target is replaced whenever the widget was posted.
 func (cb *ConfigBuilder) SetStringFloatMap(
 	target *map[string]float64,
 	fieldName string,
 ) *ConfigBuilder {
+	if !formFieldPresent(cb.context, cb.key(fieldName+"_key")) &&
+		!formFieldPresent(cb.context, cb.key(fieldName)) {
+		return cb
+	}
+
 	keys := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName+"_key")
 	values := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName+"_value")
 
@@ -1228,93 +1267,144 @@ func (cb *ConfigBuilder) SetStringFloatMap(
 			continue
 		}
 
-		if f, err := strconv.ParseFloat(strings.TrimSpace(values[i]), 64); err == nil {
-			result[k] = f
+		v := strings.TrimSpace(values[i])
+
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			cb.invalid(fieldName+"["+k+"]", v, "a number")
+			continue
 		}
+
+		result[k] = f
 	}
 
-	if len(result) > 0 {
-		*target = result
-	}
+	*target = result
 
 	return cb
 }
 
-// SetFloat32 sets a float32 field if the form value is valid.
+// SetFloat32 sets a float32 field. Empty input sets 0.
 func (cb *ConfigBuilder) SetFloat32(target *float32, fieldName string) *ConfigBuilder {
-	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
-		if floatVal, err := strconv.ParseFloat(value, 32); err == nil {
-			*target = float32(floatVal)
-		}
+	var f float64
+	if cb.setFloat(&f, fieldName, 32) {
+		*target = float32(f)
 	}
 
 	return cb
 }
 
-// SetUint8 sets a uint8 field if the form value is valid.
+// SetFloat64 sets a float64 field. Empty input sets 0.
+func (cb *ConfigBuilder) SetFloat64(target *float64, fieldName string) *ConfigBuilder {
+	cb.setFloat(target, fieldName, 64)
+	return cb
+}
+
+func (cb *ConfigBuilder) setFloat(target *float64, fieldName string, bitSize int) bool {
+	if !formFieldPresent(cb.context, cb.key(fieldName)) {
+		return false
+	}
+
+	value := strings.TrimSpace(getFormField(cb.context, cb.prefix, cb.index, fieldName))
+	if value == "" {
+		*target = 0
+		return true
+	}
+
+	f, err := strconv.ParseFloat(value, bitSize)
+	if err != nil {
+		cb.invalid(fieldName, value, "a number")
+		return false
+	}
+
+	*target = f
+
+	return true
+}
+
+// SetUint8 sets a uint8 field. Empty input sets 0.
 func (cb *ConfigBuilder) SetUint8(target *uint8, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil &&
-		value >= 0 &&
-		value <= 255 {
-		*target = uint8(value)
+	if !formFieldPresent(cb.context, cb.key(fieldName)) {
+		return cb
+	}
+
+	if n, ok := cb.parseIntField(fieldName, 0, math.MaxUint8, "a number from 0 to 255"); ok {
+		*target = uint8(n)
+	} else if strings.TrimSpace(getFormField(cb.context, cb.prefix, cb.index, fieldName)) == "" {
+		*target = 0
 	}
 
 	return cb
 }
 
-// SetStringArrayFromForm sets a string array field from PostFormArray.
+// SetStringArrayFromForm sets a string array field from PostFormArray, dropping
+// empty entries. An emptied list clears the target; it is kept only when the
+// field is absent from the form.
 func (cb *ConfigBuilder) SetStringArrayFromForm(target *[]string, fieldName string) *ConfigBuilder {
-	if values := getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName); len(values) > 0 {
-		*target = filterStringArray(values)
+	if formFieldPresent(cb.context, cb.key(fieldName)) {
+		*target = filterStringArray(getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName))
 	}
 
 	return cb
 }
 
-// SetUint16 sets a uint16 field if the form value is valid.
+// SetUint16 sets a uint16 field. Empty input sets 0.
 func (cb *ConfigBuilder) SetUint16(target *uint16, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(cb.context, cb.prefix, cb.index, fieldName); err == nil &&
-		value >= 0 &&
-		value <= 65535 {
-		*target = uint16(value)
+	if !formFieldPresent(cb.context, cb.key(fieldName)) {
+		return cb
+	}
+
+	if n, ok := cb.parseIntField(fieldName, 0, math.MaxUint16, "a number from 0 to 65535"); ok {
+		*target = uint16(n)
+	} else if strings.TrimSpace(getFormField(cb.context, cb.prefix, cb.index, fieldName)) == "" {
+		*target = 0
 	}
 
 	return cb
 }
 
-// SetUint sets a uint field if the form value is valid.
+// SetUint sets a uint field. Empty input sets 0.
 func (cb *ConfigBuilder) SetUint(target *uint, fieldName string) *ConfigBuilder {
-	if value, err := getFormFieldInt(
-		cb.context,
-		cb.prefix,
-		cb.index,
-		fieldName,
-	); err == nil &&
-		value >= 0 {
-		*target = uint(value)
+	if !formFieldPresent(cb.context, cb.key(fieldName)) {
+		return cb
+	}
+
+	if n, ok := cb.parseIntField(fieldName, 0, math.MaxInt, "a non-negative whole number"); ok {
+		*target = uint(n)
+	} else if strings.TrimSpace(getFormField(cb.context, cb.prefix, cb.index, fieldName)) == "" {
+		*target = 0
 	}
 
 	return cb
 }
 
-// SetIntArray sets an int array field by parsing comma-separated values.
+// SetIntArray sets an int array field from all posted values of the field
+// (the "arrayint" widget posts one input per entry); each value may also hold
+// a comma-separated list.
 func (cb *ConfigBuilder) SetIntArray(target *[]int, fieldName string) *ConfigBuilder {
-	if value := getFormField(cb.context, cb.prefix, cb.index, fieldName); value != "" {
-		parts := strings.Split(value, ",")
+	if !formFieldPresent(cb.context, cb.key(fieldName)) {
+		return cb
+	}
 
-		var intArray []int
-		for _, part := range parts {
-			if trimmed := strings.TrimSpace(part); trimmed != "" {
-				if intVal, err := strconv.Atoi(trimmed); err == nil {
-					intArray = append(intArray, intVal)
-				}
+	var intArray []int
+
+	for _, value := range getFormFieldArray(cb.context, cb.prefix, cb.index, fieldName) {
+		for part := range strings.SplitSeq(value, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
 			}
-		}
 
-		if len(intArray) > 0 {
-			*target = intArray
+			intVal, err := strconv.Atoi(trimmed)
+			if err != nil {
+				cb.invalid(fieldName, trimmed, "a whole number")
+				continue
+			}
+
+			intArray = append(intArray, intVal)
 		}
 	}
+
+	*target = intArray
 
 	return cb
 }
@@ -1337,8 +1427,6 @@ func createImdbConfigFields(configv *config.ImdbConfig) []FormFieldDefinition {
 		{Name: "Indexedlanguages", Type: "array", Value: configv.Indexedlanguages},
 		{Name: "Indexfull", Type: "checkbox", Value: configv.Indexfull},
 		{Name: "ImdbIDSize", Type: "number", Value: configv.ImdbIDSize},
-		{Name: "LoopSize", Type: "number", Value: configv.LoopSize},
 		{Name: "UseMemory", Type: "checkbox", Value: configv.UseMemory},
-		{Name: "UseCache", Type: "checkbox", Value: configv.UseCache},
 	}
 }

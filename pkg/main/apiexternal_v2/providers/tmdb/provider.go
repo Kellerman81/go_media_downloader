@@ -275,22 +275,6 @@ func (p *Provider) GetTVExternal(ctx context.Context, tvID int) (*TVExternalIDs,
 // Episode Methods
 //
 
-// GetSeasonDetails retrieves detailed information about a season.
-func (p *Provider) GetSeasonDetails(
-	ctx context.Context,
-	seriesID int,
-	seasonNumber int,
-) (*apiexternal_v2.Season, error) {
-	url := fmt.Sprintf("%s/tv/%d/season/%d", p.baseURL, seriesID, seasonNumber)
-
-	var response tmdbSeason
-	if err := p.makeRequest(ctx, url, &response); err != nil {
-		return nil, err
-	}
-
-	return convertSeason(&response), nil
-}
-
 // GetEpisodeDetails retrieves detailed information about an episode.
 func (p *Provider) GetEpisodeDetails(
 	ctx context.Context,
@@ -658,8 +642,17 @@ func (p *Provider) GetSeriesRecommendations(
 
 // GetTMDBList retrieves a TMDB list by ID
 // This is a provider-specific method not in the base interface.
-func (p *Provider) GetTMDBList(ctx context.Context, listID int) (*TMDBListResponse, error) {
-	url := fmt.Sprintf("%s/list/%d", p.baseURL, listID)
+func (p *Provider) GetTMDBList(
+	ctx context.Context,
+	listID int,
+	page int,
+) (*TMDBListResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+
+	// Auth is sent as a header, so this is the only query string on the URL.
+	url := fmt.Sprintf("%s/list/%d?page=%d", p.baseURL, listID, page)
 
 	var response TMDBListResponse
 	if err := p.makeRequest(ctx, url, &response); err != nil {

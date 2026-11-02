@@ -59,8 +59,22 @@ type CategoryInfo struct {
 
 // AlgoliaResult represents Algolia search result structure.
 type AlgoliaResult struct {
-	Hits []AlgoliaHit `json:"hits"`
+	Hits   []AlgoliaHit `json:"hits"`
+	NbHits int          `json:"nbHits"`
 }
+
+// hitsPerPage must stay well below Algolia's default paginationLimitedTo
+// (1000): with hitsPerPage=1000 page 0 already exhausts the window and every
+// later page comes back empty, silently truncating large series.
+const (
+	hitsPerPage         = 100
+	paginationHitsLimit = 1000
+)
+
+// errDBWrite marks createEpisode failures caused by the database rather than
+// by the hit's own data, so Scrape can tell "every write failed" apart from
+// "every hit was unusable".
+var errDBWrite = errors.New("database write failed")
 
 // AlgoliaResponse represents the full Algolia API response.
 type AlgoliaResponse struct {
@@ -112,6 +126,22 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 
 	if cfg.SerieName == "" {
 		return nil, errors.New("series name is required")
+	}
+
+	if (&Scraper{config: cfg}).buildFacetFilter() == "" {
+		if cfg.NetworkSiteFilterName != "" {
+			return nil, fmt.Errorf(
+				"network_site_filter_name %q must have the form \"network,site\"",
+				cfg.NetworkSiteFilterName,
+			)
+		}
+
+		// No filter is documented as allowed (the extracted API key may already
+		// be restricted to the site), but on an unrestricted key it pulls the
+		// whole index into this one series - make that visible.
+		logger.Logtype(logger.StatusWarning, 0).
+			Str("site", cfg.SiteName).
+			Msg("Algolia scraper has no facet filter configured; every hit the site's API key can see will be imported")
 	}
 
 	return &Scraper{
@@ -290,11 +320,12 @@ func (s *Scraper) buildFacetFilter() string {
 	}
 
 	if s.config.NetworkSiteFilterName != "" {
-		parts := strings.Split(s.config.NetworkSiteFilterName, ",")
-		if len(parts) == 2 {
-			network := strings.TrimSpace(parts[0])
-			site := strings.TrimSpace(parts[1])
+		// Cut on the first comma only, so a site name containing a comma survives.
+		network, site, ok := strings.Cut(s.config.NetworkSiteFilterName, ",")
+		network = strings.TrimSpace(network)
+		site = strings.TrimSpace(site)
 
+		if ok && network != "" && site != "" {
 			return url.QueryEscape(fmt.Sprintf(`[["network.lvl1:%s > %s"]]`, network, site))
 		}
 	}
@@ -313,7 +344,8 @@ func (s *Scraper) buildRequestBody(page int) string {
 	facetFilter := s.buildFacetFilter()
 
 	params := fmt.Sprintf(
-		"query=&hitsPerPage=1000&maxValuesPerFacet=2000&tagFilters=&facets=availableOnSite&page=%d",
+		"query=&hitsPerPage=%d&maxValuesPerFacet=2000&tagFilters=&facets=availableOnSite&page=%d",
+		hitsPerPage,
 		page,
 	)
 
@@ -335,8 +367,9 @@ func (s *Scraper) buildRequestBody(page int) string {
 //
 // Returns:
 //   - []AlgoliaHit: Array of scene hits
+//   - int: Total number of hits matching the query (nbHits)
 //   - error: Any errors during fetch
-func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, error) {
+func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, int, error) {
 	// Build API URL
 	apiURL := fmt.Sprintf(
 		"https://tsmkfa364q-dsn.algolia.net/1/indexes/*/queries?x-algolia-application-id=%s&x-algolia-api-key=%s",
@@ -353,7 +386,7 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, error)
 		strings.NewReader(requestBody),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers
@@ -367,29 +400,29 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, error)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch page %d: %w", page, err)
+		return nil, 0, fmt.Errorf("failed to fetch page %d: %w", page, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("algolia API returned status %d for page %d", resp.StatusCode, page)
+		return nil, 0, fmt.Errorf("algolia API returned status %d for page %d", resp.StatusCode, page)
 	}
 
 	data, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return nil, fmt.Errorf("failed to read response: %w", readErr)
+		return nil, 0, fmt.Errorf("failed to read response: %w", readErr)
 	}
 
 	var apiResp AlgoliaResponse
 	if err := json.Unmarshal(data, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, 0, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(apiResp.Results) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
-	return apiResp.Results[0].Hits, nil
+	return apiResp.Results[0].Hits, apiResp.Results[0].NbHits, nil
 }
 
 // joinActorNames concatenates actor names into a comma-separated string.
@@ -513,7 +546,7 @@ func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 			existingID,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to update episode '%s': %w", hit.Title, err)
+			return fmt.Errorf("failed to update episode '%s': %w: %w", hit.Title, errDBWrite, err)
 		}
 
 		logger.Logtype(logger.StatusDebug, 0).
@@ -535,7 +568,7 @@ func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 			episode.ScraperURL,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to insert episode '%s': %w", hit.Title, err)
+			return fmt.Errorf("failed to insert episode '%s': %w: %w", hit.Title, errDBWrite, err)
 		}
 
 		logger.Logtype(logger.StatusInfo, 0).
@@ -591,9 +624,17 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			Int("page", page).
 			Msg("Fetching page")
 
-		hits, err := s.fetchPage(ctx, page)
+		hits, nbHits, err := s.fetchPage(ctx, page)
 		if err != nil {
 			return totalProcessed, fmt.Errorf("failed to fetch page %d: %w", page, err)
+		}
+
+		if page == 0 && nbHits > paginationHitsLimit && maxPages > 1 {
+			logger.Logtype(logger.StatusWarning, 0).
+				Str("site", s.config.SiteName).
+				Int("nb_hits", nbHits).
+				Int("limit", paginationHitsLimit).
+				Msg("Algolia query matches more hits than the index pagination limit; older scenes beyond the limit will not be scraped")
 		}
 
 		if len(hits) == 0 {
@@ -605,7 +646,7 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			break
 		}
 
-		processedThisPage := 0
+		dbFailures := 0
 		for i := range hits {
 			if err := s.createEpisode(ctx, &hits[i]); err != nil {
 				logger.Logtype(logger.StatusError, 0).
@@ -613,31 +654,37 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 					Str("title", hits[i].Title).
 					Msg("Failed to create episode")
 
+				if errors.Is(err, errDBWrite) {
+					dbFailures++
+				}
+
 				continue
 			}
-
-			processedThisPage++
 
 			totalProcessed++
 		}
 
-		// If no episodes were processed this page, stop
-		if processedThisPage == 0 {
-			break
-		}
-
-		// Sleep between pages to avoid rate limiting
-		if page < maxPages-1 && len(hits) > 0 {
-			select {
-			case <-ctx.Done():
-				return totalProcessed, ctx.Err()
-			case <-time.After(10 * time.Second): // Algolia script uses 10 seconds
-			}
+		if dbFailures == len(hits) {
+			return totalProcessed, fmt.Errorf(
+				"all %d episodes on page %d failed to save: %w",
+				len(hits),
+				page,
+				errDBWrite,
+			)
 		}
 
 		// Break if first page only
 		if s.config.FirstPageDBOnly {
 			break
+		}
+
+		// Sleep between pages to avoid rate limiting
+		if page < maxPages-1 {
+			select {
+			case <-ctx.Done():
+				return totalProcessed, ctx.Err()
+			case <-time.After(10 * time.Second): // Algolia script uses 10 seconds
+			}
 		}
 	}
 

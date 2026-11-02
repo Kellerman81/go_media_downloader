@@ -62,6 +62,11 @@ var (
 	openlibraryProvider *openlibrary.Provider
 	goodreadsProvider   *goodreads.Provider
 	musicbrainzProvider *musicbrainz.Provider
+	// musicbrainzFallback serves callers that need MusicBrainz even when it is
+	// not in the music metadata priority list. It is kept apart from
+	// musicbrainzProvider because GetMusicBrainz() != nil is used as the
+	// "MusicBrainz enabled" check.
+	musicbrainzFallback *musicbrainz.Provider
 	lastfmProvider      *lastfm.Provider
 	discogsProvider     *discogs.Provider
 	deezerProvider      *deezer.Provider
@@ -169,12 +174,32 @@ func GetTVMaze() *tvmaze.Provider {
 // Indexer Providers
 //
 
-// SetIndexer registers an indexer provider by name.
+// SetIndexer registers an indexer provider by name. A nil provider removes
+// the entry instead of storing a nil that GetAll* would hand out as a non-nil
+// interface value.
 func SetIndexer(name string, provider *newznab.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	indexerProviders[name] = provider
+	setOrDelete(indexerProviders, name, provider)
+}
+
+// RemoveIndexer unregisters the indexer provider with the given name.
+func RemoveIndexer(name string) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	delete(indexerProviders, name)
+}
+
+// setOrDelete stores provider under name, or deletes name when provider is nil.
+func setOrDelete[T any](m map[string]*T, name string, provider *T) {
+	if provider == nil {
+		delete(m, name)
+		return
+	}
+
+	m[name] = provider
 }
 
 // GetIndexer returns an indexer provider by name.
@@ -196,23 +221,6 @@ func GetAllIndexers() map[string]*newznab.Provider {
 	return providers
 }
 
-// GetAllIndexerDownloadClients returns the download clients from all indexer providers.
-// These track download statistics separately from search statistics.
-func GetAllIndexerDownloadClients() map[string]any {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-
-	clients := make(map[string]any)
-	for name, provider := range indexerProviders {
-		if provider != nil && provider.DownloadClient != nil {
-			// Use the name from the DownloadClient which includes "_download" suffix
-			clients[name+"_download"] = provider.DownloadClient
-		}
-	}
-
-	return clients
-}
-
 //
 // Download Providers - Type-specific registration
 //
@@ -222,7 +230,7 @@ func SetQBittorrent(name string, provider *qbittorrent.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	qbittorrentProviders[name] = provider
+	setOrDelete(qbittorrentProviders, name, provider)
 }
 
 // GetQBittorrent returns a qBittorrent provider by name.
@@ -237,7 +245,7 @@ func SetDeluge(name string, provider *deluge.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	delugeProviders[name] = provider
+	setOrDelete(delugeProviders, name, provider)
 }
 
 // GetDeluge returns a Deluge provider by name.
@@ -252,7 +260,7 @@ func SetTransmission(name string, provider *transmission.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	transmissionProviders[name] = provider
+	setOrDelete(transmissionProviders, name, provider)
 }
 
 // GetTransmission returns a Transmission provider by name.
@@ -267,7 +275,7 @@ func SetRTorrent(name string, provider *rtorrent.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	rtorrentProviders[name] = provider
+	setOrDelete(rtorrentProviders, name, provider)
 }
 
 // GetRTorrent returns an rTorrent provider by name.
@@ -282,7 +290,7 @@ func SetSABnzbd(name string, provider *sabnzbd.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	sabnzbdProviders[name] = provider
+	setOrDelete(sabnzbdProviders, name, provider)
 }
 
 // GetSABnzbd returns a SABnzbd provider by name.
@@ -297,7 +305,7 @@ func SetNZBGet(name string, provider *nzbget.Provider) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
-	nzbgetProviders[name] = provider
+	setOrDelete(nzbgetProviders, name, provider)
 }
 
 // GetNZBGet returns an NZBGet provider by name.
@@ -305,6 +313,42 @@ func GetNZBGet(name string) *nzbget.Provider {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 	return nzbgetProviders[name]
+}
+
+// DownloadProviders is a complete set of download clients keyed by config
+// name, as passed to ReplaceDownloadProviders. Nil maps mean none.
+type DownloadProviders struct {
+	QBittorrent  map[string]*qbittorrent.Provider
+	Deluge       map[string]*deluge.Provider
+	Transmission map[string]*transmission.Provider
+	RTorrent     map[string]*rtorrent.Provider
+	SABnzbd      map[string]*sabnzbd.Provider
+	NZBGet       map[string]*nzbget.Provider
+}
+
+// ReplaceDownloadProviders swaps the whole set of registered download clients
+// in one step, so a concurrent lookup never sees a half-registered set.
+// Callers still holding a replaced provider keep a working instance.
+func ReplaceDownloadProviders(set DownloadProviders) {
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	qbittorrentProviders = nonNilCopy(set.QBittorrent)
+	delugeProviders = nonNilCopy(set.Deluge)
+	transmissionProviders = nonNilCopy(set.Transmission)
+	rtorrentProviders = nonNilCopy(set.RTorrent)
+	sabnzbdProviders = nonNilCopy(set.SABnzbd)
+	nzbgetProviders = nonNilCopy(set.NZBGet)
+}
+
+// nonNilCopy copies m without nil entries.
+func nonNilCopy[T any](m map[string]*T) map[string]*T {
+	out := make(map[string]*T, len(m))
+	for name, p := range m {
+		setOrDelete(out, name, p)
+	}
+
+	return out
 }
 
 //
@@ -389,43 +433,37 @@ func GetAllMetadataProviders() map[string]any {
 // GetAllDownloadProviders returns all registered download providers.
 // This includes traditional download clients (qBittorrent, etc.) and
 // indexer download clients (which track NZB file downloads separately from searches).
+// Keys are "<type>_<name>" (indexer download clients:
+// "newznab_<name>_download"), since config names are only unique per type.
 func GetAllDownloadProviders() map[string]any {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 
 	providers := make(map[string]any)
-	for name, provider := range qbittorrentProviders {
-		providers[name] = provider
-	}
-
-	for name, provider := range delugeProviders {
-		providers[name] = provider
-	}
-
-	for name, provider := range transmissionProviders {
-		providers[name] = provider
-	}
-
-	for name, provider := range rtorrentProviders {
-		providers[name] = provider
-	}
-
-	for name, provider := range sabnzbdProviders {
-		providers[name] = provider
-	}
-
-	for name, provider := range nzbgetProviders {
-		providers[name] = provider
-	}
+	addTyped(providers, "qbittorrent_", qbittorrentProviders)
+	addTyped(providers, "deluge_", delugeProviders)
+	addTyped(providers, "transmission_", transmissionProviders)
+	addTyped(providers, "rtorrent_", rtorrentProviders)
+	addTyped(providers, "sabnzbd_", sabnzbdProviders)
+	addTyped(providers, "nzbget_", nzbgetProviders)
 
 	// Add indexer download clients (track NZB downloads separately from searches)
 	for name, provider := range indexerProviders {
 		if provider != nil && provider.DownloadClient != nil {
-			providers[name+"_download"] = provider.DownloadClient
+			providers["newznab_"+name+"_download"] = provider.DownloadClient
 		}
 	}
 
 	return providers
+}
+
+// addTyped copies the non-nil providers of m into out under prefix+name.
+func addTyped[T any](out map[string]any, prefix string, m map[string]*T) {
+	for name, provider := range m {
+		if provider != nil {
+			out[prefix+name] = provider
+		}
+	}
 }
 
 //
@@ -446,6 +484,31 @@ func GetAudible(region string) *audible.Provider {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 	return audibleProviders[region]
+}
+
+// SharedAudible returns the registered Audible provider for region, creating
+// and registering one on first use, so every caller shares one rate limiter
+// per region. An empty region means "us".
+func SharedAudible(region string) *audible.Provider {
+	if region == "" {
+		region = string(audible.RegionUS)
+	}
+
+	if p := GetAudible(region); p != nil {
+		return p
+	}
+
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	if p := audibleProviders[region]; p != nil {
+		return p
+	}
+
+	p := audible.NewProviderWithRegion(audible.Region(region))
+	audibleProviders[region] = p
+
+	return p
 }
 
 // GetAllAudible returns a copy of all registered Audible providers keyed by region.
@@ -488,6 +551,23 @@ func SetOpenLibrary(provider *openlibrary.Provider) {
 func GetOpenLibrary() *openlibrary.Provider {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
+	return openlibraryProvider
+}
+
+// SharedOpenLibrary returns the registered OpenLibrary provider, creating and
+// registering one when none exists, so every caller shares one rate limiter.
+func SharedOpenLibrary() *openlibrary.Provider {
+	if p := GetOpenLibrary(); p != nil {
+		return p
+	}
+
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	if openlibraryProvider == nil {
+		openlibraryProvider = openlibrary.NewProvider()
+	}
+
 	return openlibraryProvider
 }
 
@@ -601,6 +681,35 @@ func GetMusicBrainz() *musicbrainz.Provider {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
 	return musicbrainzProvider
+}
+
+// SharedMusicBrainz returns the registered MusicBrainz provider or, when none
+// is registered, one shared fallback instance. MusicBrainz allows 1 request/s,
+// so independent instances with their own limiters would exceed it together.
+func SharedMusicBrainz() *musicbrainz.Provider {
+	registryMutex.RLock()
+	p := musicbrainzProvider
+	if p == nil {
+		p = musicbrainzFallback
+	}
+	registryMutex.RUnlock()
+
+	if p != nil {
+		return p
+	}
+
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	if musicbrainzProvider != nil {
+		return musicbrainzProvider
+	}
+
+	if musicbrainzFallback == nil {
+		musicbrainzFallback = musicbrainz.NewProvider()
+	}
+
+	return musicbrainzFallback
 }
 
 // SetAcoustID sets the global AcoustID provider instance.

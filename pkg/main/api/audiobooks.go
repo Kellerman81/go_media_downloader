@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -63,6 +62,7 @@ func AddAudiobooksRoutes(routeraudiobooks *gin.RouterGroup) {
 // @Router       /api/audiobooks [get].
 func apiAudiobooksDBList(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
+	boundPagination(&params)
 
 	rows := database.Getdatarow[uint](false, "select count() from dbaudiobooks")
 
@@ -110,11 +110,11 @@ func apiAudiobooksListGet(ctx *gin.Context) {
 
 	rows := database.Getdatarow[uint](
 		false,
-		"select count() from audiobooks where listname = ?",
+		"select count() from audiobooks where listname = ? COLLATE NOCASE",
 		&name,
 	)
 
-	query := "select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbaudiobook_id,author_id,book_series_id from audiobooks where listname = ?"
+	query := "select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbaudiobook_id,author_id,book_series_id from audiobooks where listname = ? COLLATE NOCASE"
 	if params.Order != "" {
 		query += " order by " + params.Order
 	}
@@ -178,7 +178,6 @@ func apiAudiobooksAllJobs(c *gin.Context) {
 	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
 		TypeName:    "audiobook",
 		NamePrefix:  logger.StrAudiobook,
-		Plural:      "audiobooks",
 		AllowedJobs: allowedjobsaudiobooksstr,
 	})
 }
@@ -197,7 +196,6 @@ func apiAudiobooksJobs(c *gin.Context) {
 	dispatchMediaJob(c, mediaJobDispatchConfig{
 		TypeName:    "audiobook",
 		NamePrefix:  logger.StrAudiobook,
-		Plural:      "audiobooks",
 		AllowedJobs: allowedjobsaudiobooksstr,
 	})
 }
@@ -211,15 +209,8 @@ func apiAudiobooksJobs(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/audiobooks/rss/search/list/{group} [get].
 func apiAudiobooksRssSearchList(c *gin.Context) {
-	cfgpstr := "audiobook_" + c.Param("group")
-	worker.Dispatch(
-		"rss_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRss, cfgpstr, "", true, key)
-		},
-		"RSS",
-	)
-	sendSuccess(c, "RSS search started for "+cfgpstr)
+	group := c.Param("group")
+	dispatchNamedConfigJob(c, logger.StrAudiobook, logger.StrAudiobook, group, logger.StrRss, logger.StrRss+"_", "RSS", "RSS search started for audiobook_"+group)
 }
 
 // @Summary      Search Audiobooks by List
@@ -232,15 +223,7 @@ func apiAudiobooksRssSearchList(c *gin.Context) {
 // @Router       /api/audiobooks/search/list/{id} [get].
 func apiAudiobooksSearchList(c *gin.Context) {
 	listName := c.Param(StrID)
-	cfgpstr := "audiobook_" + listName
-	worker.Dispatch(
-		"searchlist_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrSearchMissingInc, cfgpstr, "", true, key)
-		},
-		"Search",
-	)
-	sendSuccess(c, "Search started for audiobook list "+listName)
+	dispatchNamedConfigJob(c, logger.StrAudiobook, logger.StrAudiobook, listName, logger.StrSearchMissingInc, logger.StrSearchMissingInc+"_", "Search", "Search started for audiobook list "+listName)
 }
 
 // @Summary      Clear Audiobook History by Name
@@ -252,9 +235,7 @@ func apiAudiobooksSearchList(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/audiobooks/search/history/clear/{name} [get].
 func apiAudiobooksClearHistoryName(c *gin.Context) {
-	name := c.Param("name")
-	err := database.ExecNErr("DELETE FROM audiobook_histories WHERE listname = ?", &name)
-	handleDBError(c, err, "History cleared for "+name)
+	dispatchClearHistory(c, logger.StrAudiobook, logger.StrAudiobook, c.Param(StrName))
 }
 
 // @Summary      Clear Audiobook History by ID
@@ -284,16 +265,8 @@ func apiAudiobooksClearHistoryID(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/audiobooks/search/authors/missing/{name} [get].
 func apiAudiobooksSearchAuthorsMissing(c *gin.Context) {
-	listName := c.Param("name")
-	cfgpstr := "audiobook_" + listName
-	worker.Dispatch(
-		"searchauthors_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRssAuthors, cfgpstr, "", true, key)
-		},
-		"Author Search",
-	)
-	sendSuccess(c, "Author search (missing) started for audiobook list "+listName)
+	listName := c.Param(StrName)
+	dispatchNamedConfigJob(c, logger.StrAudiobook, logger.StrAudiobook, listName, logger.StrRssAuthors, logger.StrRssAuthors+"_", "Search", "Author search (missing) started for audiobook list "+listName)
 }
 
 // @Summary      Search Upgrade Audiobooks by Author
@@ -305,16 +278,8 @@ func apiAudiobooksSearchAuthorsMissing(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/audiobooks/search/authors/upgrade/{name} [get].
 func apiAudiobooksSearchAuthorsUpgrade(c *gin.Context) {
-	listName := c.Param("name")
-	cfgpstr := "audiobook_" + listName
-	worker.Dispatch(
-		"searchauthorsupgrade_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRssAuthorsUpgrade, cfgpstr, "", true, key)
-		},
-		"Author Search",
-	)
-	sendSuccess(c, "Author search (upgrade) started for audiobook list "+listName)
+	listName := c.Param(StrName)
+	dispatchNamedConfigJob(c, logger.StrAudiobook, logger.StrAudiobook, listName, logger.StrRssAuthorsUpgrade, logger.StrRssAuthorsUpgrade+"_", "Search", "Author search (upgrade) started for audiobook list "+listName)
 }
 
 // @Summary      Refresh Audiobooks
@@ -325,19 +290,7 @@ func apiAudiobooksSearchAuthorsUpgrade(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/audiobooks/all/refreshall [get].
 func apirefreshAudiobooks(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, logger.StrAudiobook) {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-	worker.Dispatch(logger.StrRefreshAudiobooks, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
-	sendSuccess(c, StrStarted)
+	dispatchJobAllConfigs(c, logger.StrAudiobook, logger.StrAudiobook, "refresh", StrStarted)
 }
 
 // @Summary      Refresh a single Audiobook
@@ -349,25 +302,21 @@ func apirefreshAudiobooks(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/audiobooks/refresh/{id} [get].
 func apirefreshAudiobook(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, logger.StrAudiobook) {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-
 	id := c.Param(logger.StrID)
-	worker.Dispatch(
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
+		&id,
+	)
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList(logger.StrAudiobook, listname),
+		logger.StrAudiobook,
 		"Refresh Single Audiobook_"+id,
-		func(_ uint32, _ context.Context) error {
+		func(_ context.Context, cfgp *config.MediaTypeConfig) error {
 			return utils.RefreshAudiobook(cfgp, &id)
 		},
-		"Feeds",
 	)
-	sendSuccess(c, StrStarted)
 }
 
 // @Summary      Refresh Audiobooks (Incremental)
@@ -378,92 +327,56 @@ func apirefreshAudiobook(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/audiobooks/all/refresh [get].
 func apiRetagAudiobook(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, logger.StrAudiobook) {
-			cfgp = media
-			return true
-		}
+	dbID, ok := parseUintParam(c, logger.StrID)
+	if !ok {
+		return
+	}
 
-		return false
-	})
-
-	id := c.Param(logger.StrID)
-	worker.Dispatch(
-		"Retag Audiobook_"+id,
-		func(_ uint32, _ context.Context) error {
-			dbID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagAudiobook(c, cfgp, uint(dbID))
-		},
-		"Feeds",
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
+		&dbID,
 	)
-	sendSuccess(c, StrStarted)
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList(logger.StrAudiobook, listname),
+		logger.StrAudiobook,
+		"Retag Audiobook_"+c.Param(logger.StrID),
+		func(ctx context.Context, cfgp *config.MediaTypeConfig) error {
+			return utils.RetagAudiobook(ctx, cfgp, dbID)
+		},
+	)
 }
 
 func apiRetagAuthorAudiobooks(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, logger.StrAudiobook) {
-			cfgp = media
-			return true
-		}
+	authorID, ok := parseUintParam(c, logger.StrID)
+	if !ok {
+		return
+	}
 
-		return false
-	})
-
-	id := c.Param(logger.StrID)
-	worker.Dispatch(
-		"Retag Author Audiobooks_"+id,
-		func(_ uint32, _ context.Context) error {
-			authorID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagAuthorAudiobooks(c, cfgp, uint(authorID))
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList(logger.StrAudiobook, ""),
+		logger.StrAudiobook,
+		"Retag Author Audiobooks_"+c.Param(logger.StrID),
+		func(ctx context.Context, cfgp *config.MediaTypeConfig) error {
+			return utils.RetagAuthorAudiobooks(ctx, cfgp, authorID)
 		},
-		"Feeds",
 	)
-	sendSuccess(c, StrStarted)
 }
 
 func apiRetagAllAudiobooks(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, logger.StrAudiobook) {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-
-	worker.Dispatch(
-		"Retag All Audiobooks",
-		func(_ uint32, _ context.Context) error {
-			return utils.RetagAllAudiobooks(c, cfgp)
-		},
-		"Feeds",
-	)
-	sendSuccess(c, StrStarted)
+	dispatchConfigFuncAll(c, logger.StrAudiobook, logger.StrAudiobook, "Retag All Audiobooks", utils.RetagAllAudiobooks)
 }
 
 func apirefreshAudiobooksInc(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, logger.StrAudiobook) {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-	worker.Dispatch(logger.StrRefreshAudiobooksInc, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
-	sendSuccess(c, StrStarted)
+	dispatchJobAllConfigs(c, logger.StrAudiobook, logger.StrAudiobook, "refreshinc", StrStarted)
 }
 
 // @Summary      Add Audiobook Author and Import Audiobooks
 // @Description  Adds an Audnex author (by Audible ASIN) to the given list and imports all their audiobooks in the background.
 // @Tags         audiobook
-// @Param        name      path   string  true  "Media config name (without 'audiobooks_' prefix)"
+// @Param        name      path   string  true  "Media config name (without 'audiobook_' prefix)"
 // @Param        listname  path   string  true  "List name within the media config"
 // @Param        author_id query  string  true  "Audnex/Audible author ASIN"
 // @Param        apikey    query  string  true  "apikey"
@@ -481,11 +394,11 @@ func apiAudiobooksAddAuthor(c *gin.Context) {
 		return
 	}
 
-	cfgpstr := "audiobooks_" + mediaName
+	cfgpstr := logger.StrAudiobook + "_" + mediaName
 
 	cfgp := config.GetSettingsMedia(cfgpstr)
 	if cfgp == nil {
-		sendBadRequest(c, "audiobooks config not found: "+cfgpstr)
+		sendBadRequest(c, "audiobook config not found: "+cfgpstr)
 		return
 	}
 
@@ -496,7 +409,7 @@ func apiAudiobooksAddAuthor(c *gin.Context) {
 	}
 
 	authorIDCopy := authorID
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"add_author_"+authorID+"_"+cfgpstr,
 		func(_ uint32, ctx context.Context) error {
 			// Import all audiobooks by this author into dbaudiobooks and audiobooks.
@@ -506,7 +419,10 @@ func apiAudiobooksAddAuthor(c *gin.Context) {
 			}, 0, cfgp, listid)
 		},
 		"Data",
-	)
+	); err != nil {
+		sendDispatchError(c, err)
+		return
+	}
 
 	sendSuccess(c, "Author "+authorID+" queued for import into "+cfgpstr+"/"+listName)
 }

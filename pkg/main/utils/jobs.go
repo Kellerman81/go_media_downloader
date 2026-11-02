@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -150,6 +152,13 @@ func insertjobhistory(jobtype string, cfgp *config.MediaTypeConfig) int64 {
 	return 0
 }
 
+// closejobhistory sets the end time of a job_histories row; 0 (insert failed) is a no-op.
+func closejobhistory(id int64) {
+	if id != 0 {
+		database.ExecN(database.QueryUpdateHistory, &id)
+	}
+}
+
 // InitialFillSeries performs the initial database fill for TV series.
 func InitialFillSeries() {
 	InitialFill(config.MediaTypeSeries)
@@ -185,6 +194,8 @@ func InitialFill(mediaType uint) {
 		}
 
 		dbid := insertjobhistory(logger.StrFeeds, media)
+		defer closejobhistory(dbid)
+
 		for idx2 := range media.Lists {
 			if idx2 > 127 {
 				continue
@@ -199,8 +210,6 @@ func InitialFill(mediaType uint) {
 			}
 		}
 
-		database.ExecN(database.QueryUpdateHistory, &dbid)
-
 		return nil
 	})
 
@@ -211,11 +220,11 @@ func InitialFill(mediaType uint) {
 		}
 
 		dbid := insertjobhistory(logger.StrDataFull, media)
+		defer closejobhistory(dbid)
+
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
 		}
-
-		database.ExecN(database.QueryUpdateHistory, &dbid)
 
 		return nil
 	})
@@ -232,6 +241,7 @@ func FillImdb() {
 		&logger.StrData,
 		&logger.StrMovie,
 	)
+	defer closejobhistory(dbinsert)
 
 	data, err := parser.ExecCmdString[[]byte](context.Background(), "", logger.StrImdb)
 	if err == nil {
@@ -239,10 +249,11 @@ func FillImdb() {
 			Str("response", data).
 			Msg("imdb response")
 		database.ExchangeImdbDB()
-	}
-
-	if dbinsert != 0 {
-		database.ExecN(database.QueryUpdateHistory, dbinsert)
+	} else {
+		logger.Logtype("error", 1).
+			Err(err).
+			Str("response", data).
+			Msg("imdb update failed")
 	}
 }
 
@@ -284,7 +295,7 @@ func newfilesloop(
 		return newfilesloopBook(ctx, cfgp, data)
 	}
 
-	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
+	pl := worker.WorkerPoolParse().NewGroupContext(ctx)
 	glblistid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
 
 	err := filepath.WalkDir(
@@ -419,7 +430,7 @@ func newfilesloopBook(
 	cfgp *config.MediaTypeConfig,
 	data *config.MediaDataConfig,
 ) error {
-	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
+	pl := worker.WorkerPoolParse().NewGroupContext(ctx)
 	glblistid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
 
 	err := filepath.WalkDir(
@@ -648,7 +659,7 @@ func processAudioDirectory(
 
 		if entries[i].IsDir() {
 			// Check if it's a multi-disc subfolder (CD1, DISC1, Part1, Chapter1, etc.)
-			if isMultiDiscSubfolder(entries[i].Name()) {
+			if isMultiDiscSubfolder(entries[i].Name(), *dirPath) {
 				hasMultiDiscSubfolder = true
 
 				logger.Logtype("debug", 0).
@@ -673,6 +684,10 @@ func processAudioDirectory(
 	// 	Int("subDirs", len(subDirs)).
 	// 	Bool("hasMultiDisc", hasMultiDiscSubfolder).
 	// 	Msg("DEBUG: Directory contents analyzed")
+
+	if !hasMultiDiscSubfolder && len(subDirs) >= 2 {
+		hasMultiDiscSubfolder = importfeed.IsDiscSet(baseNames(subDirs))
+	}
 
 	// Step 2b/2c: If we have audio files in root OR multi-disc subfolders, try to match as album
 	if len(audioFiles) > 0 || hasMultiDiscSubfolder {
@@ -755,9 +770,19 @@ func processAudioDirectory(
 	return nil
 }
 
-// isMultiDiscSubfolder checks if a folder name indicates a multi-disc/part structure.
-func isMultiDiscSubfolder(name string) bool {
-	return importfeed.LooksLikeDiscFolder(name)
+// baseNames returns the last path element of each path.
+func baseNames(paths []string) []string {
+	out := make([]string, len(paths))
+	for i := range paths {
+		out[i] = filepath.Base(paths[i])
+	}
+
+	return out
+}
+
+// isMultiDiscSubfolder checks if subfolder name of folder indicates a multi-disc/part structure.
+func isMultiDiscSubfolder(name, folder string) bool {
+	return importfeed.IsDiscSubfolder(name, filepath.Base(folder))
 }
 
 // ProcessAudioFolderAsAlbum attempts to process a folder as a complete album/audiobook.
@@ -924,6 +949,8 @@ func processAudiobookFolder(
 					// 	Msg("DEBUG: Found audiobook by tag title/author")
 				}
 			}
+
+			parser_v2.PutTrackInfo(tagData)
 		}
 	}
 
@@ -943,7 +970,10 @@ func processAudiobookFolder(
 	}
 
 	// Step 5: If still no match and addFound is enabled, try to import
-	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	listid := matchedListID(cfgp, "audiobooks", "dbaudiobook_id", album.DatabaseID)
+	if listid == -1 {
+		listid = cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	}
 	if album.DatabaseID == 0 && data.AddFound && album.ASIN != "" && listid != -1 {
 		logger.Logtype("info", 1).
 			Str("folder", folder).
@@ -1117,6 +1147,19 @@ func searchMusicBrainzByMetadata(
 			mbTotalRuntimeMS += int64(releaseDetails.Tracks[i].DurationMs)
 		}
 
+		// Without both runtimes only artist and track count were checked, and
+		// the search is fuzzy ("Greatest Hits" also returns "Greatest Hits
+		// II"): require the title itself to match before accepting.
+		if (totalRuntimeMS <= 0 || mbTotalRuntimeMS <= 0) && !mbTitleCompatible(album, result.Title) {
+			logger.Logtype("debug", 2).
+				Str("mbid", result.ID).
+				Str("title", result.Title).
+				Str("album", album).
+				Msg("Skipping - title mismatch and no runtime to verify")
+
+			continue
+		}
+
 		// Check runtime if available
 		if totalRuntimeMS > 0 && mbTotalRuntimeMS > 0 {
 			// Allow 3% runtime tolerance
@@ -1175,6 +1218,43 @@ func searchMusicBrainzByMetadata(
 	return ""
 }
 
+// mbTitleCompatible reports whether a MusicBrainz release title names the same
+// album as the local title, ignoring case, punctuation and trailing bracketed
+// qualifiers such as "(Deluxe Edition)" or "[Remastered]".
+func mbTitleCompatible(local, mb string) bool {
+	a := logger.StringToSlug(trimTrailingBrackets(local))
+
+	return a != "" && a == logger.StringToSlug(trimTrailingBrackets(mb))
+}
+
+// trimTrailingBrackets removes trailing "(...)" / "[...]" groups.
+func trimTrailingBrackets(s string) string {
+	for {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return s
+		}
+
+		var open byte
+
+		switch s[len(s)-1] {
+		case ')':
+			open = '('
+		case ']':
+			open = '['
+		default:
+			return s
+		}
+
+		idx := strings.LastIndexByte(s, open)
+		if idx <= 0 {
+			return s
+		}
+
+		s = s[:idx]
+	}
+}
+
 // processMusicFolder handles music album-specific folder processing.
 // Uses MusicBrainzID/UPC for identification and MusicBrainz/Discogs for matching.
 // Does NOT perform language validation (unlike audiobooks).
@@ -1198,8 +1278,8 @@ func processMusicFolder(
 		albumTitle = firstTrack.Album
 	}
 
-	// Try to get MusicBrainzID or UPC from tags
-	var musicBrainzID, upc string
+	// Try to get MusicBrainzID from tags
+	var musicBrainzID string
 
 	tagData := parser_v2.ReadTagsForFirstFile(files)
 	if tagData != nil {
@@ -1212,7 +1292,7 @@ func processMusicFolder(
 		}
 
 		musicBrainzID = tagData.MusicBrainzID
-		// UPC might be in a custom tag - we'll use whatever is available
+		parser_v2.PutTrackInfo(tagData)
 	}
 
 	logger.Logtype("debug", 0).
@@ -1239,18 +1319,6 @@ func processMusicFolder(
 		// 		Str("musicBrainzID", musicBrainzID).
 		// 		Uint("dbID", dbMatch.ID).
 		// 		Msg("DEBUG: Found album by MusicBrainzID")
-		// }
-	}
-
-	// Try by UPC if MusicBrainzID didn't match
-	if dbMatch == nil && upc != "" {
-		dbMatch, _ = database.FindAlbumByUPC(&upc)
-		// if searchErr == nil && dbMatch != nil {
-		// 	logger.Logtype("debug", 0).
-		// 		Str("folder", folder).
-		// 		Str("upc", upc).
-		// 		Uint("dbID", dbMatch.ID).
-		// 		Msg("DEBUG: Found album by UPC")
 		// }
 	}
 
@@ -1282,7 +1350,10 @@ func processMusicFolder(
 	}
 
 	// Step 4: If still no match and addFound is enabled, try to import via MusicBrainz
-	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	listid := matchedListID(cfgp, "albums", "dbalbum_id", album.DatabaseID)
+	if listid == -1 {
+		listid = cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	}
 
 	// Log why MusicBrainz search might be skipped
 	// logger.Logtype("debug", 0).
@@ -1306,12 +1377,24 @@ func processMusicFolder(
 		// 	Int("tracks", album.TrackCount).
 		// 	Msg("No MusicBrainzID in tags - searching MusicBrainz")
 
-		// Calculate total runtime from all files
+		// Calculate total runtime from all files. A file without a duration
+		// makes the sum a partial total, which would reject the right release;
+		// report it as unknown instead.
 		var totalRuntimeMS int64
 		for i := range files {
-			if audioTags := parser_v2.ReadTagsForFirstFile([]string{files[i]}); audioTags != nil {
-				totalRuntimeMS += audioTags.RuntimeMS
+			audioTags := parser_v2.ReadTagsForFirstFile([]string{files[i]})
+			if audioTags == nil || audioTags.RuntimeMS <= 0 {
+				if audioTags != nil {
+					parser_v2.PutTrackInfo(audioTags)
+				}
+
+				totalRuntimeMS = 0
+
+				break
 			}
+
+			totalRuntimeMS += audioTags.RuntimeMS
+			parser_v2.PutTrackInfo(audioTags)
 		}
 
 		// logger.Logtype("debug", 0).
@@ -1409,6 +1492,7 @@ func processMusicFolder(
 				for i := range files {
 					if tags := parser_v2.ReadTagsForFirstFile([]string{files[i]}); tags != nil {
 						trackInfos = append(trackInfos, parser_v2.TrackInfo{Artist: tags.Artist})
+						parser_v2.PutTrackInfo(tags)
 					}
 				}
 
@@ -1518,6 +1602,34 @@ func processMusicFolder(
 	return addAlbumFilesToDatabase(ctx, folder, album, cfgp, listid)
 }
 
+// matchedListID returns the index of the config list that already tracks the
+// matched db entry (table.dbCol = dbID), or -1. Mirrors how movies/series
+// derive the list from the match instead of only from data.AddFoundList.
+func matchedListID(cfgp *config.MediaTypeConfig, table, dbCol string, dbID uint) int {
+	if dbID == 0 || cfgp == nil || cfgp.ListsLen == 0 {
+		return -1
+	}
+
+	args := append([]any{&dbID}, configListArgs(cfgp)...)
+
+	listname := database.Getdatarow[string](false,
+		"select listname from "+table+" where "+dbCol+" = ? and listname in (?"+cfgp.ListsQu+") order by id limit 1",
+		args...)
+
+	return cfgp.GetMediaListsEntryListID(listname)
+}
+
+// configListArgs returns the config's list names as query args matching the
+// "listname in (?"+cfgp.ListsQu+")" placeholder list.
+func configListArgs(cfgp *config.MediaTypeConfig) []any {
+	args := make([]any, 0, len(cfgp.ListsNames))
+	for idx := range cfgp.ListsNames {
+		args = append(args, &cfgp.ListsNames[idx])
+	}
+
+	return args
+}
+
 // verifyAndSortTracks tries different sorting strategies to get a valid track sequence.
 // Returns true if tracks are properly sorted and verified.
 func verifyAndSortTracks(album *parser_v2.AlbumInfo) bool {
@@ -1529,11 +1641,23 @@ func verifyAndSortTracks(album *parser_v2.AlbumInfo) bool {
 		return true
 	}
 
-	// Strategy 2: Sort by filename
+	// Strategy 2: Sort by filename and number the tracks by position within
+	// their disc (numbering across discs would put disc 2 at 13.. and fail).
+	tagged := slices.Clone(album.Tracks)
+
 	parser_v2.SortTracksByFilename(album.Tracks)
-	// Re-assign track numbers based on position
+	sort.SliceStable(album.Tracks, func(i, j int) bool {
+		return album.Tracks[i].DiscNumber < album.Tracks[j].DiscNumber
+	})
+
+	pos := 0
 	for i := range album.Tracks {
-		album.Tracks[i].TrackNumber = i + 1
+		if i == 0 || album.Tracks[i].DiscNumber != album.Tracks[i-1].DiscNumber {
+			pos = 0
+		}
+
+		pos++
+		album.Tracks[i].TrackNumber = pos
 	}
 
 	isComplete, _ = parser_v2.ValidateAlbum(album, 0)
@@ -1541,8 +1665,10 @@ func verifyAndSortTracks(album *parser_v2.AlbumInfo) bool {
 		return true
 	}
 
-	// Strategy 3: Sort by disc and track again (reset)
-	parser_v2.SortTracksByDiscAndTrack(album.Tracks)
+	// Neither worked: keep the tagged numbers - the music path imports anyway
+	// and must not store the positional guesses.
+	album.Tracks = tagged
+	parser_v2.ValidateAlbum(album, 0)
 
 	return false
 }
@@ -1589,7 +1715,7 @@ func addAudiobookFilesToDatabase(
 		listname = cfgp.Lists[listid].Name
 	}
 
-	audiobookListID := database.GetAudiobookListEntryID(album.DatabaseID, listname)
+	audiobookListID := database.GetAudiobookListEntryID(&album.DatabaseID, &listname)
 	if audiobookListID == 0 {
 		logger.Logtype("error", 1).
 			Str("folder", folder).
@@ -1715,7 +1841,7 @@ func addAlbumFilesToDatabase(
 		listname = cfgp.Lists[listid].Name
 	}
 
-	albumListID := database.GetAlbumListEntryID(album.DatabaseID, listname)
+	albumListID := database.GetAlbumListEntryID(&album.DatabaseID, &listname)
 	if albumListID == 0 {
 		logger.Logtype("warn", 1).
 			Str("folder", folder).
@@ -1853,8 +1979,6 @@ func SingleJobs(
 	force bool,
 	key uint32,
 ) (finalErr error) {
-	var dbinsert int64
-
 	// Panic recovery to ensure job completion tracking
 	defer func() {
 		r := recover()
@@ -1867,11 +1991,6 @@ func SingleJobs(
 			Uint32("key", key).
 			Any("panic", logger.Stack()).
 			Msg("SingleJobs: Job panicked, ensuring completion tracking")
-
-		// Always update job history on panic
-		if dbinsert != 0 {
-			database.ExecN(database.QueryUpdateHistory, &dbinsert)
-		}
 
 		// Convert panic to error
 		if err, ok := r.(error); ok {
@@ -1894,17 +2013,19 @@ func SingleJobs(
 	cfgp := config.GetSettingsMedia(cfgpstr)
 	if cfgpstr != "" && cfgp == nil {
 		config.LoadCfgDB(true)
+		providers.ReloadClientProviders()
+		providers.RegisterNotificationProviders()
 
 		cfgp = config.GetSettingsMedia(cfgpstr)
 		if cfgp == nil {
 			logjob("config not found", cfgpstr, listname, job)
 			return errConfigNotFound
 		}
+	}
 
-		if cfgp.IsType != config.MediaTypeSeries &&
-			(job == logger.StrRssSeasons || job == logger.StrRssSeasonsAll) {
-			return nil
-		}
+	if cfgp.IsType != config.MediaTypeSeries &&
+		(job == logger.StrRssSeasons || job == logger.StrRssSeasonsAll) {
+		return nil
 	}
 
 	// Try to acquire job lock for Data, DataFull, and Structure jobs to prevent concurrent execution
@@ -1926,52 +2047,118 @@ func SingleJobs(
 	logjob("Started Job", cfgpstr, listname, job)
 	Refreshcache(cfgp.IsType)
 
-	dbinsert = insertjobhistory(job, cfgp)
-
-	idxlist := -2
-	if job == logger.StrData || job == logger.StrRss || job == logger.StrReachedFlag ||
-		job == logger.StrClearHistory ||
-		job == logger.StrFeeds ||
-		job == logger.StrCheckMissing ||
-		job == logger.StrCheckMissingFlag {
-		if job == logger.StrRss {
-			for idx := range cfgp.ListsQualities {
-				if err := logger.CheckContextEnded(rootctx); err != nil {
-					return err
-				}
-
-				searcher.NewSearcher(cfgp, config.GetSettingsQuality(cfgp.ListsQualities[idx]), logger.StrRss, nil).
-					SearchRSS(rootctx, cfgp, config.GetSettingsQuality(cfgp.ListsQualities[idx]), true, true)
-			}
-		} else {
-			if _, ok := cfgp.ListsMapIdx[listname]; ok {
-				idxlist = cfgp.ListsMapIdx[listname]
-			}
+	dbinsert := insertjobhistory(job, cfgp)
+	// Deferred so the history row is closed on every return path, including panics
+	// (deferred calls still run while the panic unwinds to the recover above).
+	defer func() {
+		if dbinsert != 0 {
+			database.ExecN(database.QueryUpdateHistory, &dbinsert)
 		}
-	} else {
-		idxlist = -1
-	}
+	}()
 
 	var err error
-	if idxlist != -2 {
-		err = runjoblistfunc(rootctx, job, cfgp, idxlist)
-		if err != nil {
-			logger.Logtype("error", 0).
-				Str("job", job).
-				Uint32("key", key).
-				Err(err).
-				Msg("SingleJobs: Error running runjoblistfunc")
+	switch job {
+	case logger.StrRss:
+		err = runjobrss(rootctx, cfgp)
+	case logger.StrReachedFlag,
+		logger.StrUpgradeFlag,
+		logger.StrClearHistory,
+		logger.StrFeeds,
+		logger.StrCheckMissing,
+		logger.StrCheckMissingFlag:
+		if listname == "" {
+			err = runjobAllLists(rootctx, job, cfgp, key)
+		} else if idxlist, ok := cfgp.ListsMapIdx[listname]; ok {
+			err = runjoblistfunc(rootctx, job, cfgp, idxlist)
 		}
+	default:
+		// Per-config jobs (data, datafull, structure, searches, ...) ignore the list index.
+		err = runjoblistfunc(rootctx, job, cfgp, -1)
+	}
+
+	if err != nil {
+		logger.Logtype("error", 0).
+			Str("job", job).
+			Uint32("key", key).
+			Err(err).
+			Msg("SingleJobs: Error running runjoblistfunc")
 	}
 
 	logjob("Ended Job", cfgpstr, listname, job)
 
-	// Always update job history completion, even on error
-	if dbinsert != 0 {
-		database.ExecN(database.QueryUpdateHistory, &dbinsert)
+	return err
+}
+
+// runjobrss runs the RSS search once per quality profile used by the config's lists.
+func runjobrss(rootctx context.Context, cfgp *config.MediaTypeConfig) error {
+	var firstErr error
+	for idx := range cfgp.ListsQualities {
+		if err := logger.CheckContextEnded(rootctx); err != nil {
+			return err
+		}
+
+		quality := config.GetSettingsQuality(cfgp.ListsQualities[idx])
+
+		err := searcher.NewSearcher(cfgp, quality, logger.StrRss, nil).
+			SearchRSS(rootctx, cfgp, quality, true, true)
+		if err == nil || errors.Is(err, logger.ErrDisabled) || errors.Is(err, logger.ErrToWait) {
+			continue
+		}
+
+		logger.Logtype("error", 0).
+			Str(logger.StrConfig, cfgp.NamePrefix).
+			Str("quality", cfgp.ListsQualities[idx]).
+			Err(err).
+			Msg("rss search failed")
+
+		if firstErr == nil {
+			firstErr = err
+		}
 	}
 
-	return err
+	return firstErr
+}
+
+// runjobAllLists runs a per-list job for every enabled list of the config, skipping
+// lists the same way the web job handlers do.
+func runjobAllLists(
+	rootctx context.Context,
+	job string,
+	cfgp *config.MediaTypeConfig,
+	key uint32,
+) error {
+	var firstErr error
+	for idx := range cfgp.Lists {
+		if err := logger.CheckContextEnded(rootctx); err != nil {
+			return err
+		}
+
+		if !listJobEnabled(&cfgp.Lists[idx]) {
+			continue
+		}
+
+		err := runjoblistfunc(rootctx, job, cfgp, idx)
+		if err == nil || errors.Is(err, logger.ErrDisabled) {
+			continue
+		}
+
+		logger.Logtype("error", 0).
+			Str("job", job).
+			Uint32("key", key).
+			Str(logger.StrListname, cfgp.Lists[idx].Name).
+			Err(err).
+			Msg("SingleJobs: Error running job for list")
+
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr
+}
+
+func listJobEnabled(list *config.MediaListsConfig) bool {
+	return list.Enabled && list.CfgList != nil && list.CfgList.Enabled
 }
 
 // logjob logs information about a job, including the action, configuration, list name, and job name.
@@ -2035,7 +2222,7 @@ func runjoblistfunc(
 		return worker.Cleanqueue()
 	case logger.StrCheckMissingFlag:
 		return checkmissingflag(rootctx, cfgp.IsType, &cfgp.Lists[listid])
-	case logger.StrReachedFlag:
+	case logger.StrReachedFlag, logger.StrUpgradeFlag:
 		return checkreachedflag(rootctx, cfgp, &cfgp.Lists[listid])
 
 	case logger.StrStructure:
@@ -2485,10 +2672,14 @@ func LoadGlobalSchedulerConfig() {
 
 			return nil
 		},
-		"BackupDatabase": func(key uint32, _ context.Context) error {
+		"BackupDatabase": func(key uint32, ctx context.Context) error {
 			if config.GetSettingsGeneral().DatabaseBackupStopTasks {
+				// ctx identifies this job, so the pause waits for the other
+				// jobs but not for this one (it runs on one of the pools).
+				// Pause, not Close: Close also stops the interval schedules
+				// for good.
 				worker.StopCronWorker()
-				worker.CloseWorkerPools()
+				worker.PauseWorkerPools(ctx)
 			}
 
 			worker.RemoveQueueEntry(key)
@@ -2508,6 +2699,7 @@ func LoadGlobalSchedulerConfig() {
 					config.GetSettingsGeneral().WorkerMetadata,
 					config.GetSettingsGeneral().WorkerRSS,
 					config.GetSettingsGeneral().WorkerIndexer,
+					config.GetSettingsGeneral().WorkerParse,
 				)
 				worker.StartCronWorker()
 			}
@@ -2541,14 +2733,18 @@ func LoadSchedulerConfig() {
 			return nil
 		}
 
-		cfgp.Jobs = make(map[string]func(uint32, context.Context) error)
-
+		// Built fully before the swap: validateJobConfig reads Jobs
+		// concurrently and must never see a nil or half-filled map.
 		arr := h.GetSchedulerJobNames()
+		jobs := make(map[string]func(uint32, context.Context) error, len(arr))
+
 		for i := range arr {
 			schedulerName, singleJobName := arr[i][0], arr[i][1]
 
-			cfgp.Jobs[schedulerName] = makeJobFunc(singleJobName, cfgp.NamePrefix)
+			jobs[schedulerName] = makeJobFunc(singleJobName, cfgp.NamePrefix)
 		}
+
+		cfgp.Jobs = jobs
 
 		return nil
 	})

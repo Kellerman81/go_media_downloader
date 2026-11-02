@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -905,21 +906,14 @@ func GetTableDefaults(table string) QueryParams {
 	return q
 }
 
-// GetAllTableNames returns all user-created table names from the main database,
-// sorted alphabetically. Used to populate the Database sidebar dropdown.
 // GetAllTableNames returns every browsable table name for the admin database
-// browser's table-select dropdown. Excludes migration bookkeeping
-// (schema_migrations) and tables that exist in the schema but have no
-// GetTableDefaults case and no application code reading/writing them
-// (stat, storage_usage_history, http_request_statistics,
-// indexer_performance_statistics - dead leftovers from earlier migrations) -
-// without this exclusion those choices 404 in adminPageDatabase since
-// GetTableDefaults returns a zero-value QueryParams for them.
+// browser's table-select dropdown, excluding migration bookkeeping
+// (schema_migrations).
 func GetAllTableNames() []string {
 	return GetrowsN[string](
 		false,
 		0,
-		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'stat', 'storage_usage_history', 'http_request_statistics', 'indexer_performance_statistics') ORDER BY name",
+		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name",
 	)
 }
 
@@ -1024,7 +1018,7 @@ func QueryDbserieAlternates(qu Querywithargs, args ...any) []DbserieAlternate {
 func GetSeries(qu Querywithargs, args ...any) (*Serie, error) {
 	qu.Table = logger.StrSeries
 
-	qu.defaultcolumns = "id,created_at,updated_at,listname,rootpath,dbserie_id,dont_upgrade,dont_search"
+	qu.defaultcolumns = "id,created_at,updated_at,listname,rootpath,aliases,quality_profile,dbserie_id,dont_upgrade,dont_search,search_specials,ignore_runtime"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
@@ -1040,7 +1034,7 @@ func GetSeries(qu Querywithargs, args ...any) (*Serie, error) {
 func GetSerieEpisodes(qu Querywithargs, args ...any) (*SerieEpisode, error) {
 	qu.Table = "serie_episodes"
 
-	qu.defaultcolumns = "id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id"
+	qu.defaultcolumns = "id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,ignore_runtime,dbserie_episode_id,serie_id,dbserie_id"
 	if qu.QueryString == "" {
 		qu.buildquery()
 	}
@@ -1397,14 +1391,20 @@ func scandatarow(imdb bool, querystring string, s any, args []any) {
 
 // ScanRowVal2 executes a query with two typed arguments and returns the first column as R.
 func ScanRowVal2[A, B, R any](query string, arg1 A, arg2 B) R {
-	stmtp := globalCache.getXStmt(query, false)
+	// Lock before the lookup: ExchangeImdbDB closes the db under the write
+	// lock, so a statement fetched outside it could belong to a closed db.
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	stmtp, cached := globalCache.getXStmt(query, false)
 	if stmtp == nil {
 		var zero R
 		return zero
 	}
 
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
+	if !cached {
+		defer stmtp.Close()
+	}
 
 	var result R
 	// ErrNoRows is routine here (lookup misses); logSQLError skips it but
@@ -1427,13 +1427,18 @@ func ScanRowVal2[A, B, R any](query string, arg1 A, arg2 B) R {
 // could not be prepared. Callers must check for nil - calling Scan on a
 // zero-value sql.Row panics in the standard library.
 func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
-	stmtp := globalCache.getXStmt(querystring, imdb)
+	stmtp, cached := globalCache.getXStmt(querystring, imdb)
 	if stmtp == nil {
 		logger.Logtype("error", 1).
 			Str(strQuery, querystring).
 			Msg("stmt failed")
 
 		return nil
+	}
+
+	// database/sql defers the real close until the returned row is consumed.
+	if !cached {
+		defer stmtp.Close()
 	}
 
 	return stmtp.QueryRowContext(sqlCTX, args...)
@@ -1452,13 +1457,18 @@ func queryRowContext(querystring string, imdb bool, args []any) *sql.Row {
 // could not be prepared. Callers must check for nil - scanning a zero-value
 // sqlx.Row panics.
 func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
-	stmt := globalCache.getXStmt(querystring, imdb)
+	stmt, cached := globalCache.getXStmt(querystring, imdb)
 	if stmt == nil {
 		logger.Logtype("error", 1).
 			Str(strQuery, querystring).
 			Msg("stmt failed")
 
 		return nil
+	}
+
+	// database/sql defers the real close until the returned row is consumed.
+	if !cached {
+		defer stmt.Close()
 	}
 
 	return stmt.QueryRowxContext(sqlCTX, args...)
@@ -1475,12 +1485,17 @@ func queryRowxContext(querystring string, imdb bool, args []any) *sqlx.Row {
 //
 // Returns a *sqlx.Rows and an error from executing the query.
 func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error) {
-	stmt := globalCache.getXStmt(querystring, imdb)
+	stmt, cached := globalCache.getXStmt(querystring, imdb)
 	if stmt == nil {
 		logger.Logtype("error", 1).
 			Str(strQuery, querystring).
 			Msg("stmt failed")
 		return &sqlx.Rows{}, logger.ErrNotAllowed
+	}
+
+	// database/sql defers the real close until the returned rows are closed.
+	if !cached {
+		defer stmt.Close()
 	}
 
 	return stmt.QueryxContext(sqlCTX, args...)
@@ -1496,14 +1511,20 @@ func queryxContext(querystring string, imdb bool, args []any) (*sqlx.Rows, error
 //
 // The function returns a value of type uint, which is the result of the SQL query.
 func Getdatarow[o any](imdb bool, querystring string, args ...any) o {
-	stmtp := globalCache.getXStmt(querystring, imdb)
+	// Lock before the lookup: ExchangeImdbDB closes the imdb db under the
+	// write lock, so a statement fetched outside it could belong to a closed db.
+	readWriteMu.RLock()
+	defer readWriteMu.RUnlock()
+
+	stmtp, cached := globalCache.getXStmt(querystring, imdb)
 	if stmtp == nil {
 		var zero o
 		return zero
 	}
 
-	readWriteMu.RLock()
-	defer readWriteMu.RUnlock()
+	if !cached {
+		defer stmtp.Close()
+	}
 
 	var s o
 	// ErrNoRows is routine here (lookup misses); logSQLError skips it but
@@ -1598,7 +1619,8 @@ func Getrowssize[t any](imdb bool, sizeq, querystring string, args ...any) []t {
 
 // GetrowsN executes the given querystring with multiple arguments against the database, scans the result
 // rows into a slice of the generic type T, handles locking, logging errors,
-// and returns the slice. The size parameter limits the number of rows scanned.
+// and returns the slice. size is only the initial capacity - it does not limit
+// the rows read, so queries that must be bounded need their own LIMIT.
 // If imdb is true, the query will be executed against the imdb database, otherwise the main database.
 func GetrowsN[t any](imdb bool, size uint, querystring string, args ...any) []t {
 	readWriteMu.RLock()
@@ -1792,6 +1814,23 @@ func ExecNid(querystring string, args ...any) (int64, error) {
 	return newid, nil
 }
 
+// CloseInterruptedJobHistories closes job_histories rows left open by a
+// previous process (a container restart kills running jobs before their
+// deferred close runs). It must run at startup before any job is started.
+// ended is set to started rather than to now, so the table browser's duration
+// column shows 0 instead of the downtime between the crash and the restart.
+func CloseInterruptedJobHistories() (int64, error) {
+	res, err := exec(
+		"update job_histories set ended = started where ended is null and started is not null and started <= datetime('now','localtime')",
+		nil,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
+}
+
 // exec executes the given SQL query with the provided arguments and logs any errors that occur.
 // It acquires a read/write lock before executing the query and releases it when the query is complete.
 // The querystring parameter specifies the SQL query to execute.
@@ -1801,11 +1840,15 @@ func exec(querystring string, args []any) (sql.Result, error) {
 	readWriteMu.Lock()
 	defer readWriteMu.Unlock()
 
-	stmt := globalCache.getXStmt(querystring, false)
+	stmt, cached := globalCache.getXStmt(querystring, false)
 	if stmt == nil {
 		// Prepare failed (bad SQL or DB closing) - getXStmt already logged it.
 		// Returning an error instead of calling ExecContext on nil avoids a panic.
 		return nil, errStmtFailed
+	}
+
+	if !cached {
+		defer stmt.Close()
 	}
 
 	r, err := stmt.ExecContext(sqlCTX, args...)
@@ -2004,15 +2047,28 @@ func GetDbstaticTwoStringOneInt(
 	return result
 }
 
-// ExchangeImdbDB exchanges the imdb.db file with a temp copy.
-// It first checks if the main imdb.db file exists, locks the db,
-// makes the main file writable, deletes it, renames the temp
-// copy to the main name, unlocks the db, and logs the result.
+// ExchangeImdbDB exchanges the imdb.db file with the freshly built
+// imdbtemp.db. The temp file is validated before the live database is touched,
+// and the live file is moved to imdb.db.bak (not deleted) so any failure during
+// the swap restores it. The .bak is removed once the new database opened, so
+// no extra ~GB copy is kept around.
 func ExchangeImdbDB() {
-	dbfile := "./databases/imdb.db"
-	dbfiletemp := "./databases/imdbtemp.db"
+	const (
+		dbfile     = "./databases/imdb.db"
+		dbfiletemp = "./databases/imdbtemp.db"
+		dbfilebak  = "./databases/imdb.db.bak"
+	)
 
 	if !checkFile(dbfile) {
+		return
+	}
+
+	if err := validateImdbDBFile(dbfiletemp); err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, dbfiletemp).
+			Err(err).
+			Msg("New imdb database not usable - keeping current one")
+
 		return
 	}
 
@@ -2023,22 +2079,96 @@ func ExchangeImdbDB() {
 	dbImdb.Close()
 
 	os.Chmod(dbfile, 0o777)
-	os.Remove(dbfile)
+	os.Remove(dbfilebak)
 
-	err := os.Rename(dbfiletemp, dbfile)
-	if err == nil {
-		logger.Logtype("debug", 1).
-			Str(logger.StrFile, dbfiletemp).
-			Msg("File renamed")
-	} else {
+	if err := os.Rename(dbfile, dbfilebak); err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, dbfile).
+			Str("target", dbfilebak).
+			Err(err).
+			Msg("Failed to back up imdb database - keeping current one")
+		reopenImdbdb()
+
+		return
+	}
+
+	if err := os.Rename(dbfiletemp, dbfile); err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrFile, dbfiletemp).
 			Str("target", dbfile).
 			Err(err).
-			Msg("Failed to rename database file")
+			Msg("Failed to rename database file - restoring previous imdb database")
+		restoreImdbBackup(dbfile, dbfilebak)
+		reopenImdbdb()
+
+		return
 	}
 
-	InitImdbdb()
+	if err := InitImdbdb(); err != nil {
+		logger.Logtype("error", 1).
+			Str(logger.StrFile, dbfile).
+			Err(err).
+			Msg("Failed to open new imdb database - restoring previous one")
+		os.Rename(dbfile, dbfiletemp)
+		restoreImdbBackup(dbfile, dbfilebak)
+		reopenImdbdb()
+
+		return
+	}
+
+	logger.Logtype("debug", 1).
+		Str(logger.StrFile, dbfiletemp).
+		Msg("File renamed")
+	os.Remove(dbfilebak)
+}
+
+// validateImdbDBFile checks that path is a non-empty SQLite database with at
+// least one imdb_titles row, so a failed/aborted import never replaces a
+// working imdb.db.
+func validateImdbDBFile(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	if fi.Size() == 0 {
+		return fmt.Errorf("%s: empty file", path)
+	}
+
+	db, err := sqlx.Connect("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(10000)")
+	if err != nil {
+		return fmt.Errorf("%s: open: %w", path, err)
+	}
+	defer db.Close()
+
+	var hasRows bool
+	if err := db.Get(&hasRows, "select exists(select 1 from imdb_titles)"); err != nil {
+		return fmt.Errorf("%s: query imdb_titles: %w", path, err)
+	}
+
+	if !hasRows {
+		return fmt.Errorf("%s: imdb_titles is empty", path)
+	}
+
+	return nil
+}
+
+func restoreImdbBackup(dbfile, dbfilebak string) {
+	if err := os.Rename(dbfilebak, dbfile); err != nil {
+		logger.Logtype("error", 2).
+			Str(logger.StrFile, dbfilebak).
+			Str("target", dbfile).
+			Err(err).
+			Msg("Failed to restore imdb database backup")
+	}
+}
+
+func reopenImdbdb() {
+	if err := InitImdbdb(); err != nil {
+		logger.Logtype("error", 2).
+			Err(err).
+			Msg("Failed to reopen imdb database")
+	}
 }
 
 // ChecknzbtitleC checks if the given nzbtitle matches the title or alternate title of the movie. It also allows checking for the movie title with the year before and after the given year.

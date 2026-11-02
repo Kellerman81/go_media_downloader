@@ -22,12 +22,6 @@ import (
 // XML-RPC structures for rTorrent
 //
 
-type xmlRPCRequest struct {
-	XMLName xml.Name   `xml:"methodCall"`
-	Method  string     `xml:"methodName"`
-	Params  *xmlParams `xml:"params,omitempty"`
-}
-
 type xmlParams struct {
 	Params []xmlParam `xml:"param"`
 }
@@ -37,10 +31,23 @@ type xmlParam struct {
 }
 
 type xmlValue struct {
-	String string    `xml:"string,omitempty"`
-	Int    int       `xml:"int,omitempty"`
-	Bool   bool      `xml:"boolean,omitempty"`
-	Array  *xmlArray `xml:"array,omitempty"`
+	String string     `xml:"string,omitempty"`
+	Int    int        `xml:"int,omitempty"`
+	I4     string     `xml:"i4,omitempty"`
+	I8     string     `xml:"i8,omitempty"`
+	Bool   bool       `xml:"boolean,omitempty"`
+	Base64 string     `xml:"base64,omitempty"`
+	Array  *xmlArray  `xml:"array,omitempty"`
+	Struct *xmlStruct `xml:"struct,omitempty"`
+}
+
+type xmlStruct struct {
+	Members []xmlMember `xml:"member"`
+}
+
+type xmlMember struct {
+	Name  string   `xml:"name"`
+	Value xmlValue `xml:"value"`
 }
 
 type xmlArray struct {
@@ -55,6 +62,32 @@ type xmlRPCResponse struct {
 
 type xmlFault struct {
 	Value xmlValue `xml:"value"`
+}
+
+// String renders a fault as "faultCode <code>: <faultString>". rTorrent
+// sends the code as <i4> or <i8>, other servers as <int>.
+func (f *xmlFault) String() string {
+	var code, msg string
+
+	if f.Value.Struct != nil {
+		for _, m := range f.Value.Struct.Members {
+			switch m.Name {
+			case "faultCode":
+				switch {
+				case m.Value.I4 != "":
+					code = m.Value.I4
+				case m.Value.I8 != "":
+					code = m.Value.I8
+				default:
+					code = strconv.Itoa(m.Value.Int)
+				}
+			case "faultString":
+				msg = m.Value.String
+			}
+		}
+	}
+
+	return logger.JoinStrings("faultCode ", code, ": ", msg)
 }
 
 //
@@ -184,53 +217,16 @@ func (p *Provider) AddTorrent(
 
 	return &apiexternal_v2.TorrentAddResponse{
 		Success:  true,
+		Hash:     btihFromURL(request.URL),
 		Message:  "Torrent added successfully",
 		Provider: "rtorrent",
 	}, nil
 }
 
-// GetTorrentInfo retrieves information about a specific torrent.
-func (*Provider) GetTorrentInfo(
-	_ context.Context,
-	hash string,
-) (*apiexternal_v2.TorrentInfo, error) {
-	// rTorrent multicall to get torrent info
-	// This is a simplified version - full implementation would use d.multicall
-	return &apiexternal_v2.TorrentInfo{
-		Hash:     hash,
-		Name:     "Unknown", // Would need multicall to get actual name
-		State:    "unknown",
-		Provider: "rtorrent",
-	}, nil
-}
-
-// ListTorrents lists all torrents in rTorrent.
-func (p *Provider) ListTorrents(
-	ctx context.Context,
-	_ string,
-) (*apiexternal_v2.TorrentListResponse, error) {
-	// Get list of torrent hashes
-	// This is simplified - full implementation would use d.multicall2 for efficiency
-	var hashes []string
-
-	if err := p.makeXMLRPCCall(ctx, "download_list", []any{}); err != nil {
-		return nil, err
-	}
-
-	torrents := make([]apiexternal_v2.TorrentInfo, 0, len(hashes))
-	for _, hash := range hashes { //nolint:gosec // range over slice is always in-bounds
-		torrents = append(torrents, apiexternal_v2.TorrentInfo{
-			Hash:     hash,
-			Name:     "Unknown",
-			State:    "unknown",
-			Provider: "rtorrent",
-		})
-	}
-
-	return &apiexternal_v2.TorrentListResponse{
-		Torrents: torrents,
-		Total:    len(torrents),
-	}, nil
+// btihFromURL returns the info hash of a magnet/torrent URL in rTorrent's
+// uppercase hex format; rTorrent's load.* calls return no hash.
+func btihFromURL(u string) string {
+	return base.InfoHashFromURL(u)
 }
 
 // PauseTorrent pauses a torrent.
@@ -261,28 +257,22 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 	return nil
 }
 
-// RemoveTorrent removes a torrent from rTorrent.
+// RemoveTorrent removes a torrent from rTorrent. d.erase removes the torrent
+// from the session but leaves its data on disk; rTorrent offers no XML-RPC
+// call that deletes the data short of running a shell command via execute, so
+// deleteFiles=true is refused rather than silently keeping the files.
 func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles bool) error {
 	if deleteFiles {
-		// Remove torrent and delete files
-		if err := p.makeXMLRPCCall(ctx, "d.erase", []any{hash}); err != nil {
-			return err
-		}
-	} else {
-		// Stop and close torrent
-		if err := p.makeXMLRPCCall(ctx, "d.stop", []any{hash}); err != nil {
-			return err
-		}
+		return errors.New("rtorrent: removing a torrent together with its data is not supported")
+	}
 
-		if err := p.makeXMLRPCCall(ctx, "d.close", []any{hash}); err != nil {
-			return err
-		}
+	if err := p.makeXMLRPCCall(ctx, "d.erase", []any{hash}); err != nil {
+		return err
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
 		Str("provider", p.GetProviderName()).
 		Str("hash", hash).
-		Bool("delete_files", deleteFiles).
 		Msg("Torrent removed")
 
 	return nil
@@ -330,35 +320,56 @@ func (*Provider) GetHTTPClient() *http.Client {
 }
 
 // makeXMLRPCCall makes an XML-RPC call to rTorrent.
-func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []any) error {
-	// Build XML-RPC request
-	request := xmlRPCRequest{
-		Method: method,
+// encodeXMLRPCRequest builds a methodCall document. Every value is written with
+// its explicit type element: rTorrent rejects an empty <value></value> ("empty
+// value element"), which is what an omitempty struct produces for the empty
+// target string load.* calls take as their first parameter.
+func encodeXMLRPCRequest(method string, params []any) ([]byte, error) {
+	var b strings.Builder
+
+	b.WriteString(xml.Header)
+	b.WriteString("<methodCall><methodName>")
+
+	if err := xml.EscapeText(&b, []byte(method)); err != nil {
+		return nil, err
 	}
 
-	if len(params) > 0 {
-		request.Params = &xmlParams{}
-		for _, param := range params {
-			var v xmlValue
-			switch t := param.(type) {
-			case string:
-				v.String = t
-			case int:
-				v.Int = t
-			case bool:
-				v.Bool = t
-			case []byte:
-				v.String = string(t)
-			default:
-				v.String = fmt.Sprintf("%v", t)
+	b.WriteString("</methodName><params>")
+
+	for _, param := range params {
+		b.WriteString("<param><value>")
+
+		switch t := param.(type) {
+		case int:
+			b.WriteString("<i8>" + strconv.Itoa(t) + "</i8>")
+		case bool:
+			if t {
+				b.WriteString("<boolean>1</boolean>")
+			} else {
+				b.WriteString("<boolean>0</boolean>")
+			}
+		case []byte:
+			b.WriteString("<base64>" + base64.StdEncoding.EncodeToString(t) + "</base64>")
+		default:
+			b.WriteString("<string>")
+
+			if err := xml.EscapeText(&b, []byte(fmt.Sprint(t))); err != nil {
+				return nil, err
 			}
 
-			request.Params.Params = append(request.Params.Params, xmlParam{Value: v})
+			b.WriteString("</string>")
 		}
+
+		b.WriteString("</value></param>")
 	}
 
-	// Marshal to XML
-	xmlData, err := xml.Marshal(request)
+	b.WriteString("</params></methodCall>")
+
+	return []byte(b.String()), nil
+}
+
+func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []any) error {
+	xmlData, err := encodeXMLRPCRequest(method, params)
 	if err != nil {
 		return errors.New(logger.JoinStrings("failed to marshal XML-RPC request: ", err.Error()))
 	}
@@ -412,7 +423,7 @@ func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []a
 			// Check for fault
 			if response.Fault != nil {
 				return errors.New(
-					logger.JoinStrings("XML-RPC fault: ", fmt.Sprintf("%v", response.Fault.Value)),
+					logger.JoinStrings("XML-RPC fault: ", response.Fault.String()),
 				)
 			}
 

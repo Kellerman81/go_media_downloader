@@ -3,8 +3,10 @@ package logger
 import (
 	"bytes"
 	"io"
+	"net/url"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,9 +67,12 @@ func ErrorLoggerT(typ gin.ErrorType) gin.HandlerFunc {
 }
 
 // GinLogger is a gin middleware that uses zerolog for structured logging.
+// Request bodies are not logged: login and config-save POSTs carry the web
+// password (= WebAPIKey) and downloader/indexer credentials.
 func GinLogger() gin.HandlerFunc {
 	o := Options{
-		FieldsOrder: ginDefaultFieldsOrder(),
+		FieldsOrder:   ginDefaultFieldsOrder(),
+		FieldsExclude: []string{PayloadFieldName},
 	}
 	return LoggerWithOptions(&o)
 }
@@ -106,7 +111,7 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 
 		raw := ctx.Request.URL.RawQuery
 		if raw != "" {
-			path = path + "?" + raw
+			path = path + "?" + RedactQuery(raw)
 		}
 
 		// Get payload from request
@@ -190,7 +195,11 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 
 			// Payload field
 			if f == PayloadFieldName && !opt.isExcluded(f) && len(payload) > 0 {
-				event.Str(PayloadFieldName, string(payload))
+				if strings.HasPrefix(ctx.ContentType(), "application/x-www-form-urlencoded") {
+					event.Str(PayloadFieldName, RedactQuery(string(payload)))
+				} else {
+					event.Str(PayloadFieldName, string(payload))
+				}
 			}
 
 			// Timestamp field
@@ -227,7 +236,7 @@ func LoggerWithOptions(opt *Options) gin.HandlerFunc {
 
 			// Referer field
 			if f == RefererFieldName && !opt.isExcluded(f) && len(ctx.Request.Referer()) > 0 {
-				event.Str(RefererFieldName, ctx.Request.Referer())
+				event.Str(RefererFieldName, RedactURL(ctx.Request.Referer()))
 			}
 
 			// statusCode field
@@ -277,4 +286,84 @@ func (o *Options) isExcluded(field string) bool {
 	}
 
 	return slices.Contains(o.FieldsExclude, field)
+}
+
+// isSensitiveParam reports whether a query/form parameter name likely holds a
+// credential. Substring matches catch config form names such as
+// "general_WebAPIKey" or "downloader_Password". "r" is the newznab RSS API key
+// and "client" the AcoustID application key.
+func isSensitiveParam(name string) bool {
+	n := strings.ToLower(name)
+	if n == "key" || n == "r" || n == "client" || strings.HasSuffix(n, "_key") {
+		return true
+	}
+
+	for _, s := range []string{"apikey", "api_key", "token", "password", "passwd", "secret"} {
+		if strings.Contains(n, s) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// RedactQuery replaces the values of sensitive parameters in a raw
+// "a=1&b=2" string, leaving everything else byte-for-byte unchanged.
+func RedactQuery(raw string) string {
+	if raw == "" {
+		return raw
+	}
+
+	parts := strings.Split(raw, "&")
+	changed := false
+
+	for i, p := range parts {
+		k, _, hasValue := strings.Cut(p, "=")
+		if !hasValue {
+			continue
+		}
+
+		name, err := url.QueryUnescape(k)
+		if err != nil {
+			name = k
+		}
+
+		if isSensitiveParam(name) {
+			parts[i] = k + "=REDACTED"
+			changed = true
+		}
+	}
+
+	if !changed {
+		return raw
+	}
+
+	return JoinStringsSep(parts, "&")
+}
+
+// RedactURL applies RedactQuery to the query part of a full URL string.
+func RedactURL(raw string) string {
+	base, query, ok := strings.Cut(raw, "?")
+	if !ok {
+		return raw
+	}
+
+	return JoinStrings(base, "?", RedactQuery(query))
+}
+
+// RedactURLError returns err with the URL of a top-level *url.Error redacted,
+// since net/http embeds the full request URL (including API keys) in it.
+// The underlying cause stays wrapped.
+func RedactURLError(err error) error {
+	ue, ok := err.(*url.Error)
+	if !ok {
+		return err
+	}
+
+	redacted := RedactURL(ue.URL)
+	if redacted == ue.URL {
+		return err
+	}
+
+	return &url.Error{Op: ue.Op, URL: redacted, Err: ue.Err}
 }

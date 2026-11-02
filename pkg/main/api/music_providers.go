@@ -95,47 +95,56 @@ func musicArtistProviders() []string {
 // musicSearchAlbums dispatches an album search to the chosen provider. artist may be
 // empty; title carries the album name. Providers that need them separately (iTunes,
 // TheAudioDB) receive artist/title directly; others get a combined query string.
+// fellBack reports that the chosen provider is not configured and MusicBrainz
+// answered instead.
 func musicSearchAlbums(
 	ctx context.Context,
 	provider, artist, title string,
 	limit int,
-) ([]apiexternal_v2.ReleaseSearchResult, error) {
+) (results []apiexternal_v2.ReleaseSearchResult, fellBack bool, err error) {
 	query := strings.TrimSpace(strings.TrimSpace(artist) + " " + strings.TrimSpace(title))
 
 	switch provider {
 	case provDiscogs:
 		if p := providers.GetDiscogs(); p != nil {
-			return p.SearchReleases(ctx, query, limit)
+			results, err = p.SearchReleases(ctx, query, limit)
+			return results, false, err
 		}
 
 	case provDeezer:
 		if p := providers.GetDeezer(); p != nil {
-			return p.SearchAlbums(ctx, query, limit)
+			results, err = p.SearchAlbums(ctx, query, limit)
+			return results, false, err
 		}
 
 	case provLastFM:
 		if p := providers.GetLastFM(); p != nil {
-			return p.SearchAlbums(ctx, query, limit)
+			results, err = p.SearchAlbums(ctx, query, limit)
+			return results, false, err
 		}
 
 	case provITunes:
 		if p := providers.GetITunes(); p != nil {
-			return p.SearchAlbums(ctx, artist, title, limit)
+			results, err = p.SearchAlbums(ctx, artist, title, limit)
+			return results, false, err
 		}
 
 	case provTheAudioDB:
 		if p := providers.GetTheAudioDB(); p != nil {
-			return p.SearchAlbums(ctx, artist, title)
+			results, err = p.SearchAlbums(ctx, artist, title)
+			return results, false, err
 		}
 	}
 
-	// Default / fallback (also used for an empty provider): MusicBrainz.
+	// Default / fallback (also used for an empty provider): MusicBrainz. Its
+	// query is Lucene syntax, so names like "AC/DC" or "Sunn O)))" must be
+	// escaped to be searched as plain text.
 	if p := providers.GetMusicBrainz(); p != nil {
-		results, _, err := p.SearchReleases(ctx, query, limit, 0)
-		return results, err
+		results, _, err = p.SearchReleases(ctx, logger.LuceneEscape(query), limit, 0)
+		return results, provider != "" && provider != provMusicBrainz, err
 	}
 
-	return nil, errProviderUnavailable
+	return nil, false, errProviderUnavailable
 }
 
 // musicSearchArtists dispatches an artist search to the chosen provider.
@@ -153,7 +162,7 @@ func musicSearchArtists(
 	}
 
 	if p := providers.GetMusicBrainz(); p != nil {
-		return p.SearchArtists(ctx, query, limit)
+		return p.SearchArtists(ctx, logger.LuceneEscape(query), limit)
 	}
 
 	return nil, errProviderUnavailable

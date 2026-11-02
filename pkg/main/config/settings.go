@@ -2,10 +2,14 @@ package config
 
 import "slices"
 
+// GetSettingsGeneral returns the general settings. Before a config is loaded
+// (startup, tests) it returns a zero-value config rather than nil: ~190 call
+// sites read fields off it directly, and a fresh value per call means no caller
+// can mutate shared state through it.
 func GetSettingsGeneral() *GeneralConfig {
 	currentSnapshot := getCurrentConfig()
-	if currentSnapshot == nil {
-		return nil
+	if currentSnapshot == nil || currentSnapshot.General == nil {
+		return &GeneralConfig{}
 	}
 
 	return currentSnapshot.General
@@ -156,6 +160,10 @@ func GetSettingsMediaListAll() []string {
 
 	retlists := make([]string, 0, 50)
 	for _, cfg := range currentSnapshot.Media {
+		if cfg == nil {
+			continue
+		}
+
 		for i := range cfg.Lists {
 			if slices.Contains(retlists, cfg.Lists[i].Name) {
 				continue

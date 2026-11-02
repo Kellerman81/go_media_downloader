@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,6 +83,8 @@ type ClientConfig struct {
 // BaseClient provides all infrastructure features for API clients.
 type BaseClient struct {
 	config ClientConfig
+	// configMu guards config.BaseURL, which SetBaseURL may change at runtime.
+	configMu sync.RWMutex
 
 	// HTTP client (pooled)
 	httpClient *http.Client
@@ -89,6 +93,8 @@ type BaseClient struct {
 	rateLimiterHour  *slidingwindow.Limiter
 	rateLimiter24h   *slidingwindow.Limiter
 	rateLimiterTotal atomic.Int64 // Use atomic counter for total requests
+	// rateMu makes check-and-consume across the limiters a single step.
+	rateMu sync.Mutex
 
 	// Server-side rate limiting (HTTP 429 responses)
 	rateLimitedUntil atomic.Value // stores time.Time - when server rate limit expires
@@ -228,9 +234,9 @@ func (s *defaultOAuth2Storage) DeleteToken(clientName string) error {
 // Pre-allocated header value slices for fixed headers — avoids per-request []string allocations.
 // These are never mutated after init (net/http only reads request headers).
 var (
-	headerAcceptJSON       = []string{"application/json"}
-	headerContentTypeJSON  = []string{"application/json"}
-	headerAcceptEncodingGZ = []string{"gzip, deflate"}
+	headerAcceptJSON      = []string{"application/json"}
+	headerAcceptAny       = []string{"*/*"}
+	headerContentTypeJSON = []string{"application/json"}
 
 	// Global default OAuth2 token storage (can be replaced with custom implementation).
 	defaultTokenStorage OAuth2TokenStorage = newDefaultOAuth2Storage()
@@ -270,6 +276,12 @@ func getOAuth2ProviderHooks(providerName string) (OAuth2ProviderHooks, bool) {
 
 // NewBaseClient creates a new base client with full infrastructure.
 func NewBaseClient(cfg ClientConfig) *BaseClient {
+	// http.Client treats 0 as "no timeout", which lets a stalled server hang
+	// a worker forever.
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+
 	// Create HTTP client with connection pooling and TLS configuration
 	transport := &http.Transport{
 		MaxIdleConns:        100,
@@ -335,7 +347,27 @@ func NewBaseClient(cfg ClientConfig) *BaseClient {
 }
 
 func (bc *BaseClient) SetBaseURL(baseURL string) {
+	bc.configMu.Lock()
+	defer bc.configMu.Unlock()
+
 	bc.config.BaseURL = baseURL
+}
+
+// tokenStorageKey identifies the OAuth2 account a token belongs to. The
+// client name alone is not unique: two configs (or two providers) may share a
+// name while talking to different token endpoints or apps, and must not hand
+// each other their tokens.
+func (bc *BaseClient) tokenStorageKey() string {
+	endpoint := bc.config.OAuthTokenURL
+	if endpoint == "" {
+		endpoint = bc.GetBaseURL()
+	}
+
+	if u, err := url.Parse(endpoint); err == nil && u.Host != "" {
+		endpoint = u.Host
+	}
+
+	return logger.JoinStrings(bc.config.Name, "|", endpoint, "|", bc.config.OAuthClientID)
 }
 
 // initializeOAuth2 sets up OAuth2 configuration and loads existing token.
@@ -351,7 +383,7 @@ func (bc *BaseClient) initializeOAuth2() {
 	}
 
 	// Try to load existing token from storage
-	if token, err := defaultTokenStorage.LoadToken(bc.config.Name); err == nil {
+	if token, err := defaultTokenStorage.LoadToken(bc.tokenStorageKey()); err == nil {
 		bc.oauthTokenLock.Lock()
 
 		bc.oauthToken = token
@@ -373,8 +405,8 @@ func (bc *BaseClient) initializeOAuth2() {
 // Returns nil if a request slot is available immediately, otherwise returns an error.
 // This is useful for pre-flight checks before queuing work.
 func (bc *BaseClient) CheckFreeNonBlocking() error {
-	// Check circuit breaker (with nil protection)
-	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
+	// Non-consuming check: no request follows, so no half-open probe slot may be taken.
+	if bc.circuitBreaker != nil && !bc.circuitBreaker.Allow() {
 		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
 	}
 
@@ -439,6 +471,7 @@ func (bc *BaseClient) MakeRequestForDownload(
 //
 // This allows flexible rate limit handling for different operation priorities.
 // Higher gracePeriod = higher priority (more willing to wait for execution).
+// It accepts any response content type (*/*), for NZB/torrent downloads.
 func (bc *BaseClient) MakeRequestWithGracePeriod(
 	ctx context.Context,
 	method, endpoint string,
@@ -447,286 +480,10 @@ func (bc *BaseClient) MakeRequestWithGracePeriod(
 	targetfunc func(*http.Response) error,
 	gracePeriod time.Duration,
 ) error {
-	// Check circuit breaker (with nil protection)
-	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
-		cbState := bc.circuitBreaker.GetState()
-		failureCount := bc.circuitBreaker.GetFailureCount()
-
-		logger.Logtype(logger.StatusDebug, 0).
-			Str("client", bc.config.Name).
-			Str("circuit_state", cbState).
-			Int("failure_count", failureCount).
-			Msg("Circuit breaker blocked request")
-
-		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
-	}
-
-	// Check server-side rate limiting (HTTP 429)
-	if err := bc.checkServerRateLimit(); err != nil {
-		return err
-	}
-
-	// Check rate limits with configurable grace period
-	if err := bc.checkRateLimitsWithGracePeriod(gracePeriod); err != nil {
-		return err
-	}
-
-	// Consume rate limit tokens right before making the request (AllowForce bypasses checks)
-	if bc.rateLimiterHour != nil {
-		bc.rateLimiterHour.AllowForce()
-	}
-
-	if bc.rateLimiter24h != nil {
-		bc.rateLimiter24h.AllowForce()
-	}
-
-	// Prepare request
-	// If endpoint is already a full URL (starts with http:// or https://), use it directly
-	// Otherwise, concatenate with BaseURL
-	url := endpoint
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		url = logger.JoinStrings(
-			bc.config.BaseURL,
-			strings.TrimPrefix(endpoint, bc.config.BaseURL),
-		)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		return errors.New(
-			logger.JoinStrings("[", bc.config.Name, "] failed to create request: ", err.Error()),
-		)
-	}
-
-	// Apply authentication
-	if err := bc.applyAuth(req); err != nil {
-		return errors.New(
-			logger.JoinStrings("[", bc.config.Name, "] authentication failed: ", err.Error()),
-		)
-	}
-
-	// Set default headers
-	req.Header.Set("User-Agent", bc.getUserAgent())
-	// For downloads, accept any content type (*/*) instead of just application/json
-	// This allows downloading NZB files (application/x-nzb+xml) and other binary content
-	req.Header.Set("Accept", "*/*")
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	if bc.config.EnableCompression {
-		req.Header.Set("Accept-Encoding", "gzip, deflate")
-	}
-
-	// Execute request with retries
-	var (
-		resp   *http.Response
-		reqErr error
-	)
-
-	startTime := time.Now()
-
-	for attempt := 0; attempt <= bc.config.MaxRetries; attempt++ {
-		// A retried attempt reuses the same *http.Request - net/http does not
-		// reset req.Body between manual Do() calls, so without restoring it
-		// via GetBody a retry after a non-nil body sends an already-drained
-		// (empty) body while Content-Length still reflects the original size.
-		if attempt > 0 && req.GetBody != nil {
-			newBody, err := req.GetBody()
-			if err != nil {
-				reqErr = err
-				break
-			}
-
-			req.Body = newBody
-		}
-
-		if resp != nil {
-			// Close the previous attempt's response body - it's being
-			// discarded (we're about to overwrite resp), and only the final
-			// response's body was ever closed otherwise, leaking a
-			// connection per retried attempt.
-			resp.Body.Close()
-		}
-
-		resp, reqErr = bc.httpClient.Do(req)
-		if reqErr == nil && resp.StatusCode < 500 {
-			break // Success or client error (4xx) - don't retry
-		}
-
-		if attempt >= bc.config.MaxRetries {
-			continue
-		}
-
-		backoff := bc.config.RetryBackoff * time.Duration(attempt+1)
-		logger.Logtype(logger.StatusDebug, 2).
-			Err(reqErr).
-			Str("url", req.URL.String()).
-			Str("client", bc.config.Name).
-			Int("attempt", attempt+1).
-			Dur("backoff", backoff).
-			Msg("Retrying request")
-		time.Sleep(backoff)
-	}
-
-	duration := time.Since(startTime)
-
-	if reqErr != nil {
-		if bc.circuitBreaker != nil {
-			bc.circuitBreaker.RecordFailure()
-
-			cbState := bc.circuitBreaker.GetState()
-
-			logger.Logtype(logger.StatusDebug, 0).
-				Str("client", bc.config.Name).
-				Err(reqErr).
-				Int("threshold", bc.config.CircuitBreakerThreshold).
-				Str("circuit_state", cbState).
-				Str("url", req.URL.String()).
-				Msg("Circuit breaker: recorded failure with request")
-		}
-
-		bc.recordStats(false, duration.Milliseconds(), reqErr.Error())
-
-		return errors.New(
-			logger.JoinStrings(
-				"[",
-				bc.config.Name,
-				"] request failed after ",
-				strconv.Itoa(bc.config.MaxRetries+1),
-				" attempts: ",
-				reqErr.Error(),
-			),
-		)
-	}
-
-	defer resp.Body.Close()
-
-	// Check status code
-	if resp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		errMsg := logger.JoinStrings(
-			"HTTP ",
-			strconv.Itoa(resp.StatusCode),
-			": ",
-			string(bodyBytes),
-		)
-
-		// Genuine rate limiting: HTTP 429, or an HTTP 400 whose body actually
-		// says so (e.g. OMDb's daily quota message). 400/401/403 alone are
-		// ordinary client errors (bad request, invalid API key, forbidden) -
-		// treating them as rate limits swallowed the real status/body (only
-		// used below in errMsg) and told the user to wait for something
-		// waiting would never fix, e.g. a malformed TMDB search query.
-		isRateLimited := resp.StatusCode == 429 ||
-			(resp.StatusCode == 400 && bytes.Contains(bytes.ToLower(bodyBytes), []byte("request limit reached")))
-
-		if isRateLimited {
-			bc.handleRateLimitResponse(resp, bodyBytes)
-
-			if bc.circuitBreaker != nil {
-				bc.circuitBreaker.RecordSuccess() // Don't penalize circuit breaker for rate limits
-			}
-
-			bc.recordRequestOnly(duration.Milliseconds())
-
-			return errors.New(
-				logger.JoinStrings(
-					"[",
-					bc.config.Name,
-					"] server rate limit (HTTP ",
-					strconv.Itoa(resp.StatusCode),
-					"), request paused",
-				),
-			)
-		}
-
-		// Classify errors for circuit breaker
-		shouldCountAsFailure := resp.StatusCode >= 500 ||
-			resp.StatusCode == 401 ||
-			resp.StatusCode == 403 ||
-			resp.StatusCode == 408 ||
-			resp.StatusCode == 425
-
-		if bc.circuitBreaker != nil {
-			if shouldCountAsFailure {
-				bc.circuitBreaker.RecordFailure()
-
-				failureCount := bc.circuitBreaker.GetFailureCount()
-				cbState := bc.circuitBreaker.GetState()
-
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("client", bc.config.Name).
-					Int("status_code", resp.StatusCode).
-					Int("failure_count", failureCount).
-					Int("threshold", bc.config.CircuitBreakerThreshold).
-					Str("circuit_state", cbState).
-					Msg("Circuit breaker: recorded failure on request")
-			} else {
-				bc.circuitBreaker.RecordSuccess()
-			}
-		}
-
-		bc.recordStats(resp.StatusCode < 500, duration.Milliseconds(), errMsg)
-
-		return errors.New(logger.JoinStrings("[", bc.config.Name, "] ", errMsg))
-	}
-
-	// Parse response into target
-	if target != nil {
-		data, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			bc.recordStats(true, duration.Milliseconds(), "json decode error")
-
-			return errors.New(
-				logger.JoinStrings(
-					"[",
-					bc.config.Name,
-					"] failed to read response: ",
-					readErr.Error(),
-				),
-			)
-		}
-
-		if err := json.Unmarshal(data, target); err != nil {
-			if bc.circuitBreaker != nil {
-				bc.circuitBreaker.RecordSuccess()
-			}
-
-			bc.recordStats(true, duration.Milliseconds(), "json decode error")
-
-			return errors.New(
-				logger.JoinStrings(
-					"[",
-					bc.config.Name,
-					"] failed to decode response: ",
-					err.Error(),
-				),
-			)
-		}
-	}
-
-	if targetfunc != nil {
-		if err := targetfunc(resp); err != nil {
-			if bc.circuitBreaker != nil {
-				bc.circuitBreaker.RecordSuccess()
-			}
-
-			bc.recordStats(true, duration.Milliseconds(), "response processing error")
-
-			return err
-		}
-	}
-
-	// Record success
-	if bc.circuitBreaker != nil {
-		bc.circuitBreaker.RecordSuccess()
-	}
-
-	bc.recordStats(true, duration.Milliseconds(), "")
-
-	return nil
+	return bc.doRequest(ctx, method, endpoint, body, target, targetfunc, requestOptions{
+		gracePeriod: gracePeriod,
+		acceptAny:   true,
+	})
 }
 
 // MakeRequestWithHeaders executes an HTTP request with custom headers and comprehensive error handling.
@@ -740,18 +497,180 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 	targetfunc func(*http.Response) error,
 	customHeaders map[string]string,
 ) error {
-	// Check circuit breaker (with nil protection)
-	if bc.circuitBreaker != nil && !bc.circuitBreaker.CanMakeRequest() {
-		cbState := bc.circuitBreaker.GetState()
-		failureCount := bc.circuitBreaker.GetFailureCount()
+	return bc.doRequest(ctx, method, endpoint, body, target, targetfunc, requestOptions{
+		customHeaders: customHeaders,
+		gracePeriod:   defaultRateLimitGracePeriod,
+	})
+}
 
-		logger.Logtype(logger.StatusDebug, 0).
-			Str("client", bc.config.Name).
-			Str("circuit_state", cbState).
-			Int("failure_count", failureCount).
-			Msg("Circuit breaker blocked request")
+// MakeRequestAcceptStatus is MakeRequestWithHeaders for protocols that use
+// specific HTTP error statuses as signals rather than failures (Transmission's
+// 409 session-id handshake, Deluge's 401 on an expired session). A response
+// whose status is listed in acceptStatuses is handed to targetfunc - headers
+// and body intact - instead of being turned into an "HTTP <code>" error.
+// Any other status >= 400 is still returned as an error before targetfunc runs.
+func (bc *BaseClient) MakeRequestAcceptStatus(
+	ctx context.Context,
+	method, endpoint string,
+	body io.Reader,
+	targetfunc func(*http.Response) error,
+	customHeaders map[string]string,
+	acceptStatuses ...int,
+) error {
+	return bc.doRequest(ctx, method, endpoint, body, nil, targetfunc, requestOptions{
+		customHeaders:  customHeaders,
+		gracePeriod:    defaultRateLimitGracePeriod,
+		acceptStatuses: acceptStatuses,
+	})
+}
 
-		return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
+const (
+	// defaultRateLimitGracePeriod is how long a regular request waits for a
+	// client-side rate limit slot before giving up.
+	defaultRateLimitGracePeriod = 30 * time.Second
+	// defaultServerRateLimitBlock applies when a server rate-limits us without
+	// saying for how long.
+	defaultServerRateLimitBlock = 5 * time.Minute
+	// maxResponseBodySize caps how much of a response is buffered for JSON decoding.
+	maxResponseBodySize = 64 << 20
+	// maxErrorBodyRead caps how much of an error response is read (enough to
+	// spot quota messages and to let the connection be reused).
+	maxErrorBodyRead = 64 << 10
+	// maxErrorBodyInMessage truncates error bodies embedded in errors and stats.
+	maxErrorBodyInMessage = 1024
+)
+
+var errResponseTooLarge = errors.New("response body exceeds size limit")
+
+type requestOptions struct {
+	customHeaders map[string]string
+	gracePeriod   time.Duration
+	acceptAny     bool
+	// acceptStatuses lists HTTP error statuses passed to targetfunc instead
+	// of being returned as errors.
+	acceptStatuses []int
+}
+
+// isRetryableMethod reports whether a request with this method may be re-sent
+// after a network error or 5xx without risking duplicate side effects
+// (e.g. an NZB being added twice).
+func isRetryableMethod(method string) bool {
+	switch method {
+	case "", http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace,
+		http.MethodPut, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+// sleepCtx waits for d or until ctx is done; it reports whether the full
+// duration elapsed.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+
+	t := time.NewTimer(d)
+	defer t.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// readLimited reads at most limit bytes and fails if the body is larger.
+func readLimited(r io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+
+	if int64(len(data)) > limit {
+		return nil, errResponseTooLarge
+	}
+
+	return data, nil
+}
+
+// drainAndClose discards a bounded amount of the body before closing it so the
+// underlying connection can be reused.
+func drainAndClose(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, maxErrorBodyRead))
+	body.Close()
+}
+
+func truncateBody(b []byte) string {
+	if len(b) <= maxErrorBodyInMessage {
+		return string(b)
+	}
+
+	return string(b[:maxErrorBodyInMessage]) + "...(truncated)"
+}
+
+// resolveURL builds the request URL. A full URL is used as is, otherwise the
+// endpoint is appended to the configured base URL.
+func (bc *BaseClient) resolveURL(endpoint string) string {
+	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		return endpoint
+	}
+
+	baseURL := bc.GetBaseURL()
+
+	return logger.JoinStrings(baseURL, strings.TrimPrefix(endpoint, baseURL))
+}
+
+// doRequest is the shared request pipeline: circuit breaker, server and
+// client-side rate limits, auth, retries, response handling and statistics.
+func (bc *BaseClient) doRequest(
+	ctx context.Context,
+	method, endpoint string,
+	body io.Reader,
+	target any,
+	targetfunc func(*http.Response) error,
+	opts requestOptions,
+) error {
+	cb := bc.circuitBreaker
+
+	probe := false
+	if cb != nil {
+		var ok bool
+
+		ok, probe = cb.acquire()
+		if !ok {
+			logger.Logtype(logger.StatusDebug, 0).
+				Str("client", bc.config.Name).
+				Str("circuit_state", cb.GetState()).
+				Int("failure_count", cb.GetFailureCount()).
+				Msg("Circuit breaker blocked request")
+
+			return errors.New(logger.JoinStrings("circuit breaker is open for ", bc.config.Name))
+		}
+	}
+
+	// A half-open probe slot taken above must be settled on every path;
+	// returning without a verdict would leave the breaker stuck half-open.
+	settled := false
+	defer func() {
+		if !settled && probe {
+			cb.ReleaseProbe()
+		}
+	}()
+
+	recordSuccess := func() {
+		settled = true
+		if cb != nil {
+			cb.RecordSuccess()
+		}
+	}
+	recordFailure := func() {
+		settled = true
+		if cb != nil {
+			cb.RecordFailure()
+		}
 	}
 
 	// Check server-side rate limiting (HTTP 429)
@@ -759,74 +678,67 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		return err
 	}
 
-	// Check rate limits
-	if err := bc.checkRateLimits(); err != nil {
-		return err
-	}
-
-	// Consume rate limit tokens right before making the request (AllowForce bypasses checks)
-	if bc.rateLimiterHour != nil {
-		bc.rateLimiterHour.AllowForce()
-	}
-
-	if bc.rateLimiter24h != nil {
-		bc.rateLimiter24h.AllowForce()
-	}
-
-	// Prepare request
-	// If endpoint is already a full URL (starts with http:// or https://), use it directly
-	// Otherwise, concatenate with BaseURL
-	url := endpoint
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		url = logger.JoinStrings(
-			bc.config.BaseURL,
-			strings.TrimPrefix(endpoint, bc.config.BaseURL),
-		)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, bc.resolveURL(endpoint), body)
 	if err != nil {
-		return errors.New(
-			logger.JoinStrings("[", bc.config.Name, "] failed to create request: ", err.Error()),
+		return fmt.Errorf(
+			"[%s] failed to create request: %w",
+			bc.config.Name,
+			logger.RedactURLError(err),
 		)
 	}
 
-	// Apply authentication
 	if err := bc.applyAuth(req); err != nil {
-		return errors.New(
-			logger.JoinStrings("[", bc.config.Name, "] authentication failed: ", err.Error()),
-		)
+		return fmt.Errorf("[%s] authentication failed: %w", bc.config.Name, err)
 	}
 
 	// Set default headers — direct map assignment skips textproto.CanonicalMIMEHeaderKey
 	// (all keys here are already in canonical form) and reuses pre-allocated slices.
+	// Accept-Encoding is deliberately left to net/http: setting it by hand
+	// disables the transport's transparent gzip decoding.
 	req.Header["User-Agent"] = bc.userAgentHeader
-	req.Header["Accept"] = headerAcceptJSON
+	if opts.acceptAny {
+		req.Header["Accept"] = headerAcceptAny
+	} else {
+		req.Header["Accept"] = headerAcceptJSON
+	}
 
 	if body != nil {
 		req.Header["Content-Type"] = headerContentTypeJSON
 	}
 
-	if bc.config.EnableCompression {
-		req.Header["Accept-Encoding"] = headerAcceptEncodingGZ
-	}
-
 	// Apply custom headers (can override defaults)
-	for key, value := range customHeaders {
+	for key, value := range opts.customHeaders {
 		req.Header.Set(key, value)
 	}
 
-	// Execute request with retries
+	// Reserve the client-side rate limit slot last, right before sending, so a
+	// slot is only consumed for a request that actually goes out.
+	if err := bc.reserveRateLimit(ctx, opts.gracePeriod); err != nil {
+		return err
+	}
+
+	safeURL := logger.RedactURL(req.URL.String())
+
+	// Non-idempotent requests (add NZB/torrent, notifications) are never
+	// re-sent: the first attempt may have been processed even if the
+	// response was lost. A body that can't be rewound can't be re-sent either.
+	maxRetries := bc.config.MaxRetries
+	if !isRetryableMethod(req.Method) ||
+		(req.Body != nil && req.Body != http.NoBody && req.GetBody == nil) {
+		maxRetries = 0
+	}
+
 	var (
-		resp   *http.Response
-		reqErr error
+		resp     *http.Response
+		reqErr   error
+		attempts int
 	)
 
 	startTime := time.Now()
 
-	for attempt := 0; attempt <= bc.config.MaxRetries; attempt++ {
-		// See MakeRequestWithGracePeriod - restore the body before a retry,
-		// and close the previous attempt's now-discarded response body.
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// net/http does not reset req.Body between manual Do() calls, so a
+		// retry must restore it via GetBody.
 		if attempt > 0 && req.GetBody != nil {
 			newBody, err := req.GetBody()
 			if err != nil {
@@ -837,113 +749,103 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 			req.Body = newBody
 		}
 
-		if resp != nil {
-			resp.Body.Close()
-		}
+		attempts++
 
 		resp, reqErr = bc.httpClient.Do(req)
 		if reqErr == nil && resp.StatusCode < 500 {
 			break // Success or client error (4xx) - don't retry
 		}
 
-		if attempt >= bc.config.MaxRetries {
-			continue
+		if attempt >= maxRetries || ctx.Err() != nil {
+			break
+		}
+
+		if resp != nil {
+			drainAndClose(resp.Body)
+			resp = nil
 		}
 
 		backoff := bc.config.RetryBackoff * time.Duration(attempt+1)
 		logger.Logtype(logger.StatusDebug, 2).
-			Err(reqErr).
-			Str("url", req.URL.String()).
+			Err(logger.RedactURLError(reqErr)).
+			Str("url", safeURL).
 			Str("client", bc.config.Name).
 			Int("attempt", attempt+1).
 			Dur("backoff", backoff).
 			Msg("Retrying request")
-		time.Sleep(backoff)
+
+		if !sleepCtx(ctx, backoff) {
+			reqErr = ctx.Err()
+			break
+		}
 	}
 
 	duration := time.Since(startTime)
 
 	if reqErr != nil {
-		if bc.circuitBreaker != nil {
-			bc.circuitBreaker.RecordFailure()
+		safeErr := logger.RedactURLError(reqErr)
 
-			cbState := bc.circuitBreaker.GetState()
+		// A request aborted by the caller's own context says nothing about
+		// the server's health, so it must not count towards opening the
+		// breaker (the deferred release frees a probe slot instead).
+		if ctx.Err() == nil {
+			recordFailure()
 
-			logEntry := logger.Logtype(logger.StatusDebug, 0).
-				Str("client", bc.config.Name)
+			if cb != nil {
+				logEntry := logger.Logtype(logger.StatusDebug, 0).
+					Str("client", bc.config.Name)
 
-			if resp != nil {
-				logEntry = logEntry.Int("status_code", resp.StatusCode)
+				if resp != nil {
+					logEntry = logEntry.Int("status_code", resp.StatusCode)
+				}
+
+				logEntry.Err(safeErr).
+					Int("threshold", bc.config.CircuitBreakerThreshold).
+					Str("circuit_state", cb.GetState()).
+					Str("url", safeURL).
+					Msg("Circuit breaker: recorded failure with request")
 			}
-
-			logEntry.Err(reqErr).
-				Int("threshold", bc.config.CircuitBreakerThreshold).
-				Str("circuit_state", cbState).
-				Str("url", req.URL.String()).
-				Msg("Circuit breaker: recorded failure with request")
 		}
 
-		bc.recordStats(false, duration.Milliseconds(), reqErr.Error())
+		bc.recordStats(false, duration.Milliseconds(), safeErr.Error())
 
-		return errors.New(
-			logger.JoinStrings(
-				"[",
-				bc.config.Name,
-				"] request failed after ",
-				strconv.Itoa(bc.config.MaxRetries+1),
-				" attempts: ",
-				reqErr.Error(),
-			),
+		return fmt.Errorf(
+			"[%s] request failed after %d attempts: %w",
+			bc.config.Name,
+			attempts,
+			safeErr,
 		)
 	}
 
 	defer resp.Body.Close()
 
 	// Check status code
-	if resp.StatusCode >= 400 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 && !slices.Contains(opts.acceptStatuses, resp.StatusCode) {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyRead))
 
 		errMsg := logger.JoinStrings(
 			"HTTP ",
 			strconv.Itoa(resp.StatusCode),
 			": ",
-			string(bodyBytes),
+			truncateBody(bodyBytes),
 		)
 
 		// Genuine rate limiting: HTTP 429, or an HTTP 400 whose body actually
 		// says so (e.g. OMDb's daily quota message). 400/401/403 alone are
 		// ordinary client errors (bad request, invalid API key, forbidden) -
-		// treating them as rate limits swallowed the real status/body (only
-		// used below in errMsg) and told the user to wait for something
-		// waiting would never fix, e.g. a malformed TMDB search query.
+		// treating them as rate limits swallowed the real status/body and
+		// told the user to wait for something waiting would never fix.
 		isRateLimited := resp.StatusCode == 429 ||
 			(resp.StatusCode == 400 && bytes.Contains(bytes.ToLower(bodyBytes), []byte("request limit reached")))
 
 		if isRateLimited {
 			bc.handleRateLimitResponse(resp, bodyBytes)
 
-			// Matches MakeRequestWithGracePeriod - both members of
-			// isRateLimited (429, and the 400-with-quota-message case) are
-			// benign rate-limit conditions, not infrastructure failures, so
-			// neither should penalize the circuit breaker. This used to
-			// split on status code and call RecordFailure() for the 400
-			// case, directly contradicting its own comment.
-			if bc.circuitBreaker != nil {
-				bc.circuitBreaker.RecordSuccess() // Don't penalize circuit breaker for rate limits
-			}
+			// Rate limits are benign conditions, not infrastructure failures.
+			recordSuccess()
 
 			// Record that we made a request without counting it as success or failure
 			bc.recordRequestOnly(duration.Milliseconds())
-
-			if resp.StatusCode != 429 {
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("client", bc.config.Name).
-					Int("status_code", resp.StatusCode).
-					Err(reqErr).
-					Int("threshold", bc.config.CircuitBreakerThreshold).
-					Str("url", req.URL.String()).
-					Msg("server rate limit: requests paused")
-			}
 
 			return errors.New(
 				logger.JoinStrings(
@@ -959,7 +861,7 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		// Classify errors for circuit breaker:
 		// - 5xx errors (server errors) → always count as failure
 		// - 401, 403 (auth errors) → count as failure (persistent configuration issues)
-		// - 408, 425, 502, 503, 504 → count as failure (transient but should trigger breaker)
+		// - 408, 425 → count as failure (transient but should trigger breaker)
 		// - 404, 400, etc. → count as success (client error, not server's fault)
 		shouldCountAsFailure := resp.StatusCode >= 500 ||
 			resp.StatusCode == 401 ||
@@ -967,12 +869,12 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 			resp.StatusCode == 408 ||
 			resp.StatusCode == 425
 
-		if bc.circuitBreaker != nil {
-			if shouldCountAsFailure {
-				bc.circuitBreaker.RecordFailure()
+		if shouldCountAsFailure {
+			recordFailure()
 
-				failureCount := bc.circuitBreaker.GetFailureCount()
-				cbState := bc.circuitBreaker.GetState()
+			if cb != nil {
+				failureCount := cb.GetFailureCount()
+				cbState := cb.GetState()
 
 				logger.Logtype(logger.StatusDebug, 0).
 					Str("client", bc.config.Name).
@@ -982,7 +884,6 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 					Str("circuit_state", cbState).
 					Msg("Circuit breaker: recorded failure")
 
-				// Log when circuit opens
 				if cbState == string(StateOpen) &&
 					failureCount == bc.config.CircuitBreakerThreshold {
 					logger.Logtype(logger.StatusWarning, 0).
@@ -992,9 +893,9 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 						Float64("timeout_seconds", bc.config.CircuitBreakerTimeout.Seconds()).
 						Msg("Circuit breaker OPENED - requests will be blocked")
 				}
-			} else {
-				bc.circuitBreaker.RecordSuccess()
 			}
+		} else {
+			recordSuccess()
 		}
 
 		bc.recordStats(resp.StatusCode < 500, duration.Milliseconds(), errMsg)
@@ -1004,37 +905,32 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 
 	// Parse response into target
 	if target != nil {
-		data, readErr := io.ReadAll(resp.Body)
+		data, readErr := readLimited(resp.Body, maxResponseBodySize)
 		if readErr != nil {
-			bc.recordStats(true, duration.Milliseconds(), "json decode error")
+			switch {
+			case errors.Is(readErr, errResponseTooLarge):
+				// The server answered; an oversized body is not a health problem.
+				recordSuccess()
+			case ctx.Err() == nil:
+				recordFailure()
+			}
 
-			return errors.New(
-				logger.JoinStrings(
-					"[",
-					bc.config.Name,
-					"] failed to read response: ",
-					readErr.Error(),
-				),
-			)
+			bc.recordStats(false, duration.Milliseconds(), "failed to read response")
+
+			return fmt.Errorf("[%s] failed to read response: %w", bc.config.Name, readErr)
 		}
 
 		if err := json.Unmarshal(data, target); err != nil {
 			// JSON decode errors are application-level parsing issues, not infrastructure failures
 			// The HTTP request succeeded (200 OK), so don't penalize the circuit breaker
-			if bc.circuitBreaker != nil {
-				bc.circuitBreaker.RecordSuccess()
+			recordSuccess()
 
-				cbState := bc.circuitBreaker.GetState()
-
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("client", bc.config.Name).
-					Int("status_code", resp.StatusCode).
-					Err(err).
-					Int("threshold", bc.config.CircuitBreakerThreshold).
-					Str("circuit_state", cbState).
-					Str("url", req.URL.String()).
-					Msg("JSON decode error (not a circuit breaker failure)")
-			}
+			logger.Logtype(logger.StatusDebug, 0).
+				Str("client", bc.config.Name).
+				Int("status_code", resp.StatusCode).
+				Err(err).
+				Str("url", safeURL).
+				Msg("JSON decode error (not a circuit breaker failure)")
 
 			bc.recordStats(true, duration.Milliseconds(), "json decode error")
 
@@ -1053,21 +949,15 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		if err := targetfunc(resp); err != nil {
 			// targetfunc errors are application-level (parsing, validation), not infrastructure failures
 			// The HTTP request succeeded (200 OK), so don't penalize the circuit breaker
-			if bc.circuitBreaker != nil {
-				bc.circuitBreaker.RecordSuccess()
+			recordSuccess()
 
-				cbState := bc.circuitBreaker.GetState()
-
-				if err.Error() != "broke" {
-					logger.Logtype(logger.StatusDebug, 0).
-						Str("client", bc.config.Name).
-						Int("status_code", resp.StatusCode).
-						Err(err).
-						Int("threshold", bc.config.CircuitBreakerThreshold).
-						Str("url", req.URL.String()).
-						Str("circuit_state", cbState).
-						Msg("Response processing returned error (not a circuit breaker failure)")
-				}
+			if err.Error() != "broke" {
+				logger.Logtype(logger.StatusDebug, 0).
+					Str("client", bc.config.Name).
+					Int("status_code", resp.StatusCode).
+					Err(err).
+					Str("url", safeURL).
+					Msg("Response processing returned error (not a circuit breaker failure)")
 			}
 
 			bc.recordStats(true, duration.Milliseconds(), "response processing error")
@@ -1076,18 +966,7 @@ func (bc *BaseClient) MakeRequestWithHeaders(
 		}
 	}
 
-	// Record success
-	if bc.circuitBreaker != nil {
-		bc.circuitBreaker.RecordSuccess()
-	}
-
-	// cbState := bc.circuitBreaker.GetState()
-	// logger.Logtype(logger.StatusDebug, 0).
-	// 	Str("client", bc.config.Name).
-	// 	Int("status_code", resp.StatusCode).
-	// 	Int("threshold", bc.config.CircuitBreakerThreshold).
-	// 	Str("circuit_state", cbState).
-	// 	Msg("Circuit breaker: recorded success")
+	recordSuccess()
 
 	bc.recordStats(true, duration.Milliseconds(), "")
 
@@ -1126,14 +1005,14 @@ func (bc *BaseClient) checkServerRateLimit() error {
 	return nil
 }
 
-// handleRateLimitResponse processes rate limit responses (429, 400, 401, 403) and extracts retry timing
+// handleRateLimitResponse processes rate limit responses (429, or 400 with a
+// quota message) and blocks further requests until the server allows them.
 //
 // Retry timing can come from:
-// - Retry-After or X-Retry-After header (integer seconds, RFC1123/RFC3339 date, or custom format)
-// - Response body containing "Request limit reached" (for status 400 only)
-// - Default fallback to 5 minutes
-//
-// This matches the legacy apiexternal/general.go addwait() behavior.
+//   - Retry-After or X-Retry-After header (integer seconds, any HTTP date format,
+//     RFC3339, or "Request limit reached. Retry in X minutes/hours")
+//   - Response body containing "Request limit reached" (for status 400 only): 3 hours
+//   - Default fallback to 5 minutes.
 func (bc *BaseClient) handleRateLimitResponse(resp *http.Response, bodyBytes []byte) {
 	retryAfter := resp.Header.Get("Retry-After")
 	if retryAfter == "" {
@@ -1141,422 +1020,206 @@ func (bc *BaseClient) handleRateLimitResponse(resp *http.Response, bodyBytes []b
 	}
 
 	now := time.Now()
+	until := parseRetryAfter(retryAfter, now)
 
-	var (
-		until               time.Time
-		rateLimiterInterval time.Duration
-	)
+	msg := "Server rate limit detected"
 
-	// Get the rate limiter interval to subtract from wait times (legacy behavior)
-
-	if bc.rateLimiterHour != nil {
-		rateLimiterInterval = bc.rateLimiterHour.Interval()
+	switch {
+	case !until.IsZero():
+	case retryAfter != "":
+		until = now.Add(defaultServerRateLimitBlock)
+		msg = "Server rate limit detected, unparseable Retry-After header, using 5min default"
+	case resp.StatusCode == 400 &&
+		bytes.Contains(bytes.ToLower(bodyBytes), []byte("request limit reached")):
+		until = now.Add(3 * time.Hour)
+		msg = "Daily rate limit reached (body contains 'Request limit reached'), waiting 3 hours"
+	default:
+		until = now.Add(defaultServerRateLimitBlock)
+		msg = "Server rate limit detected without Retry-After, using 5min default"
 	}
 
-	// If Retry-After header exists, parse it
-	if retryAfter != "" {
-		// Try parsing custom format: "Request limit reached. Retry in X minutes/hours"
-		if strings.Contains(retryAfter, "Request limit reached. Retry in ") {
-			timeStr := strings.TrimSpace(
-				strings.Replace(retryAfter, "Request limit reached. Retry in ", "", 1),
-			)
-
-			timeStr = strings.TrimSuffix(timeStr, ".")
-
-			parts := strings.Fields(timeStr)
-			if len(parts) == 2 {
-				if value, err := strconv.Atoi(parts[0]); err == nil {
-					switch parts[1] {
-					case "minute", "minutes":
-						until = now.Add(time.Duration(value) * time.Minute)
-					case "hour", "hours":
-						until = now.Add(time.Duration(value) * time.Hour)
-					case "second", "seconds":
-						until = now.Add(time.Duration(value) * time.Second)
-					}
-
-					if !until.IsZero() {
-						logger.Logtype(logger.StatusWarning, 0).
-							Str("client", bc.config.Name).
-							Str("retry_message", retryAfter).
-							Time("rate_limited_until", until).
-							Msg("Server rate limit detected with custom retry message")
-
-						bc.rateLimitedUntil.Store(until)
-						bc.stats.mu.Lock()
-
-						bc.stats.NextAvailableAt = until
-						bc.stats.mu.Unlock()
-
-						return
-					}
-				}
-			}
-
-			// Custom format parse failed, fall through to default
-		} else if seconds, err := strconv.Atoi(retryAfter); err == nil {
-			// Parse as integer seconds - subtract rate limiter interval (legacy behavior)
-			until = now.Add(time.Duration(seconds)*time.Second - rateLimiterInterval)
-			logger.Logtype(logger.StatusWarning, 0).
-				Str("client", bc.config.Name).
-				Dur("retry_after", time.Duration(seconds)*time.Second).
-				Time("rate_limited_until", until).
-				Msg("Server rate limit detected")
-
-			bc.rateLimitedUntil.Store(until)
-			bc.stats.mu.Lock()
-
-			bc.stats.NextAvailableAt = until
-			bc.stats.mu.Unlock()
-
-			return
-		} else if strings.ContainsRune(retryAfter, ' ') && strings.ContainsRune(retryAfter, ':') {
-			// Try parsing as RFC1123 date
-			if parsedTime, err := time.Parse(time.RFC1123, retryAfter); err == nil {
-				until = parsedTime.Add(-rateLimiterInterval)
-				logger.Logtype(logger.StatusWarning, 0).
-					Str("client", bc.config.Name).
-					Time("rate_limited_until", until).
-					Msg("Server rate limit detected (RFC1123)")
-
-				bc.rateLimitedUntil.Store(until)
-				bc.stats.mu.Lock()
-
-				bc.stats.NextAvailableAt = until
-				bc.stats.mu.Unlock()
-
-				return
-			}
-		} else if strings.ContainsRune(retryAfter, 'T') && strings.ContainsRune(retryAfter, ':') {
-			// Try parsing as RFC3339 date
-			if parsedTime, err := time.Parse(time.RFC3339, retryAfter); err == nil {
-				until = parsedTime.Add(-rateLimiterInterval)
-				logger.Logtype(logger.StatusWarning, 0).
-					Str("client", bc.config.Name).
-					Time("rate_limited_until", until).
-					Msg("Server rate limit detected (RFC3339)")
-
-				bc.rateLimitedUntil.Store(until)
-				bc.stats.mu.Lock()
-
-				bc.stats.NextAvailableAt = until
-				bc.stats.mu.Unlock()
-
-				return
-			}
-		}
-
-		// Header exists but couldn't parse it - use default 5 minutes
-		until = now.Add(5 * time.Minute)
-
-		logger.Logtype(logger.StatusWarning, 0).
-			Str("client", bc.config.Name).
-			Str("retry_after_header", retryAfter).
-			Msg("Server rate limit detected, unparseable Retry-After header, using 5min default")
-
-		bc.rateLimitedUntil.Store(until)
-		bc.stats.mu.Lock()
-
-		bc.stats.NextAvailableAt = until
-		bc.stats.mu.Unlock()
-
-		return
-	}
-
-	// No Retry-After header - check body for "Request limit reached" (status 400 only)
-	if resp.StatusCode == 400 && len(bodyBytes) > 0 {
-		if bytes.Contains(bytes.ToLower(bodyBytes), []byte("request limit reached")) {
-			// Daily limit hit - wait 3 hours (legacy behavior)
-			until = now.Add(3 * time.Hour)
-
-			logger.Logtype(logger.StatusWarning, 0).
-				Str("client", bc.config.Name).
-				Time("rate_limited_until", until).
-				Msg("Daily rate limit reached (body contains 'Request limit reached'), waiting 3 hours")
-
-			bc.rateLimitedUntil.Store(until)
-			bc.stats.mu.Lock()
-
-			bc.stats.NextAvailableAt = until
-			bc.stats.mu.Unlock()
-
-			return
-		}
-	}
-
-	// No header, no body match - use default 5 minutes (not blocking, just return)
-	// The circuit breaker will handle repeated failures
-	logger.Logtype(logger.StatusDebug, 1).
+	logger.Logtype(logger.StatusWarning, 0).
 		Str("client", bc.config.Name).
 		Int("status_code", resp.StatusCode).
-		Msg("Rate limit status code without retry information, relying on circuit breaker")
+		Str("retry_after_header", retryAfter).
+		Time("rate_limited_until", until).
+		Msg(msg)
+
+	bc.setRateLimitedUntil(until)
 }
 
-// checkRateLimits checks all rate limiters with automatic retry grace period
-//
-// This implements the 30-second grace period behavior from the legacy system:
-// - If wait time is <= 30 seconds, retry every second until slot available
-// - If wait time is > 30 seconds, return error immediately
-// - This prevents excessive waiting while allowing short rate limit waits.
-func (bc *BaseClient) checkRateLimits() error {
-	const (
-		maxGracePeriod = 30 * time.Second
-		retryInterval  = 1 * time.Second
-	)
+func (bc *BaseClient) setRateLimitedUntil(until time.Time) {
+	bc.rateLimitedUntil.Store(until)
+	bc.stats.mu.Lock()
 
+	bc.stats.NextAvailableAt = until
+	bc.stats.mu.Unlock()
+}
+
+// MarkServerRateLimited blocks further requests for a rate limit the provider
+// found in an otherwise successful response body (e.g. a Newznab
+// <error code="500"/> sent with HTTP 200). retryHint is parsed like a
+// Retry-After value; fallback applies when it isn't understood.
+func (bc *BaseClient) MarkServerRateLimited(retryHint string, fallback time.Duration) {
 	now := time.Now()
 
-	// Check hourly limit with grace period retry
+	until := parseRetryAfter(retryHint, now)
+	if until.IsZero() {
+		until = now.Add(fallback)
+	}
+
+	logger.Logtype(logger.StatusWarning, 0).
+		Str("client", bc.config.Name).
+		Str("retry_hint", retryHint).
+		Time("rate_limited_until", until).
+		Msg("Server rate limit reported in response body")
+
+	bc.setRateLimitedUntil(until)
+}
+
+// parseRetryAfter converts a Retry-After style value into an absolute time.
+// It returns the zero time if the value is empty or not understood.
+func parseRetryAfter(value string, now time.Time) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+
+	if rest, ok := strings.CutPrefix(value, "Request limit reached. Retry in "); ok {
+		parts := strings.Fields(strings.TrimSuffix(strings.TrimSpace(rest), "."))
+		if len(parts) != 2 {
+			return time.Time{}
+		}
+
+		n, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return time.Time{}
+		}
+
+		switch parts[1] {
+		case "second", "seconds":
+			return now.Add(time.Duration(n) * time.Second)
+		case "minute", "minutes":
+			return now.Add(time.Duration(n) * time.Minute)
+		case "hour", "hours":
+			return now.Add(time.Duration(n) * time.Hour)
+		}
+
+		return time.Time{}
+	}
+
+	if seconds, err := strconv.Atoi(value); err == nil {
+		if seconds < 0 {
+			seconds = 0
+		}
+
+		return now.Add(time.Duration(seconds) * time.Second)
+	}
+
+	if t, err := http.ParseTime(value); err == nil {
+		return t
+	}
+
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t
+	}
+
+	return time.Time{}
+}
+
+// tryReserveRateLimit checks all client-side limiters and, if every one has
+// capacity, consumes a slot in each under one lock so concurrent callers
+// can't both pass the check and over-consume. It returns how long to wait
+// (and which limiter) when a slot isn't free yet.
+func (bc *BaseClient) tryReserveRateLimit() (time.Duration, string, error) {
+	bc.rateMu.Lock()
+	defer bc.rateMu.Unlock()
+
+	if bc.config.RateLimitPerTotal > 0 &&
+		bc.rateLimiterTotal.Load() >= int64(bc.config.RateLimitPerTotal) {
+		return 0, "", errors.New(
+			logger.JoinStrings(
+				"[",
+				bc.config.Name,
+				"] total rate limit exceeded (",
+				strconv.Itoa(bc.config.RateLimitPerTotal),
+				" requests)",
+			),
+		)
+	}
+
 	if bc.rateLimiterHour != nil {
-		allowed, waitTime := bc.rateLimiterHour.Check()
-		if !allowed {
-			// If wait time exceeds grace period, return error immediately
-			if waitTime > maxGracePeriod {
-				nextAvailable := now.Add(waitTime)
-
-				bc.stats.mu.Lock()
-
-				bc.stats.NextAvailableAt = nextAvailable
-				bc.stats.mu.Unlock()
-
-				return errors.New(
-					logger.JoinStrings(
-						"[",
-						bc.config.Name,
-						"] rate limit exceeded, next request available in ",
-						waitTime.String(),
-						" (exceeds 30s grace period)",
-					),
-				)
-			}
-
-			// Wait time is within grace period - retry every second
-			deadline := now.Add(waitTime)
-			for time.Now().Before(deadline) {
-				time.Sleep(retryInterval)
-
-				allowed, newWaitTime := bc.rateLimiterHour.Check()
-				if allowed {
-					goto checkDailyLimit
-				}
-
-				waitTime = newWaitTime
-			}
-
-			// Grace period exhausted without getting slot
-			nextAvailable := now.Add(waitTime)
-
-			bc.stats.mu.Lock()
-
-			bc.stats.NextAvailableAt = nextAvailable
-			bc.stats.mu.Unlock()
-
-			return errors.New(
-				logger.JoinStrings(
-					"[",
-					bc.config.Name,
-					"] rate limit exceeded, grace period exhausted, next request available in ",
-					waitTime.String(),
-				),
-			)
+		if ok, wait := bc.rateLimiterHour.Check(); !ok {
+			return wait, "", nil
 		}
 	}
 
-checkDailyLimit:
-	// Check 24h limit with grace period retry (using Check() not Allow() to avoid consuming tokens during retry)
 	if bc.rateLimiter24h != nil {
-		allowed, waitTime := bc.rateLimiter24h.Check()
-		if !allowed {
-			// If wait time exceeds grace period, return error immediately
-			if waitTime > maxGracePeriod {
-				nextAvailable := now.Add(waitTime)
-
-				bc.stats.mu.Lock()
-
-				bc.stats.NextAvailableAt = nextAvailable
-				bc.stats.mu.Unlock()
-
-				return errors.New(logger.JoinStrings("[", bc.config.Name, "] daily rate limit exceeded, next request available in ", waitTime.String(), " (exceeds 30s grace period)"))
-			}
-
-			// Wait time is within grace period - retry every second
-			deadline := now.Add(waitTime)
-			for time.Now().Before(deadline) {
-				time.Sleep(retryInterval)
-
-				allowed, newWaitTime := bc.rateLimiter24h.Check()
-				if allowed {
-					goto checkTotalLimit
-				}
-
-				waitTime = newWaitTime
-			}
-
-			// Grace period exhausted without getting slot
-			nextAvailable := now.Add(waitTime)
-
-			bc.stats.mu.Lock()
-
-			bc.stats.NextAvailableAt = nextAvailable
-			bc.stats.mu.Unlock()
-
-			return errors.New(logger.JoinStrings("[", bc.config.Name, "] daily rate limit exceeded, grace period exhausted, next request available in ", waitTime.String()))
+		if ok, wait := bc.rateLimiter24h.Check(); !ok {
+			return wait, "daily ", nil
 		}
 	}
 
-checkTotalLimit:
-	// Check total limit (no retry for absolute limits)
-	if bc.config.RateLimitPerTotal > 0 {
-		currentTotal := bc.rateLimiterTotal.Load()
-		if currentTotal >= int64(bc.config.RateLimitPerTotal) {
-			return errors.New(logger.JoinStrings("[", bc.config.Name, "] total rate limit exceeded (", strconv.Itoa(bc.config.RateLimitPerTotal), " requests)"))
-		}
+	if bc.rateLimiterHour != nil {
+		bc.rateLimiterHour.AllowForce()
+	}
 
+	if bc.rateLimiter24h != nil {
+		bc.rateLimiter24h.AllowForce()
+	}
+
+	if bc.config.RateLimitPerTotal > 0 {
 		bc.rateLimiterTotal.Add(1)
 	}
 
-	return nil
+	return 0, "", nil
 }
 
-// checkRateLimitsWithGracePeriod checks all rate limiters with a configurable grace period
-//
-// Parameters:
-//   - gracePeriod: Maximum time to wait/retry for a rate limit slot (e.g., 30s, 120s)
-//
-// Behavior:
-// - If wait time is <= gracePeriod, retry every second until slot available
-// - If wait time is > gracePeriod, return error immediately
-// - This allows flexible rate limit handling for different operation types.
-func (bc *BaseClient) checkRateLimitsWithGracePeriod(gracePeriod time.Duration) error {
-	const retryInterval = 1 * time.Second
+// reserveRateLimit takes a client-side rate limit slot, waiting for one as
+// long as it becomes free within gracePeriod. The wait honours ctx.
+func (bc *BaseClient) reserveRateLimit(ctx context.Context, gracePeriod time.Duration) error {
+	if bc.rateLimiterHour == nil && bc.rateLimiter24h == nil && bc.config.RateLimitPerTotal <= 0 {
+		return nil
+	}
 
-	maxGracePeriod := gracePeriod
+	deadline := time.Now().Add(gracePeriod)
 
-	now := time.Now()
+	for {
+		wait, which, err := bc.tryReserveRateLimit()
+		if err != nil {
+			return err
+		}
 
-	// Check hourly limit with grace period retry
-	if bc.rateLimiterHour != nil {
-		allowed, waitTime := bc.rateLimiterHour.Check()
-		if !allowed {
-			// If wait time exceeds grace period, return error immediately
-			if waitTime > maxGracePeriod {
-				nextAvailable := now.Add(waitTime)
+		if wait <= 0 {
+			return nil
+		}
 
-				bc.stats.mu.Lock()
-
-				bc.stats.NextAvailableAt = nextAvailable
-				bc.stats.mu.Unlock()
-
-				return errors.New(
-					logger.JoinStrings(
-						"[",
-						bc.config.Name,
-						"] rate limit exceeded, next request available in ",
-						waitTime.String(),
-						" (exceeds ",
-						gracePeriod.String(),
-						" grace period)",
-					),
-				)
-			}
-
-			// Wait time is within grace period - retry every second
-			deadline := now.Add(waitTime)
-			for time.Now().Before(deadline) {
-				time.Sleep(retryInterval)
-
-				allowed, newWaitTime := bc.rateLimiterHour.Check()
-				if allowed {
-					goto checkDailyLimit
-				}
-
-				waitTime = newWaitTime
-			}
-
-			// Grace period exhausted without getting slot
-			nextAvailable := now.Add(waitTime)
-
+		now := time.Now()
+		if now.Add(wait).After(deadline) {
 			bc.stats.mu.Lock()
 
-			bc.stats.NextAvailableAt = nextAvailable
+			bc.stats.NextAvailableAt = now.Add(wait)
 			bc.stats.mu.Unlock()
 
 			return errors.New(
 				logger.JoinStrings(
 					"[",
 					bc.config.Name,
-					"] rate limit exceeded, grace period (",
+					"] ",
+					which,
+					"rate limit exceeded, next request available in ",
+					wait.String(),
+					" (exceeds ",
 					gracePeriod.String(),
-					") exhausted, next request available in ",
-					waitTime.String(),
+					" grace period)",
 				),
 			)
 		}
-	}
 
-checkDailyLimit:
-	// Check 24h limit with grace period retry
-	if bc.rateLimiter24h != nil {
-		allowed, waitTime := bc.rateLimiter24h.Check()
-		if !allowed {
-			// If wait time exceeds grace period, return error immediately
-			if waitTime > maxGracePeriod {
-				nextAvailable := now.Add(waitTime)
-
-				bc.stats.mu.Lock()
-
-				bc.stats.NextAvailableAt = nextAvailable
-				bc.stats.mu.Unlock()
-
-				return errors.New(logger.JoinStrings("[", bc.config.Name, "] daily rate limit exceeded, next request available in ", waitTime.String(), " (exceeds ", gracePeriod.String(), " grace period)"))
-			}
-
-			// Wait time is within grace period - retry every second
-			deadline := now.Add(waitTime)
-			for time.Now().Before(deadline) {
-				time.Sleep(retryInterval)
-
-				allowed, newWaitTime := bc.rateLimiter24h.Check()
-				if allowed {
-					goto checkTotalLimit
-				}
-
-				waitTime = newWaitTime
-			}
-
-			// Grace period exhausted without getting slot
-			nextAvailable := now.Add(waitTime)
-
-			bc.stats.mu.Lock()
-
-			bc.stats.NextAvailableAt = nextAvailable
-			bc.stats.mu.Unlock()
-
-			return errors.New(
-				logger.JoinStrings(
-					"[",
-					bc.config.Name,
-					"] daily rate limit exceeded, grace period (",
-					gracePeriod.String(),
-					") exhausted, next request available in ",
-					waitTime.String(),
-				),
-			)
+		if !sleepCtx(ctx, wait) {
+			return fmt.Errorf("[%s] waiting for rate limit slot: %w", bc.config.Name, ctx.Err())
 		}
 	}
-
-checkTotalLimit:
-	// Check total limit (no retry for absolute limits)
-	if bc.config.RateLimitPerTotal > 0 {
-		currentTotal := bc.rateLimiterTotal.Load()
-		if currentTotal >= int64(bc.config.RateLimitPerTotal) {
-			return errors.New(logger.JoinStrings("[", bc.config.Name, "] total rate limit exceeded (", strconv.Itoa(bc.config.RateLimitPerTotal), " requests)"))
-		}
-
-		bc.rateLimiterTotal.Add(1)
-	}
-
-	return nil
 }
 
 // checkRateLimitsNonBlocking checks all rate limiters without grace period retry.
@@ -1649,10 +1312,18 @@ func (bc *BaseClient) applyAuth(req *http.Request) error {
 		return nil
 
 	case AuthAPIKeyURL:
-		q := req.URL.Query()
-		q.Set(bc.config.APIKeyParam, bc.config.APIKey)
+		// Append rather than re-encode the whole query: q.Encode() reorders
+		// parameters and rewrites escapes (%20 -> +), which some APIs reject.
+		if req.URL.Query().Has(bc.config.APIKeyParam) {
+			return nil
+		}
 
-		req.URL.RawQuery = q.Encode()
+		param := url.QueryEscape(bc.config.APIKeyParam) + "=" + url.QueryEscape(bc.config.APIKey)
+		if req.URL.RawQuery == "" {
+			req.URL.RawQuery = param
+		} else {
+			req.URL.RawQuery += "&" + param
+		}
 
 		return nil
 
@@ -1686,8 +1357,7 @@ func (bc *BaseClient) getValidOAuthToken(ctx context.Context) (*oauth2.Token, er
 	token := bc.oauthToken
 	bc.oauthTokenLock.RUnlock()
 
-	// Check if token needs refresh (5 minute buffer before expiry)
-	if token == nil || !token.Valid() || time.Until(token.Expiry) < 5*time.Minute {
+	if tokenNeedsRefresh(token) {
 		// Need to refresh token
 		if err := bc.refreshOAuthToken(ctx); err != nil {
 			return nil, err
@@ -1701,6 +1371,16 @@ func (bc *BaseClient) getValidOAuthToken(ctx context.Context) (*oauth2.Token, er
 	}
 
 	return token, nil
+}
+
+// tokenNeedsRefresh reports whether the token is missing, invalid or within
+// 5 minutes of expiry. A zero Expiry means the token does not expire.
+func tokenNeedsRefresh(token *oauth2.Token) bool {
+	if token == nil || !token.Valid() {
+		return true
+	}
+
+	return !token.Expiry.IsZero() && time.Until(token.Expiry) < 5*time.Minute
 }
 
 // refreshOAuthToken refreshes the OAuth2 access token
@@ -1743,8 +1423,7 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 	// may have already refreshed the token while we were waiting for the
 	// lock, in which case we can reuse it instead of making a redundant
 	// network call to the token endpoint (avoids a thundering herd).
-	if currentToken != nil && currentToken.Valid() &&
-		time.Until(currentToken.Expiry) >= 5*time.Minute {
+	if !tokenNeedsRefresh(currentToken) {
 		return nil
 	}
 
@@ -1835,7 +1514,7 @@ func (bc *BaseClient) refreshOAuthToken(ctx context.Context) error {
 	bc.oauthToken = newToken
 
 	// Save token to persistent storage
-	if err := defaultTokenStorage.SaveToken(bc.config.Name, newToken); err != nil {
+	if err := defaultTokenStorage.SaveToken(bc.tokenStorageKey(), newToken); err != nil {
 		logger.Logtype(logger.StatusWarning, 0).
 			Err(err).
 			Str("client", bc.config.Name).
@@ -1872,7 +1551,7 @@ func (bc *BaseClient) SetOAuthToken(token *oauth2.Token) error {
 	bc.oauthTokenLock.Unlock()
 
 	// Save to persistent storage
-	if err := defaultTokenStorage.SaveToken(bc.config.Name, token); err != nil {
+	if err := defaultTokenStorage.SaveToken(bc.tokenStorageKey(), token); err != nil {
 		logger.Logtype(logger.StatusWarning, 0).
 			Err(err).
 			Str("client", bc.config.Name).
@@ -2134,6 +1813,9 @@ func (bc *BaseClient) GetName() string {
 
 // GetBaseURL returns the configured base URL.
 func (bc *BaseClient) GetBaseURL() string {
+	bc.configMu.RLock()
+	defer bc.configMu.RUnlock()
+
 	return bc.config.BaseURL
 }
 

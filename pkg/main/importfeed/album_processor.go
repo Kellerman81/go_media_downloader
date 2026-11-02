@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
@@ -222,7 +224,7 @@ type searchPair struct {
 // two-tier runtime check using the durations of the "extra" Audnex chapters
 // (those beyond fileCount) that we don't have locally:
 //
-//   - fileCount > len(chapters): always reject (more local files than expected).
+//   - fileCount > len(chapters): keep the ASIN (split files); runtime verification decides.
 //   - fileCount < len(chapters): run the two-tier check using actual track runtimes
 //     when available (tracks[i].RuntimeMS > 0), otherwise fall back to chapter durations.
 //     Tier 1 — per-track: |tracks[i].RuntimeMS - chapters[i].LengthMs| ≤ PerTrackToleranceSeconds
@@ -267,6 +269,14 @@ func verifyASINChapterCount(
 			Msg("More local files than Audnex chapters (split files) — keeping ASIN")
 
 		return asin
+	}
+
+	if fileCount == 1 {
+		if ok, _, _ := singleFileTotalMatch(
+			tracks[0].RuntimeMS, audnexChaptersTotalMs(chapters), len(chapters), data,
+		); ok {
+			return asin
+		}
 	}
 
 	allowMissing := data != nil && data.AllowMissingTracks
@@ -445,6 +455,7 @@ func matchAudiobookFolder(
 		)
 		albumTitle = coalesceStr(
 			meta.TagAlbum,
+			meta.TagTitle,
 			meta.FolderAlbum,
 			meta.FilenameAlbum,
 			meta.ParentAlbum,
@@ -454,18 +465,18 @@ func matchAudiobookFolder(
 	logParsedMetadata(folder, meta, "asin", asin)
 
 	// Step 3: Try to find audiobook match in database
-	var dbMatch *database.AudiobookSearchResult
+	var asinMatch *database.AudiobookSearchResult
 
 	fileCount := len(files)
 
 	// Try by ASIN first (most reliable)
 	if asin != "" {
-		dbMatch, _ = database.FindAudiobookByASIN(asin)
+		asinMatch, _ = database.FindAudiobookByASIN(asin)
 	}
 
 	// Try by tag ASIN if different from folder ASIN
-	if dbMatch == nil && meta.TagASIN != "" && meta.TagASIN != asin {
-		dbMatch, _ = database.FindAudiobookByASIN(meta.TagASIN)
+	if asinMatch == nil && meta.TagASIN != "" && meta.TagASIN != asin {
+		asinMatch, _ = database.FindAudiobookByASIN(meta.TagASIN)
 	}
 
 	// Build search pairs from parsed metadata.
@@ -500,6 +511,20 @@ func matchAudiobookFolder(
 	bestCandidates, dbMatch := selectAudiobookCandidatesWithRefresh(
 		ctx, allMatches, fileCount, data, albumTitle, artist, cfgp,
 	)
+
+	// The text search above must not discard the ASIN hit: it always competes in
+	// the candidate pass, and it is the match when the text search found nothing.
+	if asinMatch != nil {
+		if dbMatch == nil {
+			dbMatch = asinMatch
+		}
+
+		if !slices.ContainsFunc(bestCandidates, func(c *database.AudiobookSearchResult) bool {
+			return c.ID == asinMatch.ID
+		}) {
+			bestCandidates = append([]*database.AudiobookSearchResult{asinMatch}, bestCandidates...)
+		}
+	}
 
 	// If no chapter count match but we have series candidates, skip the track count
 	// requirement when SkipSeriesTrackMatch is enabled and runtime is under 1 hour.
@@ -568,7 +593,7 @@ func matchAudiobookFolder(
 
 		if audnexAddFoundPreFlight(ctx, album.ASIN, album.TrackCount, tracks, cfgp, data, folder) {
 			dbID, expTracks, newCands, addFoundEntry := importAudiobookWithAddFound(
-				ctx, album.ASIN, allMatches, bestCandidates, cfgp, listid, data, folder,
+				ctx, album.ASIN, albumTitle, allMatches, bestCandidates, cfgp, listid, data, folder,
 			)
 			if dbID > 0 {
 				album.DatabaseID = dbID
@@ -591,8 +616,13 @@ func matchAudiobookFolder(
 		return nil, "no_match", nil
 	}
 
-	// Step 6: Verify track count matches expected chapter count
-	if !seriesTrackSkipped && album.ExpectedTracks > 0 && album.TrackCount != album.ExpectedTracks {
+	// Step 6: Verify track count matches expected chapter count. With
+	// AllowMissingTracks the count may differ; runAudiobookCandidatePass verifies
+	// the per-chapter assignment instead.
+	// A single file holds the whole book; the candidate pass checks its total
+	// runtime against the chapters instead.
+	if !seriesTrackSkipped && !data.AllowMissingTracks && album.ExpectedTracks > 0 &&
+		album.TrackCount > 1 && album.TrackCount != album.ExpectedTracks {
 		logger.Logtype("debug", 0).
 			Str("folder", folder).
 			Int("localTracks", album.TrackCount).
@@ -662,7 +692,7 @@ func matchAudiobookFolder(
 	)
 
 	sortSuccess := false
-	if dbID, expTracks, matched, ok := applyAudiobookRecommendation(validABMatches); ok {
+	if dbID, expTracks, matched, ok := applyAudiobookRecommendation(validABMatches, data); ok {
 		album.DatabaseID = dbID
 		album.ExpectedTracks = expTracks
 		album.Tracks = matched
@@ -793,15 +823,7 @@ func matchAudiobookFolderForced(
 	// Step 3: get DB tracks and run the standard LAP matcher.
 	isVA := IsVariousArtists(artist)
 
-	dbTracks := resolveTracksForMatching(
-		ctx,
-		dbMatch.ID,
-		"",
-		*forcedASIN,
-		cfgp.AudibleRegion,
-		albumTitle,
-		artist,
-	)
+	dbTracks := resolveChaptersForMatching(ctx, dbMatch.ID, *forcedASIN, cfgp.AudibleRegion)
 	if len(dbTracks) == 0 {
 		return nil, "no_tracks", nil
 	}
@@ -911,7 +933,7 @@ func matchMusicFolderForced(
 	// Step 3: get DB tracks and run the standard LAP matcher.
 	isVA := DetectVA(artist, tracks)
 
-	dbTracks := resolveTracksForMatching(ctx, dbMatch.ID, *forcedMBID, "", "", albumTitle, artist)
+	dbTracks := resolveTracksForMatching(ctx, dbMatch.ID, *forcedMBID, albumTitle, artist)
 	if len(dbTracks) == 0 {
 		return nil, "no_tracks", nil
 	}
@@ -1044,6 +1066,10 @@ func matchMusicFolder(
 		}
 	}
 
+	// The exact-MBID hit must not be replaced by the text search below; keep it
+	// so it competes in the candidate pass.
+	mbidMatch := dbMatch
+
 	// Select all candidates with matching track count for runtime verification
 	var bestCandidates []*database.AlbumSearchResult
 	if len(allMatches) > 0 {
@@ -1094,6 +1120,16 @@ func matchMusicFolder(
 
 			dbMatch = allMatches[0]
 			bestCandidates = allMatches
+		}
+	}
+
+	if mbidMatch != nil {
+		dbMatch = mbidMatch
+
+		if !slices.ContainsFunc(bestCandidates, func(c *database.AlbumSearchResult) bool {
+			return c.ID == mbidMatch.ID
+		}) {
+			bestCandidates = append([]*database.AlbumSearchResult{mbidMatch}, bestCandidates...)
 		}
 	}
 
@@ -1355,7 +1391,7 @@ func matchMusicFolder(
 	// Deferred artist/series discovery from addFound - only runs after track/runtime verification succeeds
 	if addFoundMusicEntry != nil && data.AddFound {
 		discoverAddFoundArtistAlbums(
-			ctx, album.Title, &artist, &musicBrainzID, cfgp, listid, data, folder,
+			ctx, album.Title, &artist, album.DatabaseID, cfgp, listid, data, folder,
 		)
 	}
 
@@ -1439,12 +1475,12 @@ func searchAndImportAlternativeRelease(
 			// stripped diacritics or single-character typos.
 			buf := logger.PlAddBuffer.Get()
 			buf.WriteString(`release:"`)
-			buf.WriteString(LuceneEscape(*albumTitle))
+			buf.WriteString(logger.LuceneEscape(*albumTitle))
 			buf.WriteString(`"~2`)
 
 			if searchArtist != "" && !IsVariousArtists(searchArtist) {
 				buf.WriteString(` AND artist:"`)
-				buf.WriteString(LuceneEscape(searchArtist))
+				buf.WriteString(logger.LuceneEscape(searchArtist))
 				buf.WriteString(`"~2`)
 			}
 
@@ -1487,6 +1523,12 @@ func searchAndImportAlternativeRelease(
 				}
 
 				if releases[i].TrackCount != *fileCount {
+					continue
+				}
+
+				// Track count + artist (+ runtime, which may be unknown) alone would
+				// accept another album of the same artist with as many tracks.
+				if !namesMatch(releases[i].Title, *albumTitle) {
 					continue
 				}
 
@@ -1750,9 +1792,8 @@ func searchAndImportAlternativeRelease(
 				if release.DiscogsID != "" {
 					database.Scanrowsdyn(
 						false,
-						`SELECT id FROM dbalbums WHERE discogs_release_id = ? OR discogs_master_id = ? LIMIT 1`,
+						`SELECT id FROM dbalbums WHERE discogs_release_id = ? LIMIT 1`,
 						&existingID,
-						&release.DiscogsID,
 						&release.DiscogsID,
 					)
 				}
@@ -1963,29 +2004,50 @@ func replaceExistingRelease(
 		&existingDBID,
 	)
 
-	// Re-import metadata via the standard import flow.
-	// addnew=true so tracks are always re-fetched regardless of UpdatedAt — the
-	// existing row has just had its tracks deleted and MBID changed.
-	dbID, importErr := JobImportAlbums(ctx, newMusicBrainzID, cfgp, listid, true)
-	if importErr != nil {
+	// Refresh metadata and tracks directly on the existing row. JobImportAlbums
+	// would skip it: with addnew=true it only refreshes freshly inserted rows,
+	// and with addnew=false the UPDATE above has just bumped updated_at via
+	// trigger, so shouldUpdateMetadata would say "recently updated".
+	if !startJobIfAbsent(newMusicBrainzID) {
+		return existingDBID, true
+	}
+	defer endJob(newMusicBrainzID)
+
+	var dbalbum database.Dbalbum
+	if err := dbalbum.GetDbalbumByIDP(&existingDBID); err != nil {
 		logger.Logtype("debug", 0).
 			Uint("existingDBID", existingDBID).
-			Err(importErr).
-			Msg("DEBUG: Failed to re-import metadata after replace")
-		// Return the existing ID since we already updated the release ID
+			Err(err).
+			Msg("Failed to load dbalbum after release replace")
+
 		return existingDBID, true
 	}
 
-	if dbID == 0 {
-		dbID = existingDBID
+	dbalbum.MusicbrainzReleaseID = newMusicBrainzID
+	if err := metadata.AlbumGetMetadata(ctx, &dbalbum, true); err != nil {
+		logger.Logtype("debug", 0).
+			Uint("existingDBID", existingDBID).
+			Err(err).
+			Msg("Failed to re-import metadata after replace")
 	}
 
-	return dbID, true
+	updateDbalbum(&dbalbum)
+
+	if listid >= 0 && listid < len(cfgp.Lists) {
+		if err := CheckaddAlbumEntry(&existingDBID, cfgp, &cfgp.Lists[listid], newMusicBrainzID); err != nil {
+			logger.Logtype("debug", 0).
+				Uint("existingDBID", existingDBID).
+				Err(err).
+				Msg("Album list entry not added after release replace")
+		}
+	}
+
+	return existingDBID, true
 }
 
 // replaceExistingAudiobookRelease replaces an existing dbaudiobook entry with a new Audible edition.
 // It updates the ASIN, deletes all child rows (chapters, authors, narrators, titles), then
-// re-imports metadata via JobImportAudiobooks with addnew=false so the existing row is reused.
+// force-refreshes the metadata of the existing row and repopulates the child rows.
 func replaceExistingAudiobookRelease(
 	ctx context.Context,
 	existingDBID uint,
@@ -2002,22 +2064,47 @@ func replaceExistingAudiobookRelease(
 	database.ExecN("DELETE FROM dbaudiobook_narrators WHERE dbaudiobook_id = ?", &existingDBID)
 	database.ExecN("DELETE FROM dbaudiobook_titles WHERE dbaudiobook_id = ?", &existingDBID)
 
-	// Re-import metadata with the new ASIN (addnew=false reuses the existing row)
-	dbID, importErr := JobImportAudiobooks(ctx, newASIN, cfgp, listid, false)
-	if importErr != nil {
+	// JobImportAudiobooks can't be used here: the UPDATE above bumps updated_at
+	// via trigger so its shouldUpdateMetadata gate skips the refresh, and it never
+	// repopulates the child rows that were just deleted.
+	if !startJobIfAbsent(newASIN) {
+		return existingDBID, true
+	}
+	defer endJob(newASIN)
+
+	var dbaudiobook database.Dbaudiobook
+	if err := dbaudiobook.GetDbaudiobookByIDP(&existingDBID); err != nil {
 		logger.Logtype("debug", 0).
 			Uint("existingDBID", existingDBID).
-			Err(importErr).
-			Msg("Failed to re-import metadata after audiobook release replace")
+			Err(err).
+			Msg("Failed to load dbaudiobook after audiobook release replace")
 
 		return existingDBID, true
 	}
 
-	if dbID == 0 {
-		dbID = existingDBID
+	dbaudiobook.ASIN = newASIN
+	if err := metadata.AudiobookGetMetadata(ctx, cfgp, &dbaudiobook, true); err != nil {
+		logger.Logtype("debug", 0).
+			Uint("existingDBID", existingDBID).
+			Err(err).
+			Msg("Failed to re-import metadata after audiobook release replace")
 	}
 
-	return dbID, true
+	updateDbaudiobook(&dbaudiobook)
+
+	// Repopulates authors, narrators, chapters and titles on the existing row
+	// (addAudiobookDetailToDatabase finds it by the new ASIN).
+	initial := &apiexternal_v2.AudiobookSearchResult{Title: dbaudiobook.Title}
+	if err := importAndMergeAudiobook(
+		ctx, newASIN, initial, providers.GetAudnex(), nil, cfgp, listid,
+	); err != nil {
+		logger.Logtype("debug", 0).
+			Uint("existingDBID", existingDBID).
+			Err(err).
+			Msg("Failed to repopulate audiobook details after release replace")
+	}
+
+	return existingDBID, true
 }
 
 // MatchSingleAudiobookFile matches a single audio file as an individual audiobook.
@@ -2059,8 +2146,8 @@ func MatchSingleAudiobookFile(
 		tagSampleRate = tagData.SampleRate
 		tagFileSize = tagData.FileSize
 		tagQualityProfile = tagData.QualityProfile
-		// PutTrackInfo's destructor zeroes *tagData synchronously (pool.go's
-		// Put calls the destructor unconditionally) - tagData stays non-nil
+		// PutTrackInfo's destructor may zero *tagData synchronously (pool.go's
+		// Put runs it whenever the pool has room) - tagData stays non-nil
 		// afterward, so any field read through it below this point would
 		// silently read zero values instead of the real tag data.
 		parser_v2.PutTrackInfo(tagData)
@@ -2164,8 +2251,18 @@ func MatchSingleAudiobookFile(
 				continue
 			}
 
-			// For single-file episodes, prefer the first match (we can't verify chapter count)
-			dbMatch = matches[0]
+			// Single-file episodes can't be verified by chapter count, so the
+			// title (and author, when known) must be close to what was searched.
+			best := bestNameMatch(pairs[i].title, len(matches),
+				func(j int) string { return matches[j].Title },
+				func(j int) bool {
+					return matches[j].Author == "" || namesMatch(matches[j].Author, pairs[i].author)
+				})
+			if best == -1 {
+				continue
+			}
+
+			dbMatch = matches[best]
 			// logger.Logtype("debug", 0).
 			// 	Str("file", filePath).
 			// 	Str("source", pair.source).

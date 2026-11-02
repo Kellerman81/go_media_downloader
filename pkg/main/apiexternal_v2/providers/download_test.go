@@ -46,7 +46,7 @@ func TestQBittorrentDownload(t *testing.T) {
 	category := "test"
 	// ========================================
 
-	provider, err := qbittorrent.NewProvider(host, port, username, password, useSSL)
+	provider, err := qbittorrent.NewProvider(host, port, username, password, useSSL, "")
 	if err != nil {
 		t.Fatalf("Failed to create qBittorrent provider: %v", err)
 	}
@@ -333,20 +333,7 @@ func TestRTorrentDownload(t *testing.T) {
 	t.Logf("  Hash: %s", response.Hash)
 	t.Logf("  Message: %s", response.Message)
 
-	// Get torrent info
 	if response.Hash != "" {
-		time.Sleep(2 * time.Second)
-		t.Logf("Getting torrent info...")
-		info, err := provider.GetTorrentInfo(ctx, response.Hash)
-		if err != nil {
-			t.Logf("Warning: Failed to get torrent info: %v", err)
-		} else {
-			t.Logf("✓ Torrent info retrieved")
-			t.Logf("  Name: %s", info.Name)
-			t.Logf("  State: %s", info.State)
-			t.Logf("  Progress: %.2f%%", info.Progress)
-		}
-
 		// Clean up
 		t.Logf("Cleaning up - removing test torrent...")
 		if err := provider.RemoveTorrent(ctx, response.Hash, true); err != nil {
@@ -382,7 +369,7 @@ func TestSABnzbdDownload(t *testing.T) {
 	category := "test"
 	// ========================================
 
-	provider, err := sabnzbd.NewProvider(host, port, apiKey, useSSL)
+	provider, err := sabnzbd.NewProvider(host, port, apiKey, useSSL, "")
 	if err != nil {
 		t.Fatalf("Failed to create SABnzbd provider: %v", err)
 	}
@@ -463,7 +450,7 @@ func TestNZBGetDownload(t *testing.T) {
 	category := "test"
 	// ========================================
 
-	provider, err := nzbget.NewProvider(host, port, username, password, useSSL)
+	provider, err := nzbget.NewProvider(host, port, username, password, useSSL, "")
 	if err != nil {
 		t.Fatalf("Failed to create NZBGet provider: %v", err)
 	}

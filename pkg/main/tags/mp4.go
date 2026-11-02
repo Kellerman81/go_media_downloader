@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -196,8 +199,10 @@ func parseMoov(moov []byte, tags *AudioTags, withCover bool) {
 		parseMvhd(b, tags)
 	}
 
+	// Use the first sound track (hdlr "soun"); an m4a/m4b may carry a cover
+	// (video), chapter (text) or other track before the audio one.
 	for i := range boxes {
-		if boxes[i].typ == "trak" {
+		if boxes[i].typ == "trak" && trakHandler(boxes[i].body) == "soun" {
 			parseTrakAudio(boxes[i].body, tags)
 			break
 		}
@@ -249,8 +254,48 @@ func parseMvhd(b []byte, tags *AudioTags) {
 	}
 }
 
-// parseTrakAudio best-effort reads channel/sample-rate/bit-depth from the first
-// audio sample entry (trak > mdia > minf > stbl > stsd).
+// trakHandler returns the handler type (e.g. "soun", "vide", "text") of a
+// trak box from trak > mdia > hdlr, or "" if absent.
+func trakHandler(trak []byte) string {
+	mdia, ok := findChild(mp4children(trak), "mdia")
+	if !ok {
+		return ""
+	}
+
+	// hdlr: 4-byte version/flags, 4-byte pre_defined, 4-byte handler type.
+	hdlr, ok := findChild(mp4children(mdia), "hdlr")
+	if !ok || len(hdlr) < 12 {
+		return ""
+	}
+
+	return string(hdlr[8:12])
+}
+
+// mdhdTimescale returns the media timescale from an mdia's mdhd box (for
+// audio tracks this is conventionally the sample rate), or 0.
+func mdhdTimescale(mdia []byte) uint32 {
+	mdhd, ok := findChild(mp4children(mdia), "mdhd")
+	if !ok || len(mdhd) < 4 {
+		return 0
+	}
+
+	if mdhd[0] == 1 { // version 1: 64-bit creation/modification times
+		if len(mdhd) < 24 {
+			return 0
+		}
+
+		return binary.BigEndian.Uint32(mdhd[20:24])
+	}
+
+	if len(mdhd) < 16 {
+		return 0
+	}
+
+	return binary.BigEndian.Uint32(mdhd[12:16])
+}
+
+// parseTrakAudio best-effort reads channel/sample-rate/bit-depth from the
+// track's first sample entry (trak > mdia > minf > stbl > stsd).
 func parseTrakAudio(trak []byte, tags *AudioTags) {
 	mdia, ok := findChild(mp4children(trak), "mdia")
 	if !ok {
@@ -279,12 +324,30 @@ func parseTrakAudio(trak []byte, tags *AudioTags) {
 	}
 
 	se := entries[0].body
-	// AudioSampleEntry: 6 reserved, 2 data-ref, 8 reserved, 2 channels, 2 sample
-	// size, 2 predefined, 2 reserved, 4 sample rate (16.16 fixed point).
-	if len(se) >= 28 {
-		tags.Channels = int(binary.BigEndian.Uint16(se[16:18]))
-		tags.BitDepth = int(binary.BigEndian.Uint16(se[18:20]))
-		tags.SampleRate = int(binary.BigEndian.Uint32(se[24:28]) >> 16)
+	// AudioSampleEntry: 6 reserved, 2 data-ref, 2 version, 6 reserved, 2 channels,
+	// 2 sample size, 2 predefined, 2 reserved, 4 sample rate (16.16 fixed point).
+	if len(se) < 28 {
+		return
+	}
+
+	// QuickTime sound description v2 moves rate (float64) and channel count
+	// after the fixed fields.
+	if binary.BigEndian.Uint16(se[8:10]) == 2 && len(se) >= 52 {
+		tags.SampleRate = int(math.Float64frombits(binary.BigEndian.Uint64(se[32:40])))
+		tags.Channels = int(binary.BigEndian.Uint32(se[40:44]))
+		tags.BitDepth = int(binary.BigEndian.Uint32(se[48:52]))
+
+		return
+	}
+
+	tags.Channels = int(binary.BigEndian.Uint16(se[16:18]))
+	tags.BitDepth = int(binary.BigEndian.Uint16(se[18:20]))
+	tags.SampleRate = int(binary.BigEndian.Uint32(se[24:28]) >> 16)
+
+	// The 16.16 field cannot hold rates above 65535 Hz (muxers write 0 or a
+	// truncated value); the media timescale carries the real rate then.
+	if ts := mdhdTimescale(mdia); ts > 65535 || (tags.SampleRate == 0 && ts > 0) {
+		tags.SampleRate = int(ts)
 	}
 }
 
@@ -413,6 +476,8 @@ func parseFreeform(body []byte, tags *AudioTags) {
 		tags.CatalogNum = sval
 	case strings.EqualFold(name, "LABEL"):
 		tags.Label = sval
+	case strings.EqualFold(name, "CONDUCTOR"):
+		tags.Conductor = sval
 	case strings.EqualFold(name, "ISRC"):
 		tags.ISRC = sval
 	case strings.EqualFold(name, "replaygain_track_gain"):
@@ -435,6 +500,14 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
 	}
 
+	// ffmpeg's mov muxer cannot write iTunes freeform ("----") atoms and drops
+	// them, and any other ilst atom it doesn't know, on remux; they are
+	// carried over and added natively after the remux (see writeMP4Freeform).
+	existingFreeform, existingOther, err := readMP4IlstAtoms(filepath)
+	if err != nil {
+		return &ErrWriteFailed{Path: filepath, Reason: "reading existing metadata: " + err.Error()}
+	}
+
 	args := []string{"-y", "-loglevel", "error", "-i", filepath}
 
 	var coverPath string
@@ -448,13 +521,21 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 		}
 	}
 
+	// Keep every stream (audio, subtitles, real video) except:
+	//   - data streams: the QuickTime chapter text track shows up as one and
+	//     can't be stream-copied into the ipod muxer (the whole remux fails);
+	//     -map_chapters rebuilds it from the chapter list.
+	//   - with a new cover, the old cover art: "v" matches attached pictures,
+	//     "V" only real video, so drop all video and re-add the real video.
+	// The new cover is mapped first so it is output v:0 for -disposition.
 	if coverPath != "" {
-		args = append(args, "-map", "0:a", "-map", "1:v")
+		args = append(args, "-map", "1:v", "-map", "0", "-map", "-0:v?", "-map", "0:V?")
 	} else {
 		args = append(args, "-map", "0")
 	}
 
-	args = append(args, "-c", "copy", "-map_metadata", "0", "-map_chapters", "0")
+	args = append(args, "-map", "-0:d?",
+		"-c", "copy", "-map_metadata", "0", "-map_chapters", "0")
 
 	if coverPath != "" {
 		args = append(args, "-disposition:v:0", "attached_pic")
@@ -496,7 +577,6 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 	addMeta("comment", tags.Comment)
 	addMeta("copyright", tags.Copyright)
 	addMeta("lyrics", tags.Lyrics)
-	addMeta("ISRC", tags.ISRC)
 
 	// Output to a temp file with the original extension so ffmpeg selects the
 	// correct muxer, then atomically replace the original.
@@ -523,6 +603,20 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 		}
 	}
 
+	dropped, err := droppedMP4Atoms(out, existingOther)
+	if err != nil {
+		os.Remove(out)
+
+		return &ErrWriteFailed{Path: filepath, Reason: "reading remuxed metadata: " + err.Error()}
+	}
+
+	atoms := append(mergeMP4Freeform(existingFreeform, tags), dropped...)
+	if err := writeMP4Freeform(out, atoms); err != nil {
+		os.Remove(out)
+
+		return &ErrWriteFailed{Path: filepath, Reason: "writing freeform metadata: " + err.Error()}
+	}
+
 	if err := os.Rename(out, filepath); err != nil {
 		os.Remove(out)
 
@@ -532,11 +626,13 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 	return nil
 }
 
-// resolveFFmpeg locates an ffmpeg binary: first by deriving it from the
-// configured ffprobe path, then from PATH.
+// resolveFFmpeg locates an ffmpeg binary: first next to the configured
+// ffprobe, then from PATH. ffprobe_path is the folder holding ffprobe (the
+// parser joins the executable name onto it), but a path to the ffprobe binary
+// itself is accepted as well.
 func resolveFFmpeg() (string, error) {
-	if p := config.GetSettingsGeneral().FfprobePath; p != "" {
-		if cand := strings.Replace(p, "ffprobe", "ffmpeg", 1); cand != p {
+	if cfg := config.GetSettingsGeneral(); cfg != nil && cfg.FfprobePath != "" {
+		if cand := ffmpegBesideFfprobe(cfg.FfprobePath, runtime.GOOS == "windows"); cand != "" {
 			if _, err := exec.LookPath(cand); err == nil {
 				return cand, nil
 			}
@@ -550,6 +646,21 @@ func resolveFFmpeg() (string, error) {
 	return "", errors.New(
 		"ffmpeg not found in PATH - install FFmpeg to enable MP4/M4A/M4B tagging",
 	)
+}
+
+// ffmpegBesideFfprobe returns the ffmpeg path next to the configured ffprobe:
+// ffprobePath is either the folder holding ffprobe or the ffprobe binary.
+func ffmpegBesideFfprobe(ffprobePath string, windows bool) string {
+	p := filepath.Clean(ffprobePath)
+	if base := filepath.Base(p); strings.Contains(base, "ffprobe") {
+		return filepath.Join(filepath.Dir(p), strings.Replace(base, "ffprobe", "ffmpeg", 1))
+	}
+
+	if windows {
+		return filepath.Join(p, "ffmpeg.exe")
+	}
+
+	return filepath.Join(p, "ffmpeg")
 }
 
 // writeTempCover writes cover bytes to a temp file and returns its path.

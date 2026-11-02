@@ -8,38 +8,25 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/DeanThompson/ginpprof"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/api"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushover"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sendmail"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
@@ -70,44 +57,13 @@ var (
 	githash    string
 )
 
-// parseServerURL extracts host, port, and SSL from a server URL string
-// Example: "https://gotify.example.com:8080" -> ("gotify.example.com", 8080, true).
-func parseServerURL(serverURL string) (host string, port int, useSSL bool) {
-	port = 80
-
-	// Check for SSL/HTTPS
-	if strings.HasPrefix(serverURL, "https://") {
-		useSSL = true
-		port = 443
-		serverURL = strings.TrimPrefix(serverURL, "https://")
-	} else if after, ok := strings.CutPrefix(serverURL, "http://"); ok {
-		serverURL = after
+// orDefault returns v, or def when v is 0 (setting left unset).
+func orDefault(v, def int) int {
+	if v == 0 {
+		return def
 	}
 
-	// Extract host and port
-	if strings.Contains(serverURL, ":") {
-		parts := strings.Split(serverURL, ":")
-
-		host = parts[0]
-		if portNum, err := strconv.Atoi(parts[1]); err == nil {
-			port = portNum
-		}
-	} else {
-		host = serverURL
-	}
-
-	return host, port, useSSL
-}
-
-// buildBaseURL constructs a base URL from hostname, port, and SSL settings
-// Example: ("localhost", 8080, false) -> "http://localhost:8080"
-func buildBaseURL(hostname string, port int, useSSL bool) string {
-	protocol := "http"
-	if useSSL {
-		protocol = "https"
-	}
-
-	return protocol + "://" + hostname + ":" + strconv.Itoa(port)
+	return v
 }
 
 func initproviders() {
@@ -116,255 +72,16 @@ func initproviders() {
 	// Set global client manager for v2 API access
 	apiexternal_v2.SetGlobalClientManager(clientManager)
 
-	cm, exists := apiexternal_v2.GetGlobalClientManager()
-	if !exists {
+	if _, exists := apiexternal_v2.GetGlobalClientManager(); !exists {
 		logger.Logtype(logger.StatusWarning, 0).
 			Msg("Global ClientManager not available for provider registration")
 		return
 	}
 
-	// Register notification providers with full configuration
-	config.RangeSettingsNotification(func(name string, notifCfg *config.NotificationConfig) {
-		switch notifCfg.NotificationType {
-		case "pushover":
-			// Pushover supports NewProviderWithConfig with static rate limiting
-			pushoverConfig := base.ClientConfig{
-				Name:                      "pushover_" + notifCfg.Name,
-				Timeout:                   30 * time.Second,
-				AuthType:                  base.AuthNone, // Pushover handles auth via form parameters
-				RateLimitCalls:            300,           // Pushover allows ~10,000/month = ~300/hour conservative
-				RateLimitSeconds:          3600,          // 1 hour
-				CircuitBreakerThreshold:   3,
-				CircuitBreakerTimeout:     30 * time.Second,
-				CircuitBreakerHalfOpenMax: 1,
-				UserAgent:                 config.GetSettingsGeneral().UserAgent,
-			}
-			if provider := pushover.NewProviderWithConfig(
-				pushoverConfig,
-				notifCfg.Apikey,
-				notifCfg.Recipient,
-			); provider != nil {
-				cm.RegisterNotificationProvider("pushover_"+notifCfg.Name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("notification", name).
-					Msg("Registered pushover notification provider with rate limiting")
-			}
-
-		case "gotify":
-			// Gotify supports NewProviderWithConfig with static rate limiting
-			if notifCfg.ServerURL == "" || notifCfg.Apikey == "" {
-				break
-			}
-
-			// Parse server URL to extract host, port, and SSL settings
-			host, port, useSSL := parseServerURL(notifCfg.ServerURL)
-
-			gotifyConfig := base.ClientConfig{
-				Name:                      "gotify_" + name,
-				Timeout:                   30 * time.Second,
-				AuthType:                  base.AuthNone, // Gotify provider handles auth internally
-				RateLimitCalls:            1000,          // Gotify is self-hosted, generous limit
-				RateLimitSeconds:          3600,          // 1 hour
-				CircuitBreakerThreshold:   3,
-				CircuitBreakerTimeout:     30 * time.Second,
-				CircuitBreakerHalfOpenMax: 1,
-				UserAgent:                 config.GetSettingsGeneral().UserAgent,
-			}
-			if provider := gotify.NewProviderWithConfig(
-				gotifyConfig,
-				host,
-				port,
-				notifCfg.Apikey,
-				useSSL,
-			); provider != nil {
-				cm.RegisterNotificationProvider(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("notification", name).
-					Msg("Registered gotify notification provider with rate limiting")
-			}
-
-		case "pushbullet":
-			// Pushbullet only has simple NewProvider
-			if notifCfg.Apikey == "" {
-				break
-			}
-
-			if provider := pushbullet.NewProvider(notifCfg.Apikey); provider != nil {
-				cm.RegisterNotificationProvider(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("notification", name).
-					Msg("Registered pushbullet notification provider")
-			}
-
-		case "apprise":
-			// Apprise only has simple NewProvider
-			if notifCfg.ServerURL == "" || notifCfg.AppriseURLs == "" {
-				break
-			}
-
-			host, port, useSSL := parseServerURL(notifCfg.ServerURL)
-
-			urls := strings.Split(notifCfg.AppriseURLs, ",")
-			if provider := apprise.NewProvider(
-				host,
-				port,
-				notifCfg.Apikey,
-				urls,
-				useSSL,
-			); provider != nil {
-				cm.RegisterNotificationProvider(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("notification", name).
-					Msg("Registered apprise notification provider")
-			}
-
-		case "sendmail":
-			// Sendmail only has simple NewProvider
-			if notifCfg.SMTPServer != "" && notifCfg.SMTPFromEmail != "" &&
-				notifCfg.SMTPToEmail != "" {
-				port, _ := strconv.Atoi(notifCfg.SMTPPort)
-				if port == 0 {
-					port = 587 // Default SMTP submission port
-				}
-
-				toEmails := []string{notifCfg.SMTPToEmail}
-				if provider := sendmail.NewProvider(notifCfg.SMTPServer, port, notifCfg.SMTPFromEmail, toEmails, notifCfg.SMTPUsername, notifCfg.SMTPPassword); provider != nil {
-					cm.RegisterNotificationProvider(name, provider)
-					logger.Logtype(logger.StatusDebug, 0).
-						Str("notification", name).
-						Msg("Registered sendmail notification provider")
-				}
-			}
-		}
-	})
-
-	// Register download client providers with full configuration
-	config.RangeSettingsDownloader(func(name string, dlCfg *config.DownloaderConfig) {
-		if !dlCfg.Enabled {
-			return
-		}
-
-		switch dlCfg.DlType {
-		case "qbittorrent":
-			if dlCfg.Hostname == "" {
-				break
-			}
-
-			if provider, err := qbittorrent.NewProvider(
-				dlCfg.Hostname,
-				dlCfg.Port,
-				dlCfg.Username,
-				dlCfg.Password,
-				strings.HasPrefix(dlCfg.Hostname, "https"),
-			); err == nil &&
-				provider != nil {
-				providers.SetQBittorrent(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("downloader", name).
-					Msg("Registered qBittorrent download provider")
-			}
-
-		case "deluge":
-			if dlCfg.Hostname == "" {
-				break
-			}
-
-			baseURL := buildBaseURL(
-				dlCfg.Hostname,
-				dlCfg.Port,
-				strings.HasPrefix(dlCfg.Hostname, "https"),
-			)
-			if provider := deluge.NewProvider(
-				baseURL,
-				dlCfg.Username,
-				dlCfg.Password,
-			); provider != nil {
-				providers.SetDeluge(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("downloader", name).
-					Msg("Registered Deluge download provider")
-			}
-
-		case "transmission":
-			if dlCfg.Hostname == "" {
-				break
-			}
-
-			baseURL := buildBaseURL(
-				dlCfg.Hostname,
-				dlCfg.Port,
-				strings.HasPrefix(dlCfg.Hostname, "https"),
-			)
-			if provider := transmission.NewProvider(
-				baseURL,
-				dlCfg.Username,
-				dlCfg.Password,
-			); provider != nil {
-				providers.SetTransmission(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("downloader", name).
-					Msg("Registered Transmission download provider")
-			}
-
-		case "rtorrent":
-			if dlCfg.Hostname == "" {
-				break
-			}
-
-			urlBase := ""
-			if provider, err := rtorrent.NewProvider(
-				dlCfg.Hostname,
-				dlCfg.Port,
-				dlCfg.Username,
-				dlCfg.Password,
-				strings.HasPrefix(dlCfg.Hostname, "https"),
-				urlBase,
-			); err == nil &&
-				provider != nil {
-				providers.SetRTorrent(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("downloader", name).
-					Msg("Registered rTorrent download provider")
-			}
-
-		case "sabnzbd":
-			if dlCfg.Hostname == "" || dlCfg.Password == "" { // Password field used for API key
-				break
-			}
-
-			if provider, err := sabnzbd.NewProvider(
-				dlCfg.Hostname,
-				dlCfg.Port,
-				dlCfg.Password,
-				strings.HasPrefix(dlCfg.Hostname, "https"),
-			); err == nil &&
-				provider != nil {
-				providers.SetSABnzbd(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("downloader", name).
-					Msg("Registered SABnzbd download provider")
-			}
-
-		case "nzbget":
-			if dlCfg.Hostname == "" {
-				break
-			}
-
-			if provider, err := nzbget.NewProvider(
-				dlCfg.Hostname,
-				dlCfg.Port,
-				dlCfg.Username,
-				dlCfg.Password,
-				strings.HasPrefix(dlCfg.Hostname, "https"),
-			); err == nil &&
-				provider != nil {
-				providers.SetNZBGet(name, provider)
-				logger.Logtype(logger.StatusDebug, 0).
-					Str("downloader", name).
-					Msg("Registered NZBGet download provider")
-			}
-		}
-	})
+	// Notification providers and download clients are re-registered on
+	// every config reload as well.
+	providers.RegisterNotificationProviders()
+	providers.RegisterDownloadClients()
 
 	// Register book/audiobook/music metadata providers
 	general := config.GetSettingsGeneral()
@@ -372,8 +89,8 @@ func initproviders() {
 	// Initialize OpenLibrary provider (free, no API key required)
 	if provider := openlibrary.NewProviderWithConfig(base.ClientConfig{
 		Timeout:          30 * time.Second,
-		RateLimitCalls:   100,
-		RateLimitSeconds: 60,
+		RateLimitCalls:   orDefault(general.OpenLibraryLimiterCalls, 100),
+		RateLimitSeconds: orDefault(int(general.OpenLibraryLimiterSeconds), 60),
 		UserAgent:        general.UserAgent,
 	}); provider != nil {
 		providers.SetOpenLibrary(provider)
@@ -395,8 +112,8 @@ func initproviders() {
 		case "musicbrainz":
 			if provider := musicbrainz.NewProviderWithConfig(base.ClientConfig{
 				Timeout:          30 * time.Second,
-				RateLimitCalls:   1,
-				RateLimitSeconds: 1,
+				RateLimitCalls:   orDefault(general.MusicBrainzLimiterCalls, 1),
+				RateLimitSeconds: orDefault(int(general.MusicBrainzLimiterSeconds), 1),
 				UserAgent:        general.UserAgent,
 			}); provider != nil {
 				providers.SetMusicBrainz(provider)
@@ -407,8 +124,8 @@ func initproviders() {
 			// API key already validated by GetMusicMetaSourcePriority.
 			if provider := acoustid.NewProviderWithConfig(base.ClientConfig{
 				Timeout:          15 * time.Second,
-				RateLimitCalls:   3,
-				RateLimitSeconds: 1,
+				RateLimitCalls:   orDefault(general.AcoustIDLimiterCalls, 3),
+				RateLimitSeconds: orDefault(int(general.AcoustIDLimiterSeconds), 1),
 				UserAgent:        general.UserAgent,
 			}, general.AcoustIDAPIKey); provider != nil {
 				providers.SetAcoustID(provider)
@@ -458,8 +175,8 @@ func initproviders() {
 	// Initialize Audnex provider (region-agnostic, provides chapter data)
 	if provider := audnex.NewProviderWithConfig(base.ClientConfig{
 		Timeout:          30 * time.Second,
-		RateLimitCalls:   10,
-		RateLimitSeconds: 1,
+		RateLimitCalls:   orDefault(general.AudnexLimiterCalls, 10),
+		RateLimitSeconds: orDefault(int(general.AudnexLimiterSeconds), 1),
 		UserAgent:        general.UserAgent,
 	}); provider != nil {
 		providers.SetAudnex(provider)
@@ -470,8 +187,8 @@ func initproviders() {
 	// Region-specific providers will be created on-demand based on media type configs
 	if provider := audible.NewProviderWithConfig(base.ClientConfig{
 		Timeout:          30 * time.Second,
-		RateLimitCalls:   1,
-		RateLimitSeconds: 2,
+		RateLimitCalls:   orDefault(general.AudibleLimiterCalls, 1),
+		RateLimitSeconds: orDefault(int(general.AudibleLimiterSeconds), 2),
 		UserAgent:        general.UserAgent,
 	}, audible.RegionUS); provider != nil {
 		providers.SetAudible("us", provider)
@@ -500,6 +217,61 @@ func cleanupDuplicatesArgs() (runCleanup, apply bool) {
 	return runCleanup, apply
 }
 
+// startConfigWatcher watches the config file's directory and reloads the
+// settings when config.toml is written.
+func startConfigWatcher() (*fsnotify.Watcher, error) {
+	st, err := os.Lstat(config.Configfile)
+	if err != nil {
+		return nil, err
+	}
+
+	if st.IsDir() {
+		return nil, fmt.Errorf("%q is a directory, not a file", config.Configfile)
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("creating a new watcher: %w", err)
+	}
+
+	// Watch the directory, not the file itself.
+	if err := watcher.Add(filepath.Dir(config.Configfile)); err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("%q: %w", config.Configfile, err)
+	}
+
+	go func() {
+		for {
+			select {
+			case err, ok := <-watcher.Errors:
+				if !ok { // Channel was closed (i.e. Watcher.Close() was called).
+					return
+				}
+
+				fmt.Printf("ERROR: %s", err) //nolint:forbidigo // logger not initialized yet
+
+			case e, ok := <-watcher.Events:
+				if !ok { // Channel was closed (i.e. Watcher.Close() was called).
+					return
+				}
+
+				if strings.Contains(e.Name, "config.toml") &&
+					(e.Has(fsnotify.Write) || e.Has(fsnotify.Create)) {
+					// Create: config.WriteCfg/UpdateCfgEntry replace the file via rename.
+					config.Loadallsettings(true)
+					parser.GenerateAllQualityPriorities()
+					parser.GenerateCutoffPriorities()
+					scheduler.Reload()
+					providers.ReloadClientProviders()
+					providers.RegisterNotificationProviders()
+				}
+			}
+		}
+	}()
+
+	return watcher, nil
+}
+
 func main() {
 	// debug.SetGCPercent(30)
 	os.Mkdir("./temp", 0o777)
@@ -514,77 +286,16 @@ func main() {
 	}
 
 	if config.GetSettingsGeneral().EnableFileWatcher {
-		watcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			fmt.Printf(
-				"creating a new watcher: %s",
+		// A watcher failure only loses config hot-reload; keep running.
+		if watcher, err := startConfigWatcher(); err != nil {
+			fmt.Fprintf( //nolint:forbidigo // logger not initialized yet
+				os.Stderr,
+				"ERROR: config file watcher disabled: %s\n",
 				err,
 			)
-
-			return
+		} else {
+			defer watcher.Close()
 		}
-		defer watcher.Close()
-
-		// Add all files from the commandline.
-		st, err := os.Lstat(config.Configfile)
-		if err != nil {
-			fmt.Printf("%s", err) //nolint:forbidigo // logger not initialized yet
-			return
-		}
-
-		if st.IsDir() {
-			fmt.Printf(
-				"%q is a directory, not a file",
-				config.Configfile,
-			)
-
-			return
-		}
-
-		// Watch the directory, not the file itself.
-		err = watcher.Add(filepath.Dir(config.Configfile))
-		if err != nil {
-			fmt.Printf(
-				"%q: %s",
-				config.Configfile,
-				err,
-			)
-
-			return
-		}
-
-		// Start listening for events.
-		go func() {
-			for {
-				select {
-				// Read from Errors.
-				case err, ok := <-watcher.Errors:
-					if !ok { // Channel was closed (i.e. Watcher.Close() was called).
-						return
-					}
-
-					fmt.Printf("ERROR: %s", err) //nolint:forbidigo // logger not initialized yet
-
-				// Read from Events.
-				case e, ok := <-watcher.Events:
-					if !ok { // Channel was closed (i.e. Watcher.Close() was called).
-						return
-					}
-
-					if strings.Contains(e.Name, "config.toml") {
-						if e.Has(fsnotify.Write) {
-							config.Loadallsettings(true)
-							parser.GenerateAllQualityPriorities()
-							parser.GenerateCutoffPriorities()
-							utils.LoadGlobalSchedulerConfig()
-							utils.LoadSchedulerConfig()
-						}
-					} else {
-						continue
-					}
-				}
-			}
-		}()
 	}
 
 	database.InitCache()
@@ -596,6 +307,7 @@ func main() {
 		general.WorkerMetadata,
 		general.WorkerRSS,
 		general.WorkerIndexer,
+		general.WorkerParse,
 	)
 
 	// Initialize syncops single-writer system
@@ -621,59 +333,14 @@ func main() {
 	logger.Logtype("info", 0).Msg("Build Date: " + buildstamp)
 	logger.Logtype("info", 0).Msg("Programmer: kellerman81")
 
-	if general.LogLevel != "Debug" {
+	if !strings.EqualFold(general.LogLevel, logger.StrDebug) {
 		logger.Logtype("info", 0).Msg("Hint: Set Loglevel to Debug to see possible API Paths")
 	}
 
 	logger.Logtype("info", 0).Msg("------------------------------")
 
-	apiexternal.NewOmdbClient(
-		general.OmdbAPIKey,
-		general.OmdbLimiterSeconds,
-		general.OmdbLimiterCalls,
-		general.OmdbDisableTLSVerify,
-		general.OmdbTimeoutSeconds,
-	)
-	apiexternal.NewTmdbClient(
-		general.TheMovieDBApiKey,
-		general.TmdbLimiterSeconds,
-		general.TmdbLimiterCalls,
-		general.TheMovieDBDisableTLSVerify,
-		general.TmdbTimeoutSeconds,
-	)
-	apiexternal.NewTvdbClient(
-		general.TvdbLimiterSeconds,
-		general.TvdbLimiterCalls,
-		general.TvdbDisableTLSVerify,
-		general.TvdbTimeoutSeconds,
-	)
-	apiexternal.NewTVmazeClient(
-		general.TvmazeLimiterSeconds,
-		general.TvmazeLimiterCalls,
-		general.TvmazeDisableTLSVerify,
-		general.TvmazeTimeoutSeconds,
-	)
-	apiexternal.NewTraktClient(
-		general.TraktClientID,
-		general.TraktClientSecret,
-		general.TraktLimiterSeconds,
-		general.TraktLimiterCalls,
-		general.TraktDisableTLSVerify,
-		general.TraktTimeoutSeconds,
-		general.TraktRedirectUrl,
-	)
-	apiexternal.NewPlexClient(
-		general.PlexLimiterSeconds,
-		general.PlexLimiterCalls,
-		general.PlexDisableTLSVerify,
-		general.PlexTimeoutSeconds,
-	)
-	apiexternal.NewJellyfinClient(
-		general.JellyfinLimiterSeconds,
-		general.JellyfinLimiterCalls,
-		general.JellyfinDisableTLSVerify,
-		general.JellyfinTimeoutSeconds,
-	)
+	providers.RegisterMetadataProviders()
+	providers.RegisterMediaServerProviders()
 
 	logger.Logtype("info", 0).Msg("Initialize Database")
 
@@ -696,7 +363,15 @@ func main() {
 	// Remove child rows whose parents are gone. The schema's ON DELETE CASCADE
 	// rules never fire because FK enforcement is disabled (optional reference
 	// columns store 0 instead of NULL), so orphans accumulate over time.
-	database.CleanupOrphans()
+	if _, err := database.CleanupOrphans(false); err != nil {
+		logger.Logtype("error", 0).Err(err).Msg("Orphan cleanup incomplete")
+	}
+
+	if closed, err := database.CloseInterruptedJobHistories(); err != nil {
+		logger.Logtype("error", 0).Err(err).Msg("Closing interrupted job histories failed")
+	} else if closed > 0 {
+		logger.Logtype("info", 0).Int64("rows", closed).Msg("Closed job histories left open by a previous run")
+	}
 
 	err = database.InitImdbdb()
 	if err != nil {
@@ -739,12 +414,7 @@ func main() {
 	// instead of as per-file errors during scans.
 	parser.CheckAnalyzerPaths()
 
-	if general.SearcherSize == 0 {
-		general.SearcherSize = 5000
-	}
-
 	initproviders()
-	// searcher.DefineSearchPool(general.SearcherSize)
 
 	logger.Logtype("info", 0).Msg("Check Fill IMDB")
 
@@ -763,29 +433,7 @@ func main() {
 	}
 
 	logger.Logtype("info", 0).Msg("Range Indexers")
-	config.RangeSettingsIndexer(func(_ string, idx *config.IndexersConfig) {
-		apiexternal.Getnewznabclient(idx)
-	})
-
-	// logger.Logtype("info", 0).Msg("Range Notification")
-	// config.RangeSettingsNotification(func(_ string, idx *config.NotificationConfig) {
-	// 	switch idx.NotificationType {
-	// 	case "pushover":
-	// 		apiexternal.GetPushoverclient(idx.Apikey)
-	// 	case "gotify":
-	// 		if idx.ServerURL != "" {
-	// 			apiexternal.GetGotifyClient(idx.ServerURL, idx.Apikey)
-	// 		}
-	// 	case "pushbullet":
-	// 		if idx.Apikey != "" {
-	// 			apiexternal.GetPushbulletClient(idx.Apikey)
-	// 		}
-	// 	case "apprise":
-	// 		if idx.ServerURL != "" {
-	// 			apiexternal.GetAppriseClient(idx.ServerURL)
-	// 		}
-	// 	}
-	// })
+	providers.SyncIndexerProviders()
 
 	worker.RegisterWorkerSyncMaps()
 	logger.Logtype("info", 0).Msg("Create Cron Worker")
@@ -872,12 +520,18 @@ func main() {
 		MaxHeaderBytes:    20 << 20,
 	}
 
+	// Signal handling is set up before the listener starts so a listen
+	// failure can trigger the normal shutdown path instead of leaving the
+	// app running against a closed database.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	listenFailed := make(chan struct{})
+
 	go func() {
-		// service connections
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			database.DBClose()
-			logger.Logtype("error", 0).Err(err).Msg("listen")
-			// logger.LogDynamicError("error", err, "listen")
+			logger.Logtype("error", 0).Err(err).Str("port", general.WebPort).Msg("listen failed - shutting down")
+			close(listenFailed)
 		}
 	}()
 
@@ -894,11 +548,23 @@ func main() {
 		general.WebPort, api.DefaultUsername, webPassword,
 	)
 
-	// Wait for interrupt signal to gracefully shutdown the server with
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	exitCode := 0
+
+	select {
+	case <-quit:
+	case <-listenFailed:
+		exitCode = 1
+	}
+
 	logger.Logtype("info", 0).Msg("Server shutting down")
+
+	// Stop accepting requests first so no handler touches the workers or the
+	// DB while they are being torn down.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Logtype("error", 0).Err(err).Msg("server shutdown")
+	}
+	cancel()
 
 	worker.StopCronWorker()
 	worker.CloseWorkerPools()
@@ -912,15 +578,9 @@ func main() {
 	database.DBClose()
 	logger.Logtype("info", 0).Msg("Databases and cache stopped")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Logtype("error", 0).Err(err).Msg("server shutdown")
-		// logger.LogDynamicError("error", err, "server shutdown")
-	}
-
-	ctx.Done()
-
 	logger.Logtype("info", 0).Msg("Server exiting")
+
+	if exitCode != 0 {
+		os.Exit(exitCode) //nolint:gocritic // after the full shutdown path above
+	}
 }

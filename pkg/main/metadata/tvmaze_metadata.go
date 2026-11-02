@@ -1,12 +1,14 @@
 package metadata
 
 import (
+	"context"
 	"strconv"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tvmaze"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 // fieldTracker efficiently tracks which fields were updated during metadata retrieval.
@@ -24,7 +26,7 @@ const (
 	fieldPremiered
 	fieldGenres
 	fieldPoster
-	fieldBanner
+	fieldFanart
 	fieldExternalIDs
 	fieldSlug
 )
@@ -115,12 +117,17 @@ func serieGetMetadataTvmaze(serie *database.Dbserie, overwrite bool) error {
 // lookupTVmazeShow attempts to find a show on TVmaze using available identifiers.
 // Returns the show details, the lookup method used, and any error.
 func lookupTVmazeShow(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, string, error) {
+	provider := providers.GetTVMaze()
+	if provider == nil {
+		return nil, "", logger.ErrNotFound
+	}
+
 	if serie.ThetvdbID != 0 {
-		return lookupByTVDBID(serie)
+		return lookupByTVDBID(provider, serie)
 	}
 
 	if serie.ImdbID != "" {
-		return lookupByIMDBID(serie.ImdbID, serie.Seriename, "IMDB ID")
+		return lookupByIMDBID(provider, serie.ImdbID, serie.Seriename, "IMDB ID")
 	}
 
 	logger.Logtype("debug", 1).
@@ -131,13 +138,13 @@ func lookupTVmazeShow(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, s
 }
 
 // lookupByTVDBID attempts to find a show using TVDB ID, with IMDB fallback.
-func lookupByTVDBID(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, string, error) {
+func lookupByTVDBID(provider *tvmaze.Provider, serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, string, error) {
 	logger.Logtype("debug", 2).
 		Int(logger.StrTvdb, serie.ThetvdbID).
 		Str(logger.StrTitle, serie.Seriename).
 		Msg("TVmaze lookup by TVDB ID")
 
-	show, err := apiexternal.GetTVmazeShowByTVDBID(serie.ThetvdbID)
+	show, err := provider.FindSeriesByTVDbID(context.Background(), serie.ThetvdbID)
 	if err == nil {
 		return show, "TVDB ID", nil
 	}
@@ -149,7 +156,7 @@ func lookupByTVDBID(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, str
 			Str(logger.StrTitle, serie.Seriename).
 			Msg("TVmaze TVDB lookup failed, trying IMDB fallback")
 
-		return lookupByIMDBID(serie.ImdbID, serie.Seriename, "IMDB ID (fallback)")
+		return lookupByIMDBID(provider, serie.ImdbID, serie.Seriename, "IMDB ID (fallback)")
 	}
 
 	return nil, "TVDB ID", err
@@ -157,6 +164,7 @@ func lookupByTVDBID(serie *database.Dbserie) (*apiexternal_v2.SeriesDetails, str
 
 // lookupByIMDBID attempts to find a show using IMDB ID.
 func lookupByIMDBID(
+	provider *tvmaze.Provider,
 	imdbID, serieName, method string,
 ) (*apiexternal_v2.SeriesDetails, string, error) {
 	logger.Logtype("debug", 2).
@@ -164,7 +172,7 @@ func lookupByIMDBID(
 		Str(logger.StrTitle, serieName).
 		Msg("TVmaze lookup by IMDB ID")
 
-	imdbResult, err := apiexternal.GetTVmazeShowByIMDBID(imdbID)
+	imdbResult, err := provider.FindSeriesByIMDbID(context.Background(), imdbID)
 	if err != nil {
 		logger.Logtype("error", 2).
 			Str(logger.StrTitle, serieName).
@@ -180,7 +188,7 @@ func lookupByIMDBID(
 	}
 
 	// Get full details using the TVmaze ID from search result
-	show, err := apiexternal.GetTVmazeShowByID(imdbResult.TVResults[0].ID)
+	show, err := provider.GetSeriesByID(context.Background(), imdbResult.TVResults[0].ID)
 	if err != nil {
 		logger.Logtype("error", 2).
 			Str(logger.StrTitle, serieName).
@@ -269,8 +277,8 @@ func applyTVmazeMetadata(
 	}
 
 	if show.BackdropPath != "" {
-		if UpdateString(&serie.Banner, show.BackdropPath, overwrite, nil) {
-			updated |= fieldBanner
+		if UpdateString(&serie.Fanart, show.BackdropPath, overwrite, nil) {
+			updated |= fieldFanart
 		}
 	}
 

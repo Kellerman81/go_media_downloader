@@ -119,17 +119,17 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			searchArgs = append(searchArgs, "%"+search+"%")
 
 		case "serie_episodes":
-			// Check if search is a series ID (numeric) or a text search
-			if seriesID, err := strconv.Atoi(search); err == nil && seriesID > 0 {
-				// Search is a series ID - filter episodes by this series
+			// The search page's episode picker (field serie_id) sends the
+			// selected series id as the search term; every other caller sends
+			// free text, where a number is an episode title/identifier term.
+			if seriesID, err := strconv.Atoi(search); err == nil && seriesID > 0 && fieldName == "serie_id" {
 				searchFilter = " WHERE series.id = ?"
 
 				searchArgs = append(searchArgs, seriesID)
-			} else if search != "" {
-				// Search is text - filter by episode title
-				searchFilter = " WHERE dbserie_episodes.title LIKE ?"
+			} else {
+				searchFilter = " WHERE (dbserie_episodes.title LIKE ? OR dbserie_episodes.identifier LIKE ? OR dbseries.seriename LIKE ?)"
 
-				searchArgs = append(searchArgs, "%"+search+"%")
+				searchArgs = append(searchArgs, "%"+search+"%", "%"+search+"%", "%"+search+"%")
 			}
 
 		case "qualities":
@@ -207,16 +207,6 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 		case "albums":
 			searchFilter = " WHERE dbalbums.title LIKE ?"
-
-			searchArgs = append(searchArgs, "%"+search+"%")
-
-		case "listnames":
-			searchFilter = " WHERE listname LIKE ?"
-
-			searchArgs = append(searchArgs, "%"+search+"%")
-
-		case "quality_profiles":
-			searchFilter = " WHERE quality_profile LIKE ?"
 
 			searchArgs = append(searchArgs, "%"+search+"%")
 		}
@@ -309,7 +299,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "movies":
 		query := fmt.Sprintf(
-			"SELECT dbmovies.title || ' - ' || movies.listname, movies.id FROM movies LEFT JOIN dbmovies ON movies.dbmovie_id = dbmovies.id%s ORDER BY dbmovies.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE(dbmovies.title, '(missing #' || movies.dbmovie_id || ')') || ' - ' || movies.listname, movies.id FROM movies LEFT JOIN dbmovies ON movies.dbmovie_id = dbmovies.id%s ORDER BY dbmovies.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		movies := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -329,7 +319,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "series":
 		query := fmt.Sprintf(
-			"SELECT dbseries.seriename || ' - ' || series.listname, series.id FROM series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename LIMIT ? OFFSET ?",
+			"SELECT COALESCE(dbseries.seriename, '(missing #' || series.dbserie_id || ')') || ' - ' || series.listname, series.id FROM series LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		series := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -349,7 +339,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "serie_episodes":
 		query := fmt.Sprintf(
-			"SELECT COALESCE(dbseries.seriename, 'Unknown Series') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.identifier IS NOT NULL AND dbserie_episodes.identifier != 'S00E00' THEN dbserie_episodes.identifier ELSE 'ID:' || serie_episodes.id END, 'Unknown') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.title IS NOT NULL AND TRIM(dbserie_episodes.title) != '' THEN dbserie_episodes.title ELSE 'Episode ' || COALESCE(dbserie_episodes.episode, 'Unknown') END, 'Unknown Episode') || ' (' || series.listname || ')', serie_episodes.id FROM serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id LEFT JOIN series ON serie_episodes.serie_id = series.id LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename, series.listname, dbserie_episodes.season, dbserie_episodes.episode LIMIT ? OFFSET ?",
+			"SELECT COALESCE(dbseries.seriename, 'Unknown Series') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.identifier IS NOT NULL AND dbserie_episodes.identifier != 'S00E00' THEN dbserie_episodes.identifier ELSE 'ID:' || serie_episodes.id END, 'Unknown') || ' - ' || COALESCE(CASE WHEN dbserie_episodes.title IS NOT NULL AND TRIM(dbserie_episodes.title) != '' THEN dbserie_episodes.title ELSE 'Episode ' || COALESCE(dbserie_episodes.episode, 'Unknown') END, 'Unknown Episode') || ' (' || COALESCE(series.listname, '?') || ')', serie_episodes.id FROM serie_episodes LEFT JOIN dbserie_episodes ON serie_episodes.dbserie_episode_id = dbserie_episodes.id LEFT JOIN series ON serie_episodes.serie_id = series.id LEFT JOIN dbseries ON series.dbserie_id = dbseries.id%s ORDER BY dbseries.seriename, series.listname, dbserie_episodes.season, dbserie_episodes.episode LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		episodes := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -409,96 +399,6 @@ func apiAdminDropdownData(ctx *gin.Context) {
 			options = append(options, createSelect2Option(quality.Num, quality.Str))
 		}
 
-	case "listnames":
-		var query string
-		switch tableName {
-		case "movies":
-			query = fmt.Sprintf(
-				"SELECT DISTINCT listname, listname FROM movies%s ORDER BY listname LIMIT ? OFFSET ?",
-				searchFilter,
-			)
-
-		case "series":
-			query = fmt.Sprintf(
-				"SELECT DISTINCT listname, listname FROM series%s ORDER BY listname LIMIT ? OFFSET ?",
-				searchFilter,
-			)
-
-		default:
-			query = fmt.Sprintf(
-				"SELECT DISTINCT listname, listname FROM %s%s ORDER BY listname LIMIT ? OFFSET ?",
-				tableName,
-				searchFilter,
-			)
-		}
-
-		listnames := database.GetrowsN[database.DbstaticTwoString](
-			false,
-			uint(pageSize+1),
-			query,
-			searchArgs...)
-
-		hasMore = len(listnames) > pageSize
-		if hasMore {
-			listnames = listnames[:pageSize]
-		}
-
-		for _, listname := range listnames {
-			options = append(options, createSelect2OptionString(listname.Str1, listname.Str1))
-		}
-
-	case "quality_profiles":
-		var query string
-		switch tableName {
-		case "movies":
-			query = fmt.Sprintf(
-				"SELECT DISTINCT quality_profile, quality_profile FROM movies%s ORDER BY quality_profile LIMIT ? OFFSET ?",
-				searchFilter,
-			)
-
-		case "series":
-			query = fmt.Sprintf(
-				"SELECT DISTINCT quality_profile, quality_profile FROM serie_episodes%s ORDER BY quality_profile LIMIT ? OFFSET ?",
-				searchFilter,
-			)
-
-		case "movie_histories":
-			query = fmt.Sprintf(
-				"SELECT DISTINCT quality_profile, quality_profile FROM movie_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?",
-				searchFilter,
-			)
-
-		case "serie_episode_histories":
-			query = fmt.Sprintf(
-				"SELECT DISTINCT quality_profile, quality_profile FROM serie_episode_histories%s ORDER BY quality_profile LIMIT ? OFFSET ?",
-				searchFilter,
-			)
-
-		default:
-			query = fmt.Sprintf(
-				"SELECT DISTINCT quality_profile, quality_profile FROM %s%s ORDER BY quality_profile LIMIT ? OFFSET ?",
-				tableName,
-				searchFilter,
-			)
-		}
-
-		profiles := database.GetrowsN[database.DbstaticTwoString](
-			false,
-			uint(pageSize+1),
-			query,
-			searchArgs...)
-
-		hasMore = len(profiles) > pageSize
-		if hasMore {
-			profiles = profiles[:pageSize]
-		}
-
-		for _, profile := range profiles {
-			if profile.Str1 != "" {
-				options = append(options, createSelect2OptionString(profile.Str1, profile.Str1))
-			}
-		}
-
 	// Book tables
 	case "dbbooks":
 		query := fmt.Sprintf(
@@ -542,7 +442,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "books":
 		query := fmt.Sprintf(
-			"SELECT COALESCE((SELECT au.name FROM dbauthors au WHERE au.id = dbbooks.dbauthor_id) || ' - ', '') || dbbooks.title || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id%s ORDER BY CASE WHEN dbbooks.title IS NULL OR dbbooks.title = '' THEN 1 ELSE 0 END, dbbooks.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE((SELECT au.name FROM dbauthors au WHERE au.id = dbbooks.dbauthor_id) || ' - ', '') || COALESCE(dbbooks.title, '(missing #' || books.dbbook_id || ')') || ' - ' || books.listname, books.id FROM books LEFT JOIN dbbooks ON books.dbbook_id = dbbooks.id%s ORDER BY CASE WHEN dbbooks.title IS NULL OR dbbooks.title = '' THEN 1 ELSE 0 END, dbbooks.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		books := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -603,7 +503,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "audiobooks":
 		query := fmt.Sprintf(
-			"SELECT COALESCE((SELECT au.name FROM dbaudiobook_authors aba JOIN dbauthors au ON au.id = aba.dbauthor_id WHERE aba.dbaudiobook_id = dbaudiobooks.id LIMIT 1) || ' - ', '') || dbaudiobooks.title || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id%s ORDER BY CASE WHEN dbaudiobooks.title IS NULL OR dbaudiobooks.title = '' THEN 1 ELSE 0 END, dbaudiobooks.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE((SELECT au.name FROM dbaudiobook_authors aba JOIN dbauthors au ON au.id = aba.dbauthor_id WHERE aba.dbaudiobook_id = dbaudiobooks.id LIMIT 1) || ' - ', '') || COALESCE(dbaudiobooks.title, '(missing #' || audiobooks.dbaudiobook_id || ')') || ' - ' || audiobooks.listname, audiobooks.id FROM audiobooks LEFT JOIN dbaudiobooks ON audiobooks.dbaudiobook_id = dbaudiobooks.id%s ORDER BY CASE WHEN dbaudiobooks.title IS NULL OR dbaudiobooks.title = '' THEN 1 ELSE 0 END, dbaudiobooks.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		audiobooks := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -664,7 +564,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "albums":
 		query := fmt.Sprintf(
-			"SELECT COALESCE((SELECT ar.name FROM dbalbum_artists aa JOIN dbartists ar ON ar.id = aa.dbartist_id WHERE aa.dbalbum_id = dbalbums.id LIMIT 1) || ' - ', '') || dbalbums.title || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id%s ORDER BY CASE WHEN dbalbums.title IS NULL OR dbalbums.title = '' THEN 1 ELSE 0 END, dbalbums.title LIMIT ? OFFSET ?",
+			"SELECT COALESCE((SELECT ar.name FROM dbalbum_artists aa JOIN dbartists ar ON ar.id = aa.dbartist_id WHERE aa.dbalbum_id = dbalbums.id LIMIT 1) || ' - ', '') || COALESCE(dbalbums.title, '(missing #' || albums.dbalbum_id || ')') || ' - ' || albums.listname, albums.id FROM albums LEFT JOIN dbalbums ON albums.dbalbum_id = dbalbums.id%s ORDER BY CASE WHEN dbalbums.title IS NULL OR dbalbums.title = '' THEN 1 ELSE 0 END, dbalbums.title LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		albums := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -705,7 +605,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "authors":
 		query := fmt.Sprintf(
-			"SELECT dbauthors.name || ' - ' || authors.listname, authors.id FROM authors LEFT JOIN dbauthors ON authors.dbauthor_id = dbauthors.id%s ORDER BY dbauthors.name LIMIT ? OFFSET ?",
+			"SELECT COALESCE(dbauthors.name, '(missing #' || authors.dbauthor_id || ')') || ' - ' || authors.listname, authors.id FROM authors LEFT JOIN dbauthors ON authors.dbauthor_id = dbauthors.id%s ORDER BY dbauthors.name LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		authors := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -725,7 +625,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "book_series":
 		query := fmt.Sprintf(
-			"SELECT dbbook_series.name || ' - ' || book_series.listname, book_series.id FROM book_series LEFT JOIN dbbook_series ON book_series.dbbook_series_id = dbbook_series.id%s ORDER BY dbbook_series.name LIMIT ? OFFSET ?",
+			"SELECT COALESCE(dbbook_series.name, '(missing #' || book_series.dbbook_series_id || ')') || ' - ' || book_series.listname, book_series.id FROM book_series LEFT JOIN dbbook_series ON book_series.dbbook_series_id = dbbook_series.id%s ORDER BY dbbook_series.name LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		series := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -745,9 +645,16 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	// Additional music tables
 	case "dbtracks":
+		// Unfiltered, sort by the primary key: sorting ~1M rows by track_number
+		// took seconds per open and listed every album's track 1 first.
+		order := " ORDER BY id DESC"
+		if searchFilter != "" {
+			order = " ORDER BY title"
+		}
+
 		query := fmt.Sprintf(
-			"SELECT title, id FROM dbtracks%s ORDER BY track_number LIMIT ? OFFSET ?",
-			searchFilter,
+			"SELECT title, id FROM dbtracks%s%s LIMIT ? OFFSET ?",
+			searchFilter, order,
 		)
 		tracks := database.GetrowsN[database.DbstaticOneStringOneInt](
 			false,
@@ -766,7 +673,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 
 	case "artists":
 		query := fmt.Sprintf(
-			"SELECT dbartists.name || ' - ' || artists.listname, artists.id FROM artists LEFT JOIN dbartists ON artists.dbartist_id = dbartists.id%s ORDER BY dbartists.name LIMIT ? OFFSET ?",
+			"SELECT COALESCE(dbartists.name, '(missing #' || artists.dbartist_id || ')') || ' - ' || artists.listname, artists.id FROM artists LEFT JOIN dbartists ON artists.dbartist_id = dbartists.id%s ORDER BY dbartists.name LIMIT ? OFFSET ?",
 			searchFilter,
 		)
 		artists := database.GetrowsN[database.DbstaticOneStringOneInt](
@@ -795,7 +702,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 // @Param        name   path     string                 true "Table name"
 // @Param        data   body     map[string]any true "Record data"
 // @Param        apikey query    string                 true "apikey"
-// @Success      200    {object} gin.H{"success": bool}
+// @Success      200    {object} gin.H
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Router       /api/admin/table/{name}/insert [post].
@@ -845,7 +752,7 @@ func apiAdminTableInsert(ctx *gin.Context) {
 // @Param        index  path     int                    true "Record index"
 // @Param        data   body     map[string]any true "Record data"
 // @Param        apikey query    string                 true "apikey"
-// @Success      200    {object} gin.H{"success": bool}
+// @Success      200    {object} gin.H
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Router       /api/admin/table/{name}/update/{index} [post].
@@ -893,6 +800,19 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 				data[key] = values[0] // Take first value if multiple
 			}
 		}
+
+		// Unchecked checkboxes are not posted at all; without this an edit
+		// form could never switch a flag column back off.
+		if database.GetTableDefaults(tableName).Table == "" {
+			sendBadRequest(ctx, "unknown table: "+tableName)
+			return
+		}
+
+		for col := range getColumnTypes(tableName) {
+			if _, posted := data[col]; !posted && isCheckboxFieldRefactored(col) {
+				data[col] = "0"
+			}
+		}
 	}
 
 	err = updateAdminRecord(tableName, index, data)
@@ -905,7 +825,7 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 // @Param        name   path     string true "Table name"
 // @Param        index  path     int    true "Record index"
 // @Param        apikey query    string true "apikey"
-// @Success      200    {object} gin.H{"success": bool}
+// @Success      200    {object} gin.H
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Router       /api/admin/table/{name}/delete/{index} [post].
@@ -962,229 +882,148 @@ func apiAdminTableDataJson(ctx *gin.Context) {
 		return
 	}
 
-	// logger.Logtype("info", 1).Str("method", ctx.Request.Method).Msg("table")
-
-	size, _ := strconv.Atoi(getParam(ctx, "iDisplayLength", "10"))
-	start, _ := strconv.Atoi(getParam(ctx, "iDisplayStart", "0"))
-	// order := "id"
+	// Table and column names below are interpolated into SQL, so only tables
+	// known to GetTableDefaults are accepted. Every Table there starts with
+	// tableName itself, which is therefore also safe to count from.
 	tabledefault := database.GetTableDefaults(tableName)
-	columns := strings.Split(tabledefault.DefaultColumns, ",")
+	if tabledefault.Table == "" {
+		sendBadRequest(ctx, "unknown table")
+		return
+	}
 
-	// DataTables sends the sort column index in iSortCol_0. Guard against an index
-	// that is out of range (e.g. the non-data "Actions" column) so we never panic
-	// on an out-of-bounds slice access.
+	size, start := tableJSONPaging(getParam(ctx, "iDisplayLength", "10"), getParam(ctx, "iDisplayStart", "0"))
+	columns := strings.Split(tabledefault.DefaultColumns, ",")
+	orderby := tableJSONOrderBy(
+		columns,
+		getParam(ctx, "iSortCol_0", ""),
+		getParam(ctx, "sSortDir_0", "asc"),
+		tabledefault.DefaultOrderBy,
+	)
+	searchValue := getParamValue(ctx, "sSearch")
+
+	customFilters, customArgs := buildCustomFilters(tableName, ctx)
+
+	var final, total int
+
+	database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+tableName, &total)
+
+	var queryArgs []any
+
+	whereClause := ""
+
+	if searchValue != "" || customFilters != "" {
+		var conditions []string
+
+		if searchValue != "" && tabledefault.DefaultQuery != "" {
+			queryCondition := strings.TrimSpace(tabledefault.DefaultQuery)
+			queryCondition = strings.TrimPrefix(queryCondition, "WHERE ")
+			queryCondition = strings.TrimPrefix(queryCondition, "where ")
+			conditions = append(conditions, queryCondition)
+
+			for range tabledefault.DefaultQueryParamCount {
+				queryArgs = append(queryArgs, "%"+searchValue+"%")
+			}
+		}
+
+		if customFilters != "" {
+			conditions = append(conditions, customFilters)
+			queryArgs = append(queryArgs, customArgs...)
+		}
+
+		whereClause = tableJSONWhere(conditions)
+	}
+
+	data := database.GetrowsType(
+		tabledefault.Object,
+		false,
+		uint(size),
+		"select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+whereClause+" "+orderby+" LIMIT ?, ?",
+		append(queryArgs, start, size)...)
+	retdata := make([][]string, 0, len(data))
+
+	for _, loop := range data {
+		row := make([]string, 0, len(columns))
+		for _, v := range columns {
+			v = strings.TrimSpace(v)
+			if logger.ContainsI(v, " as ") {
+				v = strings.Split(v, " as ")[1]
+			}
+
+			row = append(row, fmt.Sprint(loop[v]))
+		}
+
+		retdata = append(retdata, row)
+	}
+
+	if whereClause == "" {
+		final = total
+	} else {
+		database.Scanrowsdyn(
+			false,
+			"select Count(*) as frequency FROM "+tabledefault.Table+" "+whereClause,
+			&final,
+			queryArgs...)
+	}
+
+	sendDataTablesResponse(ctx, total, final, retdata)
+}
+
+// tableJSONMaxPageSize caps DataTables page requests; "-1" (show all) would
+// otherwise pull an entire 1M-row table into memory.
+const tableJSONMaxPageSize = 1000
+
+func tableJSONPaging(lengthParam, startParam string) (size, start int) {
+	size, _ = strconv.Atoi(lengthParam)
+	if size <= 0 || size > tableJSONMaxPageSize {
+		size = tableJSONMaxPageSize
+	}
+
+	start, _ = strconv.Atoi(startParam)
+	if start < 0 {
+		start = 0
+	}
+
+	return size, start
+}
+
+// tableJSONOrderBy builds the ORDER BY clause. The column comes from the
+// table's own column list by index and the direction is restricted to
+// asc/desc, so no client string reaches the SQL. Without a sort column the
+// table's DefaultOrderBy applies.
+func tableJSONOrderBy(columns []string, sortColParam, dirParam, defaultOrderBy string) string {
+	if sortColParam == "" && strings.TrimSpace(defaultOrderBy) != "" {
+		return strings.TrimSpace(defaultOrderBy)
+	}
+
 	order := "id"
 	if len(columns) > 0 {
-		orderidx := logger.StringToInt(getParam(ctx, "iSortCol_0", "0"))
+		orderidx := logger.StringToInt(sortColParam)
 		if orderidx < 0 || orderidx >= len(columns) {
 			orderidx = 0
 		}
 
 		order = strings.TrimSpace(columns[orderidx])
 		if logger.ContainsI(order, " as ") {
-			order = strings.Split(order, " as ")[1]
+			order = strings.TrimSpace(strings.Split(order, " as ")[1])
 		}
 	}
 
-	direction := getParam(ctx, "sSortDir_0", "asc")
-
-	orderby := "order by " + order + " " + direction
-	searchValue := getParamValue(ctx, "sSearch")
-
-	// Build custom filters
-	customFilters, customArgs := buildCustomFilters(tableName, ctx)
-
-	var final, total int
-	// Handle special case for tables with JOINs
-	countTable := tableName
-	switch tableName {
-	case "dbmovie_titles":
-		countTable = "dbmovie_titles"
-	case "dbserie_alternates":
-		countTable = "dbserie_alternates"
-	case "dbserie_episodes":
-		countTable = "dbserie_episodes"
-	case "movies":
-		countTable = "movies"
-	case "series":
-		countTable = "series"
-	case "serie_episodes":
-		countTable = "serie_episodes"
-	case "movie_file_unmatcheds":
-		countTable = "movie_file_unmatcheds"
-	case "serie_file_unmatcheds":
-		countTable = "serie_file_unmatcheds"
-	case "movie_files":
-		countTable = "movie_files"
-	case "serie_episode_files":
-		countTable = "serie_episode_files"
-	case "movie_histories":
-		countTable = "movie_histories"
-	case "serie_episode_histories":
-		countTable = "serie_episode_histories"
-
-	// Book tables
-	case "dbbooks":
-		countTable = "dbbooks"
-	case "dbauthors":
-		countTable = "dbauthors"
-	case "dbbook_titles":
-		countTable = "dbbook_titles"
-	case "dbbook_series":
-		countTable = "dbbook_series"
-	case "books":
-		countTable = "books"
-	case "book_files":
-		countTable = "book_files"
-	case "authors":
-		countTable = "authors"
-	case "book_series":
-		countTable = "book_series"
-	case "book_file_unmatcheds":
-		countTable = "book_file_unmatcheds"
-	case "book_histories":
-		countTable = "book_histories"
-
-	// Audiobook tables
-	case "dbaudiobooks":
-		countTable = "dbaudiobooks"
-	case "dbnarrators":
-		countTable = "dbnarrators"
-	case "dbaudiobook_titles":
-		countTable = "dbaudiobook_titles"
-	case "audiobooks":
-		countTable = "audiobooks"
-	case "audiobook_files":
-		countTable = "audiobook_files"
-	case "audiobook_file_unmatcheds":
-		countTable = "audiobook_file_unmatcheds"
-	case "audiobook_histories":
-		countTable = "audiobook_histories"
-
-	// Music tables
-	case "dbalbums":
-		countTable = "dbalbums"
-	case "dbartists":
-		countTable = "dbartists"
-	case "dbalbum_titles":
-		countTable = "dbalbum_titles"
-	case "dbtracks":
-		countTable = "dbtracks"
-	case "albums":
-		countTable = "albums"
-	case "album_files":
-		countTable = "album_files"
-	case "artists":
-		countTable = "artists"
-	case "album_file_unmatcheds":
-		countTable = "album_file_unmatcheds"
-	case "album_histories":
-		countTable = "album_histories"
+	direction := "asc"
+	if strings.EqualFold(strings.TrimSpace(dirParam), "desc") {
+		direction = "desc"
 	}
 
-	database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+countTable, &total)
+	return "order by " + order + " " + direction
+}
 
-	// Build the complete WHERE clause
-	var (
-		whereClause string
-		queryArgs   []any
-	)
-
-	if searchValue != "" || customFilters != "" {
-		var conditions []string
-
-		// Add general search condition
-		if searchValue != "" {
-			var aux []any
-			for range tabledefault.DefaultQueryParamCount {
-				aux = append(aux, "%"+searchValue+"%")
-			}
-
-			if tabledefault.DefaultQuery != "" {
-				// Trim both " where " and " WHERE " prefixes (case insensitive)
-				queryCondition := strings.TrimSpace(tabledefault.DefaultQuery)
-
-				queryCondition = strings.TrimPrefix(queryCondition, "WHERE ")
-				queryCondition = strings.TrimPrefix(queryCondition, "where ")
-				conditions = append(
-					conditions,
-					queryCondition,
-				)
-				queryArgs = append(queryArgs, aux...)
-			}
-		}
-
-		// Add custom filters
-		if customFilters != "" {
-			conditions = append(conditions, customFilters)
-			queryArgs = append(queryArgs, customArgs...)
-		}
-
-		if len(conditions) > 0 {
-			whereClause = "WHERE " + strings.Join(conditions, " AND ")
-		}
-
-		data := database.GetrowsType(
-			tabledefault.Object,
-			false,
-			1000,
-			"select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+whereClause+" "+orderby+" LIMIT ?, ?",
-			append(queryArgs, start, size)...)
-		retdata := make([][]string, 0, len(data))
-
-		splitted := strings.Split(tabledefault.DefaultColumns, ",")
-		for _, loop := range data {
-			row := make([]string, 0, len(splitted))
-			for _, v := range splitted {
-				v = strings.TrimSpace(v)
-				if logger.ContainsI(v, " as ") {
-					v = strings.Split(v, " as ")[1]
-				}
-
-				row = append(row, fmt.Sprint(loop[v]))
-			}
-
-			retdata = append(retdata, row)
-		}
-
-		// Count filtered results
-		database.Scanrowsdyn(
-			false,
-			"select Count(*) as frequency FROM "+tabledefault.Table+" "+whereClause,
-			&final,
-			queryArgs...)
-		sendDataTablesResponse(ctx, total, final, retdata)
-
-		return
-	} else {
-		data := database.GetrowsType(
-			tabledefault.Object,
-			false,
-			1000,
-			"select "+tabledefault.DefaultColumns+" from "+tabledefault.Table+" "+orderby+" LIMIT ?, ?",
-			start,
-			size,
-		)
-		retdata := make([][]string, 0, len(data))
-
-		splitted := strings.Split(tabledefault.DefaultColumns, ",")
-		for _, loop := range data {
-			row := make([]string, 0, len(splitted))
-			for _, v := range splitted {
-				v = strings.TrimSpace(v)
-				if logger.ContainsI(v, " as ") {
-					v = strings.Split(v, " as ")[1]
-				}
-
-				row = append(row, fmt.Sprint(loop[v]))
-			}
-
-			retdata = append(retdata, row)
-		}
-
-		database.Scanrowsdyn(false, "select Count(*) as frequency FROM "+countTable, &final)
-		sendDataTablesResponse(ctx, total, final, retdata)
+// tableJSONWhere parenthesises each condition so an OR inside the search
+// clause can't swallow the filters ANDed after it.
+func tableJSONWhere(conditions []string) string {
+	if len(conditions) == 0 {
+		return ""
 	}
+
+	return "WHERE (" + strings.Join(conditions, ") AND (") + ")"
 }
 
 func apiAdminTableDataEditForm(ctx *gin.Context) {

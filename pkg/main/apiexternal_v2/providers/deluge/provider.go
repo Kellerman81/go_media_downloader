@@ -1,11 +1,13 @@
 package deluge
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/cookiejar"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,7 +67,7 @@ func NewProvider(baseURL, username, password string) *Provider {
 
 	return &Provider{
 		BaseClient: baseClient,
-		baseURL:    baseURL + "/json",
+		baseURL:    strings.TrimSuffix(baseURL, "/") + "/json",
 		username:   username,
 		password:   password,
 		cookieJar:  jar,
@@ -87,21 +89,15 @@ func (p *Provider) AddTorrent(
 	ctx context.Context,
 	request apiexternal_v2.TorrentAddRequest,
 ) (*apiexternal_v2.TorrentAddResponse, error) {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return nil, err
-	}
+	options := map[string]any{}
 
-	// Prepare torrent options
-	options := map[string]any{
-		"download_location": request.SavePath,
+	// An empty download_location would override Deluge's default path with "".
+	if request.SavePath != "" {
+		options["download_location"] = request.SavePath
 	}
 
 	if request.Paused {
 		options["add_paused"] = true
-	}
-
-	if request.Priority > 0 {
-		options["priority"] = request.Priority
 	}
 
 	// Apply additional options
@@ -132,17 +128,33 @@ func (p *Provider) AddTorrent(
 		method = "core.add_torrent_magnet"
 		params = []any{request.URL, options}
 	} else if len(request.TorrentData) > 0 {
-		// For raw torrent data, encode as base64
-		// Deluge expects base64-encoded torrent file
+		// core.add_torrent_file(filename, filedump, options): filedump is the
+		// base64-encoded .torrent content.
 		method = "core.add_torrent_file"
-		params = []any{"", string(request.TorrentData), options}
+		params = []any{
+			"",
+			base64.StdEncoding.EncodeToString(request.TorrentData),
+			options,
+		}
 	} else {
 		method = "core.add_torrent_url"
 		params = []any{request.URL, options}
 	}
 
-	result, err := p.makeRPCCall(ctx, method, params)
+	result, err := p.call(ctx, method, params)
 	if err != nil {
+		// Deluge 2.x raises AddTorrentError("Torrent already in session
+		// (<hash>).") for a duplicate add; the torrent is present, which is
+		// what the caller asked for.
+		if hash, ok := alreadyInSessionHash(err); ok {
+			return &apiexternal_v2.TorrentAddResponse{
+				Hash:     hash,
+				Success:  true,
+				Message:  "torrent already added",
+				Provider: "deluge",
+			}, nil
+		}
+
 		return nil, err
 	}
 
@@ -159,10 +171,70 @@ func (p *Provider) AddTorrent(
 		}, errors.New("deluge rejected the torrent add - no hash returned")
 	}
 
+	label := request.Label
+	if label == "" {
+		label = request.Category
+	}
+
+	if label != "" {
+		if err := p.setLabel(ctx, hash, label); err != nil {
+			logger.Logtype("warn", 0).
+				Err(err).
+				Str("hash", hash).
+				Str("label", label).
+				Msg("deluge: torrent added but label could not be set")
+		}
+	}
+
 	return &apiexternal_v2.TorrentAddResponse{
 		Hash:    hash,
 		Success: true,
 	}, nil
+}
+
+// setLabel assigns label to the torrent via Deluge's Label plugin, creating
+// the label first if needed. Without the plugin enabled it does nothing.
+// Deluge has no per-torrent priority in its core API, so the downloader
+// priority setting is not applied to Deluge.
+func (p *Provider) setLabel(ctx context.Context, hash, label string) error {
+	plugins, err := p.call(ctx, "core.get_enabled_plugins", []any{})
+	if err != nil {
+		return err
+	}
+
+	if !containsString(plugins, "Label") {
+		return nil
+	}
+
+	// The Label plugin only accepts lowercase label ids.
+	label = strings.ToLower(label)
+
+	labels, err := p.call(ctx, "label.get_labels", []any{})
+	if err != nil {
+		return err
+	}
+
+	if !containsString(labels, label) {
+		if _, err := p.call(ctx, "label.add", []any{label}); err != nil {
+			return err
+		}
+	}
+
+	_, err = p.call(ctx, "label.set_torrent", []any{hash, label})
+
+	return err
+}
+
+// containsString reports whether a decoded JSON array contains s.
+func containsString(list any, s string) bool {
+	items, _ := list.([]any)
+	for _, item := range items {
+		if v, ok := item.(string); ok && v == s {
+			return true
+		}
+	}
+
+	return false
 }
 
 // GetTorrentInfo retrieves information about a specific torrent.
@@ -170,17 +242,13 @@ func (p *Provider) GetTorrentInfo(
 	ctx context.Context,
 	hash string,
 ) (*apiexternal_v2.TorrentInfo, error) {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return nil, err
-	}
-
 	// Request specific status keys
 	keys := []string{
 		"name", "state", "progress", "total_size", "total_done", "total_uploaded",
 		"download_payload_rate", "upload_payload_rate", "eta", "save_path", "time_added",
 	}
 
-	result, err := p.makeRPCCall(ctx, "core.get_torrent_status", []any{hash, keys})
+	result, err := p.call(ctx, "core.get_torrent_status", []any{hash, keys})
 	if err != nil {
 		return nil, err
 	}
@@ -198,10 +266,6 @@ func (p *Provider) ListTorrents(
 	ctx context.Context,
 	filter string,
 ) (*apiexternal_v2.TorrentListResponse, error) {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return nil, err
-	}
-
 	// Request specific status keys
 	keys := []string{
 		"name", "state", "progress", "total_size", "total_done", "total_uploaded",
@@ -209,7 +273,7 @@ func (p *Provider) ListTorrents(
 	}
 
 	// First parameter is filter dict (empty for all torrents), second is keys
-	result, err := p.makeRPCCall(ctx, "core.get_torrents_status", []any{map[string]any{}, keys})
+	result, err := p.call(ctx, "core.get_torrents_status", []any{map[string]any{}, keys})
 	if err != nil {
 		return nil, err
 	}
@@ -243,44 +307,38 @@ func (p *Provider) ListTorrents(
 
 // PauseTorrent pauses a torrent.
 func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return err
-	}
-
-	_, err := p.makeRPCCall(ctx, "core.pause_torrent", []any{[]string{hash}})
+	// The plural form takes a list of ids in Deluge 2.x; the singular
+	// pause_torrent takes a single id string there.
+	_, err := p.call(ctx, "core.pause_torrents", []any{[]string{hash}})
 
 	return err
 }
 
 // ResumeTorrent resumes a torrent.
 func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return err
-	}
-
-	_, err := p.makeRPCCall(ctx, "core.resume_torrent", []any{[]string{hash}})
+	_, err := p.call(ctx, "core.resume_torrents", []any{[]string{hash}})
 
 	return err
 }
 
 // RemoveTorrent removes a torrent.
 func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles bool) error {
-	if err := p.ensureAuthenticated(ctx); err != nil {
+	result, err := p.call(ctx, "core.remove_torrent", []any{hash, deleteFiles})
+	if err != nil {
 		return err
 	}
 
-	_, err := p.makeRPCCall(ctx, "core.remove_torrent", []any{hash, deleteFiles})
+	// remove_torrent returns false (not an RPC error) when nothing was removed.
+	if removed, ok := result.(bool); ok && !removed {
+		return errors.New(logger.JoinStrings("deluge did not remove torrent ", hash))
+	}
 
-	return err
+	return nil
 }
 
 // GetStatus retrieves the client status.
 func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClientStatus, error) {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return nil, err
-	}
-
-	result, err := p.makeRPCCall(
+	result, err := p.call(
 		ctx,
 		"core.get_session_status",
 		[]any{[]string{"upload_rate", "download_rate", "num_peers"}},
@@ -313,21 +371,39 @@ func (p *Provider) GetStatus(ctx context.Context) (*apiexternal_v2.DownloadClien
 
 // TestConnection validates connectivity.
 func (p *Provider) TestConnection(ctx context.Context) error {
-	if err := p.ensureAuthenticated(ctx); err != nil {
-		return err
-	}
-
 	// Verify we're connected by checking connection status
-	result, err := p.makeRPCCall(ctx, "web.connected", []any{})
+	connected, err := p.daemonConnected(ctx)
 	if err != nil {
 		return err
 	}
 
-	if connected, ok := result.(bool); !ok || !connected {
+	if !connected {
+		if err := p.connectDaemon(ctx); err != nil {
+			return err
+		}
+
+		if connected, err = p.daemonConnected(ctx); err != nil {
+			return err
+		}
+	}
+
+	if !connected {
 		return errors.New("not connected to daemon")
 	}
 
 	return nil
+}
+
+// daemonConnected reports whether the web UI is attached to a daemon.
+func (p *Provider) daemonConnected(ctx context.Context) (bool, error) {
+	result, err := p.call(ctx, "web.connected", []any{})
+	if err != nil {
+		return false, err
+	}
+
+	connected, _ := result.(bool)
+
+	return connected, nil
 }
 
 // Helper methods
@@ -369,54 +445,111 @@ func (p *Provider) authenticate(ctx context.Context) error {
 		}
 	}
 
-	// Check if we need to connect to a daemon
-	// Get list of available hosts
-	result, err := p.makeRPCCall(ctx, "web.get_hosts", []any{})
-	if err != nil {
-		// If this fails, we might already be connected or it's not needed
-		p.storeSessionID("authenticated")
-		return nil
-	}
-
-	// Parse hosts list
-	hosts, ok := result.([]any)
-	if !ok || len(hosts) == 0 {
-		p.storeSessionID("authenticated")
-		return nil
-	}
-
-	// Get the first host (usually the local daemon)
-	firstHost, ok := hosts[0].([]any)
-	if !ok || len(firstHost) == 0 {
-		p.storeSessionID("authenticated")
-		return nil
-	}
-
-	// Extract host ID (first element)
-	hostID, ok := firstHost[0].(string)
-	if !ok {
-		p.storeSessionID("authenticated")
-		return nil
-	}
-
-	// Check if already connected
-	connResult, err := p.makeRPCCall(ctx, "web.connected", []any{})
-	if err == nil {
-		if connected, ok := connResult.(bool); ok && connected {
-			p.storeSessionID("authenticated")
-			return nil
-		}
-	}
-
-	// Connect to the daemon
-	_, err = p.makeRPCCall(ctx, "web.connect", []any{hostID})
-	if err != nil {
-		return errors.New(logger.JoinStrings("failed to connect to daemon: ", err.Error()))
+	if err := p.connectDaemon(ctx); err != nil {
+		return err
 	}
 
 	p.storeSessionID("authenticated")
 
 	return nil
+}
+
+// connectDaemon attaches the web UI to the first configured daemon if it isn't
+// already. deluge-web keeps login sessions across a restart but does not
+// reconnect to the daemon by itself, so this must also run when a still-valid
+// session reports itself disconnected - not only right after auth.login.
+func (p *Provider) connectDaemon(ctx context.Context) error {
+	connResult, err := p.makeRPCCall(ctx, "web.connected", []any{})
+	if err == nil {
+		if connected, ok := connResult.(bool); ok && connected {
+			return nil
+		}
+	}
+
+	result, err := p.makeRPCCall(ctx, "web.get_hosts", []any{})
+	if err != nil {
+		// Older web UIs without host management are connected implicitly.
+		return nil
+	}
+
+	hosts, ok := result.([]any)
+	if !ok || len(hosts) == 0 {
+		return nil
+	}
+
+	firstHost, ok := hosts[0].([]any)
+	if !ok || len(firstHost) == 0 {
+		return nil
+	}
+
+	hostID, ok := firstHost[0].(string)
+	if !ok {
+		return nil
+	}
+
+	if _, err := p.makeRPCCall(ctx, "web.connect", []any{hostID}); err != nil {
+		return errors.New(logger.JoinStrings("failed to connect to daemon: ", err.Error()))
+	}
+
+	return nil
+}
+
+// call runs an RPC method on an authenticated session. Deluge's web UI
+// answers an expired session with HTTP 200 and an "error" member (code 1,
+// "Not authenticated") rather than an HTTP status, so that is the signal to
+// log in again; the call is then retried once.
+func (p *Provider) call(ctx context.Context, method string, params []any) (any, error) {
+	if err := p.ensureAuthenticated(ctx); err != nil {
+		return nil, err
+	}
+
+	result, err := p.makeRPCCall(ctx, method, params)
+	if err != nil && !errors.Is(err, errNotAuthenticated) && !strings.HasPrefix(method, "web.") {
+		// A daemon (core.*) call fails while the web UI is detached from the
+		// daemon, e.g. after a deluge restart: reattach and retry once.
+		if connected, cerr := p.makeRPCCall(ctx, "web.connected", []any{}); cerr == nil {
+			if ok, _ := connected.(bool); !ok {
+				if p.connectDaemon(ctx) == nil {
+					return p.makeRPCCall(ctx, method, params)
+				}
+			}
+		}
+
+		return result, err
+	}
+
+	if !errors.Is(err, errNotAuthenticated) {
+		return result, err
+	}
+
+	p.storeSessionID("")
+
+	if err := p.authenticate(ctx); err != nil {
+		return nil, err
+	}
+
+	return p.makeRPCCall(ctx, method, params)
+}
+
+// errNotAuthenticated marks a request rejected because the web session is
+// missing or expired.
+var errNotAuthenticated = errors.New("deluge: not authenticated")
+
+// delugeAuthErrorCode is the JSON-RPC error code Deluge's web API uses for
+// "Not authenticated" (deluge/ui/web/json_api.py).
+const delugeAuthErrorCode = 1
+
+// alreadyInSessionRe matches Deluge's duplicate-add error text and captures
+// the torrent's info hash.
+var alreadyInSessionRe = regexp.MustCompile(`(?i)already in session \(([0-9a-f]{40})\)`)
+
+func alreadyInSessionHash(err error) (string, bool) {
+	m := alreadyInSessionRe.FindStringSubmatch(err.Error())
+	if m == nil {
+		return "", false
+	}
+
+	return m[1], true
 }
 
 func (p *Provider) makeRPCCall(ctx context.Context, method string, params []any) (any, error) {
@@ -431,18 +564,16 @@ func (p *Provider) makeRPCCall(ctx context.Context, method string, params []any)
 		return nil, err
 	}
 
-	// Use BaseClient's MakeRequest with custom response handler for RPC
 	var rpcResponse delugeRPCResponse
 
-	err = p.MakeRequestWithHeaders(
+	err = p.MakeRequestAcceptStatus(
 		ctx,
-		"POST",
+		http.MethodPost,
 		p.baseURL,
-		strings.NewReader(string(jsonData)),
-		nil,
+		bytes.NewReader(jsonData),
 		func(resp *http.Response) error {
 			if resp.StatusCode == http.StatusUnauthorized {
-				p.storeSessionID("") // Clear session
+				return errNotAuthenticated
 			}
 
 			if decodeErr := json.NewDecoder(resp.Body).Decode(&rpcResponse); decodeErr != nil {
@@ -450,9 +581,16 @@ func (p *Provider) makeRPCCall(ctx context.Context, method string, params []any)
 			}
 
 			if rpcResponse.Error != nil {
-				return errors.New(
-					logger.JoinStrings("RPC error: ", fmt.Sprintf("%v", rpcResponse.Error)),
-				)
+				if rpcResponse.Error.Code == delugeAuthErrorCode {
+					return errNotAuthenticated
+				}
+
+				return errors.New(logger.JoinStrings(
+					"RPC error ",
+					strconv.Itoa(rpcResponse.Error.Code),
+					": ",
+					rpcResponse.Error.Message,
+				))
 			}
 
 			return nil
@@ -461,6 +599,7 @@ func (p *Provider) makeRPCCall(ctx context.Context, method string, params []any)
 			"Content-Type": "application/json",
 			"Accept":       "application/json",
 		},
+		http.StatusUnauthorized,
 	)
 	if err != nil {
 		return nil, err
@@ -480,9 +619,14 @@ type delugeRPCRequest struct {
 }
 
 type delugeRPCResponse struct {
-	Result any `json:"result"`
-	Error  any `json:"error"`
-	ID     int `json:"id"`
+	Result any             `json:"result"`
+	Error  *delugeRPCError `json:"error"`
+	ID     int             `json:"id"`
+}
+
+type delugeRPCError struct {
+	Message string `json:"message"`
+	Code    int    `json:"code"`
 }
 
 //

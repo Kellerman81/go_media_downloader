@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -45,85 +44,9 @@ func validateOptionalURL(value, fieldName string) error {
 	return nil
 }
 
-// validateConfigStructure validates a slice of configs using common patterns.
-func validateConfigStructure[T any](configs []T, configType string, validator func(T) error) error {
-	if len(configs) == 0 {
-		return nil // Empty slice is valid
-	}
-
-	// Track names for uniqueness check
-	nameMap := make(map[string]int)
-
-	for i, config := range configs {
-		// Apply specific validator
-		if err := validator(config); err != nil {
-			return fmt.Errorf("%s config %d: %w", configType, i, err)
-		}
-
-		// Generic name uniqueness check using reflection
-		configValue := reflect.ValueOf(config)
-		if configValue.Kind() == reflect.Ptr {
-			configValue = configValue.Elem()
-		}
-
-		if configValue.Kind() != reflect.Struct {
-			continue
-		}
-
-		nameField := configValue.FieldByName("Name")
-		if !nameField.IsValid() || nameField.Kind() != reflect.String {
-			continue
-		}
-
-		name := nameField.String()
-		if name != "" {
-			if prevIndex, exists := nameMap[name]; exists {
-				return fmt.Errorf(
-					"%s config %d: duplicate name '%s' (already used in config %d)",
-					configType,
-					i,
-					name,
-					prevIndex,
-				)
-			}
-
-			nameMap[name] = i
-		}
-	}
-
-	return nil
-}
-
-// Example usage of validateConfigStructure for alternative validation approach.
-func validateDownloaderConfigsAlternative(configs []config.DownloaderConfig) error {
-	return validateConfigStructure(configs, "downloader", func(cfg config.DownloaderConfig) error {
-		if cfg.Name == "" {
-			return errors.New("name cannot be empty")
-		}
-
-		if err := validatePositiveInteger(cfg.Port, "port"); err != nil {
-			return err
-		}
-
-		if err := validatePortNumber(cfg.Port, "port"); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
 // Common validation patterns.
 func validatePortNumber(port int, fieldName string) error {
 	return validateRange(port, 0, 65535, fieldName)
-}
-
-func validatePositiveInteger(value int, fieldName string) error {
-	if value <= 0 {
-		return fmt.Errorf("%s must be positive (greater than 0)", fieldName)
-	}
-
-	return nil
 }
 
 // Enhanced validation with better error context.
@@ -276,8 +199,11 @@ func validateGeneralConfig(config *config.GeneralConfig) error {
 		return errors.New("invalid time format")
 	}
 
-	if config.LogLevel != "info" && config.LogLevel != "debug" {
-		return errors.New("log level must be 'info' or 'debug'")
+	// Mirrors the levels logger.InitLogger understands (case-insensitive).
+	if !strings.EqualFold(config.LogLevel, "info") &&
+		!strings.EqualFold(config.LogLevel, "debug") &&
+		!strings.EqualFold(config.LogLevel, "warning") {
+		return errors.New("log level must be 'info', 'debug' or 'warning'")
 	}
 
 	if config.LogFileSize <= 0 {
@@ -295,10 +221,6 @@ func validateGeneralConfig(config *config.GeneralConfig) error {
 func validateImdbConfig(config *config.ImdbConfig) error {
 	if config.ImdbIDSize <= 0 {
 		return errors.New("IMDB ID size must be greater than 0")
-	}
-
-	if config.LoopSize <= 0 {
-		return errors.New("loop size must be greater than 0")
 	}
 
 	validTypes := []string{"movie", "tvMovie", "tvmovie", "tvSeries", "tvseries", "video"}

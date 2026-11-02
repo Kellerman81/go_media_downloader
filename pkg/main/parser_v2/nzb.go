@@ -50,7 +50,10 @@ func NewNZBPreprocessor() *NZBPreprocessor {
 const (
 	reNZBPartNumberPrefix = `^\s*\[\d{1,4}/\d{1,4}\]\s*`
 	reNZBPartNumberSuffix = `\s*-?\s*\[\d{1,4}/\d{1,4}\]\s*`
-	reNZBUsenetMetaPrefix = `^\s*(?:\[\d+\]\s*-?\s*|\[FULL\]\s*-?\s*|\[#[^\]]+\]\s*-?\s*|\[[^\]]*[^\]A-Za-z0-9.][^\]]*\]\s*-?\s*)+`
+	// A bracketed year ("[2019] Title") is kept unless it is chained with a dash
+	// like a post id ("[2019]-[FULL]-..."); a bracket opening with whitespace
+	// ("[ The.Matrix.1999 ]") is the release name, not metadata.
+	reNZBUsenetMetaPrefix = `^\s*(?:\[\d+\]\s*-\s*|\[(?:\d{1,3}|\d{5,}|[03-9]\d{3}|1[0-8]\d\d|2[1-9]\d\d)\]\s*-?\s*|\[FULL\]\s*-?\s*|\[#[^\]]+\]\s*-?\s*|\[(?:[^\]A-Za-z0-9.\s][^\]]*|[A-Za-z0-9.][^\]]*[^\]A-Za-z0-9.][^\]]*)\]\s*-?\s*)+`
 	reNZBQuotedFile       = `"([^"]+)"`
 	reNZBYenc             = `\s+yEnc\s*$`
 	reNZBQualityPrefix    = `^\s*\([A-Z]{1,3}-?\d{3,4}p?\)\s*`
@@ -157,6 +160,9 @@ func (n *NZBPreprocessor) Clean(input string) string {
 	segments := strings.SplitSeq(result, " - ")
 	for seg := range segments {
 		seg = strings.TrimSpace(seg)
+		if len(seg) > 2 && seg[0] == '[' && seg[len(seg)-1] == ']' {
+			seg = strings.TrimSpace(seg[1 : len(seg)-1])
+		}
 		if n.looksLikeMediaFilename(seg) && len(seg) > 10 {
 			return seg
 		}

@@ -70,6 +70,7 @@ func AddMusicRoutes(routermusic *gin.RouterGroup) {
 // @Router       /api/music [get].
 func apiMusicDBList(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
+	boundPagination(&params)
 
 	rows := database.Getdatarow[uint](false, "select count() from dbalbums")
 
@@ -115,9 +116,9 @@ func apiMusicListGet(ctx *gin.Context) {
 
 	params := parsePaginationParams(ctx)
 
-	rows := database.Getdatarow[uint](false, "select count() from albums where listname = ?", &name)
+	rows := database.Getdatarow[uint](false, "select count() from albums where listname = ? COLLATE NOCASE", &name)
 
-	query := "select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbalbum_id,artist_id from albums where listname = ?"
+	query := "select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,listname,rootpath,dbalbum_id,artist_id from albums where listname = ? COLLATE NOCASE"
 	if params.Order != "" {
 		query += " order by " + params.Order
 	}
@@ -180,6 +181,7 @@ func apiMusicDelete(ctx *gin.Context) {
 // @Router       /api/music/artists [get].
 func apiArtistsList(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
+	boundPagination(&params)
 
 	rows := database.Getdatarow[uint](false, "select count() from dbartists")
 
@@ -219,7 +221,6 @@ func apiMusicAllJobs(c *gin.Context) {
 	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
 		TypeName:    "music",
 		NamePrefix:  "music",
-		Plural:      "music",
 		AllowedJobs: allowedjobsmusicstr,
 	})
 }
@@ -238,7 +239,6 @@ func apiMusicJobs(c *gin.Context) {
 	dispatchMediaJob(c, mediaJobDispatchConfig{
 		TypeName:    "music",
 		NamePrefix:  "music",
-		Plural:      "music",
 		AllowedJobs: allowedjobsmusicstr,
 	})
 }
@@ -252,15 +252,8 @@ func apiMusicJobs(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/music/rss/search/list/{group} [get].
 func apiMusicRssSearchList(c *gin.Context) {
-	cfgpstr := "music_" + c.Param("group")
-	worker.Dispatch(
-		"rss_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRss, cfgpstr, "", true, key)
-		},
-		"RSS",
-	)
-	sendSuccess(c, "RSS search started for "+cfgpstr)
+	group := c.Param("group")
+	dispatchNamedConfigJob(c, "music", "music", group, logger.StrRss, logger.StrRss+"_", "RSS", "RSS search started for music_"+group)
 }
 
 // @Summary      Search Albums by List
@@ -273,15 +266,7 @@ func apiMusicRssSearchList(c *gin.Context) {
 // @Router       /api/music/search/list/{id} [get].
 func apiMusicSearchList(c *gin.Context) {
 	listName := c.Param(StrID)
-	cfgpstr := "music_" + listName
-	worker.Dispatch(
-		"searchlist_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrSearchMissingInc, cfgpstr, "", true, key)
-		},
-		"Search",
-	)
-	sendSuccess(c, "Search started for music list "+listName)
+	dispatchNamedConfigJob(c, "music", "music", listName, logger.StrSearchMissingInc, logger.StrSearchMissingInc+"_", "Search", "Search started for music list "+listName)
 }
 
 // @Summary      Clear Music History by Name
@@ -293,9 +278,7 @@ func apiMusicSearchList(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/music/search/history/clear/{name} [get].
 func apiMusicClearHistoryName(c *gin.Context) {
-	name := c.Param("name")
-	err := database.ExecNErr("DELETE FROM album_histories WHERE listname = ?", &name)
-	handleDBError(c, err, "History cleared for "+name)
+	dispatchClearHistory(c, "music", "music", c.Param(StrName))
 }
 
 // @Summary      Clear Music History by ID
@@ -325,16 +308,8 @@ func apiMusicClearHistoryID(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/music/search/artists/missing/{name} [get].
 func apiMusicSearchArtistsMissing(c *gin.Context) {
-	listName := c.Param("name")
-	cfgpstr := "music_" + listName
-	worker.Dispatch(
-		"searchartists_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRssArtists, cfgpstr, "", true, key)
-		},
-		"Artist Search",
-	)
-	sendSuccess(c, "Artist search (missing) started for music list "+listName)
+	listName := c.Param(StrName)
+	dispatchNamedConfigJob(c, "music", "music", listName, logger.StrRssArtists, logger.StrRssArtists+"_", "Search", "Artist search (missing) started for music list "+listName)
 }
 
 // @Summary      Search Upgrade Albums by Artist
@@ -346,16 +321,8 @@ func apiMusicSearchArtistsMissing(c *gin.Context) {
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/music/search/artists/upgrade/{name} [get].
 func apiMusicSearchArtistsUpgrade(c *gin.Context) {
-	listName := c.Param("name")
-	cfgpstr := "music_" + listName
-	worker.Dispatch(
-		"searchartistsupgrade_"+cfgpstr,
-		func(key uint32, ctx context.Context) error {
-			return utils.SingleJobs(ctx, logger.StrRssArtistsUpgrade, cfgpstr, "", true, key)
-		},
-		"Artist Search",
-	)
-	sendSuccess(c, "Artist search (upgrade) started for music list "+listName)
+	listName := c.Param(StrName)
+	dispatchNamedConfigJob(c, "music", "music", listName, logger.StrRssArtistsUpgrade, logger.StrRssArtistsUpgrade+"_", "Search", "Artist search (upgrade) started for music list "+listName)
 }
 
 // @Summary      Refresh Music
@@ -366,19 +333,7 @@ func apiMusicSearchArtistsUpgrade(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/music/all/refreshall [get].
 func apirefreshMusic(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, "music") {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-	worker.Dispatch(logger.StrRefreshMusic, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refresh", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
-	sendSuccess(c, StrStarted)
+	dispatchJobAllConfigs(c, "music", "music", "refresh", StrStarted)
 }
 
 // @Summary      Refresh a single Album
@@ -390,25 +345,21 @@ func apirefreshMusic(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/music/refresh/{id} [get].
 func apirefreshAlbum(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, "music") {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-
 	id := c.Param(logger.StrID)
-	worker.Dispatch(
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM albums WHERE dbalbum_id = ? LIMIT 1",
+		&id,
+	)
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList("music", listname),
+		"music",
 		"Refresh Single Album_"+id,
-		func(_ uint32, _ context.Context) error {
+		func(_ context.Context, cfgp *config.MediaTypeConfig) error {
 			return utils.RefreshAlbum(cfgp, &id)
 		},
-		"Feeds",
 	)
-	sendSuccess(c, StrStarted)
 }
 
 // @Summary      Refresh Music (Incremental)
@@ -419,86 +370,50 @@ func apirefreshAlbum(c *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/music/all/refresh [get].
 func apiRetagAlbum(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, "music") {
-			cfgp = media
-			return true
-		}
+	dbID, ok := parseUintParam(c, logger.StrID)
+	if !ok {
+		return
+	}
 
-		return false
-	})
-
-	id := c.Param(logger.StrID)
-	worker.Dispatch(
-		"Retag Album_"+id,
-		func(_ uint32, _ context.Context) error {
-			dbID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagAlbum(c, cfgp, uint(dbID))
-		},
-		"Feeds",
+	listname := database.Getdatarow[string](
+		false,
+		"SELECT listname FROM albums WHERE dbalbum_id = ? LIMIT 1",
+		&dbID,
 	)
-	sendSuccess(c, StrStarted)
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList("music", listname),
+		"music",
+		"Retag Album_"+c.Param(logger.StrID),
+		func(ctx context.Context, cfgp *config.MediaTypeConfig) error {
+			return utils.RetagAlbum(ctx, cfgp, dbID)
+		},
+	)
 }
 
 func apiRetagArtistAlbums(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, "music") {
-			cfgp = media
-			return true
-		}
+	artistID, ok := parseUintParam(c, logger.StrID)
+	if !ok {
+		return
+	}
 
-		return false
-	})
-
-	id := c.Param(logger.StrID)
-	worker.Dispatch(
-		"Retag Artist Albums_"+id,
-		func(_ uint32, _ context.Context) error {
-			artistID, _ := strconv.ParseUint(id, 10, 32)
-			return utils.RetagArtistAlbums(c, cfgp, uint(artistID))
+	dispatchConfigFunc(
+		c,
+		mediaConfigForList("music", ""),
+		"music",
+		"Retag Artist Albums_"+c.Param(logger.StrID),
+		func(ctx context.Context, cfgp *config.MediaTypeConfig) error {
+			return utils.RetagArtistAlbums(ctx, cfgp, artistID)
 		},
-		"Feeds",
 	)
-	sendSuccess(c, StrStarted)
 }
 
 func apiRetagAllAlbums(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, "music") {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-
-	worker.Dispatch(
-		"Retag All Albums",
-		func(_ uint32, _ context.Context) error {
-			return utils.RetagAllAlbums(c, cfgp)
-		},
-		"Feeds",
-	)
-	sendSuccess(c, StrStarted)
+	dispatchConfigFuncAll(c, "music", "music", "Retag All Albums", utils.RetagAllAlbums)
 }
 
 func apirefreshMusicInc(c *gin.Context) {
-	var cfgp *config.MediaTypeConfig
-	config.RangeSettingsMediaBreak(func(_ string, media *config.MediaTypeConfig) bool {
-		if strings.HasPrefix(media.NamePrefix, "music") {
-			cfgp = media
-			return true
-		}
-
-		return false
-	})
-	worker.Dispatch(logger.StrRefreshMusicInc, func(key uint32, ctx context.Context) error {
-		return utils.SingleJobs(ctx, "refreshinc", cfgp.NamePrefix, "", false, key)
-	}, "Feeds")
-	sendSuccess(c, StrStarted)
+	dispatchJobAllConfigs(c, "music", "music", "refreshinc", StrStarted)
 }
 
 // @Summary      Import Music Chart for a Specific Date
@@ -527,13 +442,12 @@ func apiMusicFeedsDate(c *gin.Context) {
 
 	cfgpstr := "music_" + mediaName
 
-	// dispatched also doubles as "a response was already sent inside the
-	// closure" - see apiBooksFeedsDate (books.go) for why every early-return
-	// path below must set it.
-	var dispatched bool
+	// responded is set by every path inside the closure that already wrote
+	// a response, so the trailing writes below never double-write.
+	var found, responded bool
 
 	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if !strings.HasPrefix(media.NamePrefix, "music") {
+		if found || !strings.HasPrefix(media.NamePrefix, "music_") {
 			return nil
 		}
 
@@ -546,8 +460,10 @@ func apiMusicFeedsDate(c *gin.Context) {
 				continue
 			}
 
+			found = true
+
 			if !media.Lists[idxlist].Enabled || media.Lists[idxlist].CfgList == nil {
-				dispatched = true
+				responded = true
 
 				sendBadRequest(c, "list "+listName+" is disabled or not configured")
 
@@ -556,7 +472,7 @@ func apiMusicFeedsDate(c *gin.Context) {
 
 			overrideURL, err := buildChartDateURL(media.Lists[idxlist].CfgList, dateStr)
 			if err != nil {
-				dispatched = true
+				responded = true
 
 				sendBadRequest(c, err.Error())
 
@@ -566,7 +482,7 @@ func apiMusicFeedsDate(c *gin.Context) {
 			idxCopy := idxlist
 			cfgp := media
 
-			worker.Dispatch(
+			if err := worker.Dispatch(
 				"feeds_date_"+cfgpstr+"_"+listName,
 				func(_ uint32, ctx context.Context) error {
 					return utils.ImportFeedsWithURL(
@@ -578,9 +494,11 @@ func apiMusicFeedsDate(c *gin.Context) {
 					)
 				},
 				"Feeds",
-			)
+			); err != nil {
+				responded = true
 
-			dispatched = true
+				sendDispatchError(c, err)
+			}
 
 			return nil
 		}
@@ -588,7 +506,11 @@ func apiMusicFeedsDate(c *gin.Context) {
 		return nil
 	})
 
-	if !dispatched {
+	if responded {
+		return
+	}
+
+	if !found {
 		sendBadRequest(c, "list "+listName+" not found in music config "+mediaName)
 		return
 	}
@@ -632,7 +554,7 @@ func apiMusicAddArtist(c *gin.Context) {
 	}
 
 	artistIDCopy := artistID
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"add_artist_"+artistID+"_"+cfgpstr,
 		func(_ uint32, ctx context.Context) error {
 			// Add artist to dbartists and artists tracking table with track_mode=albums.
@@ -655,7 +577,10 @@ func apiMusicAddArtist(c *gin.Context) {
 			}, 0, cfgp, listid)
 		},
 		"Data",
-	)
+	); err != nil {
+		sendDispatchError(c, err)
+		return
+	}
 
 	sendSuccess(c, "Artist "+artistID+" queued for import into "+cfgpstr+"/"+listName)
 }
@@ -721,7 +646,7 @@ func apiMusicDiscoverSeriesForArtist(c *gin.Context) {
 	cfgpCopy := cfgp
 	listidCopy := listid
 
-	worker.Dispatch(
+	if err := worker.Dispatch(
 		"discover_series_artist_"+id,
 		func(_ uint32, ctx context.Context) error {
 			for _, album := range albums {
@@ -739,7 +664,10 @@ func apiMusicDiscoverSeriesForArtist(c *gin.Context) {
 			return nil
 		},
 		"Data",
-	)
+	); err != nil {
+		sendDispatchError(c, err)
+		return
+	}
 
 	sendSuccess(c, "Discover series albums queued for artist #"+id+
 		" ("+strconv.Itoa(len(albums))+" series found)")

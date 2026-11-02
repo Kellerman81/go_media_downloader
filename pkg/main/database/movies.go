@@ -295,49 +295,6 @@ func (u *Movie) GetMoviesByIDP(id *uint) error {
 	)
 }
 
-// InsertMovieFile inserts a movie file record into the database.
-func InsertMovieFile(
-	movieID uint,
-	location, filename, extension string,
-	resolutionID, qualityID, codecID, audioID uint,
-) error {
-	if movieID == 0 {
-		return nil
-	}
-
-	var (
-		proper, repack, extended bool
-		dbmovieID                uint
-		height, width            int
-		qualityProfile           string
-	)
-
-	// Get dbmovie_id from movie
-
-	Scanrowsdyn(false, "SELECT dbmovie_id FROM movies WHERE id = ?", &dbmovieID, &movieID)
-
-	ExecN(
-		"insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		&location,
-		&filename,
-		&extension,
-		&qualityProfile,
-		&resolutionID,
-		&qualityID,
-		&codecID,
-		&audioID,
-		&proper,
-		&repack,
-		&extended,
-		&movieID,
-		&dbmovieID,
-		&height,
-		&width,
-	)
-
-	return nil
-}
-
 // ChecknzbtitleB checks if the nzbtitle matches the movietitle and year.
 // It compares the movietitle and nzbtitle directly, and also tries
 // appending/removing the year, converting to slugs, etc.

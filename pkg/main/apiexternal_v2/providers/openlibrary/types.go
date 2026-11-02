@@ -7,6 +7,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/goccy/go-json"
 )
 
 //
@@ -54,9 +55,7 @@ type olWorkResponse struct {
 		Author struct {
 			Key string `json:"key"`
 		} `json:"author"`
-		Type struct {
-			Key string `json:"key"`
-		} `json:"type"`
+		Type olLooseRef `json:"type"`
 	} `json:"authors"`
 	Covers        []int    `json:"covers"`
 	SubjectPlaces []string `json:"subject_places"`
@@ -144,6 +143,32 @@ type olEditionEntry struct {
 // Helper types.
 type olRef struct {
 	Key string `json:"key"`
+}
+
+// olLooseRef is a {"key": ...} reference that old OpenLibrary records store as
+// a plain string instead; both decode, so one odd record does not fail the
+// whole work.
+type olLooseRef struct {
+	Key string
+}
+
+func (r *olLooseRef) UnmarshalJSON(data []byte) error {
+	var s string
+	if json.Unmarshal(data, &s) == nil {
+		r.Key = s
+		return nil
+	}
+
+	var obj struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+
+	r.Key = obj.Key
+
+	return nil
 }
 
 type olLink struct {

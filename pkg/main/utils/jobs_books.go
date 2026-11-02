@@ -57,6 +57,20 @@ func refreshbooks(ctx context.Context, cfgp *config.MediaTypeConfig, arr []strin
 	return err
 }
 
+// RefreshBook refreshes the metadata of a single book by its dbbook ID.
+func RefreshBook(cfgp *config.MediaTypeConfig, id *string) error {
+	return refreshbooks(
+		context.Background(),
+		cfgp,
+		database.GetrowsN[string](
+			false,
+			1,
+			"select distinct dbbooks.isbn_13 from dbbooks inner join books on books.dbbook_id = dbbooks.id where dbbooks.id = ? and dbbooks.isbn_13 != ''",
+			id,
+		),
+	)
+}
+
 // getrefreshbooklistid looks up the list ID for the given ISBN-13 and media config.
 func getrefreshbooklistid(isbn *string, cfgp *config.MediaTypeConfig) int {
 	listname := database.Getdatarow[string](
@@ -64,14 +78,5 @@ func getrefreshbooklistid(isbn *string, cfgp *config.MediaTypeConfig) int {
 		"SELECT b.listname FROM books b JOIN dbbooks db ON b.dbbook_id = db.id WHERE db.isbn_13 = ?",
 		isbn,
 	)
-	if listname == "" {
-		return -1
-	}
-
-	k, ok := cfgp.ListsMapIdx[listname]
-	if !ok {
-		return -1
-	}
-
-	return k
+	return cfgp.GetMediaListsEntryListID(listname)
 }

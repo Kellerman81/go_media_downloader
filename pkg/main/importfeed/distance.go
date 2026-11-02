@@ -7,12 +7,15 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Recommendation thresholds mirror beets' strong_rec_thresh / medium_rec_thresh /
@@ -25,12 +28,30 @@ import (
 // mediumRecThresh is intentionally set slightly higher (0.30) than beets' default
 // to be more permissive in automated (non-interactive) use.
 const (
-	strongRecThresh        = 0.04
-	mediumRecThresh        = 0.30
-	matchDistanceThreshold = mediumRecThresh // alias kept for existing call sites
-	// recGapThresh mirrors beets' rec_gap_thresh.
+	strongRecThresh = 0.04
+	mediumRecThresh = 0.30
+	// recGapThresh mirrors beets' rec_gap_thresh. Unlike the strong/medium
+	// thresholds it is deliberately not configurable: it only decides whether
+	// a clear lead over the runner-up upgrades the recommendation.
 	recGapThresh = 0.25
 )
+
+// recThresholds returns the strong/medium recommendation thresholds, taking the
+// data config's StrongRecThresh / MediumRecThresh overrides (0 = default).
+func recThresholds(data *config.MediaDataConfig) (strong, medium float64) {
+	strong, medium = strongRecThresh, mediumRecThresh
+	if data != nil {
+		if data.StrongRecThresh > 0 {
+			strong = data.StrongRecThresh
+		}
+
+		if data.MediumRecThresh > 0 {
+			medium = data.MediumRecThresh
+		}
+	}
+
+	return strong, medium
+}
 
 // albumRecommendation mirrors beets' Recommendation enum.
 type albumRecommendation int
@@ -184,11 +205,11 @@ var (
 	levBufPool = pool.NewPool(200, 0, nil, func(*levBuf) bool { return false })
 )
 
-// sdNormalize lowercases ASCII uppercase letters and strips all bytes that are
-// not ASCII lowercase letters or digits in a single pass.
+// sdNormalize lowercases and strips everything that is not a letter or digit.
+// Letters and digits of every script are kept; Latin diacritics are folded
+// (NFD + drop combining marks on Latin letters) so "Dvořák" → "dvorak".
 // Fast-path: returns s unchanged (zero allocation) when s is already all
-// lowercase alnum. Non-ASCII bytes (multi-byte UTF-8 sequences) are dropped,
-// matching the prior behaviour of sdStripNonAlnum(strings.ToLower(s)).
+// lowercase ASCII alnum; pure-ASCII input is handled byte-wise without NFD.
 func sdNormalize(s string) string {
 	i := 0
 	for i < len(s) {
@@ -205,23 +226,54 @@ func sdNormalize(s string) string {
 		return s // already lowercase alnum — zero allocation
 	}
 
+	ascii := true
+	for j := i; j < len(s); j++ {
+		if s[j] >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+
 	buf := logger.PlAddBuffer.Get()
 	defer logger.PlAddBuffer.Put(buf)
 
 	buf.Grow(len(s))
 	buf.WriteString(s[:i])
 
-	for ; i < len(s); i++ {
-		b := s[i]
+	if ascii {
+		for ; i < len(s); i++ {
+			b := s[i]
+			switch {
+			case b >= 'a' && b <= 'z', b >= '0' && b <= '9':
+				buf.WriteByte(b)
+			case b >= 'A' && b <= 'Z':
+				buf.WriteByte(b + 32) // ASCII uppercase → lowercase
+			}
+		}
+
+		return buf.String()
+	}
+
+	// Only marks on Latin letters are folded away; in other scripts they are
+	// part of the letter (Cyrillic й = и + breve) and get recomposed by NFC.
+	foldMarks := true
+
+	for _, r := range norm.NFD.String(s[i:]) {
 		switch {
-		case b >= 'a' && b <= 'z', b >= '0' && b <= '9':
-			buf.WriteByte(b)
-		case b >= 'A' && b <= 'Z':
-			buf.WriteByte(b + 32) // ASCII uppercase → lowercase
+		case unicode.Is(unicode.Mn, r):
+			if !foldMarks {
+				buf.WriteRune(r)
+			}
+		case unicode.IsLetter(r), unicode.IsDigit(r):
+			buf.WriteRune(unicode.ToLower(r))
+
+			foldMarks = r < utf8.RuneSelf || unicode.Is(unicode.Latin, r)
+		default:
+			foldMarks = true
 		}
 	}
 
-	return buf.String()
+	return norm.NFC.String(buf.String())
 }
 
 // penaltyEntry accumulates a named penalty: sum of values and count of entries.
@@ -309,8 +361,13 @@ type levBuf struct {
 	data []int
 }
 
-// levenshteinInt returns the raw Levenshtein edit distance between two strings.
+// levenshteinInt returns the raw Levenshtein edit distance between two strings,
+// counted in runes. Pure-ASCII input stays on the allocation-free byte path.
 func levenshteinInt(a, b string) int {
+	if !isASCII(a) || !isASCII(b) {
+		return levenshteinRunes([]rune(a), []rune(b))
+	}
+
 	la, lb := len(a), len(b)
 	if la == 0 {
 		return lb
@@ -339,9 +396,11 @@ func levenshteinInt(a, b string) int {
 		prev[j] = j
 	}
 
-	for i, ca := range a {
+	for i := range la {
+		ca := a[i]
 		curr[0] = i + 1
-		for j, cb := range b {
+		for j := range lb {
+			cb := b[j]
 			del := prev[j+1] + 1
 			ins := curr[j] + 1
 
@@ -359,19 +418,128 @@ func levenshteinInt(a, b string) int {
 	return prev[lb]
 }
 
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+
+	return true
+}
+
+func levenshteinRunes(a, b []rune) int {
+	la, lb := len(a), len(b)
+	if la == 0 {
+		return lb
+	}
+
+	if lb == 0 {
+		return la
+	}
+
+	prev := make([]int, lb+1)
+	curr := make([]int, lb+1)
+
+	for j := range prev {
+		prev[j] = j
+	}
+
+	for i := range la {
+		curr[0] = i + 1
+		for j := range lb {
+			sub := prev[j]
+			if a[i] != b[j] {
+				sub++
+			}
+
+			curr[j+1] = min3(prev[j+1]+1, curr[j]+1, sub)
+		}
+
+		prev, curr = curr, prev
+	}
+
+	return prev[lb]
+}
+
 // stringDistBasic mirrors beets _string_dist_basic:
 // strips non-alphanumeric chars, lowercases, then computes normalised Levenshtein.
+// When nothing alphanumeric survives on both sides there is no evidence of a
+// match, so only literally equal inputs count as identical.
 func stringDistBasic(str1, str2 string) float64 {
+	raw1, raw2 := str1, str2
 	str1 = sdNormalize(str1)
 
 	str2 = sdNormalize(str2)
 	if str1 == "" && str2 == "" {
-		return 0.0
+		if strings.EqualFold(raw1, raw2) {
+			return 0.0
+		}
+
+		return 1.0
 	}
 
-	maxLen := max(len(str2), len(str1))
+	maxLen := max(utf8.RuneCountInString(str2), utf8.RuneCountInString(str1))
 
 	return float64(levenshteinInt(str1, str2)) / float64(maxLen)
+}
+
+// importMatchMaxDist is the largest stringDist at which a search hit's
+// name/title is accepted as the item that was asked for.
+const importMatchMaxDist = 0.3
+
+// namesMatch reports whether two artist/author names or titles refer to the
+// same thing: equal ignoring case, or within importMatchMaxDist.
+func namesMatch(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+
+	return strings.EqualFold(a, b) || stringDist(a, b) <= importMatchMaxDist
+}
+
+// namesContain reports whether any of names matches want (see namesMatch).
+func namesContain(names []string, want string) bool {
+	for i := range names {
+		if namesMatch(names[i], want) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// bestNameMatch returns the index of the candidate whose name (get(i)) is
+// closest to want, or -1 when none is within importMatchMaxDist.
+// accept, when non-nil, filters candidates before they are scored.
+func bestNameMatch(want string, n int, get func(int) string, accept func(int) bool) int {
+	if want == "" {
+		return -1
+	}
+
+	best, bestDist := -1, importMatchMaxDist
+
+	for i := range n {
+		if accept != nil && !accept(i) {
+			continue
+		}
+
+		name := get(i)
+		if name == "" {
+			continue
+		}
+
+		d := 0.0
+		if !strings.EqualFold(name, want) {
+			d = stringDist(name, want)
+		}
+
+		if d < bestDist || (best == -1 && d <= bestDist) {
+			best, bestDist = i, d
+		}
+	}
+
+	return best
 }
 
 // stringDist mirrors beets string_dist:
@@ -477,7 +645,7 @@ const (
 // trackDistance mirrors beets track_distance().
 // It scores how well a local file matches a database track using:
 //
-//	track_length  (weight 2.0 music / 3.0 audiobook)
+//	track_length  (weight 3.0)
 //	track_title   (weight 3.0 music / 1.0 audiobook)
 //	track_artist  (weight 2.0) — only for VA albums
 //	track_index   (weight 1.0 music / 3.0 audiobook)
@@ -609,6 +777,41 @@ func trackDistance(
 	return dist.distance()
 }
 
+// singleFileTotalMatch reports whether one local file holding a whole book
+// matches a listing of chapters by total runtime. The allowed difference is
+// MaxTotalDifferenceSeconds when set, otherwise the per-track hard limit (as in
+// trackDistance) times the chapter count — the slack the chapters would have
+// had as separate files. A listing without runtimes never matches.
+func singleFileTotalMatch(
+	localMs, chaptersMs int64,
+	chapters int,
+	data *config.MediaDataConfig,
+) (ok bool, diffMs, toleranceMs int64) {
+	if chaptersMs <= 0 || localMs <= 0 || chapters <= 0 {
+		return false, 0, 0
+	}
+
+	perTrackMs := trackLengthMaxMs
+	if data != nil && data.PerTrackToleranceSeconds > 0 {
+		perTrackMs = int64(data.PerTrackToleranceSeconds) * 1000
+		if data.PerTrackToleranceSecondsMax > data.PerTrackToleranceSeconds {
+			perTrackMs = int64(data.PerTrackToleranceSecondsMax) * 1000
+		}
+	}
+
+	toleranceMs = int64(chapters) * perTrackMs
+	if data != nil && data.MaxTotalDifferenceSeconds > 0 {
+		toleranceMs = int64(data.MaxTotalDifferenceSeconds) * 1000
+	}
+
+	diffMs = localMs - chaptersMs
+	if diffMs < 0 {
+		diffMs = -diffMs
+	}
+
+	return diffMs <= toleranceMs, diffMs, toleranceMs
+}
+
 // globaliseDiscTrackNumbers returns a copy of dbTracks where per-disc track
 // numbers are replaced by global sequential positions (1, 2, 3, …) when the
 // DB release spans multiple discs but the local tracks carry no disc info.
@@ -728,13 +931,22 @@ func matchTracksByDistance(
 		}
 	}
 
-	// Hungarian algorithm: minimum-cost assignment (O(n³)).
-	rowAssign := lapAssign(cost)
+	// Audiobook files that already carry a playback order keep it: the
+	// assignment may skip chapters or files, but never reorders them. Chapters
+	// of near-identical length would otherwise be swapped by the unconstrained
+	// assignment, and the rename then scrambles the book.
+	var rowAssign []int
+	if order := audiobookLocalOrder(tracks, isAudiobook); order != nil {
+		rowAssign = alignOrdered(cost, n, order, maxTrackDist)
+	} else {
+		// Hungarian algorithm: minimum-cost assignment (O(n³)).
+		rowAssign = lapAssign(cost)
+	}
 
 	// Convert assignment to result/matched/used; ignore virtual (padded) pairs.
 	for i := range n {
 		j := rowAssign[i]
-		if j < m && cost[i][j] < maxTrackDist {
+		if j >= 0 && j < m && cost[i][j] < maxTrackDist {
 			matched[i] = true
 			used[j] = true
 			result[i] = tracks[j]
@@ -829,6 +1041,115 @@ func matchTracksByDistance(
 	}
 
 	return result, matched, used
+}
+
+// audiobookLocalOrder returns the local track indices in playback order —
+// sorted by (disc, track) — when isAudiobook is set and every track carries a
+// distinct track number. Returns nil when the order is unknown, leaving the
+// unconstrained assignment to decide.
+func audiobookLocalOrder(tracks []parser_v2.TrackInfo, isAudiobook bool) []int {
+	if !isAudiobook || len(tracks) < 2 {
+		return nil
+	}
+
+	seen := make(map[[2]int]struct{}, len(tracks))
+	for i := range tracks {
+		if tracks[i].TrackNumber <= 0 {
+			return nil
+		}
+
+		key := [2]int{tracks[i].DiscNumber, tracks[i].TrackNumber}
+		if _, dup := seen[key]; dup {
+			return nil
+		}
+
+		seen[key] = struct{}{}
+	}
+
+	order := make([]int, len(tracks))
+	for i := range order {
+		order[i] = i
+	}
+
+	sort.SliceStable(order, func(a, b int) bool {
+		ta, tb := &tracks[order[a]], &tracks[order[b]]
+		if ta.DiscNumber != tb.DiscNumber {
+			return ta.DiscNumber < tb.DiscNumber
+		}
+
+		return ta.TrackNumber < tb.TrackNumber
+	})
+
+	return order
+}
+
+// alignOrdered is the order-preserving counterpart of lapAssign: a minimum-cost
+// monotone alignment of DB rows 0..n-1 against the local tracks visited in
+// order. A pair can only be matched when its cost is below maxDist; every
+// skipped row or track costs 1.0, the same as a dummy pairing in lapAssign.
+// cost is indexed [dbRow][localIndex]. Returns rowAssign with -1 for rows left
+// unmatched.
+func alignOrdered(cost [][]float64, n int, order []int, maxDist float64) []int {
+	const (
+		skipCost = 1.0
+		stepDiag = 0
+		stepDB   = 1
+		stepLoc  = 2
+	)
+
+	m := len(order)
+	w := m + 1
+
+	dp := make([]float64, (n+1)*w)
+	step := make([]uint8, (n+1)*w)
+
+	for i := 1; i <= n; i++ {
+		dp[i*w] = float64(i) * skipCost
+		step[i*w] = stepDB
+	}
+
+	for k := 1; k <= m; k++ {
+		dp[k] = float64(k) * skipCost
+		step[k] = stepLoc
+	}
+
+	for i := 1; i <= n; i++ {
+		for k := 1; k <= m; k++ {
+			best, how := dp[(i-1)*w+k]+skipCost, uint8(stepDB)
+			if v := dp[i*w+k-1] + skipCost; v < best {
+				best, how = v, stepLoc
+			}
+
+			if c := cost[i-1][order[k-1]]; c < maxDist {
+				if v := dp[(i-1)*w+k-1] + c; v <= best {
+					best, how = v, stepDiag
+				}
+			}
+
+			dp[i*w+k] = best
+			step[i*w+k] = how
+		}
+	}
+
+	rowAssign := make([]int, n)
+	for i := range rowAssign {
+		rowAssign[i] = -1
+	}
+
+	for i, k := n, m; i > 0 || k > 0; {
+		switch step[i*w+k] {
+		case stepDiag:
+			rowAssign[i-1] = order[k-1]
+			i--
+			k--
+		case stepDB:
+			i--
+		default:
+			k--
+		}
+	}
+
+	return rowAssign
 }
 
 func min3(a, b, c int) int {
@@ -1074,8 +1395,8 @@ func albumMatchDistance(
 }
 
 // audiobookMatchDistance computes a beets-inspired weighted distance score [0..1]
-// for an audiobook candidate. Track count is intentionally excluded (beets:
-// ignored: missing_tracks unmatched_tracks) — runtime verification handles that.
+// for an audiobook candidate. Chapter-count differences contribute via
+// missing_tracks / unmatched_tracks; runtime verification does the rest.
 //
 // Weights: title: 3.0  author: 2.0  year: 0.5.
 func audiobookMatchDistance(
@@ -1098,7 +1419,8 @@ func audiobookMatchDistance(
 	}
 
 	// Missing chapters: in the catalogue but absent locally (weight 0.9 each).
-	if fileCount > 0 && c.ChapterCount > fileCount {
+	// A single file holds the whole book; its total runtime is verified instead.
+	if fileCount > 1 && c.ChapterCount > fileCount {
 		for range c.ChapterCount - fileCount {
 			dist.add("missing_tracks", 1.0)
 		}
@@ -1207,7 +1529,8 @@ func albumDistanceWithTracks(
 
 	rowAssign := lapAssign(cost)
 
-	// Accumulate per-track penalties.
+	// Accumulate per-track penalties. A pair rejected for exceeding maxTD leaves
+	// both sides unmatched, exactly as matchTracksByDistance reports it.
 	const maxTD = 0.9
 	for i := range nDB {
 		j := rowAssign[i]
@@ -1215,6 +1538,10 @@ func albumDistanceWithTracks(
 			dist.add("tracks", cost[i][j])
 		} else {
 			dist.add("missing_tracks", 1.0)
+
+			if j < nLocal {
+				dist.add("unmatched_tracks", 1.0)
+			}
 		}
 	}
 
@@ -1267,6 +1594,25 @@ func audiobookDistanceWithTracks(
 		return dist.distance()
 	}
 
+	if nLocal == 1 && nDB > 1 {
+		var chaptersMs int64
+		for i := range dbTracks {
+			chaptersMs += dbTracks[i].RuntimeMs
+		}
+
+		ok, diffMs, toleranceMs := singleFileTotalMatch(
+			localTracks[0].RuntimeMS, chaptersMs, nDB, data,
+		)
+		if ok {
+			dist.add("tracks", float64(diffMs)/float64(toleranceMs))
+		} else {
+			dist.add("missing_tracks", 1.0)
+			dist.add("unmatched_tracks", 1.0)
+		}
+
+		return dist.distance()
+	}
+
 	// Build padded square cost matrix and run Hungarian assignment (audiobook mode).
 	size := max(nLocal, nDB)
 
@@ -1282,15 +1628,22 @@ func audiobookDistanceWithTracks(
 		}
 	}
 
-	rowAssign := lapAssign(cost)
+	// Same assignment as matchTracksByDistance, so the score describes the
+	// pairing that would actually be applied.
+	const maxTD = 0.9
+
+	var rowAssign []int
+	if order := audiobookLocalOrder(localTracks, true); order != nil {
+		rowAssign = alignOrdered(cost, nDB, order, maxTD)
+	} else {
+		rowAssign = lapAssign(cost)
+	}
 
 	// Accumulate per-chapter distances as a single averaged "tracks" component,
 	// mirroring beets' approach. Adding one entry per chapter would give chapters
 	// weight 3.0×N vs metadata weight ~5, completely overwhelming title/author for
 	// audiobooks with many chapters. A single averaged entry keeps the weight fixed
 	// at 3.0 regardless of chapter count.
-	const maxTD = 0.9
-
 	var (
 		trackDistSum   float64
 		trackDistCount int
@@ -1298,7 +1651,7 @@ func audiobookDistanceWithTracks(
 
 	for i := range nDB {
 		j := rowAssign[i]
-		if j < nLocal && cost[i][j] < maxTD {
+		if j >= 0 && j < nLocal && cost[i][j] < maxTD {
 			trackDistSum += cost[i][j]
 			trackDistCount++
 		} else {
@@ -1310,10 +1663,10 @@ func audiobookDistanceWithTracks(
 		dist.add("tracks", trackDistSum/float64(trackDistCount))
 	}
 
-	for i := nDB; i < size; i++ {
-		if rowAssign[i] < nLocal {
-			dist.add("unmatched_tracks", 1.0)
-		}
+	// Every local track not paired with a chapter is unmatched, whether the
+	// assignment left it on a rejected pair or a padding row.
+	for range nLocal - trackDistCount {
+		dist.add("unmatched_tracks", 1.0)
 	}
 
 	return dist.distance()
@@ -1331,23 +1684,26 @@ func audiobookDistanceWithTracks(
 //	otherwise                                   → recNone
 //
 // recLow means the best candidate is weak; callers that only accept ≥ recMedium
-// will fall through to the alternative-release search path.
-func recommendation(sortedDists []float64) albumRecommendation {
+// will fall through to the alternative-release search path. The strong/medium
+// thresholds come from data (see recThresholds; nil = built-in defaults).
+func recommendation(sortedDists []float64, data *config.MediaDataConfig) albumRecommendation {
 	if len(sortedDists) == 0 {
 		return recNone
 	}
+
+	strongThresh, mediumThresh := recThresholds(data)
 
 	best := sortedDists[0]
 	single := len(sortedDists) < 2
 	hasGap := !single && sortedDists[1]-best >= recGapThresh
 
 	// Zone 1: very close match → always strong.
-	if best < strongRecThresh {
+	if best < strongThresh {
 		return recStrong
 	}
 
 	// Zone 2: acceptable match.
-	if best <= mediumRecThresh {
+	if best <= mediumThresh {
 		// Upgrade to strong when no competition (single candidate or clear gap).
 		if single || hasGap {
 			return recStrong
@@ -1366,7 +1722,7 @@ func recommendation(sortedDists []float64) albumRecommendation {
 }
 
 // selectBestAlbumMatches scores all candidates using beets-style weighted distance
-// and returns those below matchDistanceThreshold, sorted best-first.
+// and returns those within the medium threshold (recThresholds), sorted best-first.
 // Exact track-count matches are always kept regardless of threshold.
 // This replaces the previous "exact track count only" approach so that alternative
 // editions (bonus tracks, different pressings) are still passed to runtime verification.
@@ -1393,6 +1749,8 @@ func selectBestAlbumMatches(
 	// album title or year differs slightly, while rejecting unrelated artists/albums.
 	const exactTrackHardCap = 0.75
 
+	_, mediumThresh := recThresholds(data)
+
 	var candidates []scored
 	for _, m := range matches {
 		d := albumMatchDistance(
@@ -1416,7 +1774,7 @@ func selectBestAlbumMatches(
 
 		isExactOrAllowed := m.TotalTracks == fileCount ||
 			(allowMissing && m.TotalTracks >= fileCount)
-		if (isExactOrAllowed && d <= exactTrackHardCap) || d <= matchDistanceThreshold {
+		if (isExactOrAllowed && d <= exactTrackHardCap) || d <= mediumThresh {
 			candidates = append(candidates, scored{m, d})
 		}
 	}
@@ -1439,7 +1797,7 @@ func selectBestAlbumMatches(
 
 // selectBestAudiobookMatches scores all candidates using beets-style weighted distance
 // (title, author, and chapter-count mismatch penalties).
-// Returns candidates below matchDistanceThreshold sorted best-first.
+// Returns candidates within the medium threshold (recThresholds) sorted best-first.
 // Exact chapter-count matches are always included regardless of threshold.
 // When AllowMissingTracks is enabled, candidates with ChapterCount >= fileCount
 // whose distance score passes are also included for runtime verification.
@@ -1465,13 +1823,15 @@ func selectBestAudiobookMatches(
 	// is read before the later distance/recommendation re-gate runs.
 	const exactChapterHardCap = 0.75
 
+	_, mediumThresh := recThresholds(data)
+
 	var candidates []scored
 	for _, m := range matches {
 		d := audiobookMatchDistance(m, title, author, fileCount)
 		isExact := m.ChapterCount == fileCount
 
 		isAllowedMissing := data != nil && data.AllowMissingTracks && m.ChapterCount >= fileCount
-		if ((isExact || isAllowedMissing) && d <= exactChapterHardCap) || d <= matchDistanceThreshold {
+		if ((isExact || isAllowedMissing) && d <= exactChapterHardCap) || d <= mediumThresh {
 			candidates = append(candidates, scored{m, d})
 		}
 	}

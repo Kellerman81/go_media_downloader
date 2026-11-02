@@ -9,12 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
 
 var (
@@ -46,12 +46,11 @@ func IsArchiveFile(filename string) bool {
 
 // IsMainArchiveFile checks if this is the main archive file to extract for multipart archives.
 func IsMainArchiveFile(filename string) bool {
-	// For RAR multipart archives, look for .part1.rar, .part01.rar, .part001.rar,
-	// or just .rar (single file). Only the first volume is extracted.
-	if logger.ContainsI(filename, ".part") && logger.HasSuffixI(filename, ".rar") {
-		return logger.ContainsI(filename, ".part1.rar") ||
-			logger.ContainsI(filename, ".part01.rar") ||
-			logger.ContainsI(filename, ".part001.rar")
+	// For RAR multipart archives (name.part1.rar, name.part01.rar, ...) only the
+	// first volume is extracted. ".Part" elsewhere in the name ("Dune.Part.Two.rar")
+	// is part of the title, not a volume number.
+	if vol, ok := rarVolumeNumber(filename); ok {
+		return vol == 1
 	}
 
 	// For ZIP multipart archives, look for .z01, .z02, etc. - only extract .zip
@@ -73,6 +72,24 @@ func IsMainArchiveFile(filename string) bool {
 
 	// For all other formats, extract normally
 	return IsArchiveFile(filename)
+}
+
+// rarVolumeNumber returns the volume number of a "name.partN.rar" file.
+func rarVolumeNumber(filename string) (int, bool) {
+	if !logger.HasSuffixI(filename, ".rar") {
+		return 0, false
+	}
+
+	base := filename[:len(filename)-len(".rar")]
+
+	idx := logger.LastIndexI(base, ".part")
+	if idx == -1 || !isAllDigits(base[idx+len(".part"):]) {
+		return 0, false
+	}
+
+	n, err := strconv.Atoi(base[idx+len(".part"):])
+
+	return n, err == nil
 }
 
 // isAllDigits reports whether s is non-empty and contains only ASCII digits.
@@ -490,10 +507,13 @@ func unpackArchivesInFolder(
 
 		extractPath := filepath.Join(archiveDir, archiveName+"_unpack")
 
-		// Skip if already extracted
-		if scanner.CheckFileExist(extractPath) {
+		// Skip if already extracted. Only a definite "does not exist" allows
+		// extracting: the failure cleanup below removes the whole directory,
+		// which must never hit one this run did not create.
+		if _, err := os.Lstat(extractPath); !errors.Is(err, fs.ErrNotExist) {
 			logger.Logtype("info", 1).
 				Str(logger.StrFile, archiveFiles[i]).
+				Err(err).
 				Msg("Archive already extracted, skipping")
 			continue
 		}
@@ -503,6 +523,16 @@ func unpackArchivesInFolder(
 				Str(logger.StrFile, archiveFiles[i]).
 				Err(err).
 				Msg("Failed to extract archive")
+
+			// Remove the partial extraction so the next run retries instead
+			// of treating it as "already extracted" (and organizing half of
+			// it) forever.
+			if rerr := os.RemoveAll(extractPath); rerr != nil {
+				logger.Logtype("error", 1).
+					Str(logger.StrPath, extractPath).
+					Err(rerr).
+					Msg("Failed to remove partial extraction")
+			}
 
 			continue
 		}

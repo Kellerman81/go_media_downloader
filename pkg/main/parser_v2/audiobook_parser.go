@@ -1,11 +1,8 @@
 package parser_v2
 
 import (
-	"context"
-	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -24,9 +21,6 @@ type audiobookPatterns struct {
 	asin            *regexp.Regexp
 	isbn            *regexp.Regexp
 	year            *regexp.Regexp
-	partNumber      *regexp.Regexp
-	discNumber      *regexp.Regexp
-	chapterNum      *regexp.Regexp
 	series          *regexp.Regexp
 	seriesNum       *regexp.Regexp
 	narrator        *regexp.Regexp
@@ -59,21 +53,14 @@ func NewAudiobookParserWithMatcher(rm *RuntimeMatcher) *AudiobookParser {
 
 // Audiobook pattern strings as constants so they can be used as cache keys.
 const (
-	reAudioASIN       = `(?i)(?:asin[:\s-]?)?B0[A-Z0-9]{8}`
-	reAudioISBN       = `(?i)(?:isbn[:\s-]?)?(?:978|979)[\s-]?\d[\s-]?\d{2}[\s-]?\d{5}[\s-]?\d{3}[\s-]?\d`
-	reAudioYear       = `[\(\[]?((?:19|20)\d{2})[\)\]]?`
-	reAudioPartNumber = `(?i)(?:part|pt\.?|p)[\s._-]?(\d+)|(\d+)\s*(?:of|/)[\s._-]?(\d+)|(?:[\(\[]|\s|^)(\d{1,3})(?:[\)\]]|\s|$)`
-	// The leading (?:^|[^a-z0-9]) requires a non-alphanumeric boundary (or
-	// string start) before the marker - without it, the bare "d" alternative
-	// matched inside ordinary words immediately followed by a digit (e.g.
-	// "Weird2Track" -> false "d2" match), corrupting DiscNumber-based sorting.
-	reAudioDiscNumber = `(?i)(?:^|[^a-z0-9])(?:disc|disk|cd|d)[\s._-]?(\d+)`
-	reAudioChapterNum = `(?i)(?:chapter|ch\.?|chap\.?)[\s._-]?(\d+)`
-	reAudioSeries     = `(?i)(?:\(|\[)?\s*([^()\[\]]+?)\s*(?:book|#|,?\s*no\.?|,?\s*vol\.?|,?\s*volume)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?`
-	reAudioSeriesNum  = `(?i)(?:book|#|no\.?|vol\.?|volume)\s*(\d+(?:\.\d+)?)`
-	reAudioNarrator   = `(?i)(?:read\s+by|narrated\s+by|narrator[:\s]+)[\s,:]*([^,\[\]\(\)]+)`
-	reAudioAuthor     = `(?i)(?:by|author[:\s]+)[\s,:]*([^,\[\]\(\)-]+)`
-	reAudioAbridged   = `(?i)[\[\(\s]abr(?:idged)?[\]\)\s]`
+	reAudioASIN      = `(?i)(?:asin[:\s-]?)?B0[A-Z0-9]{8}`
+	reAudioISBN      = `(?i)(?:isbn[:\s-]?)?97[89](?:[\s-]?\d){10}`
+	reAudioYear      = `(?:^|\D)([\(\[])?((?:19|20)\d{2})([\)\]])?(?:$|\D)`
+	reAudioSeries    = `(?i)(?:\(|\[)?\s*([^()\[\]]+?)(?:(?:\s*,\s*|\s+)(?:book|no\.?|vol\.?|volume)|\s*,?\s*#)\s*(\d+(?:\.\d+)?)\s*(?:\)|\])?`
+	reAudioSeriesNum = `(?i)(?:(?:^|[^a-z0-9])(?:book|no\.?|vol\.?|volume)|#)\s*(\d+(?:\.\d+)?)`
+	reAudioNarrator  = `(?i)(?:read\s+by|narrated\s+by|narrator[:\s]+)[\s,:]*([^,\[\]\(\)]+)`
+	reAudioAuthor    = `(?i)(?:by|author[:\s]+)[\s,:]*([^,\[\]\(\)-]+)`
+	reAudioAbridged  = `(?i)[\[\(\s]abr(?:idged)?[\]\)\s]`
 	// "un" is mandatory here (was `(?:un)?abr...`, an optional prefix that
 	// made this pattern also match plain "abridged" - since this check runs
 	// after reAudioAbridged below, Abridged was unconditionally reset back
@@ -85,7 +72,6 @@ const (
 	reAudioSampleRate      = `(?i)(\d+(?:\.\d+)?)\s*(?:khz|k?hz)`
 	reAudioTitleClean      = `(?i)[\[\(](?:audiobook|audio\s*book|unabridged|abridged)[\]\)]`
 	reAudioSceneAuthorDash = `^([A-Za-z][A-Za-z\s\.]+)-([^-].*)$`
-	reAudioNumInName       = `(?:^|\D)(\d{1,2})(?:\D|$)`
 	reAudioStripASIN       = `(?i)asin[:\s-]*`
 	reStripISBN            = `(?i)isbn[:\s-]*`
 )
@@ -97,9 +83,6 @@ func compileAudiobookPatterns() *audiobookPatterns {
 		asin:            database.GetCachedRegexp(reAudioASIN),
 		isbn:            database.GetCachedRegexp(reAudioISBN),
 		year:            database.GetCachedRegexp(reAudioYear),
-		partNumber:      database.GetCachedRegexp(reAudioPartNumber),
-		discNumber:      database.GetCachedRegexp(reAudioDiscNumber),
-		chapterNum:      database.GetCachedRegexp(reAudioChapterNum),
 		series:          database.GetCachedRegexp(reAudioSeries),
 		seriesNum:       database.GetCachedRegexp(reAudioSeriesNum),
 		narrator:        database.GetCachedRegexp(reAudioNarrator),
@@ -125,11 +108,9 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 	}
 
 	// Get extension and base name
-	ext := filepath.Ext(filename)
+	name, ext := splitKnownExt(filename)
 
 	result.Format = logger.ExtToFormat(ext)
-
-	name := strings.TrimSuffix(filename, ext)
 
 	// Clean common separators
 	name = strings.ReplaceAll(name, "_", " ")
@@ -150,7 +131,7 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 	}
 
 	// Extract ISBN
-	if match := ap.patterns.isbn.FindString(name); match != "" {
+	if match := findISBN(ap.patterns.isbn, name, ValidateISBN13); match != "" {
 		result.ISBN13 = normalizeISBN(match)
 		cleanedName = strings.Replace(cleanedName, match, "", 1)
 	}
@@ -167,9 +148,30 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 	}
 
 	// Extract year BEFORE release group (group pattern matches digits too)
-	if loc := ap.patterns.year.FindStringSubmatchIndex(cleanedName); len(loc) > 2 {
-		result.Year = parseInt(cleanedName[loc[2]:loc[3]])
-		cleanedName = ap.patterns.year.ReplaceAllLiteralString(cleanedName, " ")
+	// Like the book parser, only a bracketed year - or a trailing one that
+	// leaves a title in front of it - is stripped: a bare year can be the
+	// whole title ("George Orwell - 1984"). Groups: 1 opening bracket,
+	// 2 year, 3 closing bracket.
+	if loc := ap.patterns.year.FindStringSubmatchIndex(cleanedName); len(loc) > 7 {
+		start, end := loc[4], loc[5]
+		result.Year = parseInt(cleanedName[start:end])
+
+		strip := loc[2] != -1 || loc[6] != -1
+		if strip {
+			if loc[2] != -1 {
+				start = loc[2]
+			}
+
+			if loc[6] != -1 {
+				end = loc[7]
+			}
+		} else if strings.TrimSpace(cleanedName[end:]) == "" {
+			strip = !yearIsLastSegment(strings.TrimSpace(cleanedName[:start]))
+		}
+
+		if strip {
+			cleanedName = cleanedName[:start] + " " + cleanedName[end:]
+		}
 	}
 
 	// Extract release group
@@ -185,10 +187,8 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 	}
 
 	// Extract series information
-	if loc := ap.patterns.series.FindStringSubmatchIndex(cleanedName); len(loc) > 4 {
-		result.Series = strings.TrimSpace(cleanedName[loc[2]:loc[3]])
-		result.SeriesPosition = cleanedName[loc[4]:loc[5]]
-		cleanedName = ap.patterns.series.ReplaceAllLiteralString(cleanedName, "")
+	if series, pos, rest, ok := extractSeries(ap.patterns.series, cleanedName); ok {
+		result.Series, result.SeriesPosition, cleanedName = series, pos, rest
 	}
 
 	// Extract bitrate
@@ -224,148 +224,25 @@ func (ap *AudiobookParser) Parse(filename string) *AudiobookParseResult {
 	return result
 }
 
-// ParseDirectory parses an audiobook directory containing multiple files.
-func (ap *AudiobookParser) ParseDirectory(dirPath string, files []string) *AudiobookParseResult {
-	if len(files) == 0 {
-		return nil
+// yearIsLastSegment reports whether a trailing year preceded by before is the
+// title itself: "George Orwell - 1984" (before = "George Orwell -") has no
+// other title segment, while in "Author - Title - 2001" or the scene form
+// "Author-Title-MP3-2001" a title precedes the year.
+func yearIsLastSegment(before string) bool {
+	if before == "" {
+		return true
 	}
 
-	// Parse the first file for base information
-	result := ap.Parse(filepath.Base(files[0]))
-
-	result.SourcePath = dirPath
-	result.IsMultiFile = len(files) > 1
-
-	// Try to extract info from directory name
-	dirName := filepath.Base(dirPath)
-	dirResult := ap.Parse(dirName)
-
-	// Prefer directory name info if it seems more complete
-	if dirResult.Title != "" && len(dirResult.Title) > len(result.Title) {
-		result.Title = dirResult.Title
+	rest, ok := strings.CutSuffix(before, "-")
+	if !ok {
+		return false
 	}
 
-	if dirResult.Author != "" && result.Author == "" {
-		result.Author = dirResult.Author
+	if strings.HasSuffix(rest, " ") {
+		return !strings.Contains(rest, " - ")
 	}
 
-	if dirResult.Series != "" && result.Series == "" {
-		result.Series = dirResult.Series
-		result.SeriesPosition = dirResult.SeriesPosition
-	}
-
-	if dirResult.Narrator != "" && result.Narrator == "" {
-		result.Narrator = dirResult.Narrator
-	}
-
-	if dirResult.ASIN != "" && result.ASIN == "" {
-		result.ASIN = dirResult.ASIN
-	}
-
-	// Parse all files to get part information
-	result.Files = make([]AudiobookFileInfo, 0, len(files))
-	for i := range files {
-		fileInfo := ap.parseFileInfo(files[i])
-
-		result.Files = append(result.Files, fileInfo)
-	}
-
-	// Sort files by part/disc number
-	sort.Slice(result.Files, func(i, j int) bool {
-		if result.Files[i].DiscNumber != result.Files[j].DiscNumber {
-			return result.Files[i].DiscNumber < result.Files[j].DiscNumber
-		}
-
-		return result.Files[i].PartNumber < result.Files[j].PartNumber
-	})
-
-	// Determine total parts and check for missing parts
-	ap.analyzeParts(result)
-
-	// Recalculate confidence with multi-file info
-	result.Confidence = ap.calculateConfidence(result)
-
-	return result
-}
-
-// parseFileInfo extracts file-level information from a filename.
-func (ap *AudiobookParser) parseFileInfo(filename string) AudiobookFileInfo {
-	info := AudiobookFileInfo{
-		Filename: filepath.Base(filename),
-	}
-
-	name := strings.TrimSuffix(info.Filename, filepath.Ext(info.Filename))
-
-	// Extract disc number
-	if loc := ap.patterns.discNumber.FindStringSubmatchIndex(name); len(loc) > 2 {
-		info.DiscNumber = parseInt(name[loc[2]:loc[3]])
-	}
-
-	// Extract part/track number — check each capture group for a non-empty match (loc[i] == -1 means no match).
-	if loc := ap.patterns.partNumber.FindStringSubmatchIndex(name); len(loc) > 0 {
-		for i := 1; i < len(loc)/2; i++ {
-			if loc[2*i] != -1 {
-				info.PartNumber = parseInt(name[loc[2*i]:loc[2*i+1]])
-				break
-			}
-		}
-	}
-
-	// Extract chapter number as alternative
-	if info.PartNumber == 0 {
-		if loc := ap.patterns.chapterNum.FindStringSubmatchIndex(name); len(loc) > 2 {
-			numStr := name[loc[2]:loc[3]]
-
-			info.PartNumber = parseInt(numStr)
-			info.ChapterTitle = "Chapter " + numStr
-		}
-	}
-
-	// If still no part number, try to extract from just numbers in filename
-	if info.PartNumber == 0 {
-		if matches := database.GetCachedRegexp(reAudioNumInName).
-			FindStringSubmatch(name); len(
-			matches,
-		) > 1 {
-			info.PartNumber = parseInt(matches[1])
-		}
-	}
-
-	return info
-}
-
-// analyzeParts determines total parts and identifies missing parts.
-func (*AudiobookParser) analyzeParts(result *AudiobookParseResult) {
-	if len(result.Files) == 0 {
-		return
-	}
-
-	// Find the highest part number
-	maxPart := 0
-	partMap := make(map[int]bool)
-
-	for i := range result.Files {
-		if result.Files[i].PartNumber > maxPart {
-			maxPart = result.Files[i].PartNumber
-		}
-
-		if result.Files[i].PartNumber > 0 {
-			partMap[result.Files[i].PartNumber] = true
-		}
-	}
-
-	result.TotalParts = maxPart
-
-	// Check for missing parts (only if we have numbered parts)
-	if maxPart == 0 || maxPart > 100 { // Reasonable limit for part checking
-		return
-	}
-
-	for i := 1; i <= maxPart; i++ {
-		if !partMap[i] {
-			result.MissingParts = append(result.MissingParts, i)
-		}
-	}
+	return !strings.Contains(rest, "-")
 }
 
 // extractAuthorTitle attempts to separate author from title.
@@ -534,108 +411,6 @@ func (*AudiobookParser) UpdateFileRuntimes(
 	}
 
 	result.RuntimeMS = totalRuntime
-}
-
-// ParseDirectoryWithTags parses an audiobook directory using both filename parsing and audio tags.
-func (ap *AudiobookParser) ParseDirectoryWithTags(
-	dirPath string,
-	files []string,
-) *AudiobookParseResult {
-	// First parse from filenames
-	result := ap.ParseDirectory(dirPath, files)
-	if result == nil {
-		return nil
-	}
-
-	// Read tags from files
-	tagResult, err := ReadAudiobookTags(files)
-	if err != nil || tagResult == nil {
-		return result
-	}
-
-	// Merge tag info
-	ap.mergeTagInfo(result, tagResult)
-
-	return result
-}
-
-// ParseDirectoryWithAnalysis parses an audiobook directory with full media analysis.
-func (ap *AudiobookParser) ParseDirectoryWithAnalysis(
-	ctx context.Context,
-	dirPath string,
-	files []string,
-	analyzer *MediaAnalyzer,
-) *AudiobookParseResult {
-	// Parse with tags first
-	result := ap.ParseDirectoryWithTags(dirPath, files)
-	if result == nil {
-		return nil
-	}
-
-	// Analyze files for runtime info
-	if analyzer != nil {
-		_ = analyzer.AnalyzeAudiobook(ctx, files, result)
-	}
-
-	return result
-}
-
-// mergeTagInfo merges tag information into the audiobook result.
-func (ap *AudiobookParser) mergeTagInfo(result, tagResult *AudiobookParseResult) {
-	// Book-level info from tags takes precedence
-	if tagResult.Title != "" {
-		result.Title = tagResult.Title
-	}
-
-	if tagResult.Author != "" {
-		result.Author = tagResult.Author
-	}
-
-	if len(tagResult.Authors) > 0 {
-		result.Authors = tagResult.Authors
-	}
-
-	if tagResult.Narrator != "" {
-		result.Narrator = tagResult.Narrator
-	}
-
-	if tagResult.Year > 0 {
-		result.Year = tagResult.Year
-	}
-
-	// Merge file info
-	tagFileMap := make(map[string]*AudiobookFileInfo)
-	for i := range tagResult.Files {
-		tagFileMap[tagResult.Files[i].Filename] = &tagResult.Files[i]
-	}
-
-	for i := range result.Files {
-		tagFile, ok := tagFileMap[result.Files[i].Filename]
-		if !ok {
-			continue
-		}
-
-		if tagFile.PartNumber > 0 {
-			result.Files[i].PartNumber = tagFile.PartNumber
-		}
-
-		if tagFile.DiscNumber > 0 {
-			result.Files[i].DiscNumber = tagFile.DiscNumber
-		}
-
-		if tagFile.ChapterTitle != "" {
-			result.Files[i].ChapterTitle = tagFile.ChapterTitle
-		}
-
-		if tagFile.RuntimeMS > 0 {
-			result.Files[i].RuntimeMS = tagFile.RuntimeMS
-		}
-	}
-
-	// Recalculate totals and confidence
-	ap.analyzeParts(result)
-
-	result.Confidence = ap.calculateConfidence(result)
 }
 
 // filesToTracks converts AudiobookFileInfo slice to TrackInfo slice for runtime matching.

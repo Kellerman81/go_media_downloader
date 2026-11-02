@@ -9,44 +9,49 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 )
 
-// Helper functions for actual cleanup operations
+// cleanupFileTables maps the cleanup tool's media type choices to the
+// tables holding that type's tracked file locations.
+var cleanupFileTables = []struct{ mediaType, table string }{
+	{"movies", "movie_files"},
+	{"series", "serie_episode_files"},
+	{"books", "book_files"},
+	{"audiobooks", "audiobook_files"},
+	{"music", "album_files"},
+}
+
+// trackedFileLocations returns the file locations stored for the selected
+// media type ("all" or empty selects every type).
+func trackedFileLocations(mediaTypes string) []string {
+	var locations []string
+
+	for _, ft := range cleanupFileTables {
+		if mediaTypes != "" && mediaTypes != "all" && mediaTypes != ft.mediaType {
+			continue
+		}
+
+		locations = append(locations, database.GetrowsN[string](false, 0, "SELECT location FROM "+ft.table)...)
+	}
+
+	return locations
+}
 
 // performBrokenLinksCheck checks for database entries pointing to missing files.
 func performBrokenLinksCheck(mediaTypes string) int {
 	brokenCount := 0
 
-	// Check movie files if movies are included
-	if mediaTypes == "all" || mediaTypes == "movies" {
-		movieFiles := database.StructscanT[database.MovieFile](
-			false,
-			0,
-			"SELECT location FROM movie_files",
-		)
-		for i := range movieFiles {
-			if !checkFileExists(movieFiles[i].Location) {
-				brokenCount++
-			}
-		}
-	}
-
-	// Check serie files if series are included
-	if mediaTypes == "all" || mediaTypes == "series" {
-		serieFiles := database.StructscanT[database.SerieEpisodeFile](
-			false,
-			0,
-			"SELECT location FROM serie_episode_files",
-		)
-		for i := range serieFiles {
-			if !checkFileExists(serieFiles[i].Location) {
-				brokenCount++
-			}
+	for _, location := range trackedFileLocations(mediaTypes) {
+		if !checkFileExists(location) {
+			brokenCount++
 		}
 	}
 
 	return brokenCount
 }
 
-// performEmptyDirectoriesCheck finds directories with no media files.
+// performEmptyDirectoriesCheck counts directories below each scan path that
+// contain no media file (at least minFileSize bytes) anywhere beneath them.
+// One walk per path: every qualifying file marks all its ancestor
+// directories as non-empty.
 func performEmptyDirectoriesCheck(scanPaths []string, minFileSize int64) int {
 	emptyCount := 0
 
@@ -55,55 +60,48 @@ func performEmptyDirectoriesCheck(scanPaths []string, minFileSize int64) int {
 			continue
 		}
 
-		err := filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
+		var dirs []string
+
+		hasMedia := make(map[string]bool)
+
+		_ = filepath.WalkDir(basePath, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return nil // Continue on errors
 			}
 
-			if !d.IsDir() {
+			if d.IsDir() {
+				if path != basePath {
+					dirs = append(dirs, path)
+				}
+
 				return nil
 			}
 
-			// Skip the base path itself
-			if path == basePath {
+			if !isMediaFile(path) {
 				return nil
 			}
 
-			// Check if directory has any media files
-			hasMediaFiles := false
-			dirErr := filepath.WalkDir(
-				path,
-				func(filePath string, fileInfo os.DirEntry, fileErr error) error {
-					if fileErr != nil || fileInfo.IsDir() {
-						return nil
-					}
-
-					// Check if it's a media file and meets size requirements
-					if isMediaFile(filePath) {
-						if minFileSize == 0 {
-							hasMediaFiles = true
-							return filepath.SkipAll
-						}
-
-						if info, statErr := fileInfo.Info(); statErr == nil &&
-							info.Size() >= minFileSize {
-							hasMediaFiles = true
-							return filepath.SkipAll
-						}
-					}
-
+			if minFileSize > 0 {
+				if info, statErr := d.Info(); statErr != nil || info.Size() < minFileSize {
 					return nil
-				},
-			)
+				}
+			}
 
-			if dirErr == nil && !hasMediaFiles {
-				emptyCount++
+			for dir := filepath.Dir(path); dir != basePath && !hasMedia[dir]; dir = filepath.Dir(dir) {
+				hasMedia[dir] = true
+
+				if parent := filepath.Dir(dir); parent == dir {
+					break
+				}
 			}
 
 			return nil
 		})
-		if err != nil {
-			continue // Continue with next path on error
+
+		for _, dir := range dirs {
+			if !hasMedia[dir] {
+				emptyCount++
+			}
 		}
 	}
 
@@ -114,29 +112,11 @@ func performEmptyDirectoriesCheck(scanPaths []string, minFileSize int64) int {
 func performOrphanedFilesCheck(scanPaths []string, mediaTypes string, minFileSize int64) int {
 	orphanedCount := 0
 
-	// Get all files from database
-	dbFiles := make(map[string]bool)
+	locations := trackedFileLocations(mediaTypes)
 
-	if mediaTypes == "all" || mediaTypes == "movies" {
-		movieFiles := database.StructscanT[database.MovieFile](
-			false,
-			0,
-			"SELECT location FROM movie_files",
-		)
-		for i := range movieFiles {
-			dbFiles[movieFiles[i].Location] = true
-		}
-	}
-
-	if mediaTypes == "all" || mediaTypes == "series" {
-		serieFiles := database.StructscanT[database.SerieEpisodeFile](
-			false,
-			0,
-			"SELECT location FROM serie_episode_files",
-		)
-		for i := range serieFiles {
-			dbFiles[serieFiles[i].Location] = true
-		}
+	dbFiles := make(map[string]bool, len(locations))
+	for _, location := range locations {
+		dbFiles[location] = true
 	}
 
 	// Scan filesystem and check against database
@@ -237,6 +217,10 @@ func isMediaFile(filename string) bool {
 	mediaExtensions := []string{
 		".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v",
 		".mpg", ".mpeg", ".3gp", ".ogv", ".ts", ".m2ts",
+		// audio (music, audiobooks)
+		".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".opus", ".aac", ".wav", ".wma", ".alac",
+		// books
+		".epub", ".mobi", ".azw", ".azw3", ".pdf", ".cbz", ".cbr",
 	}
 
 	return slices.Contains(mediaExtensions, ext)

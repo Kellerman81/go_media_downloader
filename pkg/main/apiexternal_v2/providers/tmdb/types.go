@@ -212,17 +212,32 @@ type tmdbVideo struct {
 	PublishedAt string `json:"published_at"`
 }
 
-// TMDBListResponse represents a TMDB list response (movies).
+// TMDBListResponse represents a TMDB list response (movies and TV).
+// The list "id" is not decoded: it is unused, and v3 lists send it as a
+// string while newer ones send a number - a typed field failed the whole
+// decode for the other shape.
 type TMDBListResponse struct {
-	CreatedBy     string                  `json:"created_by"`
-	Description   string                  `json:"description"`
-	FavoriteCount int                     `json:"favorite_count"`
-	ID            int                     `json:"id"`
-	Items         []tmdbMovieSearchResult `json:"items"`
-	ItemCount     int                     `json:"item_count"`
-	ISO6391       string                  `json:"iso_639_1"`
-	Name          string                  `json:"name"`
-	PosterPath    string                  `json:"poster_path"`
+	CreatedBy     string         `json:"created_by"`
+	Description   string         `json:"description"`
+	FavoriteCount int            `json:"favorite_count"`
+	Items         []tmdbListItem `json:"items"`
+	ItemCount     int            `json:"item_count"`
+	Page          int            `json:"page"`
+	TotalPages    int            `json:"total_pages"`
+	ISO6391       string         `json:"iso_639_1"`
+	Name          string         `json:"name"`
+	PosterPath    string         `json:"poster_path"`
+}
+
+// tmdbListItem is a list entry; TV entries carry name/first_air_date
+// instead of title/release_date.
+type tmdbListItem struct {
+	tmdbMovieSearchResult
+
+	MediaType    string `json:"media_type"`
+	Name         string `json:"name"`
+	OriginalName string `json:"original_name"`
+	FirstAirDate string `json:"first_air_date"`
 }
 
 //
@@ -452,18 +467,6 @@ func convertSeasons(tmdbSeasons []tmdbSeason) []apiexternal_v2.Season {
 	}
 
 	return seasons
-}
-
-func convertSeason(tmdbSeason *tmdbSeason) *apiexternal_v2.Season {
-	return &apiexternal_v2.Season{
-		ID:           tmdbSeason.ID,
-		SeasonNumber: tmdbSeason.SeasonNumber,
-		Name:         tmdbSeason.Name,
-		Overview:     tmdbSeason.Overview,
-		AirDate:      parseDate(tmdbSeason.AirDate),
-		EpisodeCount: tmdbSeason.EpisodeCount,
-		PosterPath:   tmdbSeason.PosterPath,
-	}
 }
 
 func convertEpisode(tmdbEp *tmdbEpisode) *apiexternal_v2.Episode {

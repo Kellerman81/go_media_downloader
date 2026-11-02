@@ -254,7 +254,18 @@ func mp3Duration(path string) (time.Duration, error) {
 	// No VBR header: walk the actual frames. This is exact for both CBR and
 	// headerless VBR — each frame holds a fixed sample count regardless of its
 	// bitrate, so a first-frame-bitrate estimate would be wrong for VBR.
-	if frames := mp3CountFrames(f, audioStart+int64(frameOffset)); frames > 0 {
+	walkStart := audioStart + int64(frameOffset)
+	if frames, walked := mp3CountFrames(f, walkStart); frames > 0 {
+		if mp3WalkStoppedEarly(fileSize-walkStart, walked) {
+			return 0, errors.New("MPEG frame walk stopped before end of audio")
+		}
+
+		// A Xing/Info/VBRI frame without a usable frame count is itself a
+		// valid-looking frame but carries no audio.
+		if mp3HasVBRTag(buf, frameOffset, fh) && frames > 1 {
+			frames--
+		}
+
 		return framesToDuration(frames, samplesPerFrame, fh.sampleRate), nil
 	}
 
@@ -275,20 +286,28 @@ func framesToDuration(frames int64, samplesPerFrame, sampleRate int) time.Durati
 	return time.Duration(secs * float64(time.Second))
 }
 
+// mp3WalkStoppedEarly reports whether a frame walk that covered walked of
+// remaining bytes ended at junk inside the stream (lost sync, an embedded tag)
+// rather than at trailing tags, so its frame count would be too low. Trailing
+// ID3v1/APE/Lyrics tags stay well within the slack.
+func mp3WalkStoppedEarly(remaining, walked int64) bool {
+	const slack = 256 * 1024
+
+	return remaining-walked > slack && walked < remaining*9/10
+}
+
 // mp3CountFrames walks every MPEG audio frame from start to EOF and returns the
-// count, stepping by each frame's own length so VBR is handled correctly. It
-// stops at the first non-frame bytes (e.g. an ID3v1 trailer or padding).
-func mp3CountFrames(f *os.File, start int64) int64 {
+// count and the bytes covered, stepping by each frame's own length so VBR is
+// handled correctly. It stops at the first non-frame bytes (e.g. an ID3v1
+// trailer or padding).
+func mp3CountFrames(f *os.File, start int64) (count, walked int64) {
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return 0
+		return 0, 0
 	}
 
 	br := bufio.NewReaderSize(f, 64*1024)
 
-	var (
-		hdr   [4]byte
-		count int64
-	)
+	var hdr [4]byte
 
 	for {
 		if _, err := io.ReadFull(br, hdr[:]); err != nil {
@@ -306,13 +325,31 @@ func mp3CountFrames(f *os.File, start int64) int64 {
 		}
 
 		count++
+		walked += int64(flen)
 
 		if _, err := br.Discard(flen - 4); err != nil {
 			break
 		}
 	}
 
-	return count
+	return count, walked
+}
+
+// mp3HasVBRTag reports whether the first frame is a Xing/Info or VBRI tag
+// frame, regardless of which optional fields it carries.
+func mp3HasVBRTag(buf []byte, frameOffset int, fh mp3FrameHeader) bool {
+	if fh.layer == 3 {
+		xing := frameOffset + 4 + fh.sideInfoSize()
+		if xing+4 <= len(buf) {
+			if tag := string(buf[xing : xing+4]); tag == "Xing" || tag == "Info" {
+				return true
+			}
+		}
+	}
+
+	vbri := frameOffset + 4 + 32
+
+	return vbri+4 <= len(buf) && string(buf[vbri:vbri+4]) == "VBRI"
 }
 
 // mp3VBRFrameCount returns the total frame count from a Xing/Info or VBRI header

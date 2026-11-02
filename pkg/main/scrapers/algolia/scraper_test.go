@@ -2,6 +2,7 @@ package algolia
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -153,7 +154,7 @@ func TestAlgoliaIntegration(t *testing.T) {
 		if !strings.Contains(body, "page=0") {
 			t.Error("Request body does not contain page parameter")
 		}
-		if !strings.Contains(body, "hitsPerPage=1000") {
+		if !strings.Contains(body, "hitsPerPage=100&") {
 			t.Error("Request body does not contain hitsPerPage parameter")
 		}
 
@@ -180,7 +181,7 @@ func TestAlgoliaIntegration(t *testing.T) {
 		}
 
 		// Fetch first page
-		hits, err := scraper.fetchPage(ctx, 0)
+		hits, _, err := scraper.fetchPage(ctx, 0)
 		if err != nil {
 			t.Errorf("Failed to fetch first page: %v", err)
 			return
@@ -285,7 +286,7 @@ func TestAlgoliaIntegration(t *testing.T) {
 		}
 
 		// Fetch first page only
-		hits, err := scraper.fetchPage(ctx, 0)
+		hits, _, err := scraper.fetchPage(ctx, 0)
 		if err != nil {
 			t.Errorf("Failed to fetch page: %v", err)
 			return
@@ -487,5 +488,69 @@ func TestAlgoliaFilters(t *testing.T) {
 
 			tt.verify(t, filter)
 		})
+	}
+}
+
+func TestBuildFacetFilterNetworkSite(t *testing.T) {
+	tests := []struct {
+		value string
+		want  string // decoded filter, "" for none
+	}{
+		{"Network,Site", `[["network.lvl1:Network > Site"]]`},
+		{" Network , Site ", `[["network.lvl1:Network > Site"]]`},
+		{"Network,Site, Inc", `[["network.lvl1:Network > Site, Inc"]]`},
+		{"NoComma", ""},
+		{"Network,", ""},
+		{",Site", ""},
+	}
+
+	for _, tt := range tests {
+		s := &Scraper{config: &Config{NetworkSiteFilterName: tt.value}}
+
+		got, err := url.QueryUnescape(s.buildFacetFilter())
+		if err != nil {
+			t.Fatalf("unescape: %v", err)
+		}
+
+		if got != tt.want {
+			t.Errorf("buildFacetFilter(%q) = %q, want %q", tt.value, got, tt.want)
+		}
+	}
+}
+
+func TestNewScraperFilterValidation(t *testing.T) {
+	base := Config{
+		StartURL:  "https://example.com/en/videos/",
+		SiteURL:   "https://example.com",
+		SerieName: "x",
+	}
+
+	malformed := base
+	malformed.NetworkSiteFilterName = "NoComma"
+
+	if _, err := NewScraper(&malformed); err == nil {
+		t.Error("expected error for malformed network_site_filter_name")
+	}
+
+	ok := base
+	ok.SiteFilterName = "site"
+
+	if _, err := NewScraper(&ok); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// No filter stays allowed (documented optional; the API key may already be site-scoped).
+	none := base
+	if _, err := NewScraper(&none); err != nil {
+		t.Errorf("unexpected error without filter: %v", err)
+	}
+}
+
+func TestBuildRequestBodyHitsPerPage(t *testing.T) {
+	s := &Scraper{config: &Config{SiteFilterName: "site"}}
+
+	body := s.buildRequestBody(3)
+	if !strings.Contains(body, "hitsPerPage=100&") || !strings.Contains(body, "page=3") {
+		t.Errorf("unexpected request body: %s", body)
 	}
 }

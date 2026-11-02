@@ -203,7 +203,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "extension", Label: "Extension", Widget: "text", Placeholder: "Extension...", Clauses: []filterClause{legacyClause(eqCol("extension"))}},
 		{Field: "quality_profile", Label: "Quality", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile")), like("movie_files.quality_profile")}},
 		// SQL-only (dead UI text field from the unreachable renderCustomFilters fallback).
-		{Field: "resolution", Clauses: []filterClause{like("movie_files.resolution")}},
+		{Field: "resolution", Clauses: []filterClause{rawClause("movie_files.resolution_id IN (SELECT id FROM qualities WHERE type = 1 AND name LIKE ?)", func(v string) []any { return []any{"%" + v + "%"} })}},
 	},
 	"serie_episode_files": {
 		{Field: "serie_episode_id", Label: "Episode ID", Widget: "text", Placeholder: "Episode ID...", Clauses: []filterClause{eqCol("serie_episode_files.serie_episode_id")}},
@@ -212,7 +212,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "extension", Label: "Extension", Widget: "text", Placeholder: "Extension...", Clauses: []filterClause{legacyClause(eqCol("extension"))}},
 		// SQL-only.
 		{Field: "quality_profile", Clauses: []filterClause{like("serie_episode_files.quality_profile")}},
-		{Field: "resolution", Clauses: []filterClause{like("serie_episode_files.resolution")}},
+		{Field: "resolution", Clauses: []filterClause{rawClause("serie_episode_files.resolution_id IN (SELECT id FROM qualities WHERE type = 1 AND name LIKE ?)", func(v string) []any { return []any{"%" + v + "%"} })}},
 	},
 	"dbmovie_titles": {
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Filter by title...", Clauses: []filterClause{legacyClause(like("dbmovie_titles.title")), like("dbmovie_titles.title")}},
@@ -238,8 +238,8 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "year", Label: "Year", Widget: "number", Placeholder: "Year...", Clauses: []filterClause{legacyClause(eqCol("year"))}},
 		// SQL-only.
 		{Field: "genres", Clauses: []filterClause{legacyClause(like("genres"))}},
-		{Field: "goodreads_id", Clauses: []filterClause{legacyClause(like("goodreads_id"))}},
-		{Field: "openlibrary_id", Clauses: []filterClause{legacyClause(like("openlibrary_id"))}},
+		{Field: "goodreads_id", Clauses: []filterClause{legacyClause(like("dbbooks.goodreads_id"))}},
+		{Field: "openlibrary_id", Clauses: []filterClause{legacyClause(like("dbbooks.openlibrary_id"))}},
 		{Field: "page_count", Clauses: []filterClause{legacyClause(gte("page_count"))}},
 		{Field: "series_position", Clauses: []filterClause{legacyClause(like("series_position"))}},
 	},
@@ -260,7 +260,13 @@ var filterFieldDefs = map[string][]tableFilterField{
 	},
 	"books": {
 		{Field: "title", Label: "Book Title", Widget: "text", Placeholder: "Filter by title...", Clauses: []filterClause{like("dbbooks.title")}},
-		{Field: "author", Label: "Author Name", Widget: "text", Placeholder: "Author name...", Clauses: []filterClause{like("dbauthors.name")}},
+		{
+			Field: "author", Label: "Author Name", Widget: "text", Placeholder: "Author name...",
+			Clauses: []filterClause{rawClause(
+				"(books.author_id IN (SELECT authors.id FROM authors JOIN dbauthors ON authors.dbauthor_id = dbauthors.id WHERE dbauthors.name LIKE ?) OR dbbooks.dbauthor_id IN (SELECT id FROM dbauthors WHERE name LIKE ?))",
+				func(v string) []any { return []any{"%" + v + "%", "%" + v + "%"} },
+			)},
+		},
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), eqCol("books.listname")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
 		{Field: "missing", Label: "Missing", Widget: "select", Options: yesNoOptions, OptionLabels: yesNoLabels, Clauses: []filterClause{legacyClause(eqCol("missing")), eqCol("books.missing")}},
@@ -301,7 +307,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), like("listname")}},
 	},
 	"book_histories": {
-		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("title")), like("title")}},
+		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("book_histories.title")), like("book_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{legacyClause(like("indexer")), like("indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
 		// SQL-only.
@@ -311,7 +317,13 @@ var filterFieldDefs = map[string][]tableFilterField{
 	"dbaudiobooks": {
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Filter by title...", Clauses: []filterClause{legacyClause(like("title")), like("title")}},
 		{Field: "asin", Label: "ASIN", Widget: "text", Placeholder: "Amazon ASIN...", Clauses: []filterClause{legacyClause(like("asin")), like("asin")}},
-		{Field: "narrator", Label: "Narrator", Widget: "text", Placeholder: "Narrator name...", Clauses: []filterClause{like("dbnarrators.name")}},
+		{
+			Field: "narrator", Label: "Narrator", Widget: "text", Placeholder: "Narrator name...",
+			Clauses: []filterClause{rawClause(
+				"dbaudiobooks.id IN (SELECT dbaudiobook_narrators.dbaudiobook_id FROM dbaudiobook_narrators JOIN dbnarrators ON dbaudiobook_narrators.dbnarrator_id = dbnarrators.id WHERE dbnarrators.name LIKE ?)",
+				func(v string) []any { return []any{"%" + v + "%"} },
+			)},
+		},
 		{Field: "publisher", Label: "Publisher", Widget: "text", Placeholder: "Publisher...", Clauses: []filterClause{legacyClause(like("publisher")), like("publisher")}},
 		{Field: "language", Label: "Language", Widget: "text", Placeholder: "Language...", Clauses: []filterClause{legacyClause(eqCol("language"))}},
 		{Field: "year", Label: "Year", Widget: "number", Placeholder: "Year...", Clauses: []filterClause{legacyClause(eqCol("year"))}},
@@ -331,7 +343,13 @@ var filterFieldDefs = map[string][]tableFilterField{
 	},
 	"audiobooks": {
 		{Field: "title", Label: "Audiobook Title", Widget: "text", Placeholder: "Filter by title...", Clauses: []filterClause{like("dbaudiobooks.title")}},
-		{Field: "narrator", Label: "Narrator", Widget: "text", Placeholder: "Narrator name...", Clauses: []filterClause{like("dbnarrators.name")}},
+		{
+			Field: "narrator", Label: "Narrator", Widget: "text", Placeholder: "Narrator name...",
+			Clauses: []filterClause{rawClause(
+				"audiobooks.dbaudiobook_id IN (SELECT dbaudiobook_narrators.dbaudiobook_id FROM dbaudiobook_narrators JOIN dbnarrators ON dbaudiobook_narrators.dbnarrator_id = dbnarrators.id WHERE dbnarrators.name LIKE ?)",
+				func(v string) []any { return []any{"%" + v + "%"} },
+			)},
+		},
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), eqCol("audiobooks.listname")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
 		{Field: "missing", Label: "Missing", Widget: "select", Options: yesNoOptions, OptionLabels: yesNoLabels, Clauses: []filterClause{legacyClause(eqCol("missing")), eqCol("audiobooks.missing")}},
@@ -342,6 +360,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "dont_search", Clauses: []filterClause{legacyClause(eqCol("dont_search"))}},
 		{Field: "blacklisted", Clauses: []filterClause{legacyClause(eqCol("blacklisted"))}},
 		{Field: "author_id", Clauses: []filterClause{legacyClause(eqCol("audiobooks.author_id")), eqCol("audiobooks.author_id")}},
+		{Field: "dbauthor_id", Clauses: []filterClause{rawClause("audiobooks.author_id IN (SELECT id FROM authors WHERE dbauthor_id = ?)", func(v string) []any { return []any{v} })}},
 	},
 	"audiobook_files": {
 		{Field: "audiobook_id", Label: "Audiobook ID", Widget: "text", Placeholder: "Audiobook ID...", Clauses: []filterClause{eqCol("audiobook_files.audiobook_id")}},
@@ -359,7 +378,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), like("listname")}},
 	},
 	"audiobook_histories": {
-		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("title")), like("title")}},
+		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("audiobook_histories.title")), like("audiobook_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{legacyClause(like("indexer")), like("indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
 		// SQL-only.
@@ -396,7 +415,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "region", Label: "Region", Widget: "text", Placeholder: "Region...", Clauses: []filterClause{legacyClause(like("dbalbum_titles.region")), like("dbalbum_titles.region")}},
 	},
 	"dbtracks": {
-		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Track title...", Clauses: []filterClause{legacyClause(like("title")), like("title")}},
+		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Track title...", Clauses: []filterClause{legacyClause(like("dbtracks.title")), like("dbtracks.title")}},
 		{Field: "album_title", Label: "Album Title", Widget: "text", Placeholder: "Album title...", Clauses: []filterClause{like("dbalbums.title")}},
 		{Field: "track_number", Label: "Track Number", Widget: "number", Placeholder: "Track #...", Clauses: []filterClause{legacyClause(eqCol("track_number")), eqCol("track_number")}},
 		// SQL-only.
@@ -438,7 +457,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "location", Label: "Location", Widget: "text", Placeholder: "File path...", Clauses: []filterClause{legacyClause(like("location"))}},
 		// SQL-only.
 		{Field: "extension", Clauses: []filterClause{legacyClause(eqCol("extension"))}},
-		{Field: "format", Clauses: []filterClause{legacyClause(eqCol("format"))}},
+		{Field: "format", Clauses: []filterClause{legacyClause(eqCol("album_files.format"))}},
 		{Field: "quality_profile", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
 		{Field: "bitrate", Clauses: []filterClause{legacyClause(gte("bitrate"))}},
 		{Field: "sample_rate", Clauses: []filterClause{legacyClause(gte("sample_rate"))}},
@@ -448,7 +467,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), like("listname")}},
 	},
 	"album_histories": {
-		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("title")), like("title")}},
+		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("album_histories.title")), like("album_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{legacyClause(like("indexer")), like("indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
 		// SQL-only.
@@ -662,41 +681,51 @@ func buildCustomFilters(tableName string, ctx *gin.Context) (string, []any) {
 	conditions = append(conditions, definedConditions...)
 	args = append(args, definedArgs...)
 
-	// Generic _id filter: any filter-*_id query param whose column exists in
-	// the base table and is not already handled above is applied as an
-	// exact-match condition. Column names are validated against
-	// pragma_table_info so no user-supplied string is ever interpolated
-	// directly into SQL.
-	{
-		validCols := getColumnTypes(tableName)
-
-		for col := range validCols {
-			if !strings.HasSuffix(col, "_id") {
-				continue
-			}
-
-			if _, handled := legacyHandled[col]; handled {
-				continue
-			}
-
-			// Skip external IDs that are not FK row references.
-			if getReferenceTable(col) == "" {
-				continue
-			}
-
-			val := getParamValue(ctx, "filter-"+col)
-			if val == "" {
-				continue
-			}
-
-			conditions = append(conditions, col+" = ?")
-			args = append(args, val)
-		}
-	}
+	idConditions, idArgs := genericIDFilters(tableName, getColumnTypes(tableName), legacyHandled, ctx)
+	conditions = append(conditions, idConditions...)
+	args = append(args, idArgs...)
 
 	if len(conditions) == 0 {
 		return "", nil
 	}
 
 	return strings.Join(conditions, " AND "), args
+}
+
+// genericIDFilters applies any filter-*_id query param whose column exists in
+// the base table (validCols, from pragma_table_info) and is not already
+// handled by filterFieldDefs as an exact-match condition. Column names come
+// from validCols, never from the request. They are qualified with the base
+// table because several tables join a sibling that has the same FK column
+// (e.g. serie_episodes and dbserie_episodes both carry dbserie_id).
+func genericIDFilters(
+	tableName string,
+	validCols map[string]string,
+	legacyHandled map[string]struct{},
+	ctx *gin.Context,
+) (conditions []string, args []any) {
+	for col := range validCols {
+		if !strings.HasSuffix(col, "_id") {
+			continue
+		}
+
+		if _, handled := legacyHandled[col]; handled {
+			continue
+		}
+
+		// Skip external IDs that are not FK row references.
+		if getReferenceTable(col) == "" {
+			continue
+		}
+
+		val := getParamValue(ctx, "filter-"+col)
+		if val == "" {
+			continue
+		}
+
+		conditions = append(conditions, tableName+"."+col+" = ?")
+		args = append(args, val)
+	}
+
+	return conditions, args
 }

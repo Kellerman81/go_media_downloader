@@ -69,16 +69,7 @@ func getrefreshaudiobooklistid(asin *string, cfgp *config.MediaTypeConfig) int {
 		"SELECT a.listname FROM audiobooks a JOIN dbaudiobooks db ON a.dbaudiobook_id = db.id WHERE db.asin = ?",
 		asin,
 	)
-	if listname == "" {
-		return -1
-	}
-
-	k, ok := cfgp.ListsMapIdx[listname]
-	if !ok {
-		return -1
-	}
-
-	return k
+	return cfgp.GetMediaListsEntryListID(listname)
 }
 
 // RefreshAudiobook refreshes the data for a single audiobook by its database ID.
@@ -150,9 +141,28 @@ func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint
 		&dbID,
 	)
 
-	chapterMap := make(map[int]string, len(chapters))
-	for i := range chapters {
-		chapterMap[int(chapters[i].ChapterNumber)] = chapters[i].Title
+	// Track numbers restart per disc, so they cannot key chapter_number on
+	// multi-disc audiobooks. When file and chapter counts match (the condition
+	// the folder import enforces), pair them positionally - files are ordered
+	// by disc/track, chapters by chapter_number, the same pairing
+	// GetExpectedTrackRuntimes uses. Otherwise only trust track_number on
+	// single-disc audiobooks.
+	positional := len(chapters) == len(files)
+
+	multiDisc := false
+	for i := range files {
+		if files[i].DiscNumber > 1 {
+			multiDisc = true
+			break
+		}
+	}
+
+	var chapterMap map[int]string
+	if !positional && !multiDisc {
+		chapterMap = make(map[int]string, len(chapters))
+		for i := range chapters {
+			chapterMap[int(chapters[i].ChapterNumber)] = chapters[i].Title
+		}
 	}
 
 	// Build AlbumInfo from DB metadata
@@ -175,7 +185,14 @@ func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint
 			Narrator:    narrator,
 		}
 		// Use chapter title from DB if available, otherwise use track title from file
-		if title, ok := chapterMap[int(files[i].TrackNumber)]; ok && title != "" {
+		var title string
+		if positional {
+			title = chapters[i].Title
+		} else if chapterMap != nil {
+			title = chapterMap[int(files[i].TrackNumber)]
+		}
+
+		if title != "" {
 			track.Title = title
 		} else if ti, err := parser_v2.ReadAudioTags(files[i].Location); err == nil && ti != nil {
 			track.Title = ti.Title
@@ -229,9 +246,15 @@ func RetagAuthorAudiobooks(ctx context.Context, cfgp *config.MediaTypeConfig, au
 
 // RetagAllAudiobooks re-writes audio tags for all audiobooks that have files.
 func RetagAllAudiobooks(ctx context.Context, cfgp *config.MediaTypeConfig) error {
+	if cfgp.ListsLen == 0 {
+		return nil
+	}
+
+	// Scoped to this config's lists: the retag uses this config's settings.
 	ids := database.Getrowssize[uint](false,
-		"SELECT count(DISTINCT dbaudiobook_id) FROM audiobook_files",
-		"SELECT DISTINCT dbaudiobook_id FROM audiobook_files")
+		"SELECT count(DISTINCT f.dbaudiobook_id) FROM audiobook_files f JOIN audiobooks a ON a.id = f.audiobook_id WHERE a.listname IN (?"+cfgp.ListsQu+")",
+		"SELECT DISTINCT f.dbaudiobook_id FROM audiobook_files f JOIN audiobooks a ON a.id = f.audiobook_id WHERE a.listname IN (?"+cfgp.ListsQu+")",
+		configListArgs(cfgp)...)
 
 	var lastErr error
 	for i := range ids {

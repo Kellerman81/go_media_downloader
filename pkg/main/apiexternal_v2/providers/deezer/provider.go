@@ -100,6 +100,10 @@ func (p *Provider) SearchAlbums(
 		return nil, err
 	}
 
+	if err := resp.Error.toError(); err != nil {
+		return nil, err
+	}
+
 	return convertSearchToReleases(resp.Data), nil
 }
 
@@ -120,5 +124,56 @@ func (p *Provider) GetAlbumByID(
 		return nil, err
 	}
 
+	if err := album.Error.toError(); err != nil {
+		return nil, err
+	}
+
+	// The tracklist embedded in /album/{id} has no track_position,
+	// disk_number or isrc; /album/{id}/tracks does. Keep the embedded list
+	// if that call fails.
+	if tracks, err := p.getAlbumTracks(ctx, id); err == nil && len(tracks) > 0 {
+		album.Tracks.Data = tracks
+	} else if err != nil {
+		logger.Logtype("debug", 0).Err(err).Int("album_id", id).Msg("deezer album tracks unavailable")
+	}
+
 	return convertAlbumToDetails(&album), nil
+}
+
+// maxTrackPages bounds pagination of /album/{id}/tracks.
+const maxTrackPages = 10
+
+// getAlbumTracks fetches the full tracklist of an album, following Deezer's
+// "next" links.
+func (p *Provider) getAlbumTracks(ctx context.Context, id int) ([]deezerTrack, error) {
+	buf := logger.PlAddBuffer.Get()
+	buf.WriteString("/album/")
+	buf.WriteInt(id)
+	buf.WriteString("/tracks?limit=500")
+
+	endpoint := buf.String()
+	logger.PlAddBuffer.Put(buf)
+
+	var all []deezerTrack
+
+	for range maxTrackPages {
+		var page deezerTracksList
+		if err := p.MakeRequest(ctx, "GET", endpoint, nil, &page, nil); err != nil {
+			return nil, err
+		}
+
+		if err := page.Error.toError(); err != nil {
+			return nil, err
+		}
+
+		all = append(all, page.Data...)
+
+		if page.Next == "" || len(page.Data) == 0 {
+			break
+		}
+
+		endpoint = page.Next
+	}
+
+	return all, nil
 }

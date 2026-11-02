@@ -1,6 +1,7 @@
 package transmission
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -55,10 +56,20 @@ func NewProvider(baseURL, username, password string) *Provider {
 
 	return &Provider{
 		BaseClient: base.NewBaseClient(config),
-		baseURL:    baseURL + "/transmission/rpc",
+		baseURL:    rpcURL(baseURL),
 		username:   username,
 		password:   password,
 	}
+}
+
+// rpcURL appends Transmission's RPC path to baseURL unless it already ends with it.
+func rpcURL(baseURL string) string {
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	if strings.HasSuffix(baseURL, "/transmission/rpc") {
+		return baseURL
+	}
+
+	return baseURL + "/transmission/rpc"
 }
 
 // GetProviderType returns the provider type.
@@ -71,18 +82,35 @@ func (*Provider) GetProviderName() string {
 	return "transmission"
 }
 
+// bandwidthPriority maps the downloader priority scale (-2 very low .. 2 very
+// high) onto Transmission's bandwidthPriority, which only knows -1/0/1.
+func bandwidthPriority(priority int) int {
+	switch {
+	case priority < 0:
+		return -1
+	case priority > 0:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // AddTorrent adds a torrent for downloading.
 func (p *Provider) AddTorrent(
 	ctx context.Context,
 	request apiexternal_v2.TorrentAddRequest,
 ) (*apiexternal_v2.TorrentAddResponse, error) {
-	args := map[string]any{
-		"download-dir": request.SavePath,
+	args := map[string]any{}
+
+	// An empty download-dir is not "use the default" for Transmission - it is
+	// taken literally, so only send it when a path is configured.
+	if request.SavePath != "" {
+		args["download-dir"] = request.SavePath
 	}
 
-	// Determine if we're adding by URL or raw data
+	// metainfo is the base64-encoded content of a .torrent file.
 	if len(request.TorrentData) > 0 {
-		args["metainfo"] = string(request.TorrentData)
+		args["metainfo"] = base64.StdEncoding.EncodeToString(request.TorrentData)
 	} else {
 		args["filename"] = request.URL
 	}
@@ -91,8 +119,8 @@ func (p *Provider) AddTorrent(
 		args["paused"] = true
 	}
 
-	if request.Priority > 0 {
-		args["bandwidthPriority"] = request.Priority
+	if bp := bandwidthPriority(request.Priority); bp != 0 {
+		args["bandwidthPriority"] = bp
 	}
 
 	response, err := p.makeRPCCall(ctx, "torrent-add", args)
@@ -104,19 +132,26 @@ func (p *Provider) AddTorrent(
 		return nil, errors.New(logger.JoinStrings("failed to add torrent: ", response.Result))
 	}
 
-	// Extract hash from response
+	// A new torrent comes back under "torrent-added"; one already in the
+	// session under "torrent-duplicate". Both mean the torrent is present, so
+	// both report success with the torrent's hash.
 	hash := ""
+	message := ""
+
 	if args, ok := response.Arguments.(map[string]any); ok {
 		if addedData, ok := args["torrent-added"].(map[string]any); ok {
-			if hashStr, ok := addedData["hashString"].(string); ok {
-				hash = hashStr
-			}
+			hash, _ = addedData["hashString"].(string)
+		} else if dupData, ok := args["torrent-duplicate"].(map[string]any); ok {
+			hash, _ = dupData["hashString"].(string)
+			message = "torrent already added"
 		}
 	}
 
 	return &apiexternal_v2.TorrentAddResponse{
-		Hash:    hash,
-		Success: true,
+		Hash:     hash,
+		Success:  true,
+		Message:  message,
+		Provider: "transmission",
 	}, nil
 }
 
@@ -330,13 +365,6 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 
 // Helper methods
 
-// maxCSRFRetries caps the number of times makeRPCCallWithRetry will recurse
-// in response to Transmission's HTTP 409 CSRF-token-refresh signal. Without
-// a cap, a persistently-409ing endpoint (broken reverse proxy, server bug)
-// would recurse indefinitely with no backoff, risking stack exhaustion or an
-// effectively-hung call.
-const maxCSRFRetries = 3
-
 // loadSessionID returns the current session ID under sessionMu.
 func (p *Provider) loadSessionID() string {
 	p.sessionMu.Lock()
@@ -353,40 +381,46 @@ func (p *Provider) storeSessionID(id string) {
 	p.sessionID = id
 }
 
-// makeRPCCall is the public entry point used by every RPC method on this
-// provider. It keeps its signature stable while delegating to
-// makeRPCCallWithRetry, which enforces a bounded CSRF-retry count.
+// makeRPCCall sends one Transmission RPC request. Transmission answers a
+// request without a valid X-Transmission-Session-Id with HTTP 409 carrying the
+// current id in that header; the id is stored and the request is sent once
+// more. A second 409 means the server keeps rotating the id (or a proxy strips
+// the header), so it is reported instead of looping.
 func (p *Provider) makeRPCCall(
 	ctx context.Context,
 	method string,
 	args any,
 ) (*transmissionRPCResponse, error) {
-	return p.makeRPCCallWithRetry(ctx, method, args, 0)
-}
-
-func (p *Provider) makeRPCCallWithRetry(
-	ctx context.Context,
-	method string,
-	args any,
-	retryCount int,
-) (*transmissionRPCResponse, error) {
-	// Get session ID if needed
-	if p.loadSessionID() == "" {
-		if err := p.getSessionID(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	request := transmissionRPCRequest{
+	jsonData, err := json.Marshal(transmissionRPCRequest{
 		Method:    method,
 		Arguments: args,
-	}
-
-	jsonData, err := json.Marshal(request)
+	})
 	if err != nil {
 		return nil, err
 	}
 
+	for range 2 {
+		response, conflict, err := p.sendRPC(ctx, jsonData)
+		if err != nil {
+			return nil, err
+		}
+
+		if !conflict {
+			return response, nil
+		}
+	}
+
+	return nil, errors.New(
+		"transmission kept answering HTTP 409: session id was not accepted after refresh",
+	)
+}
+
+// sendRPC posts one RPC body. conflict reports an HTTP 409 whose new session
+// id has been stored, meaning the request has to be re-sent.
+func (p *Provider) sendRPC(
+	ctx context.Context,
+	jsonData []byte,
+) (response *transmissionRPCResponse, conflict bool, err error) {
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
@@ -403,85 +437,39 @@ func (p *Provider) makeRPCCallWithRetry(
 
 	var rpcResponse transmissionRPCResponse
 
-	err = p.MakeRequestWithHeaders(
+	err = p.MakeRequestAcceptStatus(
 		ctx,
-		"POST",
+		http.MethodPost,
 		p.baseURL,
-		strings.NewReader(string(jsonData)),
-		nil,
+		bytes.NewReader(jsonData),
 		func(resp *http.Response) error {
-			// Handle CSRF - retry with new session ID
 			if resp.StatusCode == http.StatusConflict {
-				if sessionID := resp.Header.Get("X-Transmission-Session-Id"); sessionID != "" {
-					p.storeSessionID(sessionID)
-					// Don't decode response, will retry
-					return errors.New("CSRF retry needed")
+				sessionID := resp.Header.Get("X-Transmission-Session-Id")
+				if sessionID == "" {
+					return errors.New("transmission answered HTTP 409 without a session id")
 				}
+
+				p.storeSessionID(sessionID)
+
+				conflict = true
+
+				return nil
 			}
 
 			if resp.StatusCode != http.StatusOK {
 				return errors.New(logger.JoinStrings("HTTP ", strconv.Itoa(resp.StatusCode)))
 			}
 
-			if decodeErr := json.NewDecoder(resp.Body).Decode(&rpcResponse); decodeErr != nil {
-				return decodeErr
-			}
-
-			return nil
+			return json.NewDecoder(resp.Body).Decode(&rpcResponse)
 		},
 		headers,
+		http.StatusConflict,
 	)
-
-	// Handle CSRF retry, bounded to avoid unbounded recursion against a
-	// persistently-409ing endpoint.
-	if err != nil && err.Error() == "CSRF retry needed" {
-		if retryCount >= maxCSRFRetries {
-			return nil, errors.New(
-				"transmission CSRF retry limit exceeded: server kept requesting a session refresh",
-			)
-		}
-
-		return p.makeRPCCallWithRetry(ctx, method, args, retryCount+1)
+	if err != nil || conflict {
+		return nil, conflict, err
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	return &rpcResponse, nil
-}
-
-func (p *Provider) getSessionID(ctx context.Context) error {
-	headers := map[string]string{
-		"Content-Type": "application/json",
-	}
-
-	if p.username != "" && p.password != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(p.username + ":" + p.password))
-
-		headers["Authorization"] = "Basic " + auth
-	}
-
-	err := p.MakeRequestWithHeaders(
-		ctx,
-		"POST",
-		p.baseURL,
-		strings.NewReader("{}"),
-		nil,
-		func(resp *http.Response) error {
-			if resp.StatusCode == http.StatusConflict {
-				if sessionID := resp.Header.Get("X-Transmission-Session-Id"); sessionID != "" {
-					p.storeSessionID(sessionID)
-					return nil
-				}
-			}
-
-			return errors.New("failed to get session ID")
-		},
-		headers,
-	)
-
-	return err
+	return &rpcResponse, false, nil
 }
 
 //

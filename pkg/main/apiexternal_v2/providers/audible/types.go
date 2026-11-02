@@ -1,6 +1,7 @@
 package audible
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ type audibleProduct struct {
 	Series               []audibleSeries    `json:"series"`
 	Categories           []audibleCategory  `json:"category_ladders"`
 	Rating               audibleRating      `json:"rating"`
-	Chapters             audibleChapterInfo `json:"chapter_info"`
+	Chapters             audibleChapterInfo `json:"-"` // filled from content metadata
 	FormatType           string             `json:"format_type"`
 	IsAdultProduct       bool               `json:"is_adult_product"`
 	ISBN                 string             `json:"isbn"`
@@ -78,18 +79,28 @@ type audibleCategoryItem struct {
 	Name string `json:"name"`
 }
 
-// audibleRating contains rating information.
+// audibleRating contains rating information (response group "rating").
 type audibleRating struct {
+	NumReviews              int                 `json:"num_reviews"`
 	OverallDistribution     audibleDistribution `json:"overall_distribution"`
 	PerformanceDistribution audibleDistribution `json:"performance_distribution"`
 	StoryDistribution       audibleDistribution `json:"story_distribution"`
 }
 
-// audibleDistribution contains rating distribution.
+// audibleDistribution contains rating distribution. display_average_rating
+// is a string ("4.4") in the API, so the numeric average_rating is used.
 type audibleDistribution struct {
+	AverageRating        float64 `json:"average_rating"`
+	DisplayAverageRating string  `json:"display_average_rating"`
 	DisplayStars         float64 `json:"display_stars"`
-	DisplayAverageRating float64 `json:"display_average_rating"`
-	NumReviews           int     `json:"num_reviews"`
+	NumRatings           int     `json:"num_ratings"`
+}
+
+// audibleContentMetadataResponse is the /1.0/content/{asin}/metadata response.
+type audibleContentMetadataResponse struct {
+	ContentMetadata struct {
+		ChapterInfo audibleChapterInfo `json:"chapter_info"`
+	} `json:"content_metadata"`
 }
 
 // audibleChapterInfo contains chapter information.
@@ -178,8 +189,8 @@ func convertProductToDetails(p *audibleProduct) *apiexternal_v2.AudiobookDetails
 		ASIN:           p.ASIN,
 		Title:          p.Title,
 		Subtitle:       p.Subtitle,
-		Description:    cleanDescription(p.PublisherSummary),
-		Summary:        cleanDescription(p.MerchandisingSummary),
+		Description:    CleanDescription(p.PublisherSummary),
+		Summary:        CleanDescription(p.MerchandisingSummary),
 		Duration:       time.Duration(p.RuntimeLengthMin) * time.Minute,
 		RuntimeMinutes: p.RuntimeLengthMin,
 		Language:       p.Language,
@@ -237,16 +248,19 @@ func convertProductToDetails(p *audibleProduct) *apiexternal_v2.AudiobookDetails
 	// Series
 	if len(p.Series) > 0 {
 		details.Series = p.Series[0].Title
+		details.SeriesName = p.Series[0].Title
 		details.SeriesASIN = p.Series[0].ASIN
 		details.SeriesPosition = p.Series[0].Sequence
 	}
 
-	// Genres from categories
+	// Genres from categories; ladders share their upper levels, so dedupe.
 	if len(p.Categories) > 0 {
 		genres := make([]string, 0)
 		for i := range p.Categories {
 			for j := range p.Categories[i].Ladder {
-				genres = append(genres, p.Categories[i].Ladder[j].Name)
+				if name := p.Categories[i].Ladder[j].Name; name != "" && !slices.Contains(genres, name) {
+					genres = append(genres, name)
+				}
 			}
 		}
 
@@ -254,11 +268,11 @@ func convertProductToDetails(p *audibleProduct) *apiexternal_v2.AudiobookDetails
 	}
 
 	// Rating
-	if p.Rating.OverallDistribution.DisplayAverageRating > 0 {
-		details.Rating = p.Rating.OverallDistribution.DisplayAverageRating
-		details.AverageRating = p.Rating.OverallDistribution.DisplayAverageRating
-		details.RatingCount = p.Rating.OverallDistribution.NumReviews
-		details.RatingsCount = p.Rating.OverallDistribution.NumReviews
+	if p.Rating.OverallDistribution.AverageRating > 0 {
+		details.Rating = p.Rating.OverallDistribution.AverageRating
+		details.AverageRating = p.Rating.OverallDistribution.AverageRating
+		details.RatingCount = p.Rating.OverallDistribution.NumRatings
+		details.RatingsCount = p.Rating.OverallDistribution.NumRatings
 	}
 
 	// Chapters
@@ -266,10 +280,13 @@ func convertProductToDetails(p *audibleProduct) *apiexternal_v2.AudiobookDetails
 		chapters := make([]apiexternal_v2.AudiobookChapter, 0, len(p.Chapters.Chapters))
 		for i, ch := range p.Chapters.Chapters {
 			chapters = append(chapters, apiexternal_v2.AudiobookChapter{
-				Number:      i + 1,
-				Title:       ch.Title,
-				StartOffset: time.Duration(ch.StartOffsetMs) * time.Millisecond,
-				Duration:    time.Duration(ch.LengthMs) * time.Millisecond,
+				Number:        i + 1,
+				ChapterNumber: i + 1,
+				Title:         ch.Title,
+				StartOffset:   time.Duration(ch.StartOffsetMs) * time.Millisecond,
+				StartOffsetMs: int64(ch.StartOffsetMs),
+				LengthMs:      int64(ch.LengthMs),
+				Duration:      time.Duration(ch.LengthMs) * time.Millisecond,
 			})
 		}
 
@@ -321,8 +338,8 @@ func parseAudibleDate(dateStr string) time.Time {
 	return time.Time{}
 }
 
-// cleanDescription removes HTML tags and cleans up the description text.
-func cleanDescription(text string) string {
+// CleanDescription removes HTML tags and cleans up the description text.
+func CleanDescription(text string) string {
 	if text == "" {
 		return ""
 	}

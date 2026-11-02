@@ -78,21 +78,29 @@ func (ss *SessionStore) createSession(userID string) *Session {
 	return session
 }
 
-// getSession retrieves a session by ID.
+// getSession retrieves a session by ID. Expired sessions are removed under
+// the write lock - deleting while holding only RLock races with concurrent
+// readers and crashes with "concurrent map read and map write".
 func (ss *SessionStore) getSession(sessionID string) (*Session, bool) {
 	ss.mutex.RLock()
-	defer ss.mutex.RUnlock()
-
 	session, exists := ss.sessions[sessionID]
-	if !exists || time.Now().After(session.ExpiresAt) {
-		if exists {
-			delete(ss.sessions, sessionID)
-		}
+	ss.mutex.RUnlock()
 
+	if !exists {
 		return nil, false
 	}
 
-	return session, true
+	if !time.Now().After(session.ExpiresAt) {
+		return session, true
+	}
+
+	ss.mutex.Lock()
+	if cur, ok := ss.sessions[sessionID]; ok && time.Now().After(cur.ExpiresAt) {
+		delete(ss.sessions, sessionID)
+	}
+	ss.mutex.Unlock()
+
+	return nil, false
 }
 
 // deleteSession removes a session.
@@ -134,6 +142,7 @@ const (
 	SessionDuration = 24 * time.Hour
 	CSRFTokenLength = 16
 	SessionIDLength = 32
+	csrfCookieName  = "csrf_token"
 	// WebAPIKeyLength is the byte length used for admin-generated (not
 	// user-typed) WebAPIKey values - see HandleGenerateAPIKey.
 	WebAPIKeyLength = 32
@@ -192,32 +201,40 @@ func authenticateUser(username, password string) bool {
 	return usernameMatch && passwordMatch
 }
 
-// requireAuth middleware checks for valid session.
+// requireAuth checks for a valid session and stores it in the context. It
+// aborts the request on failure and never calls c.Next() itself - the
+// handler chain must only run after protectAdminRoutes has also passed the
+// CSRF check.
 func requireAuth(c *gin.Context) {
-	// Check for session cookie
 	sessionCookie, err := c.Cookie("session_id")
 	if err != nil {
 		redirectToLogin(c)
 		return
 	}
 
-	// Validate session
 	session, exists := sessionStore.getSession(sessionCookie)
 	if !exists {
 		redirectToLogin(c)
 		return
 	}
 
-	// Store session in context for later use
 	c.Set("session", session)
 	c.Set("csrf_token", session.CSRFToken)
-	c.Next()
+
+	// The readable csrf_token cookie lets the shared admin JS (see page() in
+	// web_pages.go) attach the token to every htmx/fetch/jQuery request.
+	// A cross-site attacker can't read it, and requireCSRF still compares
+	// against the server-side session copy.
+	if v, err := c.Cookie(csrfCookieName); err != nil || v != session.CSRFToken {
+		setCSRFCookie(c, session.CSRFToken, int(SessionDuration.Seconds()))
+	}
 }
 
-// requireCSRF middleware checks CSRF token for state-changing operations.
+// requireCSRF checks the CSRF token for state-changing requests. It aborts on
+// rejection and never calls c.Next() itself.
 func requireCSRF(c *gin.Context) {
-	if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
-		c.Next()
+	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead ||
+		c.Request.Method == http.MethodOptions {
 		return
 	}
 
@@ -228,9 +245,13 @@ func requireCSRF(c *gin.Context) {
 		return
 	}
 
-	sessionObj := session.(*Session)
+	sessionObj, ok := session.(*Session)
+	if !ok || sessionObj.CSRFToken == "" {
+		sendUnauthorized(c, "No session found")
+		c.Abort()
+		return
+	}
 
-	// Check CSRF token from header or form
 	csrfToken := c.GetHeader("X-CSRF-Token")
 	if csrfToken == "" {
 		csrfToken = c.PostForm("csrf_token")
@@ -238,17 +259,23 @@ func requireCSRF(c *gin.Context) {
 
 	if subtle.ConstantTimeCompare([]byte(csrfToken), []byte(sessionObj.CSRFToken)) != 1 {
 		sendForbidden(c, "Invalid CSRF token")
+		c.Abort()
 		return
 	}
+}
 
-	c.Next()
+// setCSRFCookie writes the JS-readable CSRF cookie (not HttpOnly on purpose).
+func setCSRFCookie(c *gin.Context, token string, maxAge int) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(csrfCookieName, token, maxAge, "/", "", requestIsHTTPS(c), false)
 }
 
 // redirectToLogin redirects user to login page.
 func redirectToLogin(c *gin.Context) {
 	// Clear any existing session cookie
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_id", "", -1, "/", "", c.Request.TLS != nil, true)
+	c.SetCookie("session_id", "", -1, "/", "", requestIsHTTPS(c), true)
+	setCSRFCookie(c, "", -1)
 
 	// Check if this is a web page request that should redirect to login
 	// Admin and manage pages should redirect, not return JSON
@@ -263,6 +290,7 @@ func redirectToLogin(c *gin.Context) {
 
 	// For other API requests (JSON endpoints), return JSON error
 	sendUnauthorized(c, "Authentication required")
+	c.Abort()
 }
 
 // loginPage renders the enhanced login form using AdminKit layout.
@@ -630,23 +658,130 @@ func loginPage(c *gin.Context) {
 
 // handleLogin processes login form submission.
 func handleLogin(c *gin.Context) {
+	// RemoteIP (the TCP peer) rather than ClientIP: no trusted proxies are
+	// configured, so gin would take X-Forwarded-For from anyone and an
+	// attacker could rotate it to dodge the limiter.
+	ip := c.RemoteIP()
+
+	if wait := loginLimiter.blockedFor(ip, time.Now()); wait > 0 {
+		logger.Logtype("warn", 0).
+			Str("ip", ip).
+			Str("retry_in", wait.Round(time.Second).String()).
+			Msg("login blocked after repeated failures")
+		c.Redirect(http.StatusFound, "/api/login?error=Too+many+failed+attempts.+Try+again+later")
+		return
+	}
+
 	username := c.PostForm("username")
 	password := c.PostForm("password")
 
 	if !authenticateUser(username, password) {
+		loginLimiter.fail(ip, time.Now())
 		c.Redirect(http.StatusFound, "/api/login?error=Invalid+credentials")
 		return
 	}
 
-	// Create session
+	loginLimiter.reset(ip)
+
 	session := sessionStore.createSession(username)
 
-	// Set session cookie
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_id", session.ID, int(24*time.Hour.Seconds()), "/", "", c.Request.TLS != nil, true)
+	c.SetCookie("session_id", session.ID, int(SessionDuration.Seconds()), "/", "", requestIsHTTPS(c), true)
+	setCSRFCookie(c, session.CSRFToken, int(SessionDuration.Seconds()))
 
-	// Redirect to admin panel
 	c.Redirect(http.StatusFound, "/api/admin")
+}
+
+// requestIsHTTPS reports whether the client reached us over HTTPS, either
+// directly or through a TLS-terminating reverse proxy. Trusting the header
+// only ever makes the cookie stricter (Secure), so a forged value can't
+// weaken anything for another user.
+func requestIsHTTPS(c *gin.Context) bool {
+	return c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+}
+
+const (
+	loginFreeAttempts = 5
+	loginBaseLockout  = 30 * time.Second
+	loginMaxLockout   = 15 * time.Minute
+	loginMaxTracked   = 10000
+)
+
+type loginAttempt struct {
+	failures     int
+	blockedUntil time.Time
+	lastFailure  time.Time
+}
+
+// loginRateLimiter tracks failed logins per IP. After loginFreeAttempts
+// failures each further failure doubles the lockout, capped at
+// loginMaxLockout. Memory is bounded by loginMaxTracked.
+type loginRateLimiter struct {
+	mu       sync.Mutex
+	attempts map[string]*loginAttempt
+}
+
+var loginLimiter = &loginRateLimiter{attempts: make(map[string]*loginAttempt)}
+
+func (l *loginRateLimiter) blockedFor(ip string, now time.Time) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if a, ok := l.attempts[ip]; ok && now.Before(a.blockedUntil) {
+		return a.blockedUntil.Sub(now)
+	}
+
+	return 0
+}
+
+func (l *loginRateLimiter) fail(ip string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	a, ok := l.attempts[ip]
+	if !ok {
+		if len(l.attempts) >= loginMaxTracked {
+			l.pruneLocked(now)
+		}
+
+		if len(l.attempts) >= loginMaxTracked {
+			// Still full: everything tracked is actively locked out. Refuse to
+			// grow rather than evict a live lockout.
+			return
+		}
+
+		a = &loginAttempt{}
+		l.attempts[ip] = a
+	}
+
+	a.failures++
+	a.lastFailure = now
+
+	if a.failures >= loginFreeAttempts {
+		lockout := loginBaseLockout << min(a.failures-loginFreeAttempts, 10)
+		if lockout > loginMaxLockout {
+			lockout = loginMaxLockout
+		}
+
+		a.blockedUntil = now.Add(lockout)
+	}
+}
+
+func (l *loginRateLimiter) reset(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	delete(l.attempts, ip)
+}
+
+// pruneLocked drops entries that are no longer locked out and have been
+// quiet for loginMaxLockout. Caller holds l.mu.
+func (l *loginRateLimiter) pruneLocked(now time.Time) {
+	for ip, a := range l.attempts {
+		if now.After(a.blockedUntil) && now.Sub(a.lastFailure) > loginMaxLockout {
+			delete(l.attempts, ip)
+		}
+	}
 }
 
 // handleLogout clears session and redirects to login.
@@ -656,25 +791,25 @@ func handleLogout(c *gin.Context) {
 	}
 
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_id", "", -1, "/", "", c.Request.TLS != nil, true)
+	c.SetCookie("session_id", "", -1, "/", "", requestIsHTTPS(c), true)
+	setCSRFCookie(c, "", -1)
 	c.Redirect(http.StatusFound, "/api/login")
 }
 
 // protectAdminRoutes middleware automatically protects admin and manage routes.
+// Auth and CSRF both run before c.Next(), so a rejected request never reaches
+// the handler.
 func protectAdminRoutes(c *gin.Context) {
 	path := c.Request.URL.Path
 
-	// Check if this is an admin or manage route (but not login/logout)
 	if (strings.HasPrefix(path, "/api/admin") || strings.HasPrefix(path, "/api/manage")) &&
 		path != "/api/login" && path != "/api/logout" {
-		// Use requireAuth for authentication
 		requireAuth(c)
 
 		if c.IsAborted() {
 			return
 		}
 
-		// Use requireCSRF for CSRF protection
 		requireCSRF(c)
 
 		if c.IsAborted() {

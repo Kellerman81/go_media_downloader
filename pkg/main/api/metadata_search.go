@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -125,6 +127,134 @@ func getQualityProfileNames() []string {
 	}
 
 	return names
+}
+
+// listQualityProfiles returns the quality profiles a list can be added with -
+// the ones its media group is configured with (the group template plus every
+// list's template), in quality-config order - and the list's own default.
+func listQualityProfiles(cfgp *config.MediaTypeConfig, listid int) ([]string, string) {
+	def := cfgp.Lists[listid].TemplateQuality
+	if def == "" {
+		def = cfgp.TemplateQuality
+	}
+
+	return configQualityProfiles(cfgp), def
+}
+
+// configQualityProfiles returns the quality profiles a media config is set up
+// with - its group template plus every list's template - in config order.
+func configQualityProfiles(cfgp *config.MediaTypeConfig) []string {
+	used := map[string]struct{}{cfgp.TemplateQuality: {}}
+	for i := range cfgp.Lists {
+		used[cfgp.Lists[i].TemplateQuality] = struct{}{}
+	}
+
+	names := getQualityProfileNames()
+	allowed := make([]string, 0, len(used))
+
+	for _, name := range names {
+		if _, ok := used[name]; ok {
+			allowed = append(allowed, name)
+		}
+	}
+
+	return allowed
+}
+
+// configuredListQuality rejects a quality profile the list's media group is
+// not configured with; an empty one is left for the caller to default. On
+// failure it writes a 400 and returns false.
+func configuredListQuality(c *gin.Context, listName, kind, quality string) bool {
+	if quality == "" {
+		return true
+	}
+
+	if cfgp, listid := findCfgpAndListID(listName, kind+"_", mediaEntriesForKind(kind)); cfgp != nil && listid >= 0 {
+		if allowed, _ := listQualityProfiles(cfgp, listid); slices.Contains(allowed, quality) {
+			return true
+		}
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{"error": "Quality profile '" + quality + "' is not configured for list '" + listName + "'"})
+
+	return false
+}
+
+// listQualityScript narrows each quality select to the profiles configured for
+// the list chosen in its paired list select and preselects the list's default.
+// pairs maps list select id to quality select id.
+func listQualityScript(kind string, pairs map[string]string) gomponents.Node {
+	byList := make(map[string]selectQuality)
+
+	for _, media := range mediaEntriesForKind(kind) {
+		cfgp := config.GetSettingsMedia(kind + "_" + media.Name)
+		if cfgp == nil {
+			continue
+		}
+
+		for i := range cfgp.Lists {
+			if _, ok := byList[cfgp.Lists[i].Name]; ok {
+				continue
+			}
+
+			profiles, def := listQualityProfiles(cfgp, i)
+			byList[cfgp.Lists[i].Name] = selectQuality{Profiles: profiles, Default: def}
+		}
+	}
+
+	return qualitySelectScript(byList, pairs, "Select a list first")
+}
+
+// selectQuality is the quality profiles offered for one value of a source
+// select (a list or a media config) and the one preselected.
+type selectQuality struct {
+	Profiles []string `json:"q"`
+	Default  string   `json:"d"`
+}
+
+// qualitySelectScript narrows each quality select to the profiles of the value
+// chosen in its paired source select. pairs maps source select id to quality
+// select id; placeholder is shown while the source has no known value.
+func qualitySelectScript(byValue map[string]selectQuality, pairs map[string]string, placeholder string) gomponents.Node {
+	// json.Marshal escapes <, > and &, so the data is safe inside <script>.
+	valueJSON, _ := json.Marshal(byValue)
+	pairJSON, _ := json.Marshal(pairs)
+	placeholderJSON, _ := json.Marshal(placeholder)
+
+	return html.Script(gomponents.Raw(`
+(function() {
+	var byList = ` + string(valueJSON) + `, pairs = ` + string(pairJSON) + `, placeholder = ` + string(placeholderJSON) + `;
+	function fill(listSel, qSel) {
+		// A leading empty option (e.g. "use the list's default") is kept.
+		if (qSel.dataset.blank === undefined) {
+			var first = qSel.options[0];
+			qSel.dataset.blank = (first && first.value === '') ? first.text : '';
+			qSel.dataset.hasBlank = (first && first.value === '') ? '1' : '';
+		}
+		var entry = byList[listSel.value];
+		qSel.innerHTML = '';
+		if (!entry) {
+			qSel.add(new Option(placeholder, ''));
+			qSel.disabled = true;
+			return;
+		}
+		qSel.disabled = false;
+		if (qSel.dataset.hasBlank) {
+			qSel.add(new Option(qSel.dataset.blank, ''));
+		}
+		entry.q.forEach(function(name) { qSel.add(new Option(name, name)); });
+		qSel.value = entry.q.indexOf(entry.d) >= 0 ? entry.d : (entry.q[0] || '');
+	}
+	Object.keys(pairs).forEach(function(listID) {
+		var listSel = document.getElementById(listID), qSel = document.getElementById(pairs[listID]);
+		if (!listSel || !qSel) {
+			return;
+		}
+		listSel.addEventListener('change', function() { fill(listSel, qSel); });
+		fill(listSel, qSel);
+	});
+})();
+`))
 }
 
 func movieMetadataSearchContent(
@@ -400,6 +530,10 @@ func movieMetadataSearchContent(
 			),
 
 			movieSearchScript(csrfToken),
+			listQualityScript("movie", map[string]string{
+				"movie_list":       "movie_quality_profile",
+				"manualMovie_list": "manualMovie_quality_profile",
+			}),
 		),
 	)
 }
@@ -674,6 +808,7 @@ func seriesMetadataSearchContent(
 			),
 
 			seriesSearchScript(csrfToken),
+			listQualityScript("serie", map[string]string{"series_list": "series_quality_profile"}),
 		),
 	)
 }
@@ -706,13 +841,13 @@ func renderSelectOptions(options []string, selectedValue string) gomponents.Node
 func SearchMovieMetadata(c *gin.Context) {
 	title := c.PostForm("movie_title")
 	if title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Title is required"})
+		c.String(http.StatusBadRequest, renderAlert("Title is required", "warning"))
 		return
 	}
 
 	provider := providers.GetTMDB()
 	if provider == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "TMDB provider not available"})
+		c.String(http.StatusInternalServerError, renderAlert("TMDB provider not available", "danger"))
 		return
 	}
 
@@ -722,9 +857,10 @@ func SearchMovieMetadata(c *gin.Context) {
 	results, err := provider.SearchMovies(ctx, title, 0)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Msg("Failed to search movies")
-		c.JSON(
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(
 			http.StatusInternalServerError,
-			gin.H{"error": "Failed to search movies: " + err.Error()},
+			renderAlert("Failed to search movies: "+err.Error(), "danger"),
 		)
 
 		return
@@ -765,13 +901,13 @@ func SearchMovieMetadata(c *gin.Context) {
 func SearchSeriesMetadata(c *gin.Context) {
 	title := c.PostForm("series_title")
 	if title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Title is required"})
+		c.String(http.StatusBadRequest, renderAlert("Title is required", "warning"))
 		return
 	}
 
 	provider := providers.GetTMDB()
 	if provider == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "TMDB provider not available"})
+		c.String(http.StatusInternalServerError, renderAlert("TMDB provider not available", "danger"))
 		return
 	}
 
@@ -781,9 +917,10 @@ func SearchSeriesMetadata(c *gin.Context) {
 	results, err := provider.SearchSeries(ctx, title, 0)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Msg("Failed to search series")
-		c.JSON(
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(
 			http.StatusInternalServerError,
-			gin.H{"error": "Failed to search series: " + err.Error()},
+			renderAlert("Failed to search series: "+err.Error(), "danger"),
 		)
 
 		return
@@ -965,6 +1102,15 @@ func AddMovieToDatabase(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "movie")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "movie", c.PostForm("movie_quality_profile")) {
+		return
+	}
+
 	tmdbID, err := strconv.Atoi(tmdbIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid TMDB ID"})
@@ -1057,7 +1203,7 @@ func AddMovieToDatabase(c *gin.Context) {
 	listExists := database.GetrowsN[int](
 		false,
 		1,
-		"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ?",
+		"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ? COLLATE NOCASE",
 		dbMovieID,
 		listName,
 	)
@@ -1098,6 +1244,15 @@ func AddSeriesToDatabase(c *gin.Context) {
 
 	if tmdbIDStr == "" || listName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "TMDB ID and list name are required"})
+		return
+	}
+
+	listName, ok := configuredListName(c, listName, "serie")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "serie", c.PostForm("series_quality_profile")) {
 		return
 	}
 
@@ -1196,7 +1351,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 	listExists := database.GetrowsN[int](
 		false,
 		1,
-		"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ?",
+		"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ? COLLATE NOCASE",
 		dbSeriesID,
 		listName,
 	)
@@ -1297,6 +1452,15 @@ func AddMovieManual(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "movie")
+	if !ok {
+		return
+	}
+
+	if !configuredListQuality(c, listName, "movie", c.PostForm("manualMovie_quality_profile")) {
+		return
+	}
+
 	year := 0
 	if yearStr != "" {
 		if parsedYear, err := strconv.Atoi(yearStr); err == nil {
@@ -1304,79 +1468,79 @@ func AddMovieManual(c *gin.Context) {
 		}
 	}
 
-	// Check if movie with same title and year already exists
-	var exists []int
-	if year > 0 {
-		exists = database.GetrowsN[int](
-			false,
-			1,
-			"SELECT count() FROM dbmovies WHERE title = ? AND year = ?",
-			title,
-			year,
-		)
-	} else {
-		exists = database.GetrowsN[int](
-			false,
-			1,
-			"SELECT count() FROM dbmovies WHERE title = ?",
-			title,
-		)
-	}
+	// An existing dbmovies row (same IMDb id, or same title and year) is
+	// linked into the list instead of creating a duplicate metadata row.
+	var existing []int
 
-	if len(exists) > 0 && exists[0] > 0 {
-		c.JSON(
-			http.StatusConflict,
-			gin.H{"error": "Movie with same title and year already exists in database"},
-		)
-
-		return
+	switch {
+	case imdbID != "":
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE imdb_id = ? ORDER BY id LIMIT 1", imdbID)
+	case year > 0:
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE title = ? COLLATE NOCASE AND year = ? ORDER BY id LIMIT 1", title, year)
+	default:
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE title = ? COLLATE NOCASE ORDER BY id LIMIT 1", title)
 	}
 
 	nowTime := time.Now()
 
-	newID, err := database.ExecNid(
-		"INSERT INTO dbmovies (title, release_date, year, adult, budget, genres, original_language, original_title, overview, popularity, revenue, runtime, spoken_languages, status, tagline, vote_average, vote_count, moviedb_id, imdb_id, freebase_m_id, freebase_id, facebook_id, instagram_id, twitter_id, url, backdrop, poster, slug, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		title,
-		"",
-		year,
-		false,
-		0,
-		"",
-		"",
-		title,
-		overview,
-		0.0,
-		0,
-		0,
-		"",
-		"",
-		"",
-		0.0,
-		0,
-		0,
-		imdbID,
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		0,
-		nowTime,
-		nowTime,
-	)
-	if err != nil {
-		logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual movie")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie to database"})
-		return
+	var dbMovieID int
+
+	if len(existing) > 0 {
+		dbMovieID = existing[0]
+
+		inList := database.GetrowsN[int](false, 1,
+			"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ? COLLATE NOCASE", dbMovieID, listName)
+		if len(inList) > 0 && inList[0] > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "Movie already exists in list '" + listName + "'"})
+			return
+		}
+	} else {
+		newID, err := database.ExecNid(
+			"INSERT INTO dbmovies (title, release_date, year, adult, budget, genres, original_language, original_title, overview, popularity, revenue, runtime, spoken_languages, status, tagline, vote_average, vote_count, moviedb_id, imdb_id, freebase_m_id, freebase_id, facebook_id, instagram_id, twitter_id, url, backdrop, poster, slug, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			title,
+			"",
+			year,
+			false,
+			0,
+			"",
+			"",
+			title,
+			overview,
+			0.0,
+			0,
+			0,
+			"",
+			"",
+			"",
+			0.0,
+			0,
+			0,
+			imdbID,
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			0,
+			nowTime,
+			nowTime,
+		)
+		if err != nil {
+			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual movie")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie to database"})
+			return
+		}
+
+		dbMovieID = int(newID)
 	}
 
 	if err := database.ExecNErr(
 		"INSERT INTO movies (dbmovie_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		int(newID),
+		dbMovieID,
 		listName,
 		qualityProfile,
 		nowTime,
@@ -1388,6 +1552,13 @@ func AddMovieManual(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"success": "Movie added manually to " + listName})
 }
+
+// Lookups of AddSeriesManual for an existing dbseries row.
+const (
+	manualSerieByTvdbQuery = "SELECT id FROM dbseries WHERE thetvdb_id = ? ORDER BY id LIMIT 1"
+	// Args: name, TVDB id (0 = none given).
+	manualSerieByNameQuery = "SELECT id FROM dbseries WHERE seriename = ? COLLATE NOCASE AND (? = 0 OR thetvdb_id = 0) ORDER BY id LIMIT 1"
+)
 
 // AddSeriesManual handles manual series entry.
 func AddSeriesManual(c *gin.Context) {
@@ -1403,6 +1574,11 @@ func AddSeriesManual(c *gin.Context) {
 		return
 	}
 
+	listName, ok := configuredListName(c, listName, "serie")
+	if !ok {
+		return
+	}
+
 	tvdbID := 0
 	if tvdbIDStr != "" {
 		if parsedID, err := strconv.Atoi(tvdbIDStr); err == nil {
@@ -1410,67 +1586,72 @@ func AddSeriesManual(c *gin.Context) {
 		}
 	}
 
-	// Check if series already exists
-	var exists []int
+	// An existing dbseries row (same TVDB id, else same name) is linked into
+	// the list instead of creating a duplicate metadata row. A name match is
+	// only taken when it can't be a different show: no TVDB id was given, or
+	// the row has none.
+	var existing []int
 	if tvdbID > 0 {
-		exists = database.GetrowsN[int](
-			false,
-			1,
-			"SELECT count() FROM dbseries WHERE thetvdb_id = ?",
-			tvdbID,
-		)
-	} else {
-		exists = database.GetrowsN[int](
-			false,
-			1,
-			"SELECT count() FROM dbseries WHERE seriename = ?",
-			seriename,
-		)
+		existing = database.GetrowsN[int](false, 1, manualSerieByTvdbQuery, tvdbID)
 	}
 
-	if len(exists) > 0 && exists[0] > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "Series already exists in database"})
-		return
+	if len(existing) == 0 {
+		existing = database.GetrowsN[int](false, 1,
+			manualSerieByNameQuery, seriename, tvdbID)
 	}
 
 	nowTime := time.Now()
 
-	newID, err := database.ExecNid(
-		"INSERT INTO dbseries (seriename, season, status, firstaired, network, runtime, language, genre, overview, rating, siterating, siterating_count, slug, imdb_id, thetvdb_id, freebase_m_id, freebase_id, tvrage_id, facebook, instagram, twitter, banner, fanart, poster, identifiedby, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		seriename,
-		"",
-		"",
-		"",
-		firstaired,
-		network,
-		"",
-		"",
-		"",
-		overview,
-		"",
-		"",
-		"",
-		"",
-		"",
-		tvdbID,
-		"",
-		"",
-		0,
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"",
-		0,
-		nowTime,
-		nowTime,
-	)
-	if err != nil {
-		logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual series")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series to database"})
-		return
+	var dbSerieID int
+
+	if len(existing) > 0 {
+		dbSerieID = existing[0]
+
+		inList := database.GetrowsN[int](false, 1,
+			"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ? COLLATE NOCASE", dbSerieID, listName)
+		if len(inList) > 0 && inList[0] > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "Series already exists in list '" + listName + "'"})
+			return
+		}
+	} else {
+		newID, err := database.ExecNid(
+			"INSERT INTO dbseries (seriename, season, status, firstaired, network, runtime, language, genre, overview, rating, siterating, siterating_count, slug, imdb_id, thetvdb_id, freebase_m_id, freebase_id, tvrage_id, facebook, instagram, twitter, banner, fanart, poster, identifiedby, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			seriename,
+			"",
+			"",
+			firstaired,
+			network,
+			"",
+			"",
+			"",
+			overview,
+			"",
+			"",
+			"",
+			"",
+			"",
+			tvdbID,
+			"",
+			"",
+			0,
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			0,
+			nowTime,
+			nowTime,
+		)
+		if err != nil {
+			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual series")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series to database"})
+			return
+		}
+
+		dbSerieID = int(newID)
 	}
 
 	qualityProfile := ""
@@ -1483,7 +1664,7 @@ func AddSeriesManual(c *gin.Context) {
 
 	if err := database.ExecNErr(
 		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
-		int(newID),
+		dbSerieID,
 		listName,
 		qualityProfile,
 		nowTime,
@@ -1558,6 +1739,13 @@ func getRuntimeFromEpisodeRuntime(episodeRuntime []int) int {
 
 func movieSearchScript(csrfToken string) gomponents.Node {
 	return html.Script(gomponents.Raw(`
+// confirmAction puts its message into innerHTML; titles come from TMDB.
+function metaSearchEscape(v) {
+	return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) {
+		return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+	});
+}
+
 document.getElementById('movieSearchForm').addEventListener('submit', function(e) {
 	e.preventDefault();
 
@@ -1597,8 +1785,11 @@ document.getElementById('movieSearchForm').addEventListener('submit', function(e
 					return;
 				}
 
-				confirmAction('Please confirm', 'Add "' + movieTitle + '" to list "' + selectedList + '" with quality profile "' + selectedQualityProfile + '"?', function() {
-					addMovieToDatabase(tmdbId, selectedList, selectedQualityProfile, this);
+				// confirmAction calls the callback without a receiver, so "this"
+				// is not the button there.
+				const addBtn = this;
+				confirmAction('Please confirm', 'Add "' + metaSearchEscape(movieTitle) + '" to list "' + metaSearchEscape(selectedList) + '" with quality profile "' + metaSearchEscape(selectedQualityProfile) + '"?', function() {
+					addMovieToDatabase(tmdbId, selectedList, selectedQualityProfile, addBtn);
 				})
 			});
 		});
@@ -1695,6 +1886,13 @@ document.getElementById('movieManualForm').addEventListener('submit', function(e
 
 func seriesSearchScript(csrfToken string) gomponents.Node {
 	return html.Script(gomponents.Raw(`
+// confirmAction puts its message into innerHTML; titles come from TMDB.
+function metaSearchEscape(v) {
+	return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) {
+		return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+	});
+}
+
 document.getElementById('seriesSearchForm').addEventListener('submit', function(e) {
 	e.preventDefault();
 
@@ -1729,7 +1927,7 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 				const selectedQualityProfile = document.getElementById('series_quality_profile').value;
 				const addBtn = this;
 
-				confirmAction('Please confirm', 'Add "' + seriesTitle + '" to list "' + selectedList + '"?', function() {
+				confirmAction('Please confirm', 'Add "' + metaSearchEscape(seriesTitle) + '" to list "' + metaSearchEscape(selectedList) + '"?', function() {
 					addSeriesToDatabase(tmdbId, selectedList, selectedQualityProfile, addBtn);
 				})
 			});
@@ -1823,4 +2021,22 @@ document.getElementById('seriesManualForm').addEventListener('submit', function(
 	});
 });
 `))
+}
+
+// mediaConfigQualityScript narrows the quality select qualityID to the
+// profiles of the media config chosen in configID (option values are the
+// configs' NamePrefix, e.g. "movie_EN") and preselects the group template.
+func mediaConfigQualityScript(configID, qualityID string) gomponents.Node {
+	byConfig := make(map[string]selectQuality)
+
+	config.RangeSettingsMedia(func(_ string, cfgp *config.MediaTypeConfig) error {
+		byConfig[cfgp.NamePrefix] = selectQuality{
+			Profiles: configQualityProfiles(cfgp),
+			Default:  cfgp.TemplateQuality,
+		}
+
+		return nil
+	})
+
+	return qualitySelectScript(byConfig, map[string]string{configID: qualityID}, "Select a media config first")
 }

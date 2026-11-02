@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -94,11 +95,17 @@ const (
 	// "Movie.1920x1080" matched "20x108" and parsed as season 20 episode 108.
 	// (?:^|[^0-9]) adds no capture group, so the group indices used by
 	// extractEpisodeInfo stay the same.
-	reVideoSeasonEpisode     = `(?i)(?:s|season\s?)(\d{1,2})[\s._-]*(?:e|episode\s?|x)(\d{1,3})(?:-?(?:e|x)?(\d{1,3}))?|(?:^|[^0-9])(\d{1,2})x(\d{2,3})`
+	// The optional second episode (group 3) must carry its own "e" marker so a
+	// trailing "-720p" is not read as an episode range; extractEpisodeInfo
+	// additionally checks that it ends on a token boundary.
+	reVideoSeasonEpisode     = `(?i)(?:s|season\s?)(\d{1,2})[\s._-]*(?:e|episode\s?|x)(\d{1,3})(?:-?e(\d{1,3}))?|(?:^|[^0-9])(\d{1,2})x(\d{2,3})`
 	reVideoSeasonEpisodeAlt  = `(?i)season\s*(\d{1,2})\s*episode\s*(\d{1,3})`
 	reVideoSeasonEpisodeDate = `(\d{2,4})[\s._-](\d{2})[\s._-](\d{2})`
-	reVideoEpisodeOnly       = `(?i)(?:e|ep|episode\s?)(\d{1,3})`
-	reVideoResolution        = `(?i)(?:(\d{3,4})(?:p|i)|8k|4k|uhd|hd|sd)`
+	// Both need token boundaries: unanchored, "Se7en" yielded episode 7 and the
+	// "sd"/"hd"/"720p" alternatives matched inside words ("Wednesday",
+	// "Wisdom") and numbers, truncating the title at that point.
+	reVideoEpisodeOnly = `(?i)(?:^|[\s._\-\[\(])(?:e|ep|episode\s?)(\d{1,3})(?:$|[^0-9])`
+	reVideoResolution  = `(?i)(?:^|[\s._\-\[\(])(\d{3,4}[pi]|8k|4k|uhd|hd|sd)(?:$|[\s._\-\]\)])`
 	// Tokens must be whole words (delimited by a separator or string boundary) so
 	// short source tags like "nf"/"ts"/"cam" can't match inside a title word
 	// (for example "nf" inside the word "Unforgettable").
@@ -192,8 +199,8 @@ func (vp *VideoParser) Parse(filename string) *VideoParseResult {
 	result.MediaType = vp.detectMediaType(originalName, result)
 
 	// Extract year
-	if loc := vp.patterns.year.FindStringSubmatchIndex(originalName); len(loc) > 2 {
-		result.Year = parseInt(originalName[loc[2]:loc[3]])
+	if year, _ := vp.selectYear(originalName); year > 0 {
+		result.Year = year
 	}
 
 	// Extract quality attributes
@@ -472,11 +479,25 @@ func parseBookFileToParseInfo(
 		if dirResult.Author != "" && result.Author == "" {
 			result.Author = dirResult.Author
 		}
+
+		if dirResult.Format != "" && result.Format == "" {
+			result.Format = dirResult.Format
+		}
+
+		result.IsRetail = result.IsRetail || dirResult.IsRetail
+		result.Proper = result.Proper || dirResult.Proper
+		result.Repack = result.Repack || dirResult.Repack
 	}
 
 	// Populate ParseInfo from BookParseResult //nolint:gosec // safe: value within target type range
 	m.Title = result.Title
 	m.Artist = result.Author
+
+	// The book scorer (parser.GetPriorityMapQualBook) ranks on these.
+	m.Quality = result.Format
+	m.Retail = result.IsRetail
+	m.Proper = result.Proper
+	m.Repack = result.Repack
 
 	m.ASIN = result.ASIN
 	if result.ISBN13 != "" {
@@ -619,8 +640,8 @@ func parseFileToParseInfo(
 
 	// Extract year
 	if !onlyIfEmpty || m.Year == 0 {
-		if loc := vp.patterns.year.FindStringSubmatchIndex(originalName); len(loc) > 2 {
-			m.Year = uint16(parseInt(originalName[loc[2]:loc[3]]))
+		if year, _ := vp.selectYear(originalName); year > 0 {
+			m.Year = uint16(year)
 		}
 	}
 
@@ -654,6 +675,7 @@ func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 			m.Season = parseInt(m.SeasonStr)
 			m.Episode = parseInt(m.EpisodeStr)
 			m.Identifier = formatIdentifier(m.Season, m.Episode)
+			m.Identifier += multiEpisodeSuffix(name, loc[5], m.Episode)
 		} else if len(loc) > 10 && loc[8] != -1 && loc[10] != -1 {
 			// NxNN format
 			m.SeasonStr = name[loc[8]:loc[9]]
@@ -706,6 +728,69 @@ func extractEpisodeInfo(vp *VideoParser, name string, m *database.ParseInfo) {
 	}
 }
 
+// multiEpisodeSuffix reads the additional episodes that follow the first
+// episode number of an SxxEyy match ("S01E01E02E03", "S01E01-E03") starting
+// at pos, and returns them in identifier form ("E02E03", "-E03") so that
+// database.ParseInfo.Getepisodestoimport and the searcher's episode check see
+// every episode. Each further episode needs its own "E" marker, must end on a
+// token boundary (or the next "E" marker) and must be higher than the previous
+// one, so "S01E02-720p"
+// or "S01E01x264" are not read as ranges.
+func multiEpisodeSuffix(name string, pos, prev int) string {
+	var suffix string
+
+	for pos < len(name) {
+		i := pos
+		dash := false
+		if name[i] == '-' {
+			dash = true
+			i++
+		}
+
+		bare := false
+		if i >= len(name) || name[i]|0x20 != 'e' {
+			// "S04E04-05": a dash followed directly by the end episode. Only
+			// accepted when the number is a plausible range end below, so
+			// "S01E02-720p" (a letter follows) and "-2019" (4 digits) don't match.
+			if !dash || i >= len(name) || name[i] < '0' || name[i] > '9' {
+				break
+			}
+
+			bare = true
+		} else {
+			i++
+		}
+
+		start := i
+		for i < len(name) && i-start < 3 && name[i] >= '0' && name[i] <= '9' {
+			i++
+		}
+
+		if i == start || (i < len(name) && isDigitOrLetter(name[i]) && name[i]|0x20 != 'e') {
+			break
+		}
+
+		ep := parseInt(name[start:i])
+		if ep <= prev || (bare && (ep > prev+50 || (i < len(name) && isDigitOrLetter(name[i])))) {
+			break
+		}
+
+		if dash {
+			suffix += "-"
+		}
+
+		if bare {
+			suffix += padInt(ep)
+		} else {
+			suffix += "E" + padInt(ep)
+		}
+		prev = ep
+		pos = i
+	}
+
+	return suffix
+}
+
 // matchDBField looks up a single pattern field (resolution/quality/codec/audio)
 // in the database pattern store, trying the fast string match first and falling
 // back to the configured regexes. Returns the matched name and its database ID.
@@ -746,8 +831,8 @@ func extractQualityToParseInfo(
 		}
 
 		if m.Resolution == "" {
-			if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 0 {
-				m.Resolution = normalizeResolution(name[loc[0]:loc[1]])
+			if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 2 {
+				m.Resolution = normalizeResolution(name[loc[2]:loc[3]])
 			}
 		}
 	}
@@ -932,8 +1017,8 @@ func (vp *VideoParser) extractQualityInfo(name string, result *VideoParseResult)
 // extractQualityInfoBuiltin uses the hardcoded regex patterns.
 func (vp *VideoParser) extractQualityInfoBuiltin(name string, result *VideoParseResult) {
 	// Extract resolution
-	if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 0 {
-		result.Resolution = normalizeResolution(name[loc[0]:loc[1]])
+	if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 2 {
+		result.Resolution = normalizeResolution(name[loc[2]:loc[3]])
 	}
 
 	// Extract quality source
@@ -1017,6 +1102,68 @@ func (vp *VideoParser) extractQualityInfoFromDB(name string, result *VideoParseR
 	}
 }
 
+// selectYear picks the release year from name and returns it together with the
+// start index of its match (the separator before it), or 0 and -1.
+//
+// Titles can contain year-like numbers ("Blade Runner 2049 (2017)",
+// "Movie 1917 2019"), so the leftmost match is not reliable. Among the years
+// that appear before the first non-title anchor (SxxEyy, resolution, codec),
+// a bracketed year wins, otherwise the last one. When no year precedes an
+// anchor, the first year found is used. A year at the very start of the name
+// never matches the pattern (it needs a separator before it), so it stays part
+// of the title ("2001.A.Space.Odyssey.1968").
+func (vp *VideoParser) selectYear(name string) (int, int) {
+	cutoff := len(name)
+	for _, pattern := range []*regexp.Regexp{
+		vp.patterns.seasonEpisode,
+		vp.patterns.seasonEpisodeAlt,
+		vp.patterns.resolution,
+		vp.patterns.codec,
+	} {
+		if loc := pattern.FindStringIndex(name); loc != nil && loc[0] < cutoff {
+			cutoff = loc[0]
+		}
+	}
+
+	firstYear, firstIdx := 0, -1
+	lastYear, lastIdx := 0, -1
+	bracketYear, bracketIdx := 0, -1
+
+	// Matches are collected manually because adjacent years ("1917.2019")
+	// share a separator, which FindAll would consume with the first match.
+	for off := 0; off < len(name); {
+		loc := vp.patterns.year.FindStringSubmatchIndex(name[off:])
+		if len(loc) < 4 {
+			break
+		}
+
+		start, yStart, yEnd := off+loc[0], off+loc[2], off+loc[3]
+		year := parseInt(name[yStart:yEnd])
+
+		if firstIdx == -1 {
+			firstYear, firstIdx = year, start
+		}
+
+		if yStart < cutoff {
+			lastYear, lastIdx = year, start
+			if name[start] == '(' || name[start] == '[' {
+				bracketYear, bracketIdx = year, start
+			}
+		}
+
+		off = yEnd
+	}
+
+	switch {
+	case bracketIdx != -1:
+		return bracketYear, bracketIdx
+	case lastIdx != -1:
+		return lastYear, lastIdx
+	default:
+		return firstYear, firstIdx
+	}
+}
+
 // extractTitle attempts to extract the title from the cleaned name.
 func (vp *VideoParser) extractTitle(cleanName string, _ *VideoParseResult) string {
 	// Structural anchors reliably mark the end of the title in standard naming:
@@ -1029,12 +1176,15 @@ func (vp *VideoParser) extractTitle(cleanName string, _ *VideoParseResult) strin
 		vp.patterns.seasonEpisode,
 		vp.patterns.seasonEpisodeAlt,
 		vp.patterns.seasonEpisodeDate,
-		vp.patterns.year,
+		vp.patterns.episodeOnly,
 		vp.patterns.resolution,
 		vp.patterns.language,
 	}
 
 	minIdx := len(cleanName)
+	if _, idx := vp.selectYear(cleanName); idx >= 0 {
+		minIdx = idx
+	}
 
 	for _, pattern := range anchorPatterns {
 		if loc := pattern.FindStringIndex(cleanName); loc != nil && loc[0] < minIdx {
@@ -1177,11 +1327,13 @@ func normalizeQuality(quality string) string {
 	case logger.ContainsI(quality, "web-dl") || logger.ContainsI(quality, "webdl") ||
 		logger.ContainsI(quality, "web dl") || logger.ContainsI(quality, "web_dl"):
 		return "WEB-DL"
-	case logger.ContainsI(quality, "webrip"):
+	case logger.ContainsI(quality, "webrip") || logger.ContainsI(quality, "web-rip") ||
+		logger.ContainsI(quality, "web rip") || logger.ContainsI(quality, "web_rip"):
 		return "WEBRip"
 	case logger.ContainsI(quality, "hdtv"):
 		return "HDTV"
-	case logger.ContainsI(quality, "dvdrip"):
+	case logger.ContainsI(quality, "dvdrip") || logger.ContainsI(quality, "dvd-rip") ||
+		logger.ContainsI(quality, "dvd rip") || logger.ContainsI(quality, "dvd_rip"):
 		return "DVDRip"
 	case logger.ContainsI(quality, "amzn") || logger.ContainsI(quality, "amazon"):
 		return "AMZN"
@@ -1290,9 +1442,9 @@ func normalizeHDR(hdr string) string {
 
 // padInt pads an integer to 2 digits with a leading zero.
 func padInt(n int) string {
-	if n >= 10 {
-		return string(rune('0'+n/10)) + string(rune('0'+n%10))
+	if n >= 0 && n < 10 {
+		return "0" + strconv.Itoa(n)
 	}
 
-	return "0" + string(rune('0'+n))
+	return strconv.Itoa(n)
 }

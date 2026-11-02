@@ -3,7 +3,9 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -66,14 +68,19 @@ const (
 )
 
 var (
-	// WorkerPoolIndexer is a WorkerPool for executing indexer tasks.
-	WorkerPoolIndexer pond.Pool
+	// poolsMu guards the pool variables, recentJobs and staleSweeperCancel:
+	// InitWorkerPools replaces them while dispatchers, stats readers and the
+	// pool accessors read them from other goroutines.
+	poolsMu sync.RWMutex
 
-	// WorkerPoolIndexerRSS is a WorkerPool for executing indexer tasks for RSS Searches.
-	WorkerPoolIndexerRSS pond.Pool
+	// workerPoolIndexer is a WorkerPool for executing indexer tasks.
+	workerPoolIndexer pond.Pool
 
-	// WorkerPoolParse is a WorkerPool for executing parse tasks.
-	WorkerPoolParse pond.Pool
+	// workerPoolIndexerRSS is a WorkerPool for executing indexer tasks for RSS Searches.
+	workerPoolIndexerRSS pond.Pool
+
+	// workerPoolParse is a WorkerPool for executing parse tasks.
+	workerPoolParse pond.Pool
 
 	// workerPoolSearch is a WorkerPool for executing search tasks.
 	workerPoolSearch pond.Pool
@@ -106,19 +113,23 @@ var (
 	// globalQueueSet is a sync.Map to store dispatcherQueue objects.
 	globalQueueSet = syncops.NewSyncMapUint[syncops.Job](1000)
 
-	// Recent jobs cache for duplicate detection.
+	// Recent jobs cache for duplicate detection. Created once by the first
+	// InitWorkerPools and reused across pool restarts (ristretto's Close is not
+	// safe against concurrent Set/Wait, so it is never swapped out).
 	recentJobs *ristretto.Cache[string, struct{}]
 
-	// jobNameIndex provides O(1) duplicate detection by job name. Accessed
-	// directly (its methods are mutex-protected) - it must NOT be registered
-	// with syncops under MapTypeStructEmpty: that type belongs to importfeed's
-	// import-job map (main.go), and the previous double registration funneled
-	// both packages' queued ops into one map of the wrong value type, silently
-	// no-opping every write and leaving this index permanently empty.
-	jobNameIndex = syncops.NewSyncMap[struct{}](1000)
+	// jobNameIndex maps a queued/running job name to the ID of the job that
+	// owns it, for O(1) duplicate detection. The name is claimed atomically
+	// (AddIfAbsent) at admission and released with a compare-and-delete on the
+	// owning ID, so a stale owner (swept or cancelled job still unwinding) can
+	// never release a newer job's claim. Accessed directly (its methods are
+	// mutex-protected) - it must NOT be registered with syncops under
+	// MapTypeStructEmpty: that type belongs to importfeed's import-job map
+	// (main.go).
+	jobNameIndex = syncops.NewSyncMap[uint32](1000)
 
-	// Optimized last added times using atomic operations to reduce lock contention
-	// Store Unix nanoseconds as int64 for atomic access.
+	// Last-added times per queue (Unix nanoseconds), used as a rate limiter;
+	// updated by compare-and-swap in reserveQueueSlot.
 	lastAddedData   atomic.Int64
 	lastAddedFeeds  atomic.Int64
 	lastAddedSearch atomic.Int64
@@ -128,6 +139,7 @@ var (
 	ErrNotQueued             = errors.New("not queued")
 	ErrQueueFull             = errors.New("queue is full")
 	ErrInvalidQueue          = errors.New("invalid queue")
+	ErrInvalidInterval       = errors.New("schedule interval must be positive")
 	errJobNotFound           = errors.New("job not found")
 	errCronJobConfigNotFound = errors.New("cron Job Config not found")
 	errCronJobNotFound       = errors.New("cron Job not found")
@@ -229,17 +241,46 @@ func (*wrappedLogger) Error(err error, msg string, keysAndValues ...any) {
 //   - ListQueue: Current jobs in all queues with metadata
 //   - ListSchedule: Active schedules with next run times
 func GetStats() Stats {
-	return Stats{
-		WorkerIndex:    GetWorkerStats(WorkerPoolIndexer),
-		WorkerIndexRSS: GetWorkerStats(WorkerPoolIndexerRSS),
-		WorkerParse:    GetWorkerStats(WorkerPoolParse),
+	poolsMu.RLock()
+	st := Stats{
+		WorkerIndex:    GetWorkerStats(workerPoolIndexer),
+		WorkerIndexRSS: GetWorkerStats(workerPoolIndexerRSS),
+		WorkerParse:    GetWorkerStats(workerPoolParse),
 		WorkerSearch:   GetWorkerStats(workerPoolSearch),
 		WorkerRSS:      GetWorkerStats(workerPoolRSS),
 		WorkerFiles:    GetWorkerStats(workerPoolFiles),
 		WorkerMeta:     GetWorkerStats(workerPoolMetadata),
-		ListQueue:      GetQueues(),
-		ListSchedule:   GetSchedules(),
 	}
+	poolsMu.RUnlock()
+
+	st.ListQueue = GetQueues()
+	st.ListSchedule = GetSchedules()
+
+	return st
+}
+
+// WorkerPoolIndexer returns the pool for executing indexer tasks.
+func WorkerPoolIndexer() pond.Pool {
+	poolsMu.RLock()
+	defer poolsMu.RUnlock()
+
+	return workerPoolIndexer
+}
+
+// WorkerPoolIndexerRSS returns the pool for executing indexer tasks for RSS searches.
+func WorkerPoolIndexerRSS() pond.Pool {
+	poolsMu.RLock()
+	defer poolsMu.RUnlock()
+
+	return workerPoolIndexerRSS
+}
+
+// WorkerPoolParse returns the pool for executing parse tasks.
+func WorkerPoolParse() pond.Pool {
+	poolsMu.RLock()
+	defer poolsMu.RUnlock()
+
+	return workerPoolParse
 }
 
 // GetWorkerStats extracts detailed performance metrics from a specific worker pool.
@@ -284,8 +325,8 @@ func GetWorkerStats(w pond.Pool) StatsDetail {
 }
 
 // SetScheduleStarted marks a job schedule as currently running and updates timing information.
-// This function is thread-safe and handles schedule state management for cron jobs
-// and interval-based jobs.
+// The read-modify-write runs inside the syncops writer goroutine, so it is
+// serialized with every other queued schedule update and cannot lose one.
 //
 // Parameters:
 //   - id: Unique identifier of the job schedule to start
@@ -294,22 +335,88 @@ func SetScheduleStarted(id uint32) {
 		return
 	}
 
-	s := globalScheduleSet.GetVal(id)
+	syncops.QueueFunc(func() {
+		s := globalScheduleSet.GetVal(id)
+		if s.ID != id {
+			return
+		}
 
-	s.IsRunning = true
+		s.IsRunning = true
 
-	s.LastRun = logger.TimeGetNow()
-	if s.ScheduleTyp == "cron" {
-		s.NextRun = s.CronSchedule.Next(logger.TimeGetNow())
-	} else {
-		s.NextRun = logger.TimeGetNow().Add(s.Interval)
+		s.LastRun = logger.TimeGetNow()
+		if s.ScheduleTyp == ScheduleTypeCron {
+			s.NextRun = s.CronSchedule.Next(logger.TimeGetNow())
+		} else {
+			s.NextRun = logger.TimeGetNow().Add(s.Interval)
+		}
+
+		globalScheduleSet.UpdateVal(id, s)
+	})
+}
+
+// queueScheduledRun is what a schedule's cron entry or ticker fires: it
+// queues one run of the job unless the schedule was stopped.
+func queueScheduledRun(cfgpstr, name, jobname, queue string, schedulerID uint32) {
+	if globalScheduleSet.GetVal(schedulerID).Paused {
+		logger.Logtype("debug", 1).
+			Str(logger.StrJob, name).
+			Msg("schedule stopped - job not queued")
+
+		return
 	}
 
-	syncops.QueueWorkerMapUpdate(syncops.MapTypeSchedule, id, s)
+	addjob(context.Background(), cfgpstr, newUUID(), name, jobname, queue, schedulerID)
+}
+
+// QueueSchedule queues one run of a schedule's job now, outside its timing
+// and also while the schedule is stopped. Returns logger.ErrNotFound for an
+// unknown id, otherwise addjob's error (e.g. ErrNotQueued when the job is
+// already queued or running, ErrQueueFull).
+func QueueSchedule(id uint32) error {
+	s := globalScheduleSet.GetVal(id)
+	if s.ID != id {
+		return logger.ErrNotFound
+	}
+
+	return addjob(context.Background(), s.Cfgpstr, newUUID(), s.JobName, s.JobFunc, s.Queue, id)
+}
+
+// SetSchedulePaused stops (paused) or restarts one schedule without removing
+// it: a stopped schedule's cron entry or ticker keeps firing but queues no
+// jobs, so restarting needs no rebuild. A job it already started keeps
+// running. The state lives in memory only - a restart or a scheduler config
+// reload recreates every schedule running. Returns false for an unknown id.
+func SetSchedulePaused(id uint32, paused bool) bool {
+	if !globalScheduleSet.Check(id) {
+		return false
+	}
+
+	return syncops.QueueFunc(func() {
+		s := globalScheduleSet.GetVal(id)
+		if s.ID != id {
+			return
+		}
+
+		s.Paused = paused
+
+		// Ticks skipped while stopped left NextRun in the past.
+		if !paused {
+			now := logger.TimeGetNow()
+			if s.ScheduleTyp == ScheduleTypeCron {
+				s.NextRun = s.CronSchedule.Next(now)
+			} else if s.Interval > 0 {
+				for !s.NextRun.After(now) {
+					s.NextRun = s.NextRun.Add(s.Interval)
+				}
+			}
+		}
+
+		globalScheduleSet.UpdateVal(id, s)
+	})
 }
 
 // SetScheduleEnded marks a job schedule as no longer running.
-// This function is thread-safe and ensures proper state cleanup after job completion.
+// Serialized through the syncops writer goroutine like SetScheduleStarted.
 //
 // Parameters:
 //   - id: Unique identifier of the job schedule to end
@@ -318,13 +425,15 @@ func SetScheduleEnded(id uint32) {
 		return
 	}
 
-	s := globalScheduleSet.GetVal(id)
-	if !s.IsRunning {
-		return
-	}
+	syncops.QueueFunc(func() {
+		s := globalScheduleSet.GetVal(id)
+		if s.ID != id || !s.IsRunning {
+			return
+		}
 
-	s.IsRunning = false
-	syncops.QueueWorkerMapUpdate(syncops.MapTypeSchedule, id, s)
+		s.IsRunning = false
+		globalScheduleSet.UpdateVal(id, s)
+	})
 }
 
 // CreateCronWorker initializes three separate cron schedulers for different job categories.
@@ -341,7 +450,11 @@ func CreateCronWorker() {
 		cron.WithLocation(logger.GetTimeZone()),
 		cron.WithLogger(&loggerworker),
 		cron.WithChain(cron.Recover(&loggerworker)), // , cron.SkipIfStillRunning(&loggerworker)
-		cron.WithSeconds(),
+		// The config docs use standard 5-field cron; older configs may carry
+		// a leading seconds field, so accept both.
+		cron.WithParser(cron.NewParser(
+			cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
+		)),
 	}
 
 	cronWorkerData = cron.New(opts...)
@@ -402,51 +515,47 @@ func getcron(queue string) *cron.Cron {
 	return nil
 }
 
-// getPoolAndLastAdded retrieves the worker pool and the last added timestamp for a given queue type.
-// Uses atomic operations for lock-free access to reduce contention under high load.
+// getPoolAndLastAdded retrieves the worker pool and the last-added rate
+// limiter timestamp for a given queue type.
 //
 // Parameters:
 //   - queue: String identifier for the queue type
 //
 // Returns:
 //   - pond.Pool: The worker pool associated with the specified queue
-//   - time.Time: The timestamp of when a job was last added to the queue
-func getPoolAndLastAdded(queue string) (pond.Pool, time.Time) {
+//   - *atomic.Int64: The queue's last-added timestamp (Unix nanoseconds)
+func getPoolAndLastAdded(queue string) (pond.Pool, *atomic.Int64) {
+	poolsMu.RLock()
+	defer poolsMu.RUnlock()
+
 	switch queue {
 	case QueueData:
-		return workerPoolFiles, time.Unix(0, lastAddedData.Load())
+		return workerPoolFiles, &lastAddedData
 	case QueueFeeds:
-		return workerPoolMetadata, time.Unix(0, lastAddedFeeds.Load())
+		return workerPoolMetadata, &lastAddedFeeds
 	case QueueSearch:
-		return workerPoolSearch, time.Unix(0, lastAddedSearch.Load())
+		return workerPoolSearch, &lastAddedSearch
 	case QueueRSS:
-		return workerPoolRSS, time.Unix(0, lastAddedRSS.Load())
+		return workerPoolRSS, &lastAddedRSS
 	default:
-		return nil, time.Unix(0, lastAddedOther.Load())
+		return nil, &lastAddedOther
 	}
 }
 
-// updateLastAdded updates the timestamp for the last job added to a specific worker queue.
-// Uses atomic operations for lock-free updates to reduce contention under high load.
-// The queue parameter determines which specific queue's timestamp is updated.
-//
-// Parameters:
-//   - queue: String identifier for the queue type (e.g., QueueData, QueueFeeds)
-func updateLastAdded(queue string) {
-	now := time.Now().UnixNano()
+// releaseJobName removes name from jobNameIndex only while it is still owned
+// by job id, so a stale owner cannot release a newer job's claim.
+func releaseJobName(name string, id uint32) {
+	jobNameIndex.DeleteIfMatch(name, func(owner uint32) bool { return owner == id })
+}
 
-	switch queue {
-	case QueueData:
-		lastAddedData.Store(now)
-	case QueueFeeds:
-		lastAddedFeeds.Store(now)
-	case QueueSearch:
-		lastAddedSearch.Store(now)
-	case QueueRSS:
-		lastAddedRSS.Store(now)
-	default:
-		lastAddedOther.Store(now)
-	}
+// jobCtxKey is the context key under which submitJob stores jobCtxInfo.
+type jobCtxKey struct{}
+
+// jobCtxInfo identifies the pooled job a context belongs to, so maintenance
+// code running inside a job (PauseWorkerPools) can exclude itself.
+type jobCtxInfo struct {
+	pool pond.Pool
+	id   uint32
 }
 
 // newUUID generates a unique 32-bit unsigned integer identifier using the UUID package.
@@ -503,44 +612,56 @@ func TestWorker(cfgpstr string, name string, queue string, jobname string) {
 //   - jobname: Specific name of the job function
 //
 // Returns:
+//   - uint32: the schedule ID (for RemoveSchedule)
 //   - error: An error if the queue is invalid or scheduling fails, otherwise nil
-func DispatchCron(cfgpstr string, cronStr string, name string, queue string, jobname string) error {
+func DispatchCron(
+	cfgpstr string,
+	cronStr string,
+	name string,
+	queue string,
+	jobname string,
+) (uint32, error) {
 	schedulerID := newUUID()
 
 	dc := getcron(queue)
 	if dc == nil {
-		return ErrInvalidQueue
+		return 0, ErrInvalidQueue
 	}
 
 	cjob, err := dc.AddFunc(cronStr, func() {
-		addjob(context.Background(), cfgpstr, newUUID(), name, jobname, queue, schedulerID)
+		queueScheduledRun(cfgpstr, name, jobname, queue, schedulerID)
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	dcentry := dc.Entry(cjob)
 	syncops.QueueWorkerMapAdd(syncops.MapTypeSchedule, schedulerID, syncops.JobSchedule{
 		JobName:        name,
+		JobFunc:        jobname,
+		Cfgpstr:        cfgpstr,
 		JobID:          newUUID(),
 		ID:             schedulerID,
 		ScheduleTyp:    ScheduleTypeCron,
 		ScheduleString: cronStr,
+		Queue:          queue,
 		LastRun:        time.Time{},
 		NextRun:        dcentry.Schedule.Next(logger.TimeGetNow()),
 		CronSchedule:   dcentry.Schedule,
 		CronID:         cjob,
 	})
 
-	return nil
+	return schedulerID, nil
 }
 
 // acquireQueueSlot performs the shared admission checks for a job: duplicate
-// detection, pool lookup, capacity check, and the per-queue rate limit. On
-// success the queue's last-added timestamp is updated and the target pool is
-// returned.
-func acquireQueueSlot(name, queue string) (pond.Pool, error) {
-	if checkQueue(name) {
+// detection, pool lookup, capacity check, and the per-queue rate limit. The
+// job name is claimed for id atomically before the other checks; on any
+// failure the claim is released again. On success the queue's rate-limit slot
+// is reserved and the target pool is returned - the caller owns the name claim
+// from then on (submitJob / runJobLifecycle release it).
+func acquireQueueSlot(name, queue string, id uint32) (pond.Pool, error) {
+	if checkQueue(name) || !jobNameIndex.AddIfAbsent(name, id, 0) {
 		logger.Logtype("info", 1).
 			Str(logger.StrJob, name).
 			Msg("already queued")
@@ -548,8 +669,9 @@ func acquireQueueSlot(name, queue string) (pond.Pool, error) {
 		return nil, ErrNotQueued
 	}
 
-	workpool, added := getPoolAndLastAdded(queue)
+	workpool, lastAdded := getPoolAndLastAdded(queue)
 	if workpool == nil {
+		releaseJobName(name, id)
 		logger.Logtype("error", 0).
 			Str(logger.StrJob, name).
 			Str("queue", queue).
@@ -564,21 +686,22 @@ func acquireQueueSlot(name, queue string) (pond.Pool, error) {
 		queue,
 		name,
 	); err != nil {
+		releaseJobName(name, id)
 		return nil, err
 	}
 
-	if err := waitForQueueAvailability(added, name); err != nil {
+	if err := reserveQueueSlot(lastAdded, name); err != nil {
+		releaseJobName(name, id)
 		return nil, err
 	}
-
-	updateLastAdded(queue)
 
 	return workpool, nil
 }
 
-// submitJob registers the job in the queue map and name index, then submits
-// the runner to the pool. When submission fails the registration is rolled
-// back and the job context cancelled.
+// submitJob registers the job in the queue map, then submits the runner to
+// the pool. The job name must already be claimed for id (acquireQueueSlot).
+// When registration or submission fails, everything is rolled back: the job
+// context is cancelled and the queue entry and name claim are removed.
 func submitJob(
 	rootctx context.Context,
 	workpool pond.Pool,
@@ -587,11 +710,13 @@ func submitJob(
 	schedulerID uint32,
 	runner func() error,
 ) bool {
-	ctx, cancel := context.WithCancel(rootctx)
+	ctx, cancel := context.WithCancel(
+		context.WithValue(rootctx, jobCtxKey{}, jobCtxInfo{pool: workpool, id: id}),
+	)
 	// cancel is stored in the Job and invoked by the runner's deferred cleanup
 	// (or by the rollback below) - deferring it here would cancel the context
 	// before the pooled job even starts.
-	syncops.QueueWorkerMapAdd(syncops.MapTypeQueue, id, syncops.Job{
+	if !syncops.QueueWorkerMapAdd(syncops.MapTypeQueue, id, syncops.Job{
 		Added:       logger.TimeGetNow(),
 		Name:        name,
 		Queue:       queue,
@@ -601,8 +726,16 @@ func submitJob(
 		SchedulerID: schedulerID,
 		Ctx:         ctx,
 		CancelFunc:  cancel,
-	})
-	jobNameIndex.Add(name, struct{}{}, 0, false, 0)
+	}) {
+		// The runner would only find no queue entry and exit - don't submit it.
+		logger.Logtype("error", 1).
+			Str(logger.StrJob, name).
+			Msg("not queued - job registration failed")
+		cancel()
+		releaseJobName(name, id)
+
+		return false
+	}
 
 	if _, ok := workpool.TrySubmitErr(runner); !ok {
 		logger.Logtype("error", 1).
@@ -610,7 +743,7 @@ func submitJob(
 			Msg("not queued")
 		cancel()
 		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
-		jobNameIndex.Delete(name)
+		releaseJobName(name, id)
 
 		return false
 	}
@@ -621,7 +754,7 @@ func submitJob(
 // addjob adds a job to the specified queue with the given configuration and details.
 // It performs several checks before adding the job, including queue availability, capacity, and job configuration validation.
 // The job is added to the global queue set and submitted to the workpool for execution.
-// If any checks fail, the job is not added and an error is logged.
+// If any checks fail, the job is not added and an error is logged and returned.
 func addjob(
 	rootctx context.Context,
 	cfgpstr string,
@@ -630,26 +763,46 @@ func addjob(
 	jobname string,
 	queue string,
 	schedulerID uint32,
-) {
+) error {
 	if jobname == "" {
 		logger.Logtype("error", 1).
 			Str(logger.StrJob, name).
 			Msg("empty func")
-		return
+		return ErrNotQueued
 	}
 
-	workpool, err := acquireQueueSlot(name, queue)
-	if err != nil {
-		return
-	}
-
+	// Validated before admission so a misconfigured job neither consumes the
+	// queue's rate-limit slot nor briefly claims its name.
 	if !validateJobConfig(cfgpstr, jobname) {
-		return
+		logger.Logtype("error", 1).
+			Str(logger.StrJob, name).
+			Str("job", jobname).
+			Str("cfgp", cfgpstr).
+			Msg("job not queued - no job function configured")
+
+		return ErrNotQueued
 	}
 
-	cleanupCompletedJobs(workpool, queue)
+	workpool, err := acquireQueueSlot(name, queue, id)
+	if err != nil {
+		return err
+	}
 
-	submitJob(rootctx, workpool, id, name, jobname, queue, cfgpstr, schedulerID, runjobcron(id))
+	if !submitJob(
+		rootctx,
+		workpool,
+		id,
+		name,
+		jobname,
+		queue,
+		cfgpstr,
+		schedulerID,
+		runjobcron(id, name),
+	) {
+		return ErrNotQueued
+	}
+
+	return nil
 }
 
 // checkQueueCapacity validates if a job can be added to a queue based on capacity limits.
@@ -677,64 +830,78 @@ func checkQueueCapacity(capa int, waiting uint64, queue, name string) error {
 	return nil
 }
 
-// waitForQueueAvailability rate-limits job admission: when the last job was
-// added to this queue within queueCheckInterval, it waits in queueCheckDelay
-// steps for the window to pass and gives up after maxQueueRetries.
-// The previous condition compared against now+interval (a future time a past
-// timestamp can never be after), so the rate limiter never engaged.
-func waitForQueueAvailability(added time.Time, name string) error {
-	for idx := 0; idx <= maxQueueRetries; idx++ {
-		// added lies in the past; "recently added" = after (now - interval).
-		if !logger.TimeAfter(added, time.Now().Add(-queueCheckInterval)) {
-			break
+// reserveQueueSlot rate-limits job admission per queue: a slot is free when
+// the last job was admitted at least queueCheckInterval ago, and is taken by
+// compare-and-swap on the queue's last-added timestamp, so concurrent
+// dispatchers cannot both pass the check. While the window is busy it waits in
+// queueCheckDelay steps and gives up after maxQueueRetries waits (re-checking
+// after the last one).
+func reserveQueueSlot(lastAdded *atomic.Int64, name string) error {
+	for attempt := 0; ; attempt++ {
+		prev := lastAdded.Load()
+
+		now := time.Now().UnixNano()
+		if now-prev >= int64(queueCheckInterval) {
+			if lastAdded.CompareAndSwap(prev, now) {
+				return nil
+			}
+
+			// Another dispatcher took the slot first - re-evaluate.
+			continue
 		}
 
-		time.Sleep(queueCheckDelay)
-
-		if idx == maxQueueRetries {
+		if attempt >= maxQueueRetries {
 			logger.Logtype("error", 1).
 				Str(logger.StrJob, name).
 				Msg("queue recently added")
+
 			return ErrNotQueued
 		}
-	}
 
-	return nil
-}
-
-// cleanupCompletedJobs checks if all tasks in the workpool have been completed and deletes the running queue if so.
-// It handles two scenarios: when all submitted tasks are completed, or when all non-waiting tasks are completed.
-func cleanupCompletedJobs(workpool pond.Pool, queue string) {
-	if workpool.SubmittedTasks() == workpool.CompletedTasks() ||
-		workpool.SubmittedTasks()-workpool.WaitingTasks() == workpool.CompletedTasks() {
-		DeleteQueueRunning(queue)
+		time.Sleep(queueCheckDelay)
 	}
 }
 
 // runJobLifecycle wraps job execution with the shared queue-state management:
 // existence check, started-timestamp update, and deferred cleanup (panic
 // recovery, context cancel, queue and name-index removal). exec receives the
-// job snapshot taken before execution.
-func runJobLifecycle(id uint32, exec func(syncops.Job) error) func() error {
-	return func() error {
-		if !globalQueueSet.Check(id) {
+// job snapshot taken before execution. name is the job name claimed for id;
+// it is released on every exit path, including a job that was cancelled or
+// removed while it was still waiting in the pool.
+func runJobLifecycle(id uint32, name string, exec func(syncops.Job) error) func() error {
+	return func() (err error) {
+		s := globalQueueSet.GetVal(id)
+		if s.ID != id {
+			releaseJobName(name, id)
 			logger.Logtype("error", 1).
 				Uint32("job_id", id).
+				Str(logger.StrJob, name).
 				Msg("Job not found")
+
 			return errJobNotFound
 		}
 
-		s := globalQueueSet.GetVal(id)
-
 		defer func() {
-			logger.HandlePanic()
-			// Cancel the context and clean up the job from queue and name index when finished
+			// recover must be called directly by the deferred function -
+			// a nested call (as logger.HandlePanic was used here) never
+			// sees the panic.
+			if r := recover(); r != nil {
+				logger.Logtype("error", 0).
+					Str("RECOVER", logger.Stack()).
+					Any("vap", r).
+					Uint32("job_id", id).
+					Str(logger.StrJob, name).
+					Msg("Recovered from panic in job")
+
+				err = fmt.Errorf("job %s panicked: %v", name, r)
+			}
+
 			if s.CancelFunc != nil {
 				s.CancelFunc()
 			}
 
 			syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
-			jobNameIndex.Delete(s.Name)
+			releaseJobName(name, id)
 		}()
 
 		// Check if job was cancelled before starting
@@ -751,8 +918,8 @@ func runJobLifecycle(id uint32, exec func(syncops.Job) error) func() error {
 
 // runjobcron returns the pooled runner for a scheduled job: it tracks the
 // schedule's running state and executes the configured job function.
-func runjobcron(id uint32) func() error {
-	return runJobLifecycle(id, func(s syncops.Job) error {
+func runjobcron(id uint32, name string) func() error {
+	return runJobLifecycle(id, name, func(s syncops.Job) error {
 		SetScheduleStarted(s.SchedulerID)
 		defer SetScheduleEnded(s.SchedulerID)
 
@@ -783,22 +950,25 @@ func RemoveQueueEntry(id uint32) {
 
 // CancelQueueEntry cancels a running job by its unique identifier and removes it from the queue.
 // This function is used for manual cancellation (e.g., via API endpoints).
-// It cancels the job's context to stop execution and then removes it from the queue.
+// It cancels the job's context to stop execution, removes it from the queue and
+// releases its job name so the job can be dispatched again.
 //
 // Parameters:
 //   - id: Unique identifier of the job to cancel (uint32)
 func CancelQueueEntry(id uint32) {
-	if id != 0 {
-		// Check if job exists and get it to access its cancel function
-		if globalQueueSet.Check(id) {
-			job := globalQueueSet.GetVal(id)
-			// Cancel the job's context to stop execution
-			if job.CancelFunc != nil {
-				job.CancelFunc()
-			}
-		}
+	if id == 0 {
+		return
+	}
 
-		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+	job := globalQueueSet.GetVal(id)
+	if job.ID == id && job.CancelFunc != nil {
+		job.CancelFunc()
+	}
+
+	syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, id)
+
+	if job.ID == id {
+		releaseJobName(job.Name, id)
 	}
 }
 
@@ -822,7 +992,11 @@ func DispatchEvery(
 	name string,
 	queue string,
 	jobname string,
-) error {
+) (uint32, error) {
+	if interval <= 0 {
+		return 0, fmt.Errorf("interval %v: %w", interval, ErrInvalidInterval)
+	}
+
 	schedulerID := newUUID()
 	t := time.NewTicker(interval)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -835,7 +1009,13 @@ func DispatchEvery(
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				addjob(context.Background(), cfgpstr, newUUID(), name, jobname, queue, schedulerID)
+				// Recovered per tick: a panic here would otherwise kill the
+				// whole process (no recover in this goroutine) - this way it is
+				// logged and the schedule keeps running.
+				func() {
+					defer logger.HandlePanic()
+					queueScheduledRun(cfgpstr, name, jobname, queue, schedulerID)
+				}()
 			}
 		}
 	}()
@@ -843,16 +1023,43 @@ func DispatchEvery(
 	syncops.QueueWorkerMapAdd(syncops.MapTypeSchedule, schedulerID, syncops.JobSchedule{
 		CancelFunc:     cancel,
 		JobName:        name,
+		JobFunc:        jobname,
+		Cfgpstr:        cfgpstr,
 		JobID:          newUUID(),
 		ID:             schedulerID,
 		ScheduleTyp:    ScheduleTypeInterval,
 		ScheduleString: interval.String(),
+		Queue:          queue,
 		LastRun:        time.Time{},
 		Interval:       interval,
 		NextRun:        logger.TimeGetNow().Add(interval),
 	})
 
-	return nil
+	return schedulerID, nil
+}
+
+// RemoveSchedule unregisters one schedule created by DispatchCron or
+// DispatchEvery: the cron entry is removed or the ticker stopped, so it
+// submits no further jobs. Jobs it already queued or started keep running -
+// they live in the worker pools, independent of the schedule.
+func RemoveSchedule(id uint32) {
+	s := globalScheduleSet.GetVal(id)
+	if s.ID != id {
+		return
+	}
+
+	switch s.ScheduleTyp {
+	case ScheduleTypeInterval:
+		if s.CancelFunc != nil {
+			s.CancelFunc()
+		}
+	case ScheduleTypeCron:
+		if dc := getcron(s.Queue); dc != nil {
+			dc.Remove(s.CronID)
+		}
+	}
+
+	syncops.QueueWorkerMapDelete(syncops.MapTypeSchedule, id)
 }
 
 // Dispatch adds a new job to the appropriate worker pool queue for immediate execution.
@@ -877,12 +1084,13 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 		return ErrNotQueued
 	}
 
-	workpool, err := acquireQueueSlot(name, queue)
+	id := newUUID()
+
+	workpool, err := acquireQueueSlot(name, queue, id)
 	if err != nil {
 		return err
 	}
 
-	id := newUUID()
 	if !submitJob(
 		context.Background(),
 		workpool,
@@ -892,7 +1100,7 @@ func Dispatch(name string, fn func(uint32, context.Context) error, queue string)
 		queue,
 		"",
 		newUUID(),
-		runjob(id, fn),
+		runjob(id, name, fn),
 	) {
 		return ErrNotQueued
 	}
@@ -925,6 +1133,8 @@ func executeJob(s syncops.Job) error {
 				Str("job", s.JobName).
 				Str("cfgp", s.Cfgpstr).
 				Msg("Cron Job not found")
+
+			return errCronJobNotFound
 		}
 	} else {
 		cfg := config.GetSettingsMedia(s.Cfgpstr)
@@ -948,8 +1158,6 @@ func executeJob(s syncops.Job) error {
 			return errCronJobNotFound
 		}
 	}
-
-	return nil
 }
 
 // runjob creates a closure that wraps a job function with lifecycle management.
@@ -961,8 +1169,8 @@ func executeJob(s syncops.Job) error {
 //
 // Returns:
 //   - A closure function that manages the complete job lifecycle
-func runjob(id uint32, fn func(uint32, context.Context) error) func() error {
-	return runJobLifecycle(id, func(s syncops.Job) error {
+func runjob(id uint32, name string, fn func(uint32, context.Context) error) func() error {
+	return runJobLifecycle(id, name, func(s syncops.Job) error {
 		err := fn(id, s.Ctx)
 		if err != nil {
 			logger.Logtype("error", 0).
@@ -986,12 +1194,14 @@ func runjob(id uint32, fn func(uint32, context.Context) error) func() error {
 //   - workermeta: Number of workers for metadata operations (defaults to 1 if 0)
 //   - workerrss: Number of workers for RSS operations (defaults to 1 if 0)
 //   - workerindex: Number of workers for indexing operations (defaults to 1 if 0)
+//   - workerparse: Number of workers for the parse pool (defaults to workerfiles if 0)
 func InitWorkerPools(
 	workersearch int,
 	workerfiles int,
 	workermeta int,
 	workerrss int,
 	workerindex int,
+	workerparse int,
 ) {
 	if workersearch == 0 {
 		workersearch = 1
@@ -1013,6 +1223,10 @@ func InitWorkerPools(
 		workerindex = 1
 	}
 
+	if workerparse <= 0 {
+		workerparse = workerfiles
+	}
+
 	// pond's default queue size is Unbounded (math.MaxInt), so checkQueueCapacity's
 	// "queue full" guard never actually trips - a pool whose workers are all stuck
 	// on hung jobs would otherwise accept new submissions forever, growing the
@@ -1022,19 +1236,28 @@ func InitWorkerPools(
 	// ErrQueueFull once something is actually wrong.
 	queueOpt := pond.WithQueueSize(maxPoolQueueSize)
 
+	poolsMu.Lock()
+	defer poolsMu.Unlock()
+
 	workerPoolSearch = pond.NewPool(workersearch, queueOpt)
 	workerPoolRSS = pond.NewPool(workerrss, queueOpt)
 	workerPoolFiles = pond.NewPool(workerfiles, queueOpt)
 	workerPoolMetadata = pond.NewPool(workermeta, queueOpt)
-	WorkerPoolIndexer = pond.NewPool(workerindex, queueOpt)
-	WorkerPoolIndexerRSS = pond.NewPool(workerindex, queueOpt)
-	WorkerPoolParse = pond.NewPool(workerfiles, queueOpt)
+	workerPoolIndexer = pond.NewPool(workerindex, queueOpt)
+	workerPoolIndexerRSS = pond.NewPool(workerindex, queueOpt)
+	workerPoolParse = pond.NewPool(workerparse, queueOpt)
 
-	recentJobs, _ = ristretto.NewCache(&ristretto.Config[string, struct{}]{
-		NumCounters: 10_000,
-		MaxCost:     1 << 20, // 1MB
-		BufferItems: 64,
-	})
+	if recentJobs == nil {
+		recentJobs, _ = ristretto.NewCache(&ristretto.Config[string, struct{}]{
+			NumCounters: 10_000,
+			MaxCost:     1 << 20, // 1MB
+			BufferItems: 64,
+		})
+	}
+
+	if staleSweeperCancel != nil {
+		staleSweeperCancel()
+	}
 
 	staleSweeperCancel = startStaleJobSweeper()
 }
@@ -1055,7 +1278,9 @@ func InitWorkerPools(
 // job doesn't check it, which is presumably why it's stuck) and then forgets
 // the bookkeeping so the job name becomes dispatchable again. If the old
 // goroutine is in fact still running and later completes, its own deferred
-// cleanup in runJobLifecycle will safely no-op (delete-if-present semantics).
+// cleanup in runJobLifecycle will safely no-op: the queue delete is
+// delete-if-present and the name release only removes the name while this
+// job's ID still owns it, so a re-dispatched job keeps its claim.
 func sweepStaleJobs() {
 	now := logger.TimeGetNow()
 
@@ -1089,7 +1314,7 @@ func sweepStaleJobs() {
 		}
 
 		syncops.QueueWorkerMapDelete(syncops.MapTypeQueue, job.ID)
-		jobNameIndex.Delete(job.Name)
+		releaseJobName(job.Name, job.ID)
 	}
 }
 
@@ -1126,8 +1351,9 @@ const (
 )
 
 // StopIntervalSchedules cancels the ticker goroutines of all interval-based
-// schedules so they stop submitting jobs. Cron schedules are stopped via
-// StopCronWorker.
+// schedules so they stop submitting jobs, permanently: nothing restarts them,
+// so this is for process shutdown only (see CloseWorkerPools). Cron schedules
+// are stopped via StopCronWorker.
 func StopIntervalSchedules() {
 	globalScheduleSet.ForEach(func(_ uint32, s syncops.JobSchedule) {
 		if s.ScheduleTyp == ScheduleTypeInterval && s.CancelFunc != nil {
@@ -1136,19 +1362,38 @@ func StopIntervalSchedules() {
 	})
 }
 
-// CloseWorkerPools gracefully shuts down all worker pools.
-// Interval schedules are stopped first so their tickers stop feeding the
-// pools, then the pools stop accepting tasks and running jobs get up to
-// closeWaitTimeout to finish. Jobs still running after that are cancelled via
-// their contexts and given a short grace period.
-// The previous implementation called Stop() without waiting (pond's Stop only
-// returns a task) and immediately cancelled all job contexts, so shutdown
-// could kill jobs mid-write despite documenting a graceful wait.
+// CloseWorkerPools gracefully shuts down all worker pools for process
+// shutdown. Interval schedules are stopped first so their tickers stop feeding
+// the pools, then the pools are drained as in PauseWorkerPools.
+// For a temporary stop (e.g. around a database backup) use PauseWorkerPools:
+// interval schedules cannot be restarted once stopped here.
 func CloseWorkerPools() {
 	StopIntervalSchedules()
+	PauseWorkerPools(context.Background())
+}
 
+// PauseWorkerPools stops all worker pools for a maintenance cycle and waits
+// for their jobs to finish; InitWorkerPools (plus StartCronWorker after
+// StopCronWorker) resumes work afterwards. Interval schedules are left running
+// - their tickers' submissions fail ("not queued") while the pools are stopped
+// and succeed again once InitWorkerPools has installed new pools.
+//
+// The pools stop accepting tasks and running jobs get up to closeWaitTimeout
+// to finish; jobs still running after that are cancelled via their contexts
+// and given a short grace period.
+//
+// When ctx belongs to a pooled job (the ctx a job function receives), that job
+// is excluded: its own pool is stopped without waiting for it, and its context
+// is not cancelled. Without this, a job pausing the pools it runs on (the
+// BackupDatabase job) waited for itself until the timeout and then cancelled
+// every running job.
+func PauseWorkerPools(ctx context.Context) {
+	self, inJob := ctx.Value(jobCtxKey{}).(jobCtxInfo)
+
+	poolsMu.Lock()
 	if staleSweeperCancel != nil {
 		staleSweeperCancel()
+		staleSweeperCancel = nil
 	}
 
 	pools := []pond.Pool{
@@ -1156,10 +1401,11 @@ func CloseWorkerPools() {
 		workerPoolRSS,
 		workerPoolFiles,
 		workerPoolMetadata,
-		WorkerPoolIndexer,
-		WorkerPoolIndexerRSS,
-		WorkerPoolParse,
+		workerPoolIndexer,
+		workerPoolIndexerRSS,
+		workerPoolParse,
 	}
+	poolsMu.Unlock()
 
 	done := make(chan struct{})
 
@@ -1168,7 +1414,12 @@ func CloseWorkerPools() {
 		defer logger.HandlePanic()
 
 		for i := range pools {
-			if pools[i] != nil {
+			switch {
+			case pools[i] == nil:
+			case inJob && pools[i] == self.pool:
+				pools[i].Stop()
+				waitForOtherTasks(pools[i])
+			default:
 				pools[i].StopAndWait()
 			}
 		}
@@ -1183,6 +1434,10 @@ func CloseWorkerPools() {
 	// Jobs still running after the wait: cancel their contexts and allow a
 	// short grace period for them to exit.
 	globalQueueSet.ForEach(func(_ uint32, getjob syncops.Job) {
+		if inJob && getjob.ID == self.id {
+			return
+		}
+
 		if getjob.CancelFunc != nil {
 			getjob.CancelFunc()
 		}
@@ -1196,17 +1451,33 @@ func CloseWorkerPools() {
 	}
 }
 
+// waitForOtherTasks blocks until p has at most one unfinished task - the
+// calling job itself. The counters are read completed/dropped first and
+// submitted last so the subtraction cannot underflow.
+func waitForOtherTasks(p pond.Pool) {
+	for {
+		finished := p.CompletedTasks() + p.DroppedTasks()
+		if p.SubmittedTasks()-finished <= 1 {
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // Cleanqueue clears the global queue set if there are no running or waiting workers across all pools.
 // It checks all worker pools (data, feeds, search, RSS) for active or waiting tasks and only
 // clears the queue if all pools are idle. This prevents premature cleanup of pending jobs
 // and ensures system stability during shutdown or maintenance operations.
 func Cleanqueue() error {
+	poolsMu.RLock()
 	pools := map[string]pond.Pool{
 		QueueData:   workerPoolFiles,
 		QueueFeeds:  workerPoolMetadata,
 		QueueSearch: workerPoolSearch,
 		QueueRSS:    workerPoolRSS,
 	}
+	poolsMu.RUnlock()
 
 	for queueName, pool := range pools {
 		if pool != nil && pool.CompletedTasks() == pool.SubmittedTasks() {
@@ -1270,24 +1541,32 @@ func GetGlobalQueueSet() *syncops.SyncMapUint[syncops.Job] {
 }
 
 func addRecentJob(jobname string) {
-	if recentJobs == nil {
+	poolsMu.RLock()
+	rc := recentJobs
+	poolsMu.RUnlock()
+
+	if rc == nil {
 		return
 	}
 
-	recentJobs.SetWithTTL(jobname, struct{}{}, 1, 10*time.Second)
+	rc.SetWithTTL(jobname, struct{}{}, 1, 10*time.Second)
 	// Ristretto applies sets asynchronously - wait so a duplicate dispatched
 	// immediately afterwards already sees the entry.
-	recentJobs.Wait()
+	rc.Wait()
 }
 
 // isRecentJob checks if a job was recently submitted (within last 10 seconds)
 // to prevent duplicate job submissions and reduce system load.
 func isRecentJob(jobname string) bool {
-	if recentJobs == nil {
+	poolsMu.RLock()
+	rc := recentJobs
+	poolsMu.RUnlock()
+
+	if rc == nil {
 		return false
 	}
 
-	_, ok := recentJobs.Get(jobname)
+	_, ok := rc.Get(jobname)
 
 	return ok
 }
@@ -1358,9 +1637,14 @@ func checkQueueStarted(jobname string, checkalternatives bool, prefix string, su
 // The contexts of the removed jobs are cancelled first - deleting without
 // cancelling leaked the contexts and left running jobs uncancellable.
 // CancelFunc is idempotent, so cancelling already-finished jobs is harmless.
+// The removed jobs' names are released so they can be dispatched again; a job
+// added between the scan and the delete releases its own name when its runner
+// finds no queue entry.
 func DeleteJobQueue(queue string, isStarted bool) {
+	var removed []syncops.Job
+
 	globalQueueSet.ForEach(func(_ uint32, job syncops.Job) {
-		if job.Queue != queue || job.CancelFunc == nil {
+		if job.Queue != queue {
 			return
 		}
 
@@ -1368,10 +1652,20 @@ func DeleteJobQueue(queue string, isStarted bool) {
 			return
 		}
 
-		job.CancelFunc()
+		removed = append(removed, job)
 	})
 
+	for i := range removed {
+		if removed[i].CancelFunc != nil {
+			removed[i].CancelFunc()
+		}
+	}
+
 	syncops.QueueWorkerMapDeleteQueue(syncops.MapTypeQueue, queue, isStarted)
+
+	for i := range removed {
+		releaseJobName(removed[i].Name, removed[i].ID)
+	}
 }
 
 // DeleteQueue deletes all jobs from the global queue set that match the given queue name.
@@ -1381,15 +1675,6 @@ func DeleteJobQueue(queue string, isStarted bool) {
 //   - queue: Name of the queue to clear of all jobs
 func DeleteQueue(queue string) {
 	DeleteJobQueue(queue, false)
-}
-
-// DeleteQueueRunning deletes all jobs from the global queue set that match the given queue name and have a non-zero start time.
-// This function only removes jobs that are currently running or have been started, leaving pending jobs untouched.
-//
-// Parameters:
-//   - queue: Name of the queue to clear of running jobs
-func DeleteQueueRunning(queue string) {
-	DeleteJobQueue(queue, true)
 }
 
 // RegisterWorkerSyncMaps registers the worker SyncMaps with the global SyncOpsManager.

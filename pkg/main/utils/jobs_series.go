@@ -146,11 +146,13 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 
 	var pl pond.TaskGroup
 	if isAudioType {
-		pl = worker.WorkerPoolParse.NewGroupContext(ctx)
+		pl = worker.WorkerPoolParse().NewGroupContext(ctx)
 	}
 
 	var errret error
-	for idxi, dataimport := range cfgp.DataImportMap {
+	// Index order (not the map) so the adjacent-duplicate skip below is deterministic.
+	for idxi := range cfgp.DataImport {
+		dataimport := &cfgp.DataImport[idxi]
 		if err := logger.CheckContextEnded(ctx); err != nil {
 			return err
 		}
@@ -162,7 +164,8 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 			continue
 		}
 
-		if idxi > 0 && cfgp.DataImport[idxi-1].CfgPath.Path == dataimport.CfgPath.Path {
+		if idxi > 0 && cfgp.DataImport[idxi-1].CfgPath != nil &&
+			cfgp.DataImport[idxi-1].CfgPath.Path == dataimport.CfgPath.Path {
 			continue
 		}
 
@@ -259,7 +262,7 @@ func structureFolderRecursive(
 
 	for i := range entries {
 		if entries[i].IsDir() {
-			if isMultiDiscSubfolder(entries[i].Name()) {
+			if isMultiDiscSubfolder(entries[i].Name(), folderPath) {
 				hasMultiDisc = true
 			}
 
@@ -278,6 +281,10 @@ func structureFolderRecursive(
 				hasAudioFiles = true
 			}
 		}
+	}
+
+	if !hasMultiDisc && len(subDirs) >= 2 {
+		hasMultiDisc = importfeed.IsDiscSet(baseNames(subDirs))
 	}
 
 	// If this folder has audio files or multi-disc subfolders, treat it as an album
@@ -318,7 +325,10 @@ func structureFolderRecursive(
 	}
 }
 
+// ReturnFeeds hands a feed fetched only for inspection back to the pool. Any
+// IRC announce lines it drained are requeued, since nothing imported them.
 func ReturnFeeds(feed *feedResults) {
+	feed.requeueIRC(false)
 	plfeeds.Put(feed)
 }
 
@@ -354,7 +364,7 @@ func ReturnFeeds(feed *feedResults) {
 // 		return nil
 // 	}
 
-// 	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
+// 	pl := worker.WorkerPoolParse().NewGroupContext(ctx)
 // 	for idxserie2 := range feed.Series {
 // 		pl.Submit(func() {
 // 			defer logger.HandlePanic()

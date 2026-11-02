@@ -111,12 +111,18 @@ func (d *feedResults) getlastfmtopartists(
 
 		if existingID == 0 {
 			artistSlug := logger.StringToSlugCached(name)
+			// With a known MBID only adopt a same-named row that has no MBID yet;
+			// a row with a different MBID is a different artist of the same name.
 			database.Scanrowsdyn(
 				false,
-				"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
+				`SELECT id FROM dbartists WHERE (name = ? COLLATE NOCASE OR slug = ?)
+				 AND (? = '' OR musicbrainz_id IS NULL OR musicbrainz_id = '' OR musicbrainz_id = ?)
+				 LIMIT 1`,
 				&existingID,
 				&name,
 				&artistSlug,
+				&mbid,
+				&mbid,
 			)
 		}
 

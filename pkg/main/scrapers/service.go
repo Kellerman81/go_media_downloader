@@ -40,9 +40,12 @@ type Scraper interface {
 
 // Service provides centralized scraper operations.
 type Service struct {
-	config         *config.MainConfig
-	scraperMutexes map[ScraperType]*sync.Mutex
-	mutexLock      sync.Mutex
+	config *config.MainConfig
+	// scraperLocks holds a 1-slot channel per scraper type instead of a
+	// sync.Mutex so a job queued behind a running scrape can give up when its
+	// context is cancelled.
+	scraperLocks map[ScraperType]chan struct{}
+	mutexLock    sync.Mutex
 }
 
 // NewService creates a new scraper service instance.
@@ -54,22 +57,22 @@ type Service struct {
 //   - *Service: Initialized service instance
 func NewService(cfg *config.MainConfig) *Service {
 	return &Service{
-		config:         cfg,
-		scraperMutexes: make(map[ScraperType]*sync.Mutex),
+		config:       cfg,
+		scraperLocks: make(map[ScraperType]chan struct{}),
 	}
 }
 
-// getScraperMutex returns the mutex for a specific scraper type, creating it if necessary.
+// getScraperLock returns the lock for a specific scraper type, creating it if necessary.
 // This ensures that only one scraper of each type can run at a time, preventing rate limit issues.
-func (s *Service) getScraperMutex(scraperType ScraperType) *sync.Mutex {
+func (s *Service) getScraperLock(scraperType ScraperType) chan struct{} {
 	s.mutexLock.Lock()
 	defer s.mutexLock.Unlock()
 
-	if s.scraperMutexes[scraperType] == nil {
-		s.scraperMutexes[scraperType] = &sync.Mutex{}
+	if s.scraperLocks[scraperType] == nil {
+		s.scraperLocks[scraperType] = make(chan struct{}, 1)
 	}
 
-	return s.scraperMutexes[scraperType]
+	return s.scraperLocks[scraperType]
 }
 
 // GetScrapersForSeries returns all configured scrapers that match the given series name.
@@ -170,17 +173,21 @@ func (s *Service) RunScrapersForSeries(
 	// Get the scraper type
 	scraperType := ScraperType(strings.ToLower(seriesCfg.ScraperType))
 
-	// Get the mutex for this scraper type to ensure only one scraper of this type runs at a time
-	mutex := s.getScraperMutex(scraperType)
+	// Get the lock for this scraper type to ensure only one scraper of this type runs at a time
+	lock := s.getScraperLock(scraperType)
 
 	logger.Logtype(logger.StatusDebug, 0).
 		Str("series", serieName).
 		Str("scraper_type", string(scraperType)).
 		Msg("Waiting for scraper type lock")
 
-	// Lock the mutex for this scraper type - this blocks if another scraper of the same type is running
-	mutex.Lock()
-	defer mutex.Unlock()
+	// Blocks while another scraper of the same type is running, unless ctx is cancelled first.
+	select {
+	case lock <- struct{}{}:
+	case <-ctx.Done():
+		return 0, fmt.Errorf("waiting for %s scraper lock: %w", scraperType, ctx.Err())
+	}
+	defer func() { <-lock }()
 
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("series", serieName).
@@ -342,8 +349,8 @@ func (*Service) createProject1ServiceScraperFromSerie(
 	scraperCfg := &project1service.Config{
 		SiteName:           cfg.Name,
 		StartURL:           cfg.StartURL,
-		SiteID:             cfg.SiteID,
 		FilterCollectionID: cfg.FilterCollectionID,
+		FilterBrandID:      cfg.FilterBrandID,
 		FirstPageDBOnly:    firstPageDBOnly,
 		SerieName:          cfg.Name,
 	}
@@ -443,11 +450,13 @@ func (*Service) createCSRFAPIScraperFromSerie(
 		// CSRF settings
 		CSRFCookieName: cfg.CSRFCookieName,
 		CSRFHeaderName: cfg.CSRFHeaderName,
+		SkipCSRF:       cfg.SkipCSRF,
 
 		// API settings
 		APIURLPattern:   cfg.APIURLPattern,
 		PageStartIndex:  cfg.PageStartIndex,
 		PaginationStyle: cfg.PaginationType,
+		PageIncrement:   cfg.PageIncrement,
 
 		// JSON field paths
 		ResultsArrayPath: cfg.ResultsArrayPath,

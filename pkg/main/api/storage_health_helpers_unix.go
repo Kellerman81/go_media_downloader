@@ -2,26 +2,16 @@
 
 package api
 
-import (
-	"syscall"
-)
+import "github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 
-// getDiskUsageUnix gets disk usage on Unix-like systems (Linux, macOS, BSD)
+// getDiskUsageUnix gets disk usage on Unix-like systems (Linux, macOS, BSD).
+// scanner.DiskUsage scales by f_frsize on Linux, where f_bsize is only the
+// preferred I/O size and can differ from the unit the block counts use.
 func getDiskUsageUnix(path string) (free uint64, total uint64, err error) {
-	var stat syscall.Statfs_t
-	err = syscall.Statfs(path, &stat)
+	free, total, err = scanner.DiskUsage(path)
 	if err != nil {
-		// If the syscall fails, try the fallback method
 		return getDiskUsageFallback(path)
 	}
 
-	// Calculate free and total bytes
-	blockSize := uint64(stat.Bsize)
-	freeBlocks := uint64(stat.Bavail) // Available to non-privileged user
-	totalBlocks := uint64(stat.Blocks)
-
-	freeBytes := freeBlocks * blockSize
-	totalBytes := totalBlocks * blockSize
-
-	return freeBytes, totalBytes, nil
+	return free, total, nil
 }

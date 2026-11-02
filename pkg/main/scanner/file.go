@@ -3,13 +3,18 @@
 package scanner
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
@@ -28,22 +33,90 @@ type MoveFileOptions struct {
 	MediaType     uint   // Media type constant for extension checking
 }
 
-// tmpMoveSuffix marks the staging file MoveFile writes next to the final
-// destination before swapping it in.
+// tmpMoveSuffix marks the staging files written next to a final destination
+// before they are swapped in. uniqueTmpPath appends "-<pid>-<random>" so
+// concurrent moves never share a staging file. The suffix leaves the file with
+// an extension no media/other-extension list contains, so library scans never
+// import a staging file left behind by a crash.
 const tmpMoveSuffix = ".tmp-move"
 
 var (
-	strto           = "to"
-	errSameFile     = errors.New("same file")
-	errSizeMismatch = errors.New("copied size does not match source size")
+	strto               = "to"
+	errSizeMismatch     = errors.New("copied size does not match source size")
+	errDstInsideSrc     = errors.New("destination folder is inside the source folder")
+	errFolderIncomplete = errors.New("folder move incomplete - source kept")
 )
+
+// uniqueTmpPath returns a staging path next to path that no other move
+// (concurrent or earlier) uses.
+func uniqueTmpPath(path string) string {
+	var b [6]byte
+
+	rand.Read(b[:])
+
+	return path + tmpMoveSuffix + "-" + strconv.Itoa(os.Getpid()) + "-" + hex.EncodeToString(b[:])
+}
+
+// chmodLogged applies mode to path and logs (but does not fail on) errors.
+func chmodLogged(path string, mode fs.FileMode) {
+	if err := os.Chmod(path, mode); err != nil {
+		logger.Logtype("warn", 2).
+			Str(logger.StrFile, path).
+			Str("mode", mode.String()).
+			Err(err).
+			Msg("chmod failed")
+	}
+}
+
+// mkdirAllMode creates dir and any missing parents. MkdirAll applies the umask,
+// so every directory level it creates (not just the last one) is chmod'ed to
+// mode afterwards. mode 0 creates with 0o777 (umask applies) and skips chmod.
+func mkdirAllMode(dir string, mode fs.FileMode) error {
+	var created []string
+
+	for p := filepath.Clean(dir); ; {
+		if _, err := os.Lstat(p); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+
+		created = append(created, p)
+
+		parent := filepath.Dir(p)
+		if parent == p {
+			break
+		}
+
+		p = parent
+	}
+
+	if len(created) == 0 {
+		return nil
+	}
+
+	mkmode := mode
+	if mkmode == 0 {
+		mkmode = 0o777
+	}
+
+	if err := os.MkdirAll(dir, mkmode); err != nil {
+		return err
+	}
+
+	if mode != 0 {
+		for _, p := range created {
+			chmodLogged(p, mode)
+		}
+	}
+
+	return nil
+}
 
 // MoveFile moves a file from one path to another. It handles checking
 // extensions, renaming, and setting permissions.
 //
-// The move is staged: the content is first placed at the destination path
-// with a ".tmp-move" suffix (instant rename on the same filesystem, verified
-// buffered copy across devices) and only then swapped in over any existing
+// The move is staged: the content is first placed at a unique ".tmp-move-…"
+// path next to the destination (instant rename on the same filesystem,
+// verified buffered copy across devices) and only then swapped in over any existing
 // destination file. At every instant either the old or the complete new file
 // exists, and a failed move leaves the source at its original path.
 //
@@ -102,46 +175,61 @@ func MoveFile(
 	return newpath, nil
 }
 
-// moveToTempThenSwap stages the file at newpath+".tmp-move" and only then
-// swaps it in over any existing destination (delete + same-directory rename).
-// Failures leave the source untouched (copy path) or restore it to its
-// original path (rename path), so the move can always be retried.
+// PlannedMovePath returns the path MoveFile would move file to with the same
+// arguments, without touching the filesystem.
+func PlannedMovePath(
+	file string,
+	setpathcfg *config.PathsConfig,
+	target, newname string,
+	opts MoveFileOptions,
+) string {
+	ext := filepath.Ext(file)
+	_, oknorename := checkExtensionPermissions(
+		opts.MediaType,
+		setpathcfg,
+		ext,
+		opts.UseOther,
+		opts.UseNil,
+	)
+
+	newfilename := determineNewFilename(file, newname, ext, oknorename)
+	logger.Path(&newfilename, false)
+
+	return filepath.Join(target, newfilename)
+}
+
+// moveToTempThenSwap stages the file at a unique temp path next to newpath and
+// only then swaps it in over any existing destination (delete + same-directory
+// rename). Failures leave the source untouched (copy path) or restore it to
+// its original path (rename path), so the move can always be retried.
 func moveToTempThenSwap(file, newpath string, folderMode, fileMode fs.FileMode) error {
 	if folderMode == 0 {
 		folderMode = 0o777
 	}
 
-	targetDir := filepath.Dir(newpath)
-	if !CheckFileExist(targetDir) {
-		if err := os.MkdirAll(targetDir, folderMode); err != nil {
-			return err
-		}
-
-		// Ensure permissions are set (MkdirAll may apply umask)
-		os.Chmod(targetDir, folderMode)
+	if err := mkdirAllMode(filepath.Dir(newpath), folderMode); err != nil {
+		return err
 	}
 
-	tmppath := newpath + tmpMoveSuffix
-	// Remove a stale staging file from a previously interrupted move so the
-	// retry isn't blocked.
-	if CheckFileExist(tmppath) {
-		if _, err := SecureRemove(tmppath); err != nil {
-			return err
-		}
-	}
+	tmppath := uniqueTmpPath(newpath)
 
-	// Fast path: same-filesystem rename is atomic and instant.
-	renamed := os.Rename(file, tmppath) == nil
-	if !renamed {
+	// Fast path: same-filesystem rename is atomic and instant. Only a
+	// cross-device error justifies the copy fallback - any other rename
+	// failure (permissions, missing source, ...) would fail the same way or
+	// leave a duplicate behind.
+	renamed := false
+	if err := os.Rename(file, tmppath); err == nil {
+		renamed = true
+	} else if !isCrossDevice(err) {
+		return err
+	} else if err := copyFileVerified(file, tmppath); err != nil {
 		// Cross-device: stage via a verified buffered copy. The source stays
 		// untouched until the swap has succeeded.
-		if err := copyFileVerified(file, tmppath); err != nil {
-			return err
-		}
+		return err
 	}
 
 	if fileMode != 0 {
-		os.Chmod(tmppath, fileMode)
+		chmodLogged(tmppath, fileMode)
 	}
 
 	if err := swapInto(tmppath, newpath); err != nil {
@@ -191,22 +279,49 @@ func swapInto(tmppath, newpath string) error {
 }
 
 // MoveFolder moves an entire folder from src to dst (full target path including folder name).
-// It first attempts os.Rename (fast, same-drive). If that fails (cross-drive),
-// it falls back to copying all files individually and removing the source.
-func MoveFolder(src, dst string) error {
+// It first attempts os.Rename (fast, same-drive). If that fails (cross-drive,
+// or dst already exists), it falls back to copying every regular file to a
+// temp name next to its destination and renaming it into place once the copy
+// is verified, then removes the source. Pre-existing destination files are
+// only ever replaced by a complete copy, never truncated or removed on
+// failure. Symlinks and other non-regular entries are skipped with a warning;
+// if anything was skipped or failed the source is kept.
+// opts.ChmodFolder/opts.Chmod are applied to created directories and files.
+func MoveFolder(src, dst string, opts MoveFileOptions) error {
 	if !CheckFileExist(src) {
 		return logger.ErrNotFound
 	}
 
-	srcAbs, _ := filepath.Abs(src)
+	srcAbs, err := filepath.Abs(src)
+	if err != nil {
+		return err
+	}
 
-	dstAbs, _ := filepath.Abs(dst)
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
+		return err
+	}
+
 	if srcAbs == dstAbs {
 		return nil
 	}
 
+	// Copying a folder into its own subtree would recurse into the copy and
+	// RemoveAll(src) would then delete the copy too.
+	if rel, err := filepath.Rel(srcAbs, dstAbs); err == nil && rel != ".." &&
+		!strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return errDstInsideSrc
+	}
+
+	folderMode := parseFileMode(opts.ChmodFolder)
+	fileMode := parseFileMode(opts.Chmod)
+
+	if err := mkdirAllMode(filepath.Dir(dstAbs), folderMode); err != nil {
+		return err
+	}
+
 	// Try rename first (same drive, fast)
-	if err := os.Rename(src, dst); err == nil {
+	if err := os.Rename(srcAbs, dstAbs); err == nil {
 		logger.Logtype("info", 1).
 			Str(logger.StrFile, src).
 			Str(strto, dst).
@@ -215,31 +330,44 @@ func MoveFolder(src, dst string) error {
 		return nil
 	}
 
-	// Cross-drive fallback: walk, copy each file, then remove source
-	if err := os.MkdirAll(dst, 0o777); err != nil {
-		return err
-	}
+	// Fallback: walk, copy each file, then remove source
+	var skipped int
 
-	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(srcAbs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(src, path)
+		relPath, relErr := filepath.Rel(srcAbs, path)
 		if relErr != nil {
 			return relErr
 		}
 
-		targetPath := filepath.Join(dst, relPath)
+		targetPath := filepath.Join(dstAbs, relPath)
 
 		if d.IsDir() {
-			return os.MkdirAll(targetPath, 0o777)
+			return mkdirAllMode(targetPath, folderMode)
 		}
 
-		return copyFile(path, targetPath, 0o777)
+		if !d.Type().IsRegular() {
+			skipped++
+
+			logger.Logtype("warn", 1).
+				Str(logger.StrFile, path).
+				Str("type", d.Type().String()).
+				Msg("Folder move: skipping symlink/non-regular file")
+
+			return nil
+		}
+
+		return copyFileAtomic(path, targetPath, fileMode)
 	})
 	if err != nil {
 		return err
+	}
+
+	if skipped > 0 {
+		return fmt.Errorf("%w: %d entries skipped", errFolderIncomplete, skipped)
 	}
 
 	logger.Logtype("info", 1).
@@ -247,7 +375,7 @@ func MoveFolder(src, dst string) error {
 		Str(strto, dst).
 		Msg("Folder moved (cross-drive)")
 
-	return os.RemoveAll(src)
+	return os.RemoveAll(srcAbs)
 }
 
 // checkExtensionPermissions validates if a file extension is allowed for processing
@@ -281,15 +409,43 @@ func checkExtensionPermissions(
 // Ensures the filename includes the original file extension (case-insensitive check).
 func determineNewFilename(file, newname, ext string, oknorename bool) string {
 	if newname == "" || oknorename {
-		return filepath.Base(file)
+		return capFileName(filepath.Base(file))
 	}
 
 	// Check if extension already present (case-insensitive)
 	if logger.HasSuffixI(newname, ext) {
-		return newname
+		return capFileName(newname)
 	}
 
-	return newname + ext
+	return capFileName(newname + ext)
+}
+
+// maxFileNameBytes keeps a file name, plus the staging suffix MoveFile adds
+// while copying (tmpMoveSuffix + "-<pid>-<random>"), below the 255-byte name
+// limit of common filesystems. Very long track titles otherwise fail with
+// "file name too long".
+const maxFileNameBytes = 200
+
+// capFileName shortens name to maxFileNameBytes, cutting the part before the
+// extension at a UTF-8 boundary and keeping the extension.
+func capFileName(name string) string {
+	if len(name) <= maxFileNameBytes {
+		return name
+	}
+
+	ext := filepath.Ext(name)
+	if len(ext) > 16 {
+		ext = ""
+	}
+
+	stem := name[:len(name)-len(ext)]
+
+	n := maxFileNameBytes - len(ext)
+	for n > 0 && !utf8.RuneStart(stem[n]) {
+		n--
+	}
+
+	return strings.TrimRight(stem[:n], " .-_") + ext
 }
 
 // parseFileMode parses an octal permission string ("755" or "0755").
@@ -353,27 +509,27 @@ func CheckExtensionsType(
 }
 
 // RemoveFile removes the file at the given path if it exists.
-// It checks if the file exists first before removing.
-// Returns a bool indicating if the file was removed, and an error if one occurred.
+// It uses Lstat, so a dangling symlink is removed too.
+// Returns (true, nil) when the file was removed and (false, nil) when it did
+// not exist - callers whose goal is "file gone" should treat both as success.
 func RemoveFile(file string) (bool, error) {
-	if !CheckFileExist(file) {
-		return false, nil
+	if _, err := os.Lstat(file); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+
+		return false, err
 	}
 
 	return SecureRemove(file)
 }
 
-// SecureRemove attempts to remove the file at the given path. If the file cannot be removed due to a permissions error,
-// it first attempts to change the file permissions to 0777 and then remove the file. If the file is successfully removed,
+// SecureRemove attempts to remove the file at the given path. If the file is successfully removed,
 // it logs an informational message. If the file cannot be removed, it logs an error message and returns the error.
+// Unlink permission lives on the parent directory, so a permission error is
+// returned as-is rather than loosening the file's own mode.
 func SecureRemove(file string) (bool, error) {
 	err := os.Remove(file)
-	if errors.Is(err, os.ErrPermission) {
-		os.Chmod(file, 0o777)
-
-		err = os.Remove(file)
-	}
-
 	if err == nil {
 		logger.Logtype("info", 1).
 			Str(logger.StrFile, file).
@@ -399,71 +555,65 @@ func SecureRemove(file string) (bool, error) {
 //
 // Returns:
 //   - bool: True if all requested checks pass, false otherwise
+//
+// Any Stat error (not only "not exist" - also permission denied, a non-directory
+// path component, symlink loops) counts as a failed check, so callers never go
+// on to operate on a path they cannot actually access.
 func checkFile(fpath string, checkexists, checkregular bool) bool {
 	sfi, err := os.Stat(fpath)
-	if checkexists {
-		return !errors.Is(err, os.ErrNotExist)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			logger.Logtype("warn", 2).
+				Str(logger.StrFile, fpath).
+				Err(err).
+				Msg("file check failed")
+		}
+
+		return false
 	}
 
 	if checkregular {
-		if err != nil {
-			return false
-		}
-
 		return sfi.Mode().IsRegular()
 	}
 
-	return false
+	return checkexists
 }
 
 // CheckFileExist checks if the file exists at the given file path.
-// It returns true if the file exists, and false if there is an error
-// indicating the file does not exist.
+// It returns true only if the path can be stat'ed successfully.
 func CheckFileExist(fpath string) bool {
 	return checkFile(fpath, true, false)
 }
 
-// copyFile copies the contents of the file named src to the file named
-// dst. The file will be created if it does not already exist. If the
-// destination file exists, all it's contents will be replaced by the
-// contents of the source file. This function handles creating any missing
-// directories in the destination path and setting permissions.
-func copyFile(src, dst string, chmodfolder fs.FileMode) error {
-	srcAbs, err := filepath.Abs(src)
-	if err != nil {
+// copyFileAtomic copies src to a unique temp file next to dst and renames it
+// into place only after the copy is verified. A pre-existing dst is therefore
+// either replaced by the complete new content or left untouched; on failure
+// only the temp file this call created is removed. dst's directory must exist.
+func copyFileAtomic(src, dst string, fileMode fs.FileMode) error {
+	tmp := uniqueTmpPath(dst)
+	if err := copyFileVerified(src, tmp); err != nil {
 		return err
 	}
 
-	dstAbs, err := filepath.Abs(dst)
-	if err != nil {
+	if fileMode != 0 {
+		chmodLogged(tmp, fileMode)
+	}
+
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 
-	if srcAbs == dstAbs {
-		return errSameFile
-	}
-
-	if !checkFile(filepath.Dir(dst), true, false) {
-		if chmodfolder == 0 {
-			chmodfolder = 0o777
-		}
-
-		if err = os.MkdirAll(filepath.Dir(dst), chmodfolder); err != nil {
-			return err
-		}
-
-		// Ensure permissions are set (MkdirAll may apply umask)
-		os.Chmod(filepath.Dir(dst), chmodfolder)
-	}
-
-	return copyFileVerified(srcAbs, dstAbs)
+	return nil
 }
 
 // copyFileVerified copies src to dst with the configured buffer size, checks
 // the available disk space first, verifies the copied byte count against the
 // source size, fsyncs, and preserves the source modification time. On any
 // failure the partial destination file is removed so a retry is never blocked
-// by leftovers. The destination directory must already exist.
+// by leftovers. dst must not exist yet (it is created exclusively, so an
+// existing file is never truncated or removed). The destination directory
+// must already exist.
 func copyFileVerified(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
@@ -490,7 +640,7 @@ func copyFileVerified(src, dst string) error {
 		)
 	}
 
-	dstFile, err := os.Create(dst)
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return err
 	}

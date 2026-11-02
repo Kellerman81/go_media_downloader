@@ -18,9 +18,9 @@ func getAdminTableColumns(tableName string) []ColumnInfo {
 	// PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
 
 	// Try to get column information using string queries
-	nameQuery := fmt.Sprintf("SELECT name, type FROM pragma_table_info('%s')", tableName)
+	const nameQuery = "SELECT name, type FROM pragma_table_info(?)"
 
-	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery)
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, &tableName)
 
 	columnsIn := strings.Split(tableDefault.DefaultColumns, ",")
 
@@ -73,8 +73,8 @@ func getAdminTableColumns(tableName string) []ColumnInfo {
 // getAdminFormColumns returns only the actual table columns (excluding joined columns) for forms.
 func getAdminFormColumns(tableName string) []ColumnInfo {
 	// For forms, we only want the actual table columns, not joined columns
-	nameQuery := fmt.Sprintf("SELECT name, type FROM pragma_table_info('%s')", tableName)
-	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery)
+	const nameQuery = "SELECT name, type FROM pragma_table_info(?)"
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, &tableName)
 
 	// Get the struct type for reflection
 	tableDefault := database.GetTableDefaults(tableName)
@@ -518,8 +518,8 @@ func getDescriptiveFieldName(fieldName string) string {
 
 // getColumnTypes returns a map of column names to their SQLite types for a table.
 func getColumnTypes(tableName string) map[string]string {
-	nameQuery := fmt.Sprintf("SELECT name, type FROM pragma_table_info('%s')", tableName)
-	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery)
+	const nameQuery = "SELECT name, type FROM pragma_table_info(?)"
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, &tableName)
 
 	columnTypes := make(map[string]string, len(columnNames))
 	for _, col := range columnNames {
@@ -585,16 +585,64 @@ func convertValueForColumn(val any, colName string, columnTypes map[string]strin
 		return float64(0)
 	}
 
+	// An empty date/datetime is stored as NULL; "" would not scan back into a time.
+	if strings.TrimSpace(strVal) == "" &&
+		(strings.Contains(colType, "DATE") || strings.Contains(colType, "TIME")) {
+		return nil
+	}
+
 	return val
 }
 
+// adminTableColumnTypes validates tableName against the browsable tables and
+// returns its column types. Table and column names are concatenated into SQL
+// by InsertArray/UpdateArray/DeleteRow, so both must come from the schema.
+func adminTableColumnTypes(tableName string) (map[string]string, error) {
+	if tableName == "" {
+		return nil, errors.New("table name is required")
+	}
+
+	if database.GetTableDefaults(tableName).Table == "" {
+		return nil, fmt.Errorf("table %q is not editable", tableName)
+	}
+
+	columnTypes := getColumnTypes(tableName)
+	if len(columnTypes) == 0 {
+		return nil, fmt.Errorf("table %q has no columns", tableName)
+	}
+
+	return columnTypes, nil
+}
+
+// unknownAdminColumn returns the first key of data that is not a column of
+// the table (ignoring the always-skipped bookkeeping keys).
+func unknownAdminColumn(data map[string]any, columnTypes map[string]string) string {
+	for col := range data {
+		if col == "csrf_token" {
+			continue
+		}
+
+		if _, ok := columnTypes[strings.ToLower(col)]; !ok {
+			return col
+		}
+	}
+
+	return ""
+}
+
 func insertAdminRecord(tableName string, data map[string]any) error {
-	if tableName == "" || len(data) == 0 {
+	if len(data) == 0 {
 		return errors.New("table name and data are required")
 	}
 
-	// Get column types for the table
-	columnTypes := getColumnTypes(tableName)
+	columnTypes, err := adminTableColumnTypes(tableName)
+	if err != nil {
+		return err
+	}
+
+	if col := unknownAdminColumn(data, columnTypes); col != "" {
+		return fmt.Errorf("unknown column %q for table %s", col, tableName)
+	}
 
 	var (
 		columns []string
@@ -618,14 +666,23 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 	}
 
 	// Use project's database insert method
-	_, err := database.InsertArray(tableName, columns, values...)
+	_, err = database.InsertArray(tableName, columns, values...)
 
 	return err
 }
 
 func updateAdminRecord(tableName string, id int, data map[string]any) error {
-	if tableName == "" || len(data) == 0 {
+	if len(data) == 0 {
 		return errors.New("table name and data are required")
+	}
+
+	columnTypes, err := adminTableColumnTypes(tableName)
+	if err != nil {
+		return err
+	}
+
+	if col := unknownAdminColumn(data, columnTypes); col != "" {
+		return fmt.Errorf("unknown column %q for table %s", col, tableName)
 	}
 
 	// Check if record exists by ID
@@ -635,9 +692,6 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	if count == 0 {
 		return errors.New("record not found")
 	}
-
-	// Get column types for the table
-	columnTypes := getColumnTypes(tableName)
 
 	// Build update data
 	var (
@@ -663,14 +717,48 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	whereClause := "id = ?"
 
 	// Use project's database update method
-	_, err := database.UpdateArray(tableName, columns, whereClause, values...)
+	_, err = database.UpdateArray(tableName, columns, whereClause, values...)
 
 	return err
 }
 
+// adminRecordReferences lists child rows that still reference tableName.id.
+// foreign_keys is not enforced on data.db and CleanupOrphans later deletes
+// rows whose parent is gone, so deleting a referenced parent here would
+// silently cascade into its children.
+func adminRecordReferences(tableName string, id int) []string {
+	var refs []string
+
+	for _, child := range database.GetAllTableNames() {
+		fks := database.GetrowsN[database.DbstaticThreeString](
+			false,
+			0,
+			`SELECT "table", "from", coalesce("to",'id') FROM pragma_foreign_key_list(?) WHERE seq = 0`,
+			&child,
+		)
+
+		for idx := range fks {
+			if !strings.EqualFold(fks[idx].Str1, tableName) || !strings.EqualFold(fks[idx].Str3, "id") {
+				continue
+			}
+
+			n := database.Getdatarow[int](
+				false,
+				fmt.Sprintf(`SELECT count(*) FROM (SELECT 1 FROM "%s" WHERE "%s" = ? LIMIT 1000)`, child, fks[idx].Str2),
+				id,
+			)
+			if n > 0 {
+				refs = append(refs, fmt.Sprintf("%s.%s (%d)", child, fks[idx].Str2, n))
+			}
+		}
+	}
+
+	return refs
+}
+
 func deleteAdminRecord(tableName string, id int) error {
-	if tableName == "" {
-		return errors.New("table name is required")
+	if _, err := adminTableColumnTypes(tableName); err != nil {
+		return err
 	}
 
 	// Check if record exists by ID
@@ -679,6 +767,13 @@ func deleteAdminRecord(tableName string, id int) error {
 
 	if count == 0 {
 		return errors.New("record not found")
+	}
+
+	if refs := adminRecordReferences(tableName, id); len(refs) > 0 {
+		return fmt.Errorf(
+			"record is still referenced by %s - delete or reassign those rows first",
+			strings.Join(refs, ", "),
+		)
 	}
 
 	// Use project's database delete method

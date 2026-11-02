@@ -15,7 +15,6 @@ type LimiterMetrics struct {
 	TotalRequests   int64
 	AllowedRequests int64
 	DeniedRequests  int64
-	Violations      int64
 
 	// Performance metrics
 	AvgResponseTime time.Duration
@@ -30,9 +29,7 @@ type LimiterMetrics struct {
 	WindowUtilization float64
 	CleanupOperations int64
 
-	// Health metrics
-	LastViolationTime time.Time
-	UptimeStart       time.Time
+	UptimeStart time.Time
 }
 
 const (
@@ -40,116 +37,27 @@ const (
 	maxResponseSamples = 1000 // Maximum number of response time samples to keep
 )
 
-// StatusCallback is called when limiter status changes.
-type StatusCallback func(limiter *Limiter, status LimiterStatus)
-
-// AlertCallback is called when alerts are triggered.
-type AlertCallback func(limiter *Limiter, alert Alert)
-
-// MetricsCallback is called periodically with current metrics.
-type MetricsCallback func(limiter *Limiter, metrics LimiterMetrics)
-
-// LimiterStatus represents the current status of the limiter.
-type LimiterStatus struct {
-	Healthy         bool
-	Active          int64
-	Utilization     float64
-	AvgResponseTime time.Duration
-	LastViolation   time.Time
-}
-
-// Alert represents an alert condition.
-type Alert struct {
-	Type      AlertType
-	Message   string
-	Timestamp time.Time
-	Severity  AlertSeverity
-	Metrics   LimiterMetrics
-}
-
-// AlertType represents different types of alerts.
-type AlertType int
-
-const (
-	AlertViolation AlertType = iota
-	AlertHighUtilization
-	AlertHighResponseTime
-	AlertUnhealthy
-	AlertRecovered
-)
-
-// AlertSeverity represents alert severity levels.
-type AlertSeverity int
-
-const (
-	SeverityInfo AlertSeverity = iota
-	SeverityWarning
-	SeverityError
-	SeverityCritical
-)
-
-// String returns string representation of AlertType.
-func (a AlertType) String() string {
-	switch a {
-	case AlertViolation:
-		return "VIOLATION"
-	case AlertHighUtilization:
-		return "HIGH_UTILIZATION"
-	case AlertHighResponseTime:
-		return "HIGH_RESPONSE_TIME"
-	case AlertUnhealthy:
-		return "UNHEALTHY"
-	case AlertRecovered:
-		return "RECOVERED"
-	default:
-		return "UNKNOWN"
-	}
-}
-
-// String returns string representation of AlertSeverity.
-func (s AlertSeverity) String() string {
-	switch s {
-	case SeverityInfo:
-		return "INFO"
-	case SeverityWarning:
-		return "WARNING"
-	case SeverityError:
-		return "ERROR"
-	case SeverityCritical:
-		return "CRITICAL"
-	default:
-		return "UNKNOWN"
-	}
-}
-
 // Limiter provides a high-performance sliding window rate limiter
 // with comprehensive metrics, observability, and advanced features.
 type Limiter struct {
-	// Core rate limiting with segmented locking
-	mu          sync.RWMutex // Main lock for structural changes
-	callbacksMu sync.RWMutex // Separate lock for callbacks
-	interval    time.Duration
-	max         int64
+	mu       sync.RWMutex
+	interval time.Duration
+	max      int64
 
-	// True sliding window implementation
+	// requests holds the timestamps of admitted requests in ascending order,
+	// which lets trimLocked find the window cutoff with a binary search.
 	requests []time.Time
 
-	// Reservation system for advanced use cases
 	reservations map[string]time.Time // client ID -> reservation time
-	nextSlot     time.Time            // when the next slot becomes available
+	// nextSlot is an externally imposed block (e.g. a server's Retry-After),
+	// honoured by Allow/Check/Reserve until it passes.
+	nextSlot time.Time
 
-	// Performance optimizations
-	lastCleanup      time.Time // Last time cleanup was performed
-	cleanupInterval  time.Duration
-	capacityHint     int  // Hint for initial slice capacity
-	cleanupThreshold int  // Number of requests before forcing cleanup
-	fastPath         bool // Use optimized fast path for common cases
+	capacityHint int
 
-	// Comprehensive metrics (atomic counters)
 	totalRequests   atomic.Int64
 	allowedRequests atomic.Int64
 	deniedRequests  atomic.Int64
-	violations      atomic.Int64
 	cleanupOps      atomic.Int64
 	maxConcurrent   atomic.Int64
 	currentActive   atomic.Int64
@@ -160,10 +68,7 @@ type Limiter struct {
 	maxResponseTime   atomic.Int64 // nanoseconds
 	totalResponseTime atomic.Int64 // nanoseconds for average calculation
 
-	// Health and observability
-	updateStart   time.Time
-	lastViolation time.Time
-	healthy       int32 // atomic boolean
+	updateStart time.Time
 }
 
 // NewLimiter creates a new improved sliding window rate limiter
@@ -182,96 +87,40 @@ func NewLimiter(interval time.Duration, maxRequests int64) *Limiter {
 	capacity := max(int(maxRequests), 10)
 
 	limiter := &Limiter{
-		interval:         interval,
-		max:              maxRequests,
-		requests:         make([]time.Time, 0, capacity*2),
-		reservations:     make(map[string]time.Time),
-		cleanupInterval:  interval / 4, // Cleanup every quarter interval
-		capacityHint:     capacity,
-		cleanupThreshold: capacity * 2,       // Force cleanup when requests exceed 2x capacity
-		fastPath:         maxRequests <= 100, // Use fast path for small limits
-		responseTimes:    make([]time.Duration, 0, maxResponseSamples),
-		updateStart:      time.Now(),
-		healthy:          1, // Start healthy
-		lastCleanup:      time.Now(),
+		interval:      interval,
+		max:           maxRequests,
+		requests:      make([]time.Time, 0, capacity*2),
+		reservations:  make(map[string]time.Time),
+		capacityHint:  capacity,
+		responseTimes: make([]time.Duration, 0, maxResponseSamples),
+		updateStart:   time.Now(),
 	}
 
 	return limiter
 }
 
-// cleanupOldRequests removes requests older than the window with performance optimizations.
-func (l *Limiter) cleanupOldRequests(now time.Time) {
-	// Advanced cleanup logic based on performance characteristics
-	forceCleanup := len(l.requests) >= l.cleanupThreshold
-	timeBasedCleanup := now.Sub(l.lastCleanup) >= l.cleanupInterval
-
-	// Only cleanup if necessary
-	if !forceCleanup && !timeBasedCleanup {
-		return
-	}
-
+// trimLocked drops requests (and reservations) that have left the window.
+// It runs on every state-changing call so admission decisions are always
+// made on the fresh count; requests is time-ordered, so finding the cutoff
+// is a binary search. Caller must hold l.mu for writing.
+func (l *Limiter) trimLocked(now time.Time) {
 	cutoff := now.Add(-l.interval)
 
-	// Fast path optimization for small request counts
-	if l.fastPath && len(l.requests) <= int(l.max)*2 {
-		// Simple linear scan for small arrays (better cache performance)
-		validStart := 0
-		for i, reqTime := range l.requests {
-			if reqTime.After(cutoff) {
-				validStart = i
-				break
-			}
-
-			validStart = i + 1
-		}
-
-		// Optimized slice operation
-		if validStart > 0 {
-			if validStart < len(l.requests) {
-				// Use copy for better performance
-				n := copy(l.requests, l.requests[validStart:])
-
-				l.requests = l.requests[:n]
-			} else {
-				// All requests are old - reset slice
-				l.requests = l.requests[:0]
-			}
-		}
-	} else {
-		// Binary search optimization for large arrays
-		validStart := l.binarySearchCleanup(cutoff)
-		if validStart > 0 {
-			if validStart < len(l.requests) {
-				n := copy(l.requests, l.requests[validStart:])
-
-				l.requests = l.requests[:n]
-			} else {
-				l.requests = l.requests[:0]
-			}
-		}
+	if validStart := l.firstFresh(cutoff); validStart > 0 {
+		n := copy(l.requests, l.requests[validStart:])
+		l.requests = l.requests[:n]
+		l.cleanupOps.Add(1)
 	}
 
-	// Clean up old reservations efficiently
-	if len(l.reservations) > 0 {
-		for id, resTime := range l.reservations {
-			if resTime.Before(cutoff) {
-				delete(l.reservations, id)
-			}
+	for id, resTime := range l.reservations {
+		if !resTime.After(cutoff) {
+			delete(l.reservations, id)
 		}
-	}
-
-	// Update cleanup timestamp and metrics
-	l.lastCleanup = now
-	l.cleanupOps.Add(1)
-
-	// Trigger GC hint if we freed significant memory
-	if forceCleanup && len(l.requests) < l.cleanupThreshold/4 {
-		// runtime.GC()
 	}
 }
 
-// binarySearchCleanup performs binary search to find first valid request.
-func (l *Limiter) binarySearchCleanup(cutoff time.Time) int {
+// firstFresh returns the index of the first request newer than cutoff.
+func (l *Limiter) firstFresh(cutoff time.Time) int {
 	left, right := 0, len(l.requests)
 	for left < right {
 		mid := (left + right) / 2
@@ -285,17 +134,42 @@ func (l *Limiter) binarySearchCleanup(cutoff time.Time) int {
 	return left
 }
 
+// waitForSlot returns how long until a new request fits, given that
+// requests[start:] are inside the window and `extra` further slots are
+// held (reservations). Zero means a slot is free now.
+func (l *Limiter) waitForSlot(now time.Time, start, extra int) time.Duration {
+	if now.Before(l.nextSlot) {
+		return l.nextSlot.Sub(now)
+	}
+
+	used := int64(len(l.requests)-start) + int64(extra)
+	if used < l.max {
+		return 0
+	}
+
+	// The (used-max+1)-th oldest in-window request has to expire first.
+	idx := start + int(used-l.max)
+	if idx >= len(l.requests) {
+		// Only reservations hold the remaining capacity.
+		return l.interval
+	}
+
+	if wait := l.requests[idx].Add(l.interval).Sub(now); wait > 0 {
+		return wait
+	}
+
+	return time.Nanosecond
+}
+
 // Allow attempts to allow a request immediately with comprehensive metrics tracking.
 func (l *Limiter) Allow() (bool, time.Duration) {
 	start := time.Now()
 
 	l.totalRequests.Add(1)
 
-	// Update current active counter
 	active := l.currentActive.Add(1)
 	defer l.currentActive.Add(-1)
 
-	// Update max concurrent if necessary (lock-free)
 	for {
 		maxCurrent := l.maxConcurrent.Load()
 		if active <= maxCurrent ||
@@ -304,64 +178,19 @@ func (l *Limiter) Allow() (bool, time.Duration) {
 		}
 	}
 
-	// Fast path optimization for small limits
-	if l.fastPath {
-		// Quick read-only check for obviously under-limit cases
-		l.mu.RLock()
-
-		currentCount := int64(len(l.requests))
-		l.mu.RUnlock()
-
-		// If we're clearly under half the limit, try fast path
-		if currentCount < l.max/2 {
-			// Use full lock for actual modification
-			l.mu.Lock()
-
-			now := time.Now()
-			// Double-check under full lock
-			if int64(len(l.requests)) < l.max {
-				l.requests = append(l.requests, now)
-				l.allowedRequests.Add(1)
-				l.recordResponseTime(start, now)
-				l.mu.Unlock()
-
-				return true, 0
-			}
-
-			l.mu.Unlock()
-		}
-	}
-
-	// Full path with cleanup and comprehensive checking
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	now := time.Now()
-	l.cleanupOldRequests(now)
+	l.trimLocked(now)
 
-	// Check if we have capacity
-	if int64(len(l.requests)) < l.max {
-		l.requests = append(l.requests, now)
-		l.allowedRequests.Add(1)
+	if wait := l.waitForSlot(now, 0, 0); wait > 0 {
+		l.deniedRequests.Add(1)
 		l.recordResponseTime(start, now)
 
-		return true, 0
+		return false, wait
 	}
 
-	// Calculate when next slot becomes available
-	if len(l.requests) > 0 {
-		oldest := l.requests[0]
-
-		waitTime := oldest.Add(l.interval).Sub(now)
-		if waitTime > 0 {
-			l.deniedRequests.Add(1)
-			l.recordResponseTime(start, now)
-
-			return false, waitTime
-		}
-	}
-
-	// If we get here, cleanup should have made space
 	l.requests = append(l.requests, now)
 	l.allowedRequests.Add(1)
 	l.recordResponseTime(start, now)
@@ -376,39 +205,9 @@ func (l *Limiter) Check() (bool, time.Duration) {
 
 	now := time.Now()
 
-	// Use read-only check without cleanup for performance
-	cutoff := now.Add(-l.interval)
+	wait := l.waitForSlot(now, l.firstFresh(now.Add(-l.interval)), 0)
 
-	activeRequests := int64(0)
-	for i := range l.requests {
-		if l.requests[i].After(cutoff) {
-			activeRequests++
-		}
-	}
-
-	// Check if we have capacity
-	if activeRequests < l.max {
-		return true, 0
-	}
-
-	// Calculate when next slot becomes available
-	if len(l.requests) > 0 {
-		// Find oldest active request
-		for i := range l.requests {
-			if !l.requests[i].After(cutoff) {
-				continue
-			}
-
-			waitTime := l.requests[i].Add(l.interval).Sub(now)
-			if waitTime > 0 {
-				return false, waitTime
-			}
-
-			break
-		}
-	}
-
-	return true, 0
+	return wait == 0, wait
 }
 
 // Reserve attempts to reserve a slot for future use with enhanced tracking.
@@ -417,28 +216,19 @@ func (l *Limiter) Reserve(id string) (bool, time.Duration) {
 	defer l.mu.Unlock()
 
 	now := time.Now()
-	l.cleanupOldRequests(now)
+	l.trimLocked(now)
 
-	// Check if already reserved
 	if _, exists := l.reservations[id]; exists {
 		return true, 0
 	}
 
-	// Check if we have capacity (including reservations)
-	totalUsed := int64(len(l.requests) + len(l.reservations))
-	if totalUsed < l.max {
-		l.reservations[id] = now
-		return true, 0
+	if wait := l.waitForSlot(now, 0, len(l.reservations)); wait > 0 {
+		return false, wait
 	}
 
-	// Calculate when next slot becomes available
-	if len(l.requests) > 0 {
-		oldest := l.requests[0]
-		waitTime := oldest.Add(l.interval).Sub(now)
-		return false, waitTime
-	}
+	l.reservations[id] = now
 
-	return false, l.interval
+	return true, 0
 }
 
 // UseReservation converts a reservation into an actual request with metrics tracking.
@@ -486,7 +276,7 @@ func (l *Limiter) AllowForce() bool {
 	defer l.mu.Unlock()
 
 	now := time.Now()
-	l.cleanupOldRequests(now)
+	l.trimLocked(now)
 
 	l.requests = append(l.requests, now)
 
@@ -726,7 +516,6 @@ func (l *Limiter) GetMetrics() LimiterMetrics {
 		TotalRequests:     l.totalRequests.Load(),
 		AllowedRequests:   l.allowedRequests.Load(),
 		DeniedRequests:    l.deniedRequests.Load(),
-		Violations:        l.violations.Load(),
 		AvgResponseTime:   avgResponseTime,
 		MaxResponseTime:   time.Duration(l.maxResponseTime.Load()),
 		P99ResponseTime:   p99ResponseTime,
@@ -734,32 +523,8 @@ func (l *Limiter) GetMetrics() LimiterMetrics {
 		CurrentActive:     l.currentActive.Load(),
 		WindowUtilization: utilization,
 		CleanupOperations: l.cleanupOps.Load(),
-		LastViolationTime: l.lastViolation,
 		UptimeStart:       l.updateStart,
 	}
-}
-
-// HealthCheck performs a comprehensive health check of the rate limiter.
-func (l *Limiter) HealthCheck() bool {
-	// Check if we're healthy
-	if atomic.LoadInt32(&l.healthy) == 0 {
-		return false
-	}
-
-	// Check for recent violations
-	if !l.lastViolation.IsZero() && time.Since(l.lastViolation) < time.Minute {
-		return false
-	}
-
-	// Check if metrics look reasonable
-	metrics := l.GetMetrics()
-	if metrics.Violations > 0 {
-		// Mark as unhealthy if we have violations
-		atomic.StoreInt32(&l.healthy, 0)
-		return false
-	}
-
-	return true
 }
 
 // ResetMetrics resets all metrics counters.
@@ -767,7 +532,6 @@ func (l *Limiter) ResetMetrics() {
 	l.totalRequests.Store(0)
 	l.allowedRequests.Store(0)
 	l.deniedRequests.Store(0)
-	l.violations.Store(0)
 	l.cleanupOps.Store(0)
 	l.maxConcurrent.Store(0)
 	l.maxResponseTime.Store(0)
@@ -778,18 +542,18 @@ func (l *Limiter) ResetMetrics() {
 	l.responseTimes = l.responseTimes[:0]
 	l.responseTimesIdx = 0
 	l.updateStart = time.Now()
-	l.lastViolation = time.Time{}
 	l.mu.Unlock()
-
-	atomic.StoreInt32(&l.healthy, 1)
 }
 
-// WaitTill sets the next available slot time to the given time.
+// WaitTill blocks Allow, Check and Reserve until waitTime, e.g. to honour a
+// server's Retry-After. An earlier time than an existing block is ignored.
 func (l *Limiter) WaitTill(waitTime time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.nextSlot = waitTime
+	if waitTime.After(l.nextSlot) {
+		l.nextSlot = waitTime
+	}
 }
 
 // GetCapacityHint returns the current capacity hint for performance optimization.
@@ -807,26 +571,6 @@ func (l *Limiter) SetCapacityHint(hint int) {
 	l.capacityHint = hint
 }
 
-// getCurrentStatus returns the current status of the limiter.
-func (l *Limiter) getCurrentStatus() LimiterStatus {
-	metrics := l.GetMetrics()
-
-	return LimiterStatus{
-		Healthy:         atomic.LoadInt32(&l.healthy) == 1,
-		Active:          metrics.CurrentActive,
-		Utilization:     metrics.WindowUtilization,
-		AvgResponseTime: metrics.AvgResponseTime,
-		LastViolation:   l.lastViolation,
-	}
-}
-
-// GetStatus returns the current status of the limiter.
-func (l *Limiter) GetStatus() LimiterStatus {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.getCurrentStatus()
-}
-
 // GetMetrics returns a snapshot of current limiter metrics.
 // This function provides observability into rate limiter performance.
 func GetMetrics(limiter any) LimiterMetrics {
@@ -836,16 +580,5 @@ func GetMetrics(limiter any) LimiterMetrics {
 	default:
 		// Return empty metrics for unsupported types
 		return LimiterMetrics{UptimeStart: time.Now()}
-	}
-}
-
-// HealthCheck performs a health check on the rate limiter.
-// Returns true if the limiter is functioning correctly.
-func HealthCheck(limiter any) bool {
-	switch l := limiter.(type) {
-	case *Limiter:
-		return l.HealthCheck()
-	default:
-		return false
 	}
 }

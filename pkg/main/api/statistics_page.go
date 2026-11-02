@@ -232,6 +232,23 @@ func webStatisticsPage(ctx *gin.Context) {
 			// Library details
 			html.H5(html.Class("mb-3 text-muted"), gomponents.Text("Library Breakdown")),
 			html.Div(append([]gomponents.Node{html.Class("row")}, detailCards...)...),
+			// Activity and library health
+			html.H5(html.Class("mb-3 mt-2 text-muted"), gomponents.Text("Activity & Library Health")),
+			statSectionCard(
+				"text-primary",
+				"/api/admin/statistics/activity",
+				"Loading download activity...",
+			),
+			statSectionCard(
+				"text-warning",
+				"/api/admin/statistics/backlog",
+				"Loading wanted backlog...",
+			),
+			statSectionCard(
+				"text-success",
+				"/api/admin/statistics/quality",
+				"Loading library quality...",
+			),
 			// Storage details
 			statSectionCard(
 				"text-info",
@@ -240,6 +257,11 @@ func webStatisticsPage(ctx *gin.Context) {
 			),
 			// Operational sections
 			html.H5(html.Class("mb-3 mt-2 text-muted"), gomponents.Text("System & Providers")),
+			statSectionCard(
+				"text-info",
+				"/api/admin/statistics/jobs",
+				"Loading job runtimes...",
+			),
 			statSectionCard(
 				"text-dark",
 				"/api/admin/statistics/workers",

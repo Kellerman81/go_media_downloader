@@ -14,6 +14,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite" // Needed for Migrate
@@ -120,9 +121,11 @@ func InitCfg() {
 			Msg("Database Initialization Failed")
 	}
 
-	// Populate slugs for existing records if DB version >= 23
+	// Populate missing or outdated slugs for existing records if DB version >= 23.
+	// Covers every slug table: book/album/audiobook rows used to be inserted
+	// without one, and slugs computed by an older StringToSlug no longer match.
 	if vers, _ := strconv.Atoi(DBVersion); vers >= 23 {
-		PopulateSlugs(false)
+		PopulateAllSlugs(false)
 	}
 
 	// Repair any empty-string/non-numeric values stored in numeric columns so
@@ -217,17 +220,6 @@ func InitDB(dbloglevel string) error {
 	return nil
 }
 
-// CloseImdb closes the dbImdb database connection if it is open.
-// It first invalidates any prepared statements to prevent resource leaks,
-// then closes the database connection and sets the global dbImdb variable to nil.
-// This function should be called during application shutdown or database reinitialization.
-func CloseImdb() {
-	if dbImdb != nil {
-		InvalidateImdbStmt()
-		dbImdb.Close()
-	}
-}
-
 // GetVersion returns the current database version string stored in the DBVersion global variable.
 // This version string is used for database migration tracking and compatibility checks.
 // The version follows semantic versioning patterns and is updated during database upgrades.
@@ -268,10 +260,14 @@ func InitImdbdb() error {
 		return err
 	}
 
-	dbImdb.SetMaxIdleConns(2)
+	// Same pool shape as dbData: no connection rotation. imdb.db runs in
+	// rollback-journal mode, so the WAL -shm SIGBUS can't happen here, but
+	// rotating buys nothing and would bite the moment the file goes WAL.
+	// ExchangeImdbDB closes and reopens the handle around the file swap.
+	dbImdb.SetMaxIdleConns(10)
 	dbImdb.SetMaxOpenConns(10)
-	dbImdb.SetConnMaxLifetime(5 * time.Minute) // Rotate connections
-	dbImdb.SetConnMaxIdleTime(2 * time.Minute) // Close idle
+	dbImdb.SetConnMaxLifetime(0)
+	dbImdb.SetConnMaxIdleTime(0)
 
 	return nil
 }
@@ -656,10 +652,6 @@ func SetVars() {
 		false,
 	)
 	globalCache.addStaticXStmt(
-		"select count() from movies where dbmovie_id = ? and listname = ?",
-		false,
-	)
-	globalCache.addStaticXStmt(
 		"select count() from movies where dbmovie_id in (select id from dbmovies where imdb_id = ?) and listname = ? COLLATE NOCASE",
 		false,
 	)
@@ -771,7 +763,7 @@ func SetVars() {
 	globalCache.addStaticXStmt("select rootpath from series where id = ?", false)
 	globalCache.addStaticXStmt("update series SET listname = ?, dbserie_id = ? where id = ?", false)
 	globalCache.addStaticXStmt(
-		"update series SET aliases=?, search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ?",
+		"update series SET aliases=?, search_specials=?, dont_search=?, dont_upgrade=? where dbserie_id = ? and listname = ? COLLATE NOCASE",
 		false,
 	)
 	globalCache.addStaticXStmt("update series set rootpath = ? where id = ?", false)
@@ -802,7 +794,7 @@ func SetVars() {
 		false,
 	)
 	globalCache.addStaticXStmt(
-		"select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?",
+		"select id,created_at,updated_at,blacklisted,quality_reached,quality_profile,missing,dont_upgrade,dont_search,ignore_runtime,dbserie_episode_id,serie_id,dbserie_id from serie_episodes where id = ?",
 		false,
 	)
 	globalCache.addStaticXStmt(
@@ -1073,14 +1065,6 @@ func SetVarsType(isType uint, media *config.MediaTypeConfig) {
 	case config.MediaTypeMovie:
 		{
 			for _, cfgplist := range media.ListsMap {
-				globalCache.addStaticXStmt(
-					logger.JoinStrings(
-						"select count() from movies where listname in (?",
-						cfgplist.IgnoreMapListsQu,
-						") and dbmovie_id = ?",
-					),
-					false,
-				)
 				globalCache.addStaticXStmt(
 					logger.JoinStrings(
 						"select count() from movies where listname in (?",
@@ -1390,21 +1374,14 @@ func PopulateSlugs(force bool) {
 }
 
 // populateTableSlugs updates slug fields for a specific table.
-// If force is true, updates all records; otherwise only those with empty slugs.
-// Uses GetrowsNuncached and ExecN for consistency with other database operations.
+// Without force only rows whose stored slug is empty or differs from the slug
+// StringToSlug now produces are rewritten; force rewrites every row.
 func populateTableSlugs(tableName, nameColumn string, force bool) {
-	var query string
-	if force {
-		query = fmt.Sprintf("SELECT %s as str, id as num FROM %s", nameColumn, tableName)
-	} else {
-		query = fmt.Sprintf(
-			"SELECT %s as str, id as num FROM %s WHERE slug = '' OR slug IS NULL",
-			nameColumn,
-			tableName,
-		)
-	}
-
-	records := GetrowsNuncached[DbstaticOneStringOneUInt](0, query, nil)
+	records := GetrowsN[syncops.DbstaticTwoStringOneInt](
+		false,
+		0,
+		fmt.Sprintf("SELECT COALESCE(%s, ''), COALESCE(slug, ''), id FROM %s", nameColumn, tableName),
+	)
 	if len(records) == 0 {
 		return
 	}
@@ -1417,8 +1394,8 @@ func populateTableSlugs(tableName, nameColumn string, force bool) {
 	// pay a full fsync each, which dominates on large tables.
 	_ = ExecNTx(func(exec func(querystring string, args ...any) error) error {
 		for idx := range records {
-			slug := logger.StringToSlugCached(records[idx].Str)
-			if slug == "" {
+			slug := logger.StringToSlugCached(records[idx].Str1)
+			if slug == "" || (!force && slug == records[idx].Str2) {
 				continue
 			}
 
@@ -1448,6 +1425,7 @@ func UpgradeIMDB() {
 	)
 	if err != nil {
 		logger.Logtype("error", 1).Err(err).Msg("migration failed")
+		return
 	}
 
 	err = m.Up()

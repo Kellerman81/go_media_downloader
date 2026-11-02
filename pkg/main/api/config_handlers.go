@@ -1,19 +1,20 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
 )
@@ -62,7 +63,15 @@ func HandleGeneralConfigUpdate(c *gin.Context) {
 		return
 	}
 
-	updatedConfig := parseGeneralConfig(c)
+	updatedConfig, err := parseGeneralConfig(c)
+	if err != nil {
+		c.String(
+			http.StatusOK,
+			renderAlert(fmt.Sprintf("Failed to update %s", err.Error()), "danger"),
+		)
+
+		return
+	}
 
 	// Validate the configuration
 	if err := validateGeneralConfig(&updatedConfig); err != nil {
@@ -84,6 +93,12 @@ func HandleGeneralConfigUpdate(c *gin.Context) {
 		return
 	}
 
+	// UseCronInsteadOfInterval is part of every schedule.
+	scheduler.Reload()
+
+	// Notification providers carry the general user agent.
+	providers.RegisterNotificationProviders()
+
 	c.String(http.StatusOK, renderAlert("Update successful", "success"))
 }
 
@@ -101,9 +116,16 @@ func HandleImdbConfigUpdate(c *gin.Context) {
 		SetStringArrayFromForm(&updatedConfig.Indexedlanguages, "Indexedlanguages").
 		SetBool(&updatedConfig.Indexfull, "Indexfull").
 		SetInt(&updatedConfig.ImdbIDSize, "ImdbIDSize").
-		SetInt(&updatedConfig.LoopSize, "LoopSize").
-		SetBool(&updatedConfig.UseMemory, "UseMemory").
-		SetBool(&updatedConfig.UseCache, "UseCache")
+		SetBool(&updatedConfig.UseMemory, "UseMemory")
+
+	if err := builder.Err(); err != nil {
+		c.String(
+			http.StatusOK,
+			renderAlert(fmt.Sprintf("Failed to update: %s", err.Error()), "danger"),
+		)
+
+		return
+	}
 
 	// Validate the configuration
 	if err := validateImdbConfig(&updatedConfig); err != nil {
@@ -138,13 +160,25 @@ func HandleMediaConfigUpdate(c *gin.Context) {
 	logger.Logtype("info", 0).Any("form data", c.Request.Form).Msg("log post")
 	logger.Logtype("info", 0).Any("post data", c.Request.PostForm).Msg("log post")
 
-	var newConfig config.MediaConfig
+	var (
+		newConfig config.MediaConfig
+		errs      [5]error
+	)
 
-	newConfig.Movies = parseMediaConfigs(c, "movies")
-	newConfig.Series = parseMediaConfigs(c, "series")
-	newConfig.Books = parseMediaConfigs(c, "books")
-	newConfig.AudioBooks = parseMediaConfigs(c, "audiobooks")
-	newConfig.Music = parseMediaConfigs(c, "music")
+	newConfig.Movies, errs[0] = parseMediaConfigs(c, "movies")
+	newConfig.Series, errs[1] = parseMediaConfigs(c, "series")
+	newConfig.Books, errs[2] = parseMediaConfigs(c, "books")
+	newConfig.AudioBooks, errs[3] = parseMediaConfigs(c, "audiobooks")
+	newConfig.Music, errs[4] = parseMediaConfigs(c, "music")
+
+	if err := errors.Join(errs[:]...); err != nil {
+		c.String(
+			http.StatusOK,
+			renderAlert("Configuration validation failed: "+err.Error(), "danger"),
+		)
+
+		return
+	}
 
 	if err := saveConfig(&newConfig); err != nil {
 		c.String(
@@ -154,6 +188,8 @@ func HandleMediaConfigUpdate(c *gin.Context) {
 
 		return
 	}
+
+	scheduler.Reload()
 
 	c.String(http.StatusOK, renderAlert("Media configuration updated successfully", "success"))
 }
@@ -187,66 +223,6 @@ func HandleDownloaderConfigUpdate(c *gin.Context) {
 	)
 }
 
-// HandleDownloaderConfigUpdateGeneric handles downloader configuration updates using the generic parser approach.
-func HandleDownloaderConfigUpdateGeneric(c *gin.Context) {
-	parser := createDownloaderParser()
-	if err := parser.ParseAndSave(c); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save downloader configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert("Downloader configuration updated successfully! (Generic Parser)", "success"),
-	)
-}
-
-// HandleDownloaderConfigUpdateAlternative handles downloader configuration updates using the alternative validation approach.
-func HandleDownloaderConfigUpdateAlternative(c *gin.Context) {
-	// Parse configs using the standard approach
-	configs, err := parseDownloaderConfigs(c)
-	if err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to parse downloader configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	// Use alternative validation approach
-	if err := validateDownloaderConfigsAlternative(configs); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Alternative validation failed: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	// Save configs
-	if err := saveDownloaderConfigs(configs); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save downloader configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert(
-			"Downloader configuration updated successfully! (Alternative Validation)",
-			"success",
-		),
-	)
-}
-
 // HandleListsConfigUpdate handles lists configuration updates.
 func HandleListsConfigUpdate(c *gin.Context) {
 	// Parse configs using dedicated parser function
@@ -271,24 +247,6 @@ func HandleListsConfigUpdate(c *gin.Context) {
 	}
 
 	c.String(http.StatusOK, renderAlert("Lists configuration updated successfully!", "success"))
-}
-
-// HandleListsConfigUpdateGeneric handles lists configuration updates using the generic parser approach.
-func HandleListsConfigUpdateGeneric(c *gin.Context) {
-	parser := createListsParser()
-	if err := parser.ParseAndSave(c); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save lists configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert("Lists configuration updated successfully! (Generic Parser)", "success"),
-	)
 }
 
 // HandleIndexersConfigUpdate handles indexers configuration updates.
@@ -317,24 +275,6 @@ func HandleIndexersConfigUpdate(c *gin.Context) {
 	c.String(http.StatusOK, renderAlert("Indexer configuration updated successfully!", "success"))
 }
 
-// HandleIndexersConfigUpdateGeneric handles indexers configuration updates using the generic parser approach.
-func HandleIndexersConfigUpdateGeneric(c *gin.Context) {
-	parser := createIndexerParser()
-	if err := parser.ParseAndSave(c); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save indexer configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert("Indexer configuration updated successfully! (Generic Parser)", "success"),
-	)
-}
-
 // HandlePathsConfigUpdate handles paths configuration updates.
 func HandlePathsConfigUpdate(c *gin.Context) {
 	// Parse configs using dedicated parser function
@@ -359,24 +299,6 @@ func HandlePathsConfigUpdate(c *gin.Context) {
 	}
 
 	c.String(http.StatusOK, renderAlert("Paths configuration updated successfully!", "success"))
-}
-
-// HandlePathsConfigUpdateGeneric handles paths configuration updates using the generic parser approach.
-func HandlePathsConfigUpdateGeneric(c *gin.Context) {
-	parser := createPathsParser()
-	if err := parser.ParseAndSave(c); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save paths configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert("Paths configuration updated successfully! (Generic Parser)", "success"),
-	)
 }
 
 // HandleNotificationConfigUpdate handles notification configuration updates.
@@ -408,24 +330,6 @@ func HandleNotificationConfigUpdate(c *gin.Context) {
 	)
 }
 
-// HandleNotificationConfigUpdateGeneric handles notification configuration updates using the generic parser approach.
-func HandleNotificationConfigUpdateGeneric(c *gin.Context) {
-	parser := createNotificationParser()
-	if err := parser.ParseAndSave(c); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save notification configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert("Notification configuration updated successfully! (Generic Parser)", "success"),
-	)
-}
-
 // HandleRegexConfigUpdate handles regex configuration updates.
 func HandleRegexConfigUpdate(c *gin.Context) {
 	// Parse configs using dedicated parser function
@@ -450,24 +354,6 @@ func HandleRegexConfigUpdate(c *gin.Context) {
 	}
 
 	c.String(http.StatusOK, renderAlert("Regex configuration updated successfully!", "success"))
-}
-
-// HandleRegexConfigUpdateGeneric handles regex configuration updates using the generic parser approach.
-func HandleRegexConfigUpdateGeneric(c *gin.Context) {
-	parser := createRegexParser()
-	if err := parser.ParseAndSave(c); err != nil {
-		c.String(
-			http.StatusOK,
-			renderAlert("Failed to save regex configuration: "+err.Error(), "danger"),
-		)
-
-		return
-	}
-
-	c.String(
-		http.StatusOK,
-		renderAlert("Regex configuration updated successfully! (Generic Parser)", "success"),
-	)
 }
 
 // HandleQualityConfigUpdate handles quality configuration updates.
@@ -538,8 +424,8 @@ func HandleTestParse(c *gin.Context) {
 	filename := c.PostForm("testparse_Filename")
 	configKey := c.PostForm("testparse_ConfigKey")
 	qualityKey := c.PostForm("testparse_QualityKey")
-	usePath, _ := strconv.ParseBool(c.PostForm("testparse_UsePath"))
-	useFolder, _ := strconv.ParseBool(c.PostForm("testparse_UseFolder"))
+	usePath := formBool(c.PostForm("testparse_UsePath"))
+	useFolder := formBool(c.PostForm("testparse_UseFolder"))
 
 	if filename == "" {
 		c.String(http.StatusOK, renderAlert("Please enter a filename to parse", "warning"))
@@ -567,6 +453,15 @@ func HandleTestParse(c *gin.Context) {
 		return
 	}
 
+	if !slices.Contains(configQualityProfiles(cfgp), qualityKey) {
+		c.String(
+			http.StatusOK,
+			renderAlert(fmt.Sprintf("Quality %s is not configured for %s", qualityKey, configKey), "danger"),
+		)
+
+		return
+	}
+
 	// Parse the file
 	m := parser_v2.ParseFile(filename, usePath, useFolder, cfgp, -1)
 	if m == nil {
@@ -574,12 +469,19 @@ func HandleTestParse(c *gin.Context) {
 		return
 	}
 
-	// Get database IDs and quality mapping
-	parser.GetDBIDs(m, cfgp, true, false)
+	defer m.Close()
+
+	// Get database IDs and quality mapping. A failed ID lookup still leaves the
+	// parsed fields worth showing, so report it alongside them.
+	dbidErr := parser.GetDBIDs(m, cfgp, true, false)
 	parser.GetPriorityMapQual(m, cfgp, quality, false, true)
 
-	// Render results
-	c.String(http.StatusOK, renderParseResults(m, filename, configKey, qualityKey))
+	out := renderParseResults(m, filename, configKey, qualityKey)
+	if dbidErr != nil {
+		out = renderAlert("Database ID lookup failed: "+dbidErr.Error(), "warning") + out
+	}
+
+	c.String(http.StatusOK, out)
 }
 
 // HandleTraktAuth handles Trakt authentication requests.
@@ -631,7 +533,7 @@ func handleGetTraktAuthURL(c *gin.Context) {
 	}
 
 	// Get the authorization URL
-	authURL := apiexternal.GetTraktAuthURL()
+	authURL := traktAuthURL()
 	if authURL == "" {
 		c.String(http.StatusOK, renderAlert("Failed to generate authorization URL", "danger"))
 		return
@@ -776,7 +678,7 @@ func handleStoreTraktToken(c *gin.Context) {
 	}
 
 	// Exchange code for token
-	token, tokenErr := apiexternal.GetTraktAuthToken(authCode)
+	token, tokenErr := traktExchangeCode(c.Request.Context(), authCode)
 	if tokenErr != nil || token == nil || token.AccessToken == "" {
 		msg := "Failed to exchange authorization code for token. Please check the code and try again."
 		if tokenErr != nil {
@@ -787,10 +689,6 @@ func handleStoreTraktToken(c *gin.Context) {
 
 		return
 	}
-
-	// Store the token
-	apiexternal.SetTraktToken(token)
-	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
 
 	result := html.Div(
 		html.Class("card border-0 shadow-sm border-success mb-4"),
@@ -927,8 +825,10 @@ func handleStoreTraktToken(c *gin.Context) {
 
 // handleRefreshTraktToken refreshes the current Trakt token.
 func handleRefreshTraktToken(c *gin.Context) {
-	currentToken := apiexternal.GetTraktToken()
-	if currentToken == nil || currentToken.RefreshToken == "" {
+	provider := providers.GetTrakt()
+
+	currentToken := traktToken()
+	if provider == nil || currentToken == nil || currentToken.RefreshToken == "" {
 		c.String(
 			http.StatusOK,
 			renderAlert("No refresh token available. Please re-authenticate.", "danger"),
@@ -938,7 +838,7 @@ func handleRefreshTraktToken(c *gin.Context) {
 	}
 
 	// Attempt to refresh the token
-	newToken, err := apiexternal.RefreshTraktToken()
+	newToken, err := provider.RefreshToken(c.Request.Context(), currentToken.RefreshToken)
 	if err != nil {
 		c.String(
 			http.StatusOK,
@@ -966,9 +866,9 @@ func handleRefreshTraktToken(c *gin.Context) {
 
 // handleRevokeTraktToken revokes the current Trakt token.
 func handleRevokeTraktToken(c *gin.Context) {
-	// Clear the token
-	apiexternal.SetTraktToken(&oauth2.Token{})
-	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
+	if provider := providers.GetTrakt(); provider != nil {
+		_ = provider.RevokeToken(c.Request.Context(), "")
+	}
 
 	result := html.Div(
 		html.Class("card border-0 shadow-sm border-success mb-4"),
@@ -1032,16 +932,13 @@ func handleRevokeTraktToken(c *gin.Context) {
 
 // handleTestTraktAPI tests the Trakt API connection.
 func handleTestTraktAPI(c *gin.Context) {
-	token := apiexternal.GetTraktToken()
+	token := traktToken()
 	if token == nil || token.AccessToken == "" {
 		c.String(http.StatusOK, renderAlert("No valid Trakt token available", "danger"))
 		return
 	}
 
-	// Test the API by getting popular movies (limit to 5 for testing)
-	limit := "5"
-
-	_, movies, testErr := apiexternal.TestTraktConnectivity(20*time.Second, &limit)
+	movies, testErr := traktTrendingMovies(20*time.Second, 5)
 
 	if len(movies) == 0 {
 		msg := "API test failed - no movies returned. Check your network connection and token validity."
@@ -1059,10 +956,10 @@ func handleTestTraktAPI(c *gin.Context) {
 		movieRows = append(movieRows,
 			html.Tr(
 				html.Td(gomponents.Text(fmt.Sprintf("%d", i+1))),
-				html.Td(gomponents.Text(movie.Movie.Title)),
-				html.Td(gomponents.Text(fmt.Sprintf("%d", movie.Movie.Year))),
-				html.Td(gomponents.Text(movie.Movie.IDs.Imdb)),
-				html.Td(gomponents.Text(fmt.Sprintf("%d", movie.Movie.IDs.Trakt))),
+				html.Td(gomponents.Text(movie.Title)),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", movie.Year))),
+				html.Td(gomponents.Text(movie.IMDbID)),
+				html.Td(gomponents.Text(fmt.Sprintf("%d", movie.ID))),
 			),
 		)
 	}

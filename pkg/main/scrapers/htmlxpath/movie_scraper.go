@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/sitethrottle"
 	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
@@ -128,32 +128,24 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 		Str("url", s.config.StartURL).
 		Msg("Starting movie scrape")
 
-	// If no pagination pattern, just scrape the start URL
-	if s.config.PageURLPattern == "" {
-		movies, err := s.scrapePage(ctx, s.config.StartURL)
-		if err != nil {
-			return nil, err
-		}
-
-		for idx := range movies {
-			if movies[idx].ImdbID != "" && !seenIDs[movies[idx].ImdbID] {
-				imdbIDs = append(imdbIDs, movies[idx].ImdbID)
-				seenIDs[movies[idx].ImdbID] = true
-			}
-		}
-
-		return imdbIDs, nil
-	}
-
-	// Paginated scraping
 	if maxPages == 0 {
 		maxPages = 10 // Default to 10 pages
 	}
 
+	// Without a pagination pattern only the start URL exists.
+	if s.config.PageURLPattern == "" {
+		maxPages = 1
+	}
+
 	for page := range maxPages {
-		// Build page URL
-		pageNum := s.getPageNumber(page)
-		url := strings.ReplaceAll(s.config.PageURLPattern, "{page}", fmt.Sprintf("%d", pageNum))
+		url := s.config.StartURL
+		if s.config.PageURLPattern != "" {
+			url = strings.ReplaceAll(
+				s.config.PageURLPattern,
+				"{page}",
+				strconv.Itoa(s.getPageNumber(page)),
+			)
+		}
 
 		logger.Logtype("debug", 1).
 			Int("page", page+1).
@@ -162,12 +154,18 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 
 		movies, err := s.scrapePage(ctx, url)
 		if err != nil {
-			logger.Logtype("warn", 1).
-				Err(err).
-				Int("page", page+1).
-				Msg("Failed to scrape page, stopping")
+			if page == 0 {
+				return nil, fmt.Errorf("failed to scrape page 1: %w", err)
+			}
 
-			break
+			// Hand back what earlier pages produced; the caller decides
+			// whether a partial list is usable.
+			return imdbIDs, fmt.Errorf(
+				"failed to scrape page %d (%d ids from earlier pages kept): %w",
+				page+1,
+				len(imdbIDs),
+				err,
+			)
 		}
 
 		if len(movies) == 0 {
@@ -177,31 +175,8 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 			break
 		}
 
-		// Process movies from this page
 		for idx := range movies {
-			// If IMDB ID is directly available, use it
-			if movies[idx].ImdbID != "" && !seenIDs[movies[idx].ImdbID] {
-				imdbIDs = append(imdbIDs, movies[idx].ImdbID)
-				seenIDs[movies[idx].ImdbID] = true
-			} else if movies[idx].Title != "" && movies[idx].Year > 0 {
-				// Search for IMDB ID using title and year
-				imdbID, err := s.searchIMDBID(movies[idx].Title, movies[idx].Year)
-				if err == nil && imdbID != "" && !seenIDs[imdbID] {
-					logger.Logtype("debug", 1).
-						Str("title", movies[idx].Title).
-						Int("year", movies[idx].Year).
-						Str("imdb_id", imdbID).
-						Msg("Found IMDB ID via search")
-
-					imdbIDs = append(imdbIDs, imdbID)
-					seenIDs[imdbID] = true
-				} else {
-					logger.Logtype("debug", 1).
-						Str("title", movies[idx].Title).
-						Int("year", movies[idx].Year).
-						Msg("Could not find IMDB ID for movie")
-				}
-			}
+			imdbIDs = s.appendMovieImdbID(imdbIDs, seenIDs, &movies[idx])
 		}
 
 		// Per-page spacing is enforced per site in scrapePage (sitethrottle).
@@ -212,6 +187,50 @@ func (s *MovieScraper) Scrape(ctx context.Context, maxPages int) ([]string, erro
 		Msg("Movie scrape completed")
 
 	return imdbIDs, nil
+}
+
+// appendMovieImdbID appends the movie's IMDb id - taken directly, or found via
+// a TMDB title/year search when the item carries none - unless already seen.
+func (s *MovieScraper) appendMovieImdbID(
+	imdbIDs []string,
+	seenIDs map[string]bool,
+	movie *MovieData,
+) []string {
+	if movie.ImdbID != "" {
+		if !seenIDs[movie.ImdbID] {
+			imdbIDs = append(imdbIDs, movie.ImdbID)
+			seenIDs[movie.ImdbID] = true
+		}
+
+		return imdbIDs
+	}
+
+	if movie.Title == "" || movie.Year <= 0 {
+		return imdbIDs
+	}
+
+	imdbID, err := s.searchIMDBID(movie.Title, movie.Year)
+	if err != nil || imdbID == "" {
+		logger.Logtype("debug", 1).
+			Str("title", movie.Title).
+			Int("year", movie.Year).
+			Msg("Could not find IMDB ID for movie")
+
+		return imdbIDs
+	}
+
+	if !seenIDs[imdbID] {
+		logger.Logtype("debug", 1).
+			Str("title", movie.Title).
+			Int("year", movie.Year).
+			Str("imdb_id", imdbID).
+			Msg("Found IMDB ID via search")
+
+		imdbIDs = append(imdbIDs, imdbID)
+		seenIDs[imdbID] = true
+	}
+
+	return imdbIDs
 }
 
 // scrapePage fetches and parses a single page, returning movie data.
@@ -357,7 +376,13 @@ func (s *MovieScraper) extractMovieData(node *html.Node) MovieData {
 					}
 				} else {
 					// Try common formats
-					formats := []string{"2006-01-02", "Jan 2, 2006", "January 2, 2006", "2006"}
+					formats := []string{
+						time.RFC3339,
+						"2006-01-02",
+						"Jan 2, 2006",
+						"January 2, 2006",
+						"2006",
+					}
 					for i := range formats {
 						if t, err := time.Parse(formats[i], movie.ReleaseDate); err == nil {
 							movie.Year = t.Year()
@@ -388,8 +413,7 @@ func (*MovieScraper) searchIMDBID(title string, year int) (string, error) {
 		Int("year", year).
 		Msg("Searching for IMDB ID via TMDB")
 
-	// Use the apiexternal package to search TMDB
-	imdbID, err := apiexternal.SearchTMDBMovieImdbID(title, year)
+	imdbID, err := providers.TMDBMovieIMDbID(context.Background(), title, year)
 	if err != nil {
 		return "", err
 	}

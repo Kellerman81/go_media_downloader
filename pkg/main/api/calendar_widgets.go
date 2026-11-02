@@ -782,9 +782,8 @@ func CalendarDayEventsHandler(c *gin.Context) {
 
 	targetDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 
-	startOfDay := targetDate
-	endOfDay := targetDate.Add(24 * time.Hour)
-	allEvents := getCalendarEvents(startOfDay, endOfDay, "all")
+	// getCalendarEvents treats endDate as inclusive (queries < end+1 day).
+	allEvents := getCalendarEvents(targetDate, targetDate, "all")
 
 	var dayEvents []calendarEvent
 

@@ -295,18 +295,14 @@ var metaUnicodeReplacer = strings.NewReplacer(
 )
 
 var (
-	openLibraryProvider *openlibrary.Provider
-	audnexProvider      *audnex.Provider
-	musicbrainzProvider *musicbrainz.Provider
-	goodreadsProvider   *goodreads.Provider
-	discogsProvider     *discogs.Provider
+	audnexProvider    *audnex.Provider
+	goodreadsProvider *goodreads.Provider
+	discogsProvider   *discogs.Provider
 
 	// sync.Once instances for thread-safe initialization.
-	openLibraryOnce sync.Once
-	audnexOnce      sync.Once
-	musicbrainzOnce sync.Once
-	goodreadsOnce   sync.Once
-	discogsOnce     sync.Once
+	audnexOnce    sync.Once
+	goodreadsOnce sync.Once
+	discogsOnce   sync.Once
 
 	// levenshteinPool provides reusable slices for Levenshtein distance calculation.
 	// This reduces allocations when computing distances for multiple strings.
@@ -322,29 +318,12 @@ var (
 )
 
 func getOpenLibraryProvider() *openlibrary.Provider {
-	openLibraryOnce.Do(func() {
-		openLibraryProvider = openlibrary.NewProvider()
-	})
-	return openLibraryProvider
+	return providers.SharedOpenLibrary()
 }
 
-// getAudibleProvider returns the Audible provider for the given region from
-// the shared providers registry, creating and registering it when missing.
-// The previous sync.Once implementation locked in whichever region asked
-// first, so configs with a different AudibleRegion queried the wrong store.
+// getAudibleProvider returns the registry's shared Audible provider for region.
 func getAudibleProvider(region audible.Region) *audible.Provider {
-	if region == "" {
-		region = audible.RegionUS
-	}
-
-	if p := providers.GetAudible(string(region)); p != nil {
-		return p
-	}
-
-	p := audible.NewProviderWithRegion(region)
-	providers.SetAudible(string(region), p)
-
-	return p
+	return providers.SharedAudible(string(region))
 }
 
 func getAudnexProvider() *audnex.Provider {
@@ -355,10 +334,7 @@ func getAudnexProvider() *audnex.Provider {
 }
 
 func getMusicBrainzProvider() *musicbrainz.Provider {
-	musicbrainzOnce.Do(func() {
-		musicbrainzProvider = musicbrainz.NewProvider()
-	})
-	return musicbrainzProvider
+	return providers.SharedMusicBrainz()
 }
 
 // getGoodreadsProvider reads the API key from config inside the Once so the
@@ -474,50 +450,6 @@ func applyBookDetails(book *database.Dbbook, details *apiexternal_v2.BookDetails
 
 	if book.Year == 0 || overwrite {
 		book.Year = ExtractYearFromTime(details.PublishDate)
-	}
-}
-
-// AuthorGetMetadata retrieves metadata for an author from configured sources.
-func AuthorGetMetadata(ctx context.Context, author *database.Dbauthor, overwrite bool) error {
-	if author.OpenlibraryID == "" {
-		return nil
-	}
-
-	provider := getOpenLibraryProvider()
-
-	details, err := provider.GetAuthorByID(ctx, author.OpenlibraryID)
-	if err != nil {
-		return err
-	}
-
-	applyAuthorDetails(author, details, overwrite)
-
-	return nil
-}
-
-// applyAuthorDetails applies API author details to a database author record.
-func applyAuthorDetails(
-	author *database.Dbauthor,
-	details *apiexternal_v2.AuthorDetails,
-	overwrite bool,
-) {
-	if details == nil {
-		return
-	}
-
-	UpdateString(&author.Name, details.Name, overwrite, nil)
-	UpdateString(&author.Bio, details.Bio, overwrite, nil)
-	UpdateString(&author.Website, details.Website, overwrite, nil)
-	UpdateString(&author.ImageURL, details.ImageURL, overwrite, nil)
-	UpdateString(&author.OpenlibraryID, details.OpenLibraryID, overwrite, nil)
-	UpdateString(&author.GoodreadsID, details.GoodreadsID, overwrite, nil)
-
-	if !details.BirthDate.IsZero() {
-		author.BirthDate = details.BirthDate.Format("2006-01-02")
-	}
-
-	if !details.DeathDate.IsZero() {
-		author.DeathDate = details.DeathDate.Format("2006-01-02")
 	}
 }
 
@@ -946,8 +878,11 @@ func applyAudiobookDetails(
 	UpdateString(&audiobook.Publisher, details.Publisher, overwrite, nil)
 	UpdateString(&audiobook.Language, details.Language, overwrite, nil)
 	UpdateString(&audiobook.CoverURL, details.CoverURL, overwrite, nil)
+	UpdateString(&audiobook.SeriesName, details.SeriesName, overwrite, nil)
+	UpdateString(&audiobook.SeriesPosition, details.SeriesPosition, overwrite, nil)
 
 	UpdateInt(&audiobook.RuntimeMinutes, details.RuntimeMinutes, overwrite)
+	UpdateInt(&audiobook.ChapterCount, len(details.Chapters), overwrite)
 	UpdateFloat32(&audiobook.AverageRating, float32(details.AverageRating), overwrite)
 	UpdateInt32(&audiobook.RatingsCount, int32(details.RatingsCount), overwrite)
 
@@ -1041,22 +976,23 @@ func applyAudiobookDetails(
 		}
 
 		for i := range details.Chapters {
-			if _, ok := existing[details.Chapters[i].ChapterNumber]; ok {
+			chapterNumber, startMs, lengthMs := chapterValues(&details.Chapters[i])
+			if _, ok := existing[chapterNumber]; ok {
 				continue
 			}
 
-			existing[details.Chapters[i].ChapterNumber] = struct{}{}
+			existing[chapterNumber] = struct{}{}
 
 			batch = append(batch, batchedInsert{
 				query: "INSERT INTO dbaudiobook_chapters (dbaudiobook_id, title, chapter_number, position, start_time_ms, end_time_ms, runtime_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
 				args: []any{
 					audiobook.ID,
 					details.Chapters[i].Title,
-					details.Chapters[i].ChapterNumber,
+					chapterNumber,
 					details.Chapters[i].Number,
-					details.Chapters[i].StartOffsetMs,
-					details.Chapters[i].StartOffsetMs + details.Chapters[i].LengthMs,
-					details.Chapters[i].LengthMs,
+					startMs,
+					startMs + lengthMs,
+					lengthMs,
 				},
 			})
 		}
@@ -1070,10 +1006,9 @@ func applyAudiobookDetails(
 		return
 	}
 
-	var dbbookID uint
+	dbbookID := audiobook.DbbookID
 
-	// Try to find existing book by ISBN or Goodreads ID
-	if details.ISBN != "" {
+	if dbbookID == 0 && details.ISBN != "" {
 		database.Scanrowsdyn(
 			false,
 			"SELECT id FROM dbbooks WHERE isbn_13 = ?",
@@ -1091,16 +1026,36 @@ func applyAudiobookDetails(
 		)
 	}
 
-	// If no existing book found, create one
+	// Audible rarely supplies ISBN or Goodreads ID, so without this lookup
+	// every refresh inserted another orphan dbbooks row.
+	if dbbookID == 0 && details.Title != "" && len(details.Authors) > 0 && details.Authors[0] != "" {
+		database.Scanrowsdyn(
+			false,
+			`SELECT b.id FROM dbbooks b
+			 WHERE b.title = ? COLLATE NOCASE
+			 AND (b.dbauthor_id IN (SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE)
+			  OR EXISTS (SELECT 1 FROM dbbook_authors ba JOIN dbauthors a ON a.id = ba.dbauthor_id
+			   WHERE ba.dbbook_id = b.id AND a.name = ? COLLATE NOCASE))
+			 LIMIT 1`,
+			&dbbookID,
+			&details.Title,
+			&details.Authors[0],
+			&details.Authors[0],
+		)
+	}
+
 	if dbbookID == 0 {
 		var publishDate string
 		if !details.ReleaseDate.IsZero() {
 			publishDate = details.ReleaseDate.Format("2006-01-02")
 		}
 
+		slug := GenerateSlug(details.Title)
+
 		result, err := database.ExecNid(
-			"INSERT INTO dbbooks (title, isbn_13, goodreads_id, description, publisher, language, publish_date, year, series_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO dbbooks (title, slug, isbn_13, goodreads_id, description, publisher, language, publish_date, year, series_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			&details.Title,
+			&slug,
 			&details.ISBN,
 			&details.GoodreadsID,
 			&details.Description,
@@ -1117,7 +1072,18 @@ func applyAudiobookDetails(
 
 	// Handle series information if we have a series name
 	if dbbookID > 0 && details.SeriesName != "" {
-		var seriesID uint
+		var (
+			seriesID        uint
+			currentSeriesID uint
+			currentPosition string
+		)
+
+		database.GetdatarowArgs(
+			"SELECT COALESCE(dbbook_series_id, 0), COALESCE(series_position, '') FROM dbbooks WHERE id = ?",
+			&dbbookID,
+			&currentSeriesID,
+			&currentPosition,
+		)
 
 		seriesSlug := logger.StringToSlugCached(details.SeriesName)
 
@@ -1130,8 +1096,10 @@ func applyAudiobookDetails(
 			&seriesSlug,
 		)
 
-		// If no existing series found, create one
-		if seriesID == 0 {
+		// Don't replace a different series the book already has unless asked to.
+		if currentSeriesID != 0 && currentSeriesID != seriesID && !overwrite {
+			seriesID = 0
+		} else if seriesID == 0 {
 			result, err := database.ExecNid(
 				"INSERT INTO dbbook_series (name, slug, goodreads_id) VALUES (?, ?, ?)",
 				&details.SeriesName, &seriesSlug, &details.GoodreadsID,
@@ -1141,11 +1109,16 @@ func applyAudiobookDetails(
 			}
 		}
 
-		// Link book to series
 		if seriesID > 0 {
+			position := currentPosition
+			if seriesID != currentSeriesID ||
+				(details.SeriesPosition != "" && (position == "" || overwrite)) {
+				position = details.SeriesPosition
+			}
+
 			database.ExecN(
 				"UPDATE dbbooks SET dbbook_series_id = ?, series_position = ? WHERE id = ?",
-				&seriesID, &details.SeriesPosition, &dbbookID,
+				&seriesID, &position, &dbbookID,
 			)
 		}
 	}
@@ -1159,6 +1132,27 @@ func applyAudiobookDetails(
 
 		audiobook.DbbookID = dbbookID
 	}
+}
+
+// chapterValues returns chapter number, start offset and length in ms,
+// falling back to Number/StartOffset/Duration for providers that only set those.
+func chapterValues(c *apiexternal_v2.AudiobookChapter) (int, int64, int64) {
+	number := c.ChapterNumber
+	if number == 0 {
+		number = c.Number
+	}
+
+	startMs := c.StartOffsetMs
+	if startMs == 0 {
+		startMs = c.StartOffset.Milliseconds()
+	}
+
+	lengthMs := c.LengthMs
+	if lengthMs == 0 {
+		lengthMs = c.Duration.Milliseconds()
+	}
+
+	return number, startMs, lengthMs
 }
 
 // NarratorGetMetadata retrieves metadata for a narrator from configured sources.
@@ -1181,30 +1175,39 @@ func AlbumGetMetadata(ctx context.Context, album *database.Dbalbum, overwrite bo
 		Msg("ended get album metadata for")
 
 	// Try MusicBrainz first (by release ID or barcode)
+	mbApplied := false
 	if album.MusicbrainzReleaseID != "" {
 		if err := albumUpdateFromMusicBrainz(ctx, album, overwrite); err != nil {
 			logger.Logtype("debug", 2).Err(err).Msg("MusicBrainz lookup failed")
+		} else {
+			mbApplied = true
 		}
 	} else if album.UPC != "" {
 		// Try by barcode
 		if err := albumUpdateFromMusicBrainzByBarcode(ctx, album, overwrite); err != nil {
 			logger.Logtype("debug", 2).Err(err).Msg("MusicBrainz barcode lookup failed")
+		} else {
+			mbApplied = true
 		}
 	}
+
+	// Discogs only fills gaps once MusicBrainz data was applied; it may only
+	// overwrite when it is the sole source.
+	discogsOverwrite := overwrite && !mbApplied
 
 	// If MusicBrainz didn't provide full metadata, try Discogs as fallback
 	// Discogs can be queried by release ID or by barcode
 	if album.DiscogsReleaseID != "" {
 		logger.Logtype("debug", 2).Msg("Trying Discogs by release ID")
 
-		if err := albumUpdateFromDiscogs(ctx, album, overwrite); err != nil {
+		if err := albumUpdateFromDiscogs(ctx, album, discogsOverwrite); err != nil {
 			logger.Logtype("debug", 2).Err(err).Msg("Discogs lookup by release ID failed")
 		}
 	} else if album.UPC != "" && (album.MusicbrainzReleaseID == "" || album.Label == "") {
 		// Try Discogs by barcode if we don't have MB data or missing key fields
 		logger.Logtype("debug", 2).Msg("Trying Discogs by barcode")
 
-		if err := albumUpdateFromDiscogsByBarcode(ctx, album, overwrite); err != nil {
+		if err := albumUpdateFromDiscogsByBarcode(ctx, album, discogsOverwrite); err != nil {
 			logger.Logtype("debug", 2).Err(err).Msg("Discogs barcode lookup failed")
 		}
 	}
@@ -1612,11 +1615,11 @@ func applyArtistDetails(
 	}
 
 	if !details.BeginDate.IsZero() {
-		artist.BeginDate = details.BeginDate.Format("2006-01-02")
+		UpdateString(&artist.BeginDate, details.BeginDate.Format("2006-01-02"), overwrite, nil)
 	}
 
 	if !details.EndDate.IsZero() {
-		artist.EndDate = details.EndDate.Format("2006-01-02")
+		UpdateString(&artist.EndDate, details.EndDate.Format("2006-01-02"), overwrite, nil)
 	}
 
 	// Add artist aliases to dbartist_aliases table
@@ -1633,7 +1636,7 @@ func applyArtistDetails(
 		// Check if alias already exists
 		var existingAlias uint
 		database.Scanrowsdyn(false,
-			"SELECT id FROM dbartist_aliases WHERE dbartist_id = ? AND alias = ?",
+			"SELECT id FROM dbartist_aliases WHERE dbartist_id = ? AND alias = ? COLLATE NOCASE",
 			&existingAlias, &artist.ID, &aliasName)
 
 		if existingAlias == 0 {
@@ -1645,49 +1648,5 @@ func applyArtistDetails(
 				&artist.ID, &aliasName, &aliasSlug,
 			)
 		}
-	}
-}
-
-// TrackGetMetadata retrieves metadata for a music track from configured sources.
-func TrackGetMetadata(ctx context.Context, track *database.Dbtrack, overwrite bool) error {
-	if track.MusicbrainzRecordingID == "" && track.ISRC == "" {
-		return nil
-	}
-
-	provider := getMusicBrainzProvider()
-
-	var (
-		details *apiexternal_v2.Track
-		err     error
-	)
-
-	if track.MusicbrainzRecordingID != "" {
-		details, err = provider.GetRecordingByID(ctx, track.MusicbrainzRecordingID)
-	} else if track.ISRC != "" {
-		details, err = provider.GetRecordingByISRC(ctx, track.ISRC)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	applyTrackDetails(track, details, overwrite)
-
-	return nil
-}
-
-// applyTrackDetails applies API track details to a database track record.
-func applyTrackDetails(track *database.Dbtrack, details *apiexternal_v2.Track, overwrite bool) {
-	if details == nil {
-		return
-	}
-
-	UpdateString(&track.Title, details.Title, overwrite, nil)
-	UpdateString(&track.MusicbrainzRecordingID, details.MusicBrainzID, overwrite, nil)
-	UpdateString(&track.ISRC, details.ISRC, overwrite, nil)
-	UpdateString(&track.AcoustID, details.AcoustID, overwrite, nil)
-
-	if details.DurationMs > 0 {
-		UpdateInt64(&track.RuntimeMs, int64(details.DurationMs), overwrite)
 	}
 }

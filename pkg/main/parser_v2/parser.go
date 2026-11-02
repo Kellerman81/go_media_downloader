@@ -1,7 +1,6 @@
 package parser_v2
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 
@@ -343,16 +342,6 @@ func (p *Parser) ParseAudiobook(filename string) *AudiobookParseResult {
 	return p.audiobookParser.Parse(cleanFilename)
 }
 
-// ParseAudiobookDirectory parses an audiobook from a directory of files.
-func (p *Parser) ParseAudiobookDirectory(dirPath string) (*AudiobookParseResult, error) {
-	files, err := p.collectAudioFiles(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.audiobookParser.ParseDirectory(dirPath, files), nil
-}
-
 // ParseMusic parses a file as a music track.
 func (p *Parser) ParseMusic(filename string) *MusicParseResult {
 	cleanFilename := filename
@@ -361,16 +350,6 @@ func (p *Parser) ParseMusic(filename string) *MusicParseResult {
 	}
 
 	return p.musicParser.Parse(cleanFilename)
-}
-
-// ParseMusicAlbum parses a music album from a directory of files.
-func (p *Parser) ParseMusicAlbum(dirPath string) (*MusicParseResult, error) {
-	files, err := p.collectAudioFiles(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.musicParser.ParseAlbum(dirPath, files), nil
 }
 
 // audiobookIndicators are filename substrings that suggest audiobook content.
@@ -395,28 +374,6 @@ func (*Parser) isAudiobookFile(filename, ext string) bool {
 	}
 
 	return false
-}
-
-// collectAudioFiles collects audio files from a directory.
-func (*Parser) collectAudioFiles(dirPath string) ([]string, error) {
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	var files []string
-	for i := range entries {
-		if entries[i].IsDir() {
-			continue
-		}
-
-		ext := logger.FileExt(entries[i].Name())
-		if IsAudioExtension(ext) {
-			files = append(files, filepath.Join(dirPath, entries[i].Name()))
-		}
-	}
-
-	return files, nil
 }
 
 // DetectMediaType attempts to detect the media type from a file path.
@@ -525,16 +482,6 @@ func (p *Parser) SetRuntimeMatcher(rm *RuntimeMatcher) {
 	p.musicParser = NewMusicParserWithMatcher(rm)
 }
 
-// ParseMusicAlbumWithTags parses a music album with audio tag reading.
-func (p *Parser) ParseMusicAlbumWithTags(dirPath string) (*MusicParseResult, error) {
-	files, err := p.collectAudioFiles(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.musicParser.ParseAlbumWithTags(dirPath, files), nil
-}
-
 func Gettypeids(inval string, qualitytype []database.Qualities) uint {
 	var disableParserStringMatch bool
 	if general := config.GetSettingsGeneral(); general != nil {
@@ -557,60 +504,4 @@ func Gettypeids(inval string, qualitytype []database.Qualities) uint {
 	}
 
 	return 0
-}
-
-// ParseMusicAlbumWithAnalysis parses a music album with full media analysis.
-func (p *Parser) ParseMusicAlbumWithAnalysis(
-	ctx context.Context, dirPath string,
-	analyzer *MediaAnalyzer,
-) (*MusicParseResult, error) {
-	files, err := p.collectAudioFiles(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.musicParser.ParseAlbumWithAnalysis(ctx, dirPath, files, analyzer), nil
-}
-
-// ParseAudiobookDirectoryWithTags parses an audiobook directory with audio tag reading.
-func (p *Parser) ParseAudiobookDirectoryWithTags(dirPath string) (*AudiobookParseResult, error) {
-	files, err := p.collectAudioFiles(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.audiobookParser.ParseDirectoryWithTags(dirPath, files), nil
-}
-
-// ParseAudiobookDirectoryWithAnalysis parses an audiobook directory with full media analysis.
-func (p *Parser) ParseAudiobookDirectoryWithAnalysis(
-	ctx context.Context,
-	dirPath string,
-	analyzer *MediaAnalyzer,
-) (*AudiobookParseResult, error) {
-	files, err := p.collectAudioFiles(dirPath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.audiobookParser.ParseDirectoryWithAnalysis(ctx, dirPath, files, analyzer), nil
-}
-
-// AnalyzeVideoFile analyzes a video file and updates the parse result with technical info.
-func (*Parser) AnalyzeVideoFile(
-	ctx context.Context,
-	filePath string,
-	result *VideoParseResult,
-	analyzer *MediaAnalyzer,
-) error {
-	if analyzer == nil {
-		analyzer = DefaultMediaAnalyzer
-	}
-
-	return analyzer.AnalyzeVideo(ctx, filePath, result)
-}
-
-// NewMediaAnalyzerFromConfig creates a MediaAnalyzer from parser config.
-func NewMediaAnalyzerFromConfig(_ ParserConfig) *MediaAnalyzer {
-	return NewMediaAnalyzer()
 }

@@ -1,9 +1,10 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -12,16 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
-	"github.com/PuerkitoBio/goquery"
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
 	"maragu.dev/gomponents"
@@ -45,7 +46,9 @@ func AddGeneralRoutes(routerapi *gin.RouterGroup) {
 		routerapi.GET("/scheduler/stop", apiSchedulerStop)
 		routerapi.GET("/scheduler/start", apiSchedulerStart)
 		routerapi.GET("/scheduler/list", apiSchedulerList)
-		routerapi.GET("/db/close", apiDBClose)
+		routerapi.POST("/scheduler/stop/:id", apiScheduleStop)
+		routerapi.POST("/scheduler/start/:id", apiScheduleStart)
+		routerapi.POST("/scheduler/queue/:id", apiScheduleQueue)
 		routerapi.GET("/db/integrity", apiDBIntegrity)
 		routerapi.GET("/db/cleanuporphans", apiDBCleanupOrphans)
 		routerapi.GET("/db/backup", apiDBBackup)
@@ -131,7 +134,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/admin/seriesconfig", renderSeriesConfigPage)
 	routerapi.GET("/admin/seriesconfig/add", handleSeriesConfigAdd)
 	routerapi.GET("/admin/seriesconfig/edit", handleSeriesConfigEdit)
-	routerapi.GET("/admin/seriesconfig/delete", handleSeriesConfigDelete)
+	routerapi.POST("/admin/seriesconfig/delete", handleSeriesConfigDelete)
 	routerapi.POST("/admin/seriesconfig/update", handleSeriesConfigUpdate)
 	routerapi.GET("/admin/seriesconfig/helper", handleScraperHelper)
 	routerapi.GET("/admin/testparse", adminPageTestParse)
@@ -169,7 +172,6 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/missing-episodes", HandleMissingEpisodes)
 	routerapi.GET("/admin/log-analysis", adminPageLogAnalysis)
 	routerapi.POST("/admin/log-analysis", HandleLogAnalysis)
-	routerapi.POST("/admin/log-analysis/export", HandleLogAnalysis)
 	routerapi.GET("/admin/storage-health", adminPageStorageHealth)
 	routerapi.POST("/admin/storage-health", HandleStorageHealth)
 	routerapi.POST("/admin/storage-health/monitor", HandleStorageHealth)
@@ -201,6 +203,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/admin/statistics/notification", webStatisticsNotification)
 	routerapi.GET("/admin/statistics/downloader", webStatisticsDownloader)
 	routerapi.GET("/admin/statistics/system", webStatisticsSystem)
+	routerapi.GET("/admin/statistics/activity", webStatisticsActivity)
+	routerapi.GET("/admin/statistics/backlog", webStatisticsBacklog)
+	routerapi.GET("/admin/statistics/jobs", webStatisticsJobs)
+	routerapi.GET("/admin/statistics/quality", webStatisticsQuality)
 
 	routerapi.GET("/admin/regex-tester", adminPageRegexTester)
 	routerapi.POST("/admin/regex-tester/test", HandleRegexTesting)
@@ -273,388 +279,187 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/table/:name/delete/:index", apiAdminTableDelete)
 	routerapi.Any("/admin/dropdown/:table/:field", apiAdminDropdownData)
 
+	// Add-row endpoints. The add buttons sit inside the config form, so htmx
+	// posts the current rows; the new row gets max existing index + 1 so it
+	// never collides with a posted row (also after rows were removed).
 	routerapi.Any("/manage/media/form/:typev", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "media_main_"+ctx.Param("typev")+"_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) ||
-				!(strings.Contains(key, "media_main_"+ctx.Param("typev")+"_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[3]] = true
-		}
-
-		form := renderMediaForm(
+		renderAddedRow(ctx, renderMediaForm(
 			ctx.Param("typev"),
-			&config.MediaTypeConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+			idx,
+			&config.MediaTypeConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/downloader/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "downloader_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "downloader_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderDownloaderForm(
-			&config.DownloaderConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(ctx, renderDownloaderForm(
+			idx,
+			&config.DownloaderConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/lists/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "lists_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "lists_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderListsForm(
-			&config.ListsConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(ctx, renderListsForm(
+			idx,
+			&config.ListsConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/indexers/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "indexers_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "indexers_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderIndexersForm(
-			&config.IndexersConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(ctx, renderIndexersForm(
+			idx,
+			&config.IndexersConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/paths/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "paths_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "paths_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderPathsForm(
-			&config.PathsConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(ctx, renderPathsForm(
+			idx,
+			&config.PathsConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/notification/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "notifications_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "notifications_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderNotificationForm(
-			&config.NotificationConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(ctx, renderNotificationForm(
+			idx,
+			&config.NotificationConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/regex/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "regex_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "regex_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderRegexForm(&config.RegexConfig{Name: "new" + strconv.Itoa(len(formKeys))})
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		renderAddedRow(
+			ctx,
+			renderRegexForm(idx, &config.RegexConfig{Name: "new" + strconv.Itoa(idx)}),
+		)
 	})
 	routerapi.Any("/manage/quality/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "quality_main_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "quality_main_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[2]] = true
-		}
-
-		form := renderQualityForm(
-			&config.QualityConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(ctx, renderQualityForm(
+			idx,
+			&config.QualityConfig{Name: "new" + strconv.Itoa(idx)},
 			getCSRFToken(ctx),
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		))
 	})
 	routerapi.Any("/manage/qualityreorder/form/:typev", func(ctx *gin.Context) {
-		var count int
-
-		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
-		if err == nil {
-			a.Find("#qualityContainer").Children().Each(
-				func(_ int, s *goquery.Selection) {
-					s.Find(".qualityreorder").Each(func(_ int, s *goquery.Selection) {
-						s.Find("array-item card").Each(
-							func(_ int, _ *goquery.Selection) {
-								count++
-							},
-						)
-					})
-				},
-			)
+		idx, ok := nextRowIndexFromForm(ctx, "quality_"+ctx.Param("typev")+"_reorder_", "_Name")
+		if !ok {
+			return
 		}
 
-		form := renderQualityReorderForm(count, ctx.Param("typev"), &config.QualityReorderConfig{})
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		renderAddedRow(
+			ctx,
+			renderQualityReorderForm(idx, ctx.Param("typev"), &config.QualityReorderConfig{}),
+		)
 	})
 	routerapi.Any("/manage/qualityindexer/form/:typev", func(ctx *gin.Context) {
-		var count int
-
-		a, err := goquery.NewDocumentFromReader(ctx.Request.Body)
-		if err == nil {
-			a.Find("#qualityContainer").Children().Each(
-				func(_ int, s *goquery.Selection) {
-					s.Find(".qualityindexer").Each(func(_ int, s *goquery.Selection) {
-						s.Find("array-item card").Each(
-							func(_ int, _ *goquery.Selection) {
-								count++
-							},
-						)
-					})
-				},
-			)
+		idx, ok := nextRowIndexFromForm(
+			ctx,
+			"quality_"+ctx.Param("typev")+"_indexer_",
+			"_TemplateIndexer",
+		)
+		if !ok {
+			return
 		}
 
-		form := renderQualityIndexerForm(count, ctx.Param("typev"), &config.QualityIndexerConfig{})
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		renderAddedRow(
+			ctx,
+			renderQualityIndexerForm(idx, ctx.Param("typev"), &config.QualityIndexerConfig{}),
+		)
 	})
 	routerapi.Any("/manage/scheduler/form", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, "scheduler_", "_Name")
+		if !ok {
 			return
 		}
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, "scheduler_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[1]] = true
-		}
-
-		form := renderSchedulerForm(
-			&config.SchedulerConfig{Name: "new" + strconv.Itoa(len(formKeys))},
+		renderAddedRow(
+			ctx,
+			renderSchedulerForm(idx, &config.SchedulerConfig{Name: "new" + strconv.Itoa(idx)}),
 		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
 	})
 	routerapi.Any("/manage/mediadata/form/:prefix/:configv", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_data"
+
+		idx, ok := nextRowIndexFromForm(ctx, prefix+"_", "_TemplatePath")
+		if !ok {
 			return
 		}
 
-		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_data"
-		logger.Logtype("info", 0).Str("prefix", prefix).Msg("prefix")
-
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			logger.Logtype("info", 0).Str("key", key).Msg("key")
-
-			if !(strings.Contains(key, "_TemplatePath")) || !(strings.Contains(key, prefix+"_")) {
-				continue
-			}
-
-			logger.Logtype("info", 0).
-				Str("splitted", fmt.Sprintf("%v", strings.Split(key, "_"))).
-				Msg("key")
-
-			formKeys[strings.Split(key, "_")[4]] = true
-		}
-
-		logger.Logtype("info", 0).Any("keys", formKeys).Msg("keys")
-
-		form := renderMediaDataForm(prefix, len(formKeys), &config.MediaDataConfig{})
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		renderAddedRow(ctx, renderMediaDataForm(prefix, idx, &config.MediaDataConfig{}))
 	})
 	routerapi.Any("/manage/mediaimport/form/:prefix/:configv", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
-			return
-		}
-
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_dataimport"
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_TemplatePath")) || !(strings.Contains(key, prefix+"_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[4]] = true
+		idx, ok := nextRowIndexFromForm(ctx, prefix+"_", "_TemplatePath")
+		if !ok {
+			return
 		}
 
-		form := renderMediaDataImportForm(prefix, len(formKeys), &config.MediaDataImportConfig{})
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		renderAddedRow(
+			ctx,
+			renderMediaDataImportForm(prefix, idx, &config.MediaDataImportConfig{}),
+		)
 	})
 	routerapi.Any("/manage/medianotification/form/:prefix/:configv", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
-			return
-		}
-
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_notification"
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_MapNotification")) ||
-				!(strings.Contains(key, prefix+"_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[4]] = true
-		}
-
-		form := renderMediaNotificationForm(
-			prefix,
-			len(formKeys),
-			&config.MediaNotificationConfig{},
-		)
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
-	})
-	routerapi.Any("/manage/medialists/form/:prefix/:configv", func(ctx *gin.Context) {
-		if err := ctx.Request.ParseForm(); err != nil {
-			ctx.String(http.StatusOK, "")
+		idx, ok := nextRowIndexFromForm(ctx, prefix+"_", "_MapNotification")
+		if !ok {
 			return
 		}
 
+		renderAddedRow(
+			ctx,
+			renderMediaNotificationForm(prefix, idx, &config.MediaNotificationConfig{}),
+		)
+	})
+	routerapi.Any("/manage/medialists/form/:prefix/:configv", func(ctx *gin.Context) {
 		prefix := "media_" + ctx.Param("prefix") + "_" + ctx.Param("configv") + "_lists"
 
-		formKeys := make(map[any]bool)
-		for key := range ctx.Request.PostForm {
-			if !(strings.Contains(key, "_Name")) || !(strings.Contains(key, prefix+"_")) {
-				continue
-			}
-
-			formKeys[strings.Split(key, "_")[4]] = true
+		idx, ok := nextRowIndexFromForm(ctx, prefix+"_", "_Name")
+		if !ok {
+			return
 		}
 
-		form := renderMediaListsForm(prefix, len(formKeys), &config.MediaListsConfig{})
-
-		var buf strings.Builder
-		form.Render(&buf)
-		ctx.Header("Content-Type", "text/html")
-		ctx.String(http.StatusOK, buf.String())
+		renderAddedRow(ctx, renderMediaListsForm(prefix, idx, &config.MediaListsConfig{}))
 	})
 
 	// Config preview endpoint - returns readonly HTML view of a config item
@@ -677,7 +482,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsPath(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"Path: "+configName,
-					renderPathsForm(cfg, getCSRFToken(ctx)),
+					renderPathsForm(0, cfg, getCSRFToken(ctx)),
 				)
 			}
 
@@ -685,7 +490,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsList(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"List: "+configName,
-					renderListsForm(cfg, getCSRFToken(ctx)),
+					renderListsForm(0, cfg, getCSRFToken(ctx)),
 				)
 			}
 
@@ -693,7 +498,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsQuality(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"Quality: "+configName,
-					renderQualityForm(cfg, ""),
+					renderQualityForm(0, cfg, ""),
 				)
 			}
 
@@ -701,7 +506,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsScheduler(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"Scheduler: "+configName,
-					renderSchedulerForm(cfg),
+					renderSchedulerForm(0, cfg),
 				)
 			}
 
@@ -709,7 +514,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsIndexer(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"Indexer: "+configName,
-					renderIndexersForm(cfg, getCSRFToken(ctx)),
+					renderIndexersForm(0, cfg, getCSRFToken(ctx)),
 				)
 			}
 
@@ -718,7 +523,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 				if cfg.Name == configName {
 					form = renderConfigPreviewReadonly(
 						"Downloader: "+configName,
-						renderDownloaderForm(&cfg, getCSRFToken(ctx)),
+						renderDownloaderForm(0, &cfg, getCSRFToken(ctx)),
 					)
 
 					break
@@ -728,7 +533,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 		case "regex":
 			for _, cfg := range config.GetSettingsRegexAll() {
 				if cfg.Name == configName {
-					form = renderConfigPreviewReadonly("Regex: "+configName, renderRegexForm(&cfg))
+					form = renderConfigPreviewReadonly("Regex: "+configName, renderRegexForm(0, &cfg))
 					break
 				}
 			}
@@ -737,7 +542,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 			if cfg := config.GetSettingsNotification(configName); cfg != nil {
 				form = renderConfigPreviewReadonly(
 					"Notification: "+configName,
-					renderNotificationForm(cfg, getCSRFToken(ctx)),
+					renderNotificationForm(0, cfg, getCSRFToken(ctx)),
 				)
 			}
 		}
@@ -784,15 +589,6 @@ func apiDebugStats(ctx *gin.Context) {
 	gcjson, _ := json.Marshal(gc)
 	memjson, _ := json.Marshal(mem)
 
-	f, err := os.Create("./temp/heapdump")
-	if err != nil {
-		sendBadRequest(ctx, "Failed to create heap dump file: "+err.Error())
-		return
-	}
-	defer f.Close()
-
-	debug.WriteHeapDump(f.Fd())
-
 	debug.FreeOSMemory()
 	ctx.JSON(http.StatusOK, gin.H{
 		"GC Stats":     string(gcjson),
@@ -819,7 +615,7 @@ type Statsresults struct {
 // @Description  Lists Queued and Started Jobs (but not finished)
 // @Tags         general
 // @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=map[string]worker.Job}
+// @Success      200  {object}  Jsondata{data=map[string]syncops.Job}
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/queue [get].
 func apiQueueList(ctx *gin.Context) {
@@ -861,7 +657,7 @@ func apiQueueListStarted(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/trakt/authorize [get].
 func apiTraktGetAuthURL(ctx *gin.Context) {
-	sendJSONResponse(ctx, http.StatusOK, apiexternal.GetTraktAuthURL())
+	sendJSONResponse(ctx, http.StatusOK, traktAuthURL())
 }
 
 // @Summary      Trakt Save Token
@@ -878,11 +674,9 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 		return
 	}
 
-	tk, _ := apiexternal.GetTraktAuthToken(code)
-	apiexternal.SetTraktToken(tk)
+	_, _ = traktExchangeCode(ctx.Request.Context(), code)
 
-	config.UpdateCfgEntry(config.Conf{Name: "trakt_token", Data: apiexternal.GetTraktToken()})
-	sendJSONResponse(ctx, http.StatusOK, apiexternal.GetTraktToken())
+	sendJSONResponse(ctx, http.StatusOK, traktToken())
 }
 
 // @Summary      Trakt Get List (Auth Test)
@@ -891,7 +685,7 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Param        user  path      string  true  "Trakt Username"
 // @Param        list  path      string  true  "List Name"
 // @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  Jsondataerror{data=[]apiexternal.TraktUserList}
+// @Success      200   {object}  Jsondataerror{data=[]trakt.TraktUserListItem}
 // @Failure      401   {object}  Jsonerror
 // @Router       /api/trakt/user/{user}/{list} [get].
 func apiTraktGetUserList(ctx *gin.Context) {
@@ -905,8 +699,11 @@ func apiTraktGetUserList(ctx *gin.Context) {
 		return
 	}
 
-	lim := "10"
-	list, err := apiexternal.GetTraktUserList(user, listParam, "movie,show", &lim)
+	list, err := traktUserList(ctx.Request.Context(), user, listParam, "movie,show")
+	if len(list) > 10 {
+		list = list[:10]
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{"data": list, "error": err})
 }
 
@@ -1035,27 +832,88 @@ func apiSchedulerStart(c *gin.Context) {
 	sendSuccess(c, StrOK)
 }
 
+// @Summary      Stop Schedule
+// @Description  Stops one schedule: it queues no jobs until started again (in memory only - a restart or scheduler config reload starts it again)
+// @Tags         scheduler
+// @Param        id     path     string    true  "Schedule ID"
+// @Param        apikey query    string    true  "apikey"
+// @Success      200    {object} gin.H
+// @Failure      400    {object} Jsonerror
+// @Failure      401    {object} Jsonerror
+// @Failure      404    {object} Jsonerror
+// @Router       /api/scheduler/stop/{id} [post].
+func apiScheduleStop(ctx *gin.Context) {
+	setSchedulePaused(ctx, true)
+}
+
+// @Summary      Start Schedule
+// @Description  Starts a schedule stopped via /api/scheduler/stop/{id} again
+// @Tags         scheduler
+// @Param        id     path     string    true  "Schedule ID"
+// @Param        apikey query    string    true  "apikey"
+// @Success      200    {object} gin.H
+// @Failure      400    {object} Jsonerror
+// @Failure      401    {object} Jsonerror
+// @Failure      404    {object} Jsonerror
+// @Router       /api/scheduler/start/{id} [post].
+func apiScheduleStart(ctx *gin.Context) {
+	setSchedulePaused(ctx, false)
+}
+
+// @Summary      Queue Schedule
+// @Description  Queues one run of a schedule's job now - also for a stopped schedule
+// @Tags         scheduler
+// @Param        id     path     string    true  "Schedule ID"
+// @Param        apikey query    string    true  "apikey"
+// @Success      200    {object} gin.H
+// @Failure      400    {object} Jsonerror
+// @Failure      401    {object} Jsonerror
+// @Failure      404    {object} Jsonerror
+// @Failure      409    {object} Jsonerror
+// @Router       /api/scheduler/queue/{id} [post].
+func apiScheduleQueue(ctx *gin.Context) {
+	id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+	if err != nil {
+		sendBadRequest(ctx, "Invalid schedule ID format")
+		return
+	}
+
+	switch err := worker.QueueSchedule(uint32(id)); {
+	case err == nil:
+		sendSuccess(ctx, StrOK)
+	case errors.Is(err, logger.ErrNotFound):
+		sendNotFound(ctx, "Schedule not found")
+	case errors.Is(err, worker.ErrNotQueued):
+		sendJSONError(ctx, http.StatusConflict, "Job is already queued or running")
+	default:
+		sendJSONError(ctx, http.StatusConflict, err.Error())
+	}
+}
+
+func setSchedulePaused(ctx *gin.Context, paused bool) {
+	id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
+	if err != nil {
+		sendBadRequest(ctx, "Invalid schedule ID format")
+		return
+	}
+
+	if !worker.SetSchedulePaused(uint32(id), paused) {
+		sendNotFound(ctx, "Schedule not found")
+		return
+	}
+
+	sendSuccess(ctx, StrOK)
+}
+
 // @Summary      Scheduler Jobs
 // @Description  Lists Planned Jobs
 // @Tags         scheduler
 // @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=map[string]worker.jobSchedule}
+// @Success      200  {object}  Jsondata{data=map[string]syncops.JobSchedule}
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/scheduler/list [get].
 func apiSchedulerList(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, worker.GetSchedules())
-}
-
-// @Summary      Close DB
-// @Description  Closes all database connections
-// @Tags         database
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
-// @Router       /api/db/close [get].
-func apiDBClose(ctx *gin.Context) {
-	database.DBClose()
-	sendSuccess(ctx, StrOK)
 }
 
 // @Summary      Backup DB
@@ -1067,8 +925,9 @@ func apiDBClose(ctx *gin.Context) {
 // @Router       /api/db/backup [get].
 func apiDBBackup(ctx *gin.Context) {
 	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
+		// Pause, not Close: Close also stops the interval schedules for good.
 		worker.StopCronWorker()
-		worker.CloseWorkerPools()
+		worker.PauseWorkerPools(context.Background())
 	}
 
 	backupto := "./backup/data.db." + database.GetVersion() + "." + time.Now().
@@ -1085,6 +944,7 @@ func apiDBBackup(ctx *gin.Context) {
 			config.GetSettingsGeneral().WorkerMetadata,
 			config.GetSettingsGeneral().WorkerRSS,
 			config.GetSettingsGeneral().WorkerIndexer,
+			config.GetSettingsGeneral().WorkerParse,
 		)
 		worker.StartCronWorker()
 	}
@@ -1111,7 +971,13 @@ func apiDBIntegrity(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/db/cleanuporphans [get].
 func apiDBCleanupOrphans(ctx *gin.Context) {
-	sendJSONResponse(ctx, http.StatusOK, database.CleanupOrphans())
+	deleted, err := database.CleanupOrphans(false)
+	if err != nil {
+		sendJSONError(ctx, http.StatusInternalServerError, "orphan cleanup incomplete: "+err.Error())
+		return
+	}
+
+	sendJSONResponse(ctx, http.StatusOK, deleted)
 }
 
 // @Summary      Clear DB Table
@@ -1404,7 +1270,135 @@ func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
 // @Failure      401  {object}  Jsonerror
 // @Router       /api/config/all [get].
 func apiConfigAll(ctx *gin.Context) {
-	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
+	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
+}
+
+// configRedacted replaces secret config values in API responses.
+const configRedacted = "***REDACTED***"
+
+// isSecretConfigField reports whether a config struct field name (as
+// encoded to JSON, e.g. "WebAPIKey", "Password", "PlexToken") holds a
+// credential.
+func isSecretConfigField(name string) bool {
+	n := strings.ToLower(name)
+
+	return strings.Contains(n, "password") || strings.Contains(n, "apikey") ||
+		strings.Contains(n, "api_key") || strings.Contains(n, "token") ||
+		strings.Contains(n, "secret") || strings.HasSuffix(n, "key")
+}
+
+// redactConfigSecrets returns a JSON-shaped copy of v with every non-empty
+// secret field replaced, so config read endpoints don't hand out the web
+// API key, download-client passwords or indexer keys.
+func redactConfigSecrets(v any) any {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+
+	var out any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+
+	redactSecretsWalk(out)
+
+	return out
+}
+
+func redactSecretsWalk(v any) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, val := range t {
+			if s, ok := val.(string); ok {
+				if s != "" && isSecretConfigField(k) {
+					t[k] = configRedacted
+				}
+
+				continue
+			}
+
+			redactSecretsWalk(val)
+		}
+
+	case []any:
+		for _, val := range t {
+			redactSecretsWalk(val)
+		}
+	}
+}
+
+// restoreRedactedSecrets puts the stored value back into every field of dst
+// that still holds configRedacted, so a client that read a config through the
+// redacting endpoints and posts it back does not overwrite real secrets.
+func restoreRedactedSecrets(dst any, name string) {
+	stored, ok := config.GetCfgAll()[name]
+	if !ok {
+		return
+	}
+
+	var cur, old any
+
+	b, err := json.Marshal(dst)
+	if err != nil || json.Unmarshal(b, &cur) != nil {
+		return
+	}
+
+	b, err = json.Marshal(stored)
+	if err != nil || json.Unmarshal(b, &old) != nil {
+		return
+	}
+
+	if !mergeRedacted(cur, old) {
+		return
+	}
+
+	if b, err = json.Marshal(cur); err == nil {
+		_ = json.Unmarshal(b, dst)
+	}
+}
+
+// mergeRedacted replaces configRedacted values in cur with the value at the
+// same position in old and reports whether anything was replaced.
+func mergeRedacted(cur, old any) bool {
+	changed := false
+
+	switch c := cur.(type) {
+	case map[string]any:
+		o, _ := old.(map[string]any)
+		for k, v := range c {
+			if s, ok := v.(string); ok && s == configRedacted {
+				if ov, ok := o[k]; ok {
+					c[k] = ov
+				} else {
+					c[k] = ""
+				}
+
+				changed = true
+
+				continue
+			}
+
+			if mergeRedacted(v, o[k]) {
+				changed = true
+			}
+		}
+
+	case []any:
+		o, _ := old.([]any)
+		for i, v := range c {
+			var ov any
+			if i < len(o) {
+				ov = o[i]
+			}
+
+			if mergeRedacted(v, ov) {
+				changed = true
+			}
+		}
+	}
+
+	return changed
 }
 
 // @Summary      Clear Config
@@ -1417,7 +1411,7 @@ func apiConfigAll(ctx *gin.Context) {
 func apiConfigClear(ctx *gin.Context) {
 	config.ClearCfg()
 	config.WriteCfg()
-	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
+	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
 }
 
 // @Summary      Get Config
@@ -1434,7 +1428,7 @@ func apiConfigGet(ctx *gin.Context) {
 		return
 	}
 
-	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll()[name])
+	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()[name]))
 }
 
 // @Summary      Delete Config
@@ -1451,9 +1445,12 @@ func apiConfigDelete(ctx *gin.Context) {
 		return
 	}
 
-	config.DeleteCfgEntry(name)
+	if err := config.DeleteCfgEntry(name); err == nil {
+		reloadRuntimeFor(name)
+	}
+
 	config.WriteCfg()
-	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
+	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
 }
 
 // @Summary      Reload ConfigFile
@@ -1467,7 +1464,46 @@ func apiConfigRefreshFile(ctx *gin.Context) {
 	config.LoadCfgDB(true)
 	parser.GenerateAllQualityPriorities()
 	parser.GenerateCutoffPriorities()
-	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
+	scheduler.Reload()
+	providers.ReloadClientProviders()
+	providers.RegisterNotificationProviders()
+	sendSuccess(ctx, "config reloaded")
+}
+
+// reloadRuntimeFor re-applies a saved or deleted config entry to the parts of
+// the running app that only read it at registration time: the download-client,
+// indexer and notification providers, and the scheduler. Without the config file watcher
+// nothing else would pick the change up before a restart.
+func reloadRuntimeFor(name string) {
+	if strings.HasPrefix(name, "downloader_") || strings.HasPrefix(name, "indexer_") {
+		providers.ReloadClientProviders()
+	}
+
+	// Notification providers carry the general user agent.
+	if name == "general" || strings.HasPrefix(name, "notification_") {
+		providers.RegisterNotificationProviders()
+	}
+
+	if affectsScheduler(name) {
+		scheduler.Reload()
+	}
+}
+
+// affectsScheduler reports whether a config entry feeds the schedules: the
+// scheduler templates, the media configs that reference them, and general
+// (UseCronInsteadOfInterval).
+func affectsScheduler(name string) bool {
+	if name == "general" {
+		return true
+	}
+
+	for _, p := range []string{"scheduler_", "serie_", "movie_", "book_", "audiobook_", "music_"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // @Summary      Update Config
@@ -1501,6 +1537,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		restoreRedactedSecrets(&getcfg, name)
+
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "downloader":
@@ -1508,6 +1546,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
+		restoreRedactedSecrets(&getcfg, name)
 
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
@@ -1517,6 +1557,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		restoreRedactedSecrets(&getcfg, name)
+
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "indexer":
@@ -1524,6 +1566,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
+		restoreRedactedSecrets(&getcfg, name)
 
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
@@ -1533,6 +1577,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		restoreRedactedSecrets(&getcfg, name)
+
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "serie", "movie":
@@ -1540,6 +1586,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
+		restoreRedactedSecrets(&getcfg, name)
 
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
@@ -1549,6 +1597,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		restoreRedactedSecrets(&getcfg, name)
+
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "path":
@@ -1556,6 +1606,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
+		restoreRedactedSecrets(&getcfg, name)
 
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
@@ -1565,6 +1617,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		restoreRedactedSecrets(&getcfg, name)
+
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "regex":
@@ -1573,6 +1627,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		restoreRedactedSecrets(&getcfg, name)
+
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
 	case "scheduler":
@@ -1580,6 +1636,8 @@ func apiConfigUpdate(ctx *gin.Context) {
 		if !bindJSONWithValidation(ctx, &getcfg) {
 			return
 		}
+
+		restoreRedactedSecrets(&getcfg, name)
 
 		err = config.UpdateCfgEntry(config.Conf{Name: name, Data: getcfg})
 
@@ -1593,8 +1651,9 @@ func apiConfigUpdate(ctx *gin.Context) {
 		return
 	}
 
+	reloadRuntimeFor(name)
 	config.WriteCfg()
-	sendJSONResponse(ctx, http.StatusOK, config.GetCfgAll())
+	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
 }
 
 // @Summary      List Config Type
@@ -1698,7 +1757,7 @@ func apiListConfigType(ctx *gin.Context) {
 		})
 	}
 
-	sendJSONResponse(ctx, http.StatusOK, list)
+	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(list))
 }
 
 type apiNameInput struct {
@@ -1730,21 +1789,28 @@ func apiNamingGenerate(ctx *gin.Context) {
 			database.Querywithargs{Where: logger.FilterByID},
 			cfg.MovieID,
 		)
-		if err != nil {
+		if err != nil || movie == nil {
 			sendBadRequest(ctx, "movie not found")
 			return
 		}
 
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
+		if cfgp == nil || len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
+			sendBadRequest(ctx, "media config not found or has no data/data_import templates")
+			return
+		}
+
 		s := structure.NewStructure(
 			cfgp,
-			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
-			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath, false, false, 0)
+			cfgp.DataImport[0].TemplatePath,
+			cfgp.Data[0].TemplatePath, false, false, 0)
 		if s == nil {
 			sendBadRequest(ctx, "failed to create organizer - check that Structure is enabled for this config")
 			return
 		}
-		// defer s.Close()
+
+		defer s.Close()
+
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
@@ -1761,16 +1827,13 @@ func apiNamingGenerate(ctx *gin.Context) {
 			cfgp.GetMediaListsEntryListID(movie.Listname),
 		)
 
+		if m == nil || m.ListID < 0 || m.ListID >= len(cfgp.Lists) {
+			sendBadRequest(ctx, "file could not be parsed or list not found")
+			return
+		}
+
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(
-			ctx,
-			&orgadata2,
-			m,
-			0,
-			false,
-			false,
-			s.Cfgp.Lists[m.ListID].CfgQuality,
-		)
+		namingPreviewProbe(ctx, cfgp, m, cfg.FilePath, cfgp.Lists[m.ListID].CfgQuality)
 
 		s.GenerateNamingTemplate(&orgadata2, m, &movie.DbmovieID)
 		ctx.JSON(
@@ -1782,24 +1845,30 @@ func apiNamingGenerate(ctx *gin.Context) {
 			database.Querywithargs{Where: logger.FilterByID},
 			cfg.SerieID,
 		)
-		if err != nil {
+		if err != nil || series == nil {
 			sendBadRequest(ctx, "series not found")
 			return
 		}
 		// defer logger.ClearVar(&series)
 		cfgp := config.GetSettingsMedia(cfg.CfgMedia)
+		if cfgp == nil || len(cfgp.DataImport) == 0 || len(cfgp.Data) == 0 {
+			sendBadRequest(ctx, "media config not found or has no data/data_import templates")
+			return
+		}
 
 		s := structure.NewStructure(
 			cfgp,
-			config.GetSettingsMedia(cfg.CfgMedia).DataImport[0].TemplatePath,
-			config.GetSettingsMedia(cfg.CfgMedia).Data[0].TemplatePath,
+			cfgp.DataImport[0].TemplatePath,
+			cfgp.Data[0].TemplatePath,
 			false, false, 0,
 		)
 		if s == nil {
 			sendBadRequest(ctx, "failed to create organizer - check that Structure is enabled for this config")
 			return
 		}
-		// defer s.Close()
+
+		defer s.Close()
+
 		to := filepath.Dir(cfg.FilePath)
 
 		var orgadata2 structure.Organizerdata
@@ -1816,28 +1885,22 @@ func apiNamingGenerate(ctx *gin.Context) {
 			cfgp.GetMediaListsEntryListID(series.Listname),
 		)
 
+		if m == nil || m.ListID < 0 || m.ListID >= len(cfgp.Lists) {
+			sendBadRequest(ctx, "file could not be parsed or list not found")
+			return
+		}
+
 		orgadata2.Listid = m.ListID
-		s.ParseFileAdditional(
-			ctx,
-			&orgadata2,
-			m,
-			0,
-			false,
-			false,
-			s.Cfgp.Lists[m.ListID].CfgQuality,
-		)
+		namingPreviewProbe(ctx, cfgp, m, cfg.FilePath, cfgp.Lists[m.ListID].CfgQuality)
 
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID
-		s.GetSeriesEpisodes(&orgadata2, m, true, s.Cfgp.Lists[orgadata2.Listid].CfgQuality)
-
-		var firstepiid uint
-		for _, entry := range m.Episodes {
-			firstepiid = entry.Num1
-			break
+		if err := m.Getepisodestoimport(); err != nil || len(m.Episodes) == 0 {
+			sendBadRequest(ctx, "no matching episode found for this file in the selected series")
+			return
 		}
 
-		s.GenerateNamingTemplate(&orgadata2, m, &firstepiid)
+		s.GenerateNamingTemplate(&orgadata2, m, &m.Episodes[0].Num1)
 		ctx.JSON(
 			http.StatusOK,
 			gin.H{"foldername": orgadata2.Foldername, "filename": orgadata2.Filename, "m": m},
@@ -2048,7 +2111,7 @@ func apiAlbumForceMatch(ctx *gin.Context) {
 // @Tags         queue
 // @Param        id     path     string    true  "Queue job ID"
 // @Param        apikey query    string    true  "apikey"
-// @Success      200    {object} gin.H{"success": bool}
+// @Success      200    {object} gin.H
 // @Failure      400    {object} Jsonerror
 // @Failure      401    {object} Jsonerror
 // @Failure      404    {object} Jsonerror

@@ -199,6 +199,59 @@ func (s *ConfigSearcher) validateSize(entry *apiexternal_v2.Nzbwithprio) bool {
 	return s.filterSizeNzbs(entry)
 }
 
+// singleTrackExts are audio extensions that mark a release title as a single
+// posted file. m4b is left out: one m4b file is usually a complete audiobook.
+var singleTrackExts = map[string]struct{}{
+	".mp3": {}, ".flac": {}, ".m4a": {}, ".ogg": {}, ".opus": {}, ".aac": {}, ".wav": {}, ".wma": {},
+}
+
+// checksingletrack rejects music and audiobook releases whose title is one
+// posted audio file ("Artist - Album - 05 - Song.flac", `[06/17] - "06-x.flac"`).
+// They resolve to the right album or book but hold one track, so the item stays
+// missing and the next search grabs the next track. Returns true to skip.
+func (s *ConfigSearcher) checksingletrack(entry *apiexternal_v2.Nzbwithprio) bool {
+	if s.Cfgp.IsType != config.MediaTypeMusic && s.Cfgp.IsType != config.MediaTypeAudiobook {
+		return false
+	}
+
+	if _, ok := singleTrackExts[logger.FileExt(strings.TrimRight(entry.NZB.Title, `" `))]; !ok {
+		return false
+	}
+
+	s.logdenied("single track", entry)
+
+	return true
+}
+
+// minAudiobookBytesPerHour is the smallest plausible size of one hour of
+// audiobook audio: 10 MiB/h is ~23 kbps, below the 32 kbps mono floor that
+// spoken-word encodes go down to.
+const minAudiobookBytesPerHour = 10 << 20
+
+// checkruntimesize rejects audiobook releases far too small for the book's
+// known runtime - sample posts of a few MB that the import later moves to
+// wrong_runtime, after which the book is searched and grabbed again.
+// Returns true to skip.
+func (s *ConfigSearcher) checkruntimesize(entry *apiexternal_v2.Nzbwithprio) bool {
+	if s.Cfgp.IsType != config.MediaTypeAudiobook || entry.NZB.Size <= 0 ||
+		entry.Info.DbaudiobookID == 0 {
+		return false
+	}
+
+	runtime := database.Getdatarow[int64](
+		false,
+		"select runtime_minutes from dbaudiobooks where id = ?",
+		&entry.Info.DbaudiobookID,
+	)
+	if runtime < 30 || entry.NZB.Size >= runtime*minAudiobookBytesPerHour/60 {
+		return false
+	}
+
+	s.logdenied1Int64("too small for runtime", entry)
+
+	return true
+}
+
 // validateEntry combines multiple validation steps.
 func (s *ConfigSearcher) validateEntry(
 	e, entry *apiexternal_v2.Nzbwithprio,
@@ -206,6 +259,10 @@ func (s *ConfigSearcher) validateEntry(
 ) bool {
 	// History check
 	if s.checkhistory(entry, qual) {
+		return true
+	}
+
+	if s.checkruntimesize(entry) {
 		return true
 	}
 
@@ -259,7 +316,11 @@ func (s *ConfigSearcher) validateEntry(
 		return true
 	}
 
-	if entry.MinimumPriority != 0 && entry.MinimumPriority == entry.Info.Priority {
+	// Existing files are compared on the comparable scale (books: format only).
+	// entry.Info.Priority keeps the full score for ranking releases.
+	comparable := parser.ComparablePriority(&entry.Info, s.Cfgp)
+
+	if entry.MinimumPriority != 0 && entry.MinimumPriority == comparable {
 		s.logdenied("same Prio", entry)
 		return true
 	}
@@ -272,11 +333,11 @@ func (s *ConfigSearcher) validateEntry(
 			threshold += minDiff
 		}
 
-		if entry.Info.Priority <= threshold {
+		if comparable <= threshold {
 			logger.Logtype("debug", 0).
 				Str(logger.StrReason, "lower Prio").
 				Str(logger.StrTitle, entry.NZB.Title).
-				Int(logger.StrFound, entry.Info.Priority).
+				Int(logger.StrFound, comparable).
 				Int(logger.StrWanted, entry.MinimumPriority).
 				Msg(skippedstr)
 
@@ -521,25 +582,25 @@ func (s *ConfigSearcher) checkyear(
 		return false
 	}
 
+	if !qual.CheckYear && !qual.CheckYear1 {
+		return false
+	}
+
 	if sourceentry.Info.Year == 0 {
 		s.logdenied("no year", entry)
 		return true
 	}
 
-	if qual.CheckYear || qual.CheckYear1 {
-		targetYear := sourceentry.Info.Year
+	targetYear := sourceentry.Info.Year
 
-		// Check exact year
-		if logger.ContainsInt(entry.NZB.Title, targetYear) {
+	if logger.ContainsInt(entry.NZB.Title, targetYear) {
+		return false
+	}
+
+	if qual.CheckYear1 {
+		if logger.ContainsInt(entry.NZB.Title, targetYear+1) ||
+			logger.ContainsInt(entry.NZB.Title, targetYear-1) {
 			return false
-		}
-
-		// Check year +/- 1 if enabled
-		if qual.CheckYear1 {
-			if logger.ContainsInt(entry.NZB.Title, targetYear+1) ||
-				logger.ContainsInt(entry.NZB.Title, targetYear-1) {
-				return false
-			}
 		}
 	}
 
@@ -728,11 +789,11 @@ func (s *ConfigSearcher) checkepisode(sourceentry, entry *apiexternal_v2.Nzbwith
 		return true
 	}
 
-	return s.checkEpisodeFormat(sourceentry, entry, sourceentry.Info.Identifier)
+	return s.checkEpisodeFormat(sourceentry, entry, entry.Info.Identifier)
 }
 
-// checkEpisodeFormat validates the episode identifier format for a given entry.
-// It checks if the identifier matches the expected season and episode format.
+// checkEpisodeFormat validates the release's parsed episode identifier against
+// the wanted season and episode (sourceentry.NZB.Season/Episode).
 // Returns false if the identifier is valid, true if the entry should be skipped.
 //
 // Optimized: Reduced string allocations by building patterns once and reusing them.
@@ -750,7 +811,12 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 		return true
 	}
 
-	if !logger.HasPrefixI(identifier, sprefix+sourceentry.NZB.Season) {
+	// The parser zero-pads the release identifier (S01E05) while the wanted
+	// season may be stored unpadded ("1"); requiring the episode prefix right
+	// after the season keeps season 1 from matching S10/S11.
+	season := sourceentry.NZB.Season
+	if !logger.HasPrefixI(identifier, sprefix+season+eprefix) &&
+		!logger.HasPrefixI(identifier, sprefix+"0"+season+eprefix) {
 		s.logdenied1StrNo("unwanted Season", entry, &sourceentry.Info)
 		return true
 	}
@@ -761,9 +827,6 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 		return true
 	}
 
-	// Pre-build common episode patterns to reduce allocations in loops
-	eprefixEpisode := eprefix + episode
-
 	// Check episode suffixes with all prefix combinations
 	// episodePrefixes = {"", " ", "0", " 0"}
 	for i := range episodePrefixes {
@@ -773,20 +836,13 @@ func (s *ConfigSearcher) checkEpisodeFormat(
 		}
 	}
 
-	// Check suffix patterns: eprefix, space, dash
-	// Instead of nested loops, check each pattern combination directly
-	if logger.ContainsI(identifier, eprefixEpisode+eprefix) ||
-		logger.ContainsI(identifier, eprefixEpisode+logger.StrSpace) ||
-		logger.ContainsI(identifier, eprefixEpisode+logger.StrDash) {
-		return false
-	}
-
-	// Check suffix patterns with episode prefixes
+	// Multi-episode identifiers (S01E05E06, S01E05-E06): the wanted episode
+	// followed by a separator anywhere in the identifier.
 	for i := range episodePrefixes {
 		base := eprefix + episodePrefixes[i] + episode
-		if logger.HasSuffixI(identifier, base+eprefix) ||
-			logger.HasSuffixI(identifier, base+logger.StrSpace) ||
-			logger.HasSuffixI(identifier, base+logger.StrDash) {
+		if logger.ContainsI(identifier, base+eprefix) ||
+			logger.ContainsI(identifier, base+logger.StrSpace) ||
+			logger.ContainsI(identifier, base+logger.StrDash) {
 			return false
 		}
 	}

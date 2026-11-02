@@ -14,7 +14,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
@@ -25,12 +24,9 @@ import (
 const (
 	// COLLATE NOCASE matches querySelectMovieByImdb (jobs_movies.go) - without
 	// it, a listname differing only in case from list.Name (config rename,
-	// casing drift) makes a just-matched book/audiobook/album ID stay 0,
-	// so the file is dropped as unmatched even though the DB row was found.
-	querySelectBookByDbID      = "select id from books where dbbook_id = ? and listname = ? COLLATE NOCASE"
-	querySelectAudiobookByDbID = "select id from audiobooks where dbaudiobook_id = ? and listname = ? COLLATE NOCASE"
-	querySelectAlbumByDbID     = "select id from albums where dbalbum_id = ? and listname = ? COLLATE NOCASE"
-	querySelectTrackByAlbum    = "SELECT id FROM dbtracks WHERE dbalbum_id = ? AND track_number = ? AND disc_number = ?"
+	// casing drift) makes a just-matched book ID stay 0, so the file is
+	// dropped as unmatched even though the DB row was found.
+	querySelectBookByDbID = "select id from books where dbbook_id = ? and listname = ? COLLATE NOCASE"
 	// querySelectImdbByDbmovie   = "select imdb_id from dbmovies where id = ?".
 )
 
@@ -173,8 +169,8 @@ func jobImportParseCommon(
 			m.AddUnmatched(cfgp, &list.Name, logger.ErrNotFoundDbserie)
 			return logger.ErrNotFoundDbserie
 		}
-	} else if mediaID == 0 {
-		// Movies: already handled in caller's addfound logic, just check if we have an ID
+	} else if mediaID == 0 && (cfgp.IsType != config.MediaTypeMovie || !addfound) {
+		// Movies with addfound fall through to the add-found import below.
 		m.TempTitle = pathv
 		m.AddUnmatched(cfgp, &list.Name, logger.ErrNotFound)
 		return logger.ErrNotFoundMovie
@@ -282,81 +278,6 @@ func jobImportParseCommon(
 				return err
 			}
 		}
-
-	case config.MediaTypeBook:
-		{
-			// Try to find the book in the database by title
-			if m.BookID == 0 {
-				m.FindDbbookByTitle()
-
-				if m.DbbookID != 0 {
-					// Found in dbbooks, now check if tracked
-					database.Scanrowsdyn(
-						false,
-						querySelectBookByDbID,
-						&m.BookID,
-						&m.DbbookID,
-						&list.Name,
-					)
-				}
-			}
-
-			if m.BookID == 0 {
-				m.TempTitle = pathv
-				m.AddUnmatched(cfgp, &list.Name, logger.ErrNotFoundBook)
-				return logger.ErrNotFoundBook
-			}
-		}
-
-	case config.MediaTypeAudiobook:
-		{
-			// Try to find the audiobook in the database by title
-			if m.AudiobookID == 0 {
-				m.FindDbaudiobookByTitle()
-
-				if m.DbaudiobookID != 0 {
-					// Found in dbaudiobooks, now check if tracked
-					database.Scanrowsdyn(
-						false,
-						querySelectAudiobookByDbID,
-						&m.AudiobookID,
-						&m.DbaudiobookID,
-						&list.Name,
-					)
-				}
-			}
-
-			if m.AudiobookID == 0 {
-				m.TempTitle = pathv
-				m.AddUnmatched(cfgp, &list.Name, logger.ErrNotFoundAudiobook)
-				return logger.ErrNotFoundAudiobook
-			}
-		}
-
-	case config.MediaTypeMusic:
-		{
-			// Try to find the album in the database by title
-			if m.AlbumID == 0 {
-				m.FindDbalbumByTitle()
-
-				if m.DbalbumID != 0 {
-					// Found in dbalbums, now check if tracked
-					database.Scanrowsdyn(
-						false,
-						querySelectAlbumByDbID,
-						&m.AlbumID,
-						&m.DbalbumID,
-						&list.Name,
-					)
-				}
-			}
-
-			if m.AlbumID == 0 {
-				m.TempTitle = pathv
-				m.AddUnmatched(cfgp, &list.Name, logger.ErrNotFoundAlbum)
-				return logger.ErrNotFoundAlbum
-			}
-		}
 	}
 
 	// Common parsing logic
@@ -446,86 +367,6 @@ func jobImportParseCommon(
 				// this path after the switch below - no need to repeat it
 				// per episode for a multi-episode file.
 			}
-		}
-
-	case config.MediaTypeBook:
-		{ // Books: single insert
-			m.TempTitle = pathv
-
-			// Update rootpath if empty
-			if mediaID != 0 && database.Getdatarow[string](false, selectRootpath, &mediaID) == "" {
-				structure.UpdateRootpath(pathv, "books", &mediaID, cfgp)
-			}
-
-			database.ExecN(insertQuery,
-				&m.TempTitle, &basefile, &extfile, &qualityProfileName,
-				&mediaID, &dbMediaID,
-			)
-			database.ExecN(updateMissing, &mediaID)
-			database.ExecN(updateReached, &reached, &mediaID)
-		}
-
-	case config.MediaTypeAudiobook:
-		{ // Audiobooks: single insert
-			m.TempTitle = pathv
-
-			// Update rootpath if empty
-			if mediaID != 0 && database.Getdatarow[string](false, selectRootpath, &mediaID) == "" {
-				structure.UpdateRootpath(pathv, "audiobooks", &mediaID, cfgp)
-			}
-
-			database.ExecN(insertQuery,
-				&m.TempTitle, &basefile, &extfile, &qualityProfileName,
-				&mediaID, &dbMediaID,
-			)
-			database.ExecN(updateMissing, &mediaID)
-			database.ExecN(updateReached, &reached, &mediaID)
-		}
-
-	case config.MediaTypeMusic:
-		{ // Albums: single insert
-			m.TempTitle = pathv
-
-			// Update rootpath if empty
-			if mediaID != 0 && database.Getdatarow[string](false, selectRootpath, &mediaID) == "" {
-				structure.UpdateRootpath(pathv, "albums", &mediaID, cfgp)
-			}
-
-			// Read audio tags to match file to track
-			var dbtrackID uint
-			if tagData := parser_v2.ReadTagsForFirstFile([]string{pathv}); tagData != nil {
-				if dbMediaID != 0 {
-					// Try to find matching track in dbtracks by track number and disc number
-					database.Scanrowsdyn(
-						false,
-						querySelectTrackByAlbum,
-						&dbtrackID,
-						&dbMediaID,
-						&tagData.TrackNumber,
-						&tagData.DiscNumber,
-					)
-
-					logger.Logtype("debug", 2).
-						Uint("dbalbum_id", dbMediaID).
-						Int("track_number", tagData.TrackNumber).
-						Int("disc_number", tagData.DiscNumber).
-						Uint("dbtrack_id", dbtrackID).
-						Str("file", pathv).
-						Msg("Matched music file to track")
-				}
-
-				// Every other ReadTagsForFirstFile/ReadAudioTags call site in
-				// this codebase returns the pooled object right after use -
-				// this one didn't, silently draining the bounded TrackInfo pool.
-				parser_v2.PutTrackInfo(tagData)
-			}
-
-			database.ExecN(insertQuery,
-				&m.TempTitle, &basefile, &extfile, &qualityProfileName,
-				&mediaID, &dbMediaID, &dbtrackID,
-			)
-			database.ExecN(updateMissing, &mediaID)
-			database.ExecN(updateReached, &reached, &mediaID)
 		}
 	}
 
@@ -618,9 +459,10 @@ func jobImportParseBook(
 
 	m.File = pathv
 
-	// Calculate quality reached
+	// Calculate quality reached (format-only for books, matching the
+	// existing-file score the cutoff is checked against on rescans)
 	var reached int
-	if m.Priority >= list.CfgQuality.CutoffPriority {
+	if parser.ComparablePriority(m, cfgp) >= list.CfgQuality.CutoffPriority {
 		reached = 1
 	}
 
@@ -704,11 +546,42 @@ func importnewsingle(
 
 	feed, err := Feeds(ctx, cfgp, list, false)
 	if err != nil {
+		feed.requeueIRC(false)
 		plfeeds.Put(feed)
+
 		return err
 	}
 	defer plfeeds.Put(feed)
 
+	// IRC announce lines drained by Feeds are only gone for good once the
+	// import ran to completion; otherwise the next run gets them again.
+	completed := false
+
+	defer func() {
+		if !completed { // panicking
+			feed.requeueIRC(true)
+		}
+	}()
+
+	err = importFeedEntries(ctx, cfgp, list, listid, feed)
+	completed = true
+
+	if err == nil && ctx.Err() == nil {
+		feed.commitIRC()
+	} else {
+		feed.requeueIRC(false)
+	}
+
+	return err
+}
+
+// importFeedEntries imports the entries of a fetched feed into list listid.
+func importFeedEntries(
+	ctx context.Context, cfgp *config.MediaTypeConfig,
+	list *config.MediaListsConfig,
+	listid int,
+	feed *feedResults,
+) error {
 	listnamefilter := list.Getlistnamefilterignore()
 
 	args := logger.PLArrAny.Get()
@@ -721,7 +594,10 @@ func importnewsingle(
 	// Aggregate per-entry outcomes so one summary line is logged per run.
 	ctx, summary := importfeed.WithImportSummary(ctx)
 
-	pl := worker.WorkerPoolParse.NewGroupContext(ctx)
+	pl := worker.WorkerPoolParse().NewGroupContext(ctx)
+	// Submitted tasks read feed entries; early returns must not hand the feed
+	// back to the pool (deferred in importnewsingle) while they are still running.
+	defer func() { _ = pl.Wait() }()
 
 	switch cfgp.IsType {
 	case config.MediaTypeMovie:

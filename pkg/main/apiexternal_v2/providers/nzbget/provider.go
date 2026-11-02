@@ -72,8 +72,15 @@ type Provider struct {
 	baseURL  string
 }
 
-// NewProvider creates a new NZBGet download provider
-func NewProvider(host string, port int, username, password string, useSSL bool) (*Provider, error) {
+// NewProvider creates a new NZBGet download provider. urlBase is an optional
+// reverse-proxy sub-path ("/nzbget") in front of the /jsonrpc endpoint.
+func NewProvider(
+	host string,
+	port int,
+	username, password string,
+	useSSL bool,
+	urlBase string,
+) (*Provider, error) {
 	if port == 0 {
 		port = 6789 // Default NZBGet port
 	}
@@ -84,7 +91,7 @@ func NewProvider(host string, port int, username, password string, useSSL bool) 
 		scheme = "https"
 	}
 
-	baseURL := fmt.Sprintf("%s://%s:%d/jsonrpc", scheme, host, port)
+	baseURL := fmt.Sprintf("%s://%s:%d%s/jsonrpc", scheme, host, port, strings.TrimSuffix(urlBase, "/"))
 
 	config := base.ClientConfig{
 		Name:                    "nzbget",
@@ -192,8 +199,7 @@ func (p *Provider) PauseTorrent(ctx context.Context, hash string) error {
 		return errors.New(logger.JoinStrings("invalid NZBID: ", hash))
 	}
 
-	_, err = p.makeJSONRPCCall(ctx, "editqueue", []any{"GroupPause", 0, "", []int{nzbID}})
-	if err != nil {
+	if err := p.editQueue(ctx, []any{"GroupPause", 0, "", []int{nzbID}}); err != nil {
 		return errors.New(logger.JoinStrings("failed to pause download: ", err.Error()))
 	}
 
@@ -212,8 +218,7 @@ func (p *Provider) ResumeTorrent(ctx context.Context, hash string) error {
 		return errors.New(logger.JoinStrings("invalid NZBID: ", hash))
 	}
 
-	_, err = p.makeJSONRPCCall(ctx, "editqueue", []any{"GroupResume", 0, "", []int{nzbID}})
-	if err != nil {
+	if err := p.editQueue(ctx, []any{"GroupResume", 0, "", []int{nzbID}}); err != nil {
 		return errors.New(logger.JoinStrings("failed to resume download: ", err.Error()))
 	}
 
@@ -237,8 +242,7 @@ func (p *Provider) RemoveTorrent(ctx context.Context, hash string, deleteFiles b
 		action = "GroupFinalDelete" // Deletes from history and files
 	}
 
-	_, err = p.makeJSONRPCCall(ctx, "editqueue", []any{action, 0, "", []int{nzbID}})
-	if err != nil {
+	if err := p.editQueue(ctx, []any{action, 0, "", []int{nzbID}}); err != nil {
 		return errors.New(logger.JoinStrings("failed to remove download: ", err.Error()))
 	}
 
@@ -297,6 +301,38 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 // GetHTTPClient returns an HTTP client for this provider
 func (p *Provider) GetHTTPClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
+}
+
+// editQueue runs an editqueue command. NZBGet answers an unknown NZBID with
+// result false rather than an RPC error.
+func (p *Provider) editQueue(ctx context.Context, params []any) error {
+	result, err := p.makeJSONRPCCall(ctx, "editqueue", params)
+	if err != nil {
+		return err
+	}
+
+	var ok bool
+	if err := json.Unmarshal(result, &ok); err != nil {
+		return errors.New(logger.JoinStrings("unexpected editqueue result: ", string(result)))
+	}
+
+	if !ok {
+		return errors.New("nzbget rejected the edit (unknown NZBID?)")
+	}
+
+	return nil
+}
+
+// nzbgetPriority converts the downloader config's documented -2..2 priority
+// scale to NZBGet's (-100 very low, -50 low, 0 normal, 50 high, 100 very
+// high, 900 force). Values outside -2..2 are assumed to already be on
+// NZBGet's scale and pass through.
+func nzbgetPriority(priority int) int {
+	if priority >= -2 && priority <= 2 {
+		return priority * 50
+	}
+
+	return priority
 }
 
 // makeJSONRPCCall makes a JSON-RPC call to NZBGet
@@ -458,7 +494,7 @@ func (p *Provider) convertHistoryItemToTorrentInfo(
 // AddNZB implements the DownloadProvider interface for NZB support
 // This is the interface-compliant version that calls AddNZBExtended with default parameters
 func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority int) error {
-	_, err := p.AddNZBExtended(ctx, nzbURL, category, priority, false)
+	_, err := p.AddNZBExtended(ctx, nzbURL, category, "", priority, false)
 	return err
 }
 
@@ -466,9 +502,12 @@ func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority
 //
 // This is an extended method with additional parameters not in the DownloadProvider interface,
 // but useful for clients that need direct NZB support with more options
+//
+// nzbName, when non-empty, is used as the NZBFilename (NZBGet derives the job
+// name from it) instead of the name taken from the indexer response.
 func (p *Provider) AddNZBExtended(
 	ctx context.Context,
-	nzbURL, category string,
+	nzbURL, category, nzbName string,
 	priority int,
 	addPaused bool,
 ) (int, error) {
@@ -511,10 +550,10 @@ func (p *Provider) AddNZBExtended(
 	nzbContent := base64.StdEncoding.EncodeToString(buf.Bytes())
 
 	// Extract filename - try multiple methods
-	filename := ""
+	filename := nzbName
 
 	// 1. Try Content-Disposition header
-	if contentDisposition != "" {
+	if filename == "" && contentDisposition != "" {
 		// Parse Content-Disposition: attachment; filename="something.nzb"
 		if parts := strings.Split(contentDisposition, "filename="); len(parts) > 1 {
 			filename = strings.Trim(parts[1], "\"")
@@ -544,16 +583,16 @@ func (p *Provider) AddNZBExtended(
 
 	// Append NZB file
 	params := []any{
-		filename,   // NZB filename
-		nzbContent, // NZB content (base64)
-		category,   // Category
-		priority,   // Priority
-		false,      // Add to top of queue
-		addPaused,  // Add paused
-		"",         // Duplicate key (empty for auto-generate)
-		0,          // Duplicate score
-		"SCORE",    // Duplicate mode
-		nil,        // Post-processing parameters
+		filename,                 // NZB filename
+		nzbContent,               // NZB content (base64)
+		category,                 // Category
+		nzbgetPriority(priority), // Priority
+		false,                    // Add to top of queue
+		addPaused,                // Add paused
+		"",                       // Duplicate key (empty for auto-generate)
+		0,                        // Duplicate score
+		"SCORE",                  // Duplicate mode
+		nil,                      // Post-processing parameters
 	}
 
 	result, err := p.makeJSONRPCCall(ctx, "append", params)

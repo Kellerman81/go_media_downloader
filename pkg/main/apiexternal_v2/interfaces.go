@@ -62,17 +62,6 @@ import "context"
 // 	GetSeriesRecommendations(ctx context.Context, id int) ([]SeriesSearchResult, error)
 // }
 
-// WatchlistProvider defines the interface for watchlist functionality (Plex, Jellyfin, Trakt).
-type WatchlistProvider interface {
-	GetProviderType() ProviderType
-	GetProviderName() string
-
-	// Watchlist operations
-	GetWatchlist(ctx context.Context, username string) ([]WatchlistItem, error)
-	AddToWatchlist(ctx context.Context, username string, itemType string, id int) error
-	RemoveFromWatchlist(ctx context.Context, username string, itemType string, id int) error
-}
-
 // DownloadProvider defines the interface for download clients with full type safety.
 // type DownloadProvider interface {
 // 	GetProviderType() DownloadProviderType

@@ -1,6 +1,7 @@
 package omdb
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,7 +88,7 @@ func convertSearchResults(
 				ID:           0, // OMDB doesn't use numeric IDs
 				Title:        omdbResults[i].Title,
 				Year:         parseYear(omdbResults[i].Year),
-				PosterPath:   omdbResults[i].Poster,
+				PosterPath:   notAvailable(omdbResults[i].Poster),
 				ProviderName: provider,
 				IMDbID:       omdbResults[i].ImdbID, // OMDB provides IMDb ID directly in search results
 			})
@@ -108,8 +109,9 @@ func convertSearchToSeriesResults(
 			results = append(results, apiexternal_v2.SeriesSearchResult{
 				ID:           0, // OMDB doesn't use numeric IDs
 				Name:         omdbResults[i].Title,
-				PosterPath:   omdbResults[i].Poster,
+				PosterPath:   notAvailable(omdbResults[i].Poster),
 				ProviderName: provider,
+				IMDbID:       omdbResults[i].ImdbID,
 			})
 		}
 	}
@@ -123,10 +125,12 @@ func convertDetailsToSearchResult(details *omdbDetailsResponse) apiexternal_v2.M
 		Title:        details.Title,
 		Year:         parseYear(details.Year),
 		ReleaseDate:  parseOMDBDate(details.Released),
-		PosterPath:   details.Poster,
-		Overview:     details.Plot,
+		PosterPath:   notAvailable(details.Poster),
+		Overview:     notAvailable(details.Plot),
 		VoteAverage:  parseRating(details.ImdbRating),
+		VoteCount:    parseVotes(details.ImdbVotes),
 		ProviderName: "omdb",
+		IMDbID:       details.ImdbID,
 	}
 }
 
@@ -137,17 +141,19 @@ func convertDetailsToSeriesSearchResult(
 		ID:           0,
 		Name:         details.Title,
 		FirstAirDate: parseOMDBDate(details.Released),
-		PosterPath:   details.Poster,
-		Overview:     details.Plot,
+		PosterPath:   notAvailable(details.Poster),
+		Overview:     notAvailable(details.Plot),
 		VoteAverage:  parseRating(details.ImdbRating),
+		VoteCount:    parseVotes(details.ImdbVotes),
 		ProviderName: "omdb",
+		IMDbID:       details.ImdbID,
 	}
 }
 
 func convertDetailsToMovieDetails(details *omdbDetailsResponse) *apiexternal_v2.MovieDetails {
 	// Parse genres
 	genres := []apiexternal_v2.Genre{}
-	if details.Genre != "" {
+	if notAvailable(details.Genre) != "" {
 		genreNames := strings.Split(details.Genre, ", ")
 		for i, name := range genreNames {
 			genres = append(genres, apiexternal_v2.Genre{
@@ -159,7 +165,7 @@ func convertDetailsToMovieDetails(details *omdbDetailsResponse) *apiexternal_v2.
 
 	// Parse spoken languages
 	languages := []apiexternal_v2.SpokenLanguage{}
-	if details.Language != "" {
+	if notAvailable(details.Language) != "" {
 		langNames := strings.SplitSeq(details.Language, ", ")
 		for name := range langNames {
 			languages = append(languages, apiexternal_v2.SpokenLanguage{
@@ -174,12 +180,14 @@ func convertDetailsToMovieDetails(details *omdbDetailsResponse) *apiexternal_v2.
 		IMDbID:          details.ImdbID,
 		Title:           details.Title,
 		OriginalTitle:   details.Title,
-		Overview:        details.Plot,
+		Overview:        notAvailable(details.Plot),
 		Year:            parseYear(details.Year),
 		ReleaseDate:     parseOMDBDate(details.Released),
 		Runtime:         parseRuntime(details.Runtime),
 		VoteAverage:     parseRating(details.ImdbRating),
-		PosterPath:      details.Poster,
+		VoteCount:       parseVotes(details.ImdbVotes),
+		Homepage:        notAvailable(details.Website),
+		PosterPath:      notAvailable(details.Poster),
 		Genres:          genres,
 		SpokenLanguages: languages,
 		ProviderName:    "omdb",
@@ -224,6 +232,25 @@ func convertDetailsToMovieDetails(details *omdbDetailsResponse) *apiexternal_v2.
 //
 // Helper Functions
 //
+
+// notAvailable maps OMDb's "N/A" placeholder to an empty value.
+func notAvailable(s string) string {
+	if s == "N/A" {
+		return ""
+	}
+
+	return s
+}
+
+// parseVotes parses imdbVotes ("1,234,567"; "N/A" when unknown).
+func parseVotes(votesStr string) int {
+	votes, err := strconv.Atoi(strings.ReplaceAll(votesStr, ",", ""))
+	if err != nil {
+		return 0
+	}
+
+	return votes
+}
 
 func parseOMDBDate(dateStr string) time.Time {
 	if dateStr == "" || dateStr == "N/A" {

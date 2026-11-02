@@ -93,6 +93,8 @@ func (p *Provider) SearchAlbums(
 	artist, album string,
 ) ([]apiexternal_v2.ReleaseSearchResult, error) {
 	buf := logger.PlAddBuffer.Get()
+	buf.WriteString("/")
+	buf.WriteURL(p.apiKey)
 	buf.WriteString("/searchalbum.php?s=")
 	buf.WriteURL(artist)
 	buf.WriteString("&a=")

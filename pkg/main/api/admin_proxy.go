@@ -9,6 +9,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,10 +39,12 @@ type adminProxyRoute struct {
 var adminProxyRoutes = []adminProxyRoute{
 	{regexp.MustCompile(`^/api/movies/search/list/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/series/episodes/search/list/\d+$`), http.MethodGet},
+	{regexp.MustCompile(`^/api/series/searchrss/seasons/id/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/music/search/list/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/books/search/list/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/audiobooks/search/list/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/queue/cancel/[^/?]+$`), http.MethodDelete},
+	{regexp.MustCompile(`^/api/scheduler/(?:stop|start|queue)/\d+$`), http.MethodPost},
 	{
 		regexp.MustCompile(`^/api/(?:movies|series|books|audiobooks|music)/search/list/[^/?]+$`),
 		http.MethodGet,
@@ -50,8 +54,7 @@ var adminProxyRoutes = []adminProxyRoute{
 		http.MethodGet,
 	},
 	{regexp.MustCompile(`^/api/music/discover/series/artist/\d+$`), http.MethodGet},
-	{regexp.MustCompile(`^/api/(?:music|audiobooks|books)/job/refresh$`), http.MethodGet},
-	{regexp.MustCompile(`^/api/(?:movies|series)/refresh/\d+$`), http.MethodGet},
+	{regexp.MustCompile(`^/api/(?:movies|series|music|audiobooks|books)/refresh/\d+$`), http.MethodGet},
 }
 
 // adminProxyClient is a short-timeout client for the self-loopback call -
@@ -108,7 +111,18 @@ func HandleAdminAPIProxy(c *gin.Context) {
 
 	resp, err := adminProxyClient.Do(req)
 	if err != nil {
-		sendBadRequest(c, "proxied request failed: "+err.Error())
+		// *url.Error embeds the full target URL including the apikey we
+		// appended, so log only the inner error and the bare path.
+		logErr := err
+
+		var uerr *url.Error
+		if errors.As(err, &uerr) {
+			logErr = uerr.Err
+		}
+
+		logger.Logtype("error", 0).Err(logErr).Str("path", u.Path).Msg("admin proxy request failed")
+		sendBadRequest(c, "proxied request failed")
+
 		return
 	}
 	defer resp.Body.Close()

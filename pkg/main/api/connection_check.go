@@ -28,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
@@ -36,6 +35,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushover"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sendmail"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -93,34 +93,13 @@ func renderConnectionTestControl(
 	)
 }
 
-// parseServerURL extracts host, port, and SSL from a server URL string, e.g.
-// "https://gotify.example.com:8080" -> ("gotify.example.com", 8080, true).
-// Mirrors main.go's parseServerURL (package main, unreachable from here) -
-// see the doc comment there for the same logic's production usage building
-// these same provider types from NotificationConfig.
+// parseServerURL mirrors main.go's parseServerURL (package main, unreachable
+// from here): host, port and SSL flag for the gotify/apprise constructors,
+// with any reverse-proxy sub-path kept on the host ("host/sub").
 func parseServerURL(serverURL string) (host string, port int, useSSL bool) {
-	port = 80
+	host, port, useSSL, path := base.SplitHostURL(serverURL, 0, 0)
 
-	if strings.HasPrefix(serverURL, "https://") {
-		useSSL = true
-		port = 443
-		serverURL = strings.TrimPrefix(serverURL, "https://")
-	} else if after, ok := strings.CutPrefix(serverURL, "http://"); ok {
-		serverURL = after
-	}
-
-	if strings.Contains(serverURL, ":") {
-		parts := strings.Split(serverURL, ":")
-
-		host = parts[0]
-		if portNum, err := strconv.Atoi(parts[1]); err == nil {
-			port = portNum
-		}
-	} else {
-		host = serverURL
-	}
-
-	return host, port, useSSL
+	return host + path, port, useSSL
 }
 
 // connectionTestClientConfig builds a base.ClientConfig for a one-off
@@ -397,8 +376,7 @@ func HandleTestListConnection(c *gin.Context) {
 			return
 		}
 
-		limit := "1"
-		if _, err := apiexternal.GetTraktUserList(username, listname, c.PostForm("traktlisttype"), &limit); err != nil {
+		if _, err := traktUserList(c.Request.Context(), username, listname, c.PostForm("traktlisttype")); err != nil {
 			c.String(http.StatusOK, renderAlert("Connection failed: "+err.Error(), "danger"))
 			return
 		}
@@ -406,7 +384,7 @@ func HandleTestListConnection(c *gin.Context) {
 		c.String(http.StatusOK, renderAlert("Connection succeeded.", "success"))
 
 	case strings.HasPrefix(listType, "traktmovie"), strings.HasPrefix(listType, "traktserie"):
-		if _, _, err := apiexternal.TestTraktConnectivity(wizardTestTimeout, nil); err != nil {
+		if _, err := traktTrendingMovies(wizardTestTimeout, 1); err != nil {
 			c.String(http.StatusOK, renderAlert("Connection failed: "+err.Error(), "danger"))
 			return
 		}
@@ -426,7 +404,13 @@ func HandleTestListConnection(c *gin.Context) {
 			return
 		}
 
-		if _, err := apiexternal.GetPlexWatchlist(serverURL, token, strings.TrimSpace(c.PostForm("plexusername"))); err != nil {
+		plexp := providers.GetPlex()
+		if plexp == nil {
+			c.String(http.StatusOK, renderAlert("Plex client not initialized.", "danger"))
+			return
+		}
+
+		if _, err := plexp.GetWatchlist(c.Request.Context(), serverURL, token); err != nil {
 			c.String(http.StatusOK, renderAlert("Connection failed: "+err.Error(), "danger"))
 			return
 		}
@@ -446,7 +430,13 @@ func HandleTestListConnection(c *gin.Context) {
 			return
 		}
 
-		if _, err := apiexternal.GetJellyfinWatchlist(serverURL, token, strings.TrimSpace(c.PostForm("jellyfinusername"))); err != nil {
+		jellyfinp := providers.GetJellyfin()
+		if jellyfinp == nil {
+			c.String(http.StatusOK, renderAlert("Jellyfin client not initialized.", "danger"))
+			return
+		}
+
+		if _, err := jellyfinp.GetWatchlist(c.Request.Context(), serverURL, token, strings.TrimSpace(c.PostForm("jellyfinusername"))); err != nil {
 			c.String(http.StatusOK, renderAlert("Connection failed: "+err.Error(), "danger"))
 			return
 		}

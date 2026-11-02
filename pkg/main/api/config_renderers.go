@@ -1,13 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	html2 "html"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
@@ -137,13 +138,13 @@ func renderGenericConfigSection[T any](
 	configs []T,
 	csrfToken string,
 	options RenderConfigOptions,
-	renderItemFunc func(T, string) gomponents.Node,
+	renderItemFunc func(int, T, string) gomponents.Node,
 ) gomponents.Node {
 	items := getNodeSlice()
 	defer putNodeSlice(items)
 
-	for _, config := range configs {
-		items = append(items, renderItemFunc(config, csrfToken))
+	for i, config := range configs {
+		items = append(items, renderItemFunc(i, config, csrfToken))
 	}
 
 	containerContent := getNodeSlice()
@@ -200,11 +201,11 @@ func renderConfigSection[T any](
 	configList []T,
 	csrfToken string,
 	options ConfigSectionOptions,
-	renderForm func(*T) gomponents.Node,
+	renderForm func(int, *T) gomponents.Node,
 ) gomponents.Node {
 	elements := make([]gomponents.Node, 0, len(configList))
-	for _, config := range configList {
-		elements = append(elements, renderForm(&config))
+	for i, config := range configList {
+		elements = append(elements, renderForm(i, &config))
 	}
 
 	return html.Div(
@@ -470,7 +471,7 @@ func renderGeneralConfigSections(
 				{Name: "TimeZone", Type: "text", Value: configv.TimeZone},
 				{Name: "UserAgent", Type: "text", Value: configv.UserAgent},
 				{Name: "WebPort", Type: "text", Value: configv.WebPort},
-				{Name: "WebAPIKey", Type: "text", Value: configv.WebAPIKey},
+				{Name: "WebAPIKey", Type: "password", Value: configv.WebAPIKey},
 				{
 					Name:    "",
 					Type:    "custom",
@@ -488,7 +489,7 @@ func renderGeneralConfigSections(
 					Type:  "select",
 					Value: configv.LogLevel,
 					Options: convertMapToSelectOptions(
-						map[string][]string{"options": {"info", "debug"}},
+						map[string][]string{"options": {"info", "debug", "warning"}},
 					),
 				},
 				{
@@ -533,13 +534,13 @@ func renderGeneralConfigSections(
 		// API Integration Section
 		renderConfigGroup("API Integration", "apis", false,
 			[]FormFieldDefinition{
-				{Name: "OmdbAPIKey", Type: "text", Value: configv.OmdbAPIKey},
-				{Name: "TheMovieDBApiKey", Type: "text", Value: configv.TheMovieDBApiKey},
+				{Name: "OmdbAPIKey", Type: "password", Value: configv.OmdbAPIKey},
+				{Name: "TheMovieDBApiKey", Type: "password", Value: configv.TheMovieDBApiKey},
 				{Name: "TraktClientID", Type: "text", Value: configv.TraktClientID},
-				{Name: "TraktClientSecret", Type: "text", Value: configv.TraktClientSecret},
+				{Name: "TraktClientSecret", Type: "password", Value: configv.TraktClientSecret},
 				{Name: "TraktRedirectUrl", Type: "text", Value: configv.TraktRedirectUrl},
 				{Name: "SpotifyClientID", Type: "text", Value: configv.SpotifyClientID},
-				{Name: "SpotifyClientSecret", Type: "text", Value: configv.SpotifyClientSecret},
+				{Name: "SpotifyClientSecret", Type: "password", Value: configv.SpotifyClientSecret},
 				{Name: "SpotifyRegion", Type: "text", Value: configv.SpotifyRegion},
 			}, group, comments, displayNames),
 
@@ -649,11 +650,11 @@ func renderGeneralConfigSections(
 		// Book/Audiobook/Music Provider API Keys
 		renderConfigGroup("Book/Music Provider API Keys", "provider_keys", false,
 			[]FormFieldDefinition{
-				{Name: "GoodreadsAPIKey", Type: "text", Value: configv.GoodreadsAPIKey},
-				{Name: "DiscogsToken", Type: "text", Value: configv.DiscogsToken},
-				{Name: "AcoustIDAPIKey", Type: "text", Value: configv.AcoustIDAPIKey},
-				{Name: "LastFMAPIKey", Type: "text", Value: configv.LastFMAPIKey},
-				{Name: "TheAudioDBAPIKey", Type: "text", Value: configv.TheAudioDBAPIKey},
+				{Name: "GoodreadsAPIKey", Type: "password", Value: configv.GoodreadsAPIKey},
+				{Name: "DiscogsToken", Type: "password", Value: configv.DiscogsToken},
+				{Name: "AcoustIDAPIKey", Type: "password", Value: configv.AcoustIDAPIKey},
+				{Name: "LastFMAPIKey", Type: "password", Value: configv.LastFMAPIKey},
+				{Name: "TheAudioDBAPIKey", Type: "password", Value: configv.TheAudioDBAPIKey},
 			}, group, comments, displayNames),
 
 		// Book/Audiobook/Music Provider Rate Limits
@@ -1069,6 +1070,8 @@ func renderMediaDataForm(prefix string, i int, configv *config.MediaDataConfig) 
 			Value:   configv.ExceedToleranceIfTotalMatch,
 			Options: nil,
 		},
+		{Name: "StrongRecThresh", Type: "number", Value: configv.StrongRecThresh, Options: nil},
+		{Name: "MediumRecThresh", Type: "number", Value: configv.MediumRecThresh, Options: nil},
 		{Name: "TrackTitleWeight", Type: "number", Value: configv.TrackTitleWeight, Options: nil},
 		{Name: "TrackIndexWeight", Type: "number", Value: configv.TrackIndexWeight, Options: nil},
 		{Name: "TrackLengthWeight", Type: "number", Value: configv.TrackLengthWeight, Options: nil},
@@ -1195,7 +1198,7 @@ func renderMediaListsForm(prefix string, i int, configv *config.MediaListsConfig
 		{Name: "IgnoreMapLists", Type: "array", Value: configv.IgnoreMapLists, Options: nil},
 		{Name: "ReplaceMapLists", Type: "array", Value: configv.ReplaceMapLists, Options: nil},
 		{Name: "Enabled", Type: "checkbox", Value: configv.Enabled, Options: nil},
-		{Name: "AddFound", Type: "checkbox", Value: configv.Addfound, Options: nil},
+		{Name: "Addfound", Type: "checkbox", Value: configv.Addfound, Options: nil},
 	}
 
 	return renderArrayItemFormWithIndex(prefix, i, "List", configv, fields)
@@ -1230,12 +1233,15 @@ func renderMediaNotificationForm(
 	return renderArrayItemFormWithIndex(prefix, i, "Notification", configv, fields)
 }
 
+// renderMediaForm renders one media entry; idx is the row index used in the
+// form field names.
 func renderMediaForm(
 	typev string,
+	idx int,
 	configv *config.MediaTypeConfig,
 	csrfToken string,
 ) gomponents.Node {
-	group := "media_" + typev + "_" + configv.Name
+	group := "media_" + typev + "_" + strconv.Itoa(idx)
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 
@@ -1263,7 +1269,15 @@ func renderMediaForm(
 			html.Div(
 				html.Class(ClassCardBody),
 				// Organized media sections
-				renderMediaConfigSections(configv, typev, group, comments, displayNames, csrfToken),
+				renderMediaConfigSections(
+					configv,
+					typev,
+					strconv.Itoa(idx),
+					group,
+					comments,
+					displayNames,
+					csrfToken,
+				),
 			),
 		),
 	)
@@ -1272,7 +1286,7 @@ func renderMediaForm(
 // renderMediaConfigSections organizes media fields into logical groups.
 func renderMediaConfigSections(
 	configv *config.MediaTypeConfig,
-	typev, group string,
+	typev, idx, group string,
 	comments map[string]string,
 	displayNames map[string]string,
 	csrfToken string,
@@ -1330,10 +1344,10 @@ func renderMediaConfigSections(
 					Type:  "select",
 					Value: configv.AudibleRegion,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"us", "uk", "ca", "au", "de", "fr", "it", "es", "in", "jp"},
+						"options": {"", "us", "uk", "ca", "au", "de", "fr", "it", "es", "in", "jp"},
 					}),
 				},
-			}, "media_main_"+typev+"_"+configv.Name, comments, displayNames, accordionId),
+			}, "media_main_"+typev+"_"+idx, comments, displayNames, accordionId),
 
 		// Quality & Templates
 		renderConfigGroupWithParent(
@@ -1372,7 +1386,7 @@ func renderMediaConfigSections(
 					Options: convertMapToSelectOptions(config.GetSettingTemplatesFor("scheduler")),
 				},
 			},
-			"media_main_"+typev+"_"+configv.Name,
+			"media_main_"+typev+"_"+idx,
 			comments,
 			displayNames,
 			accordionId,
@@ -1407,7 +1421,7 @@ func renderMediaConfigSections(
 					Options: nil,
 				},
 			},
-			"media_main_"+typev+"_"+configv.Name,
+			"media_main_"+typev+"_"+idx,
 			comments,
 			displayNames,
 			accordionId,
@@ -1419,7 +1433,7 @@ func renderMediaConfigSections(
 			"data-"+typev+"-"+configv.Name,
 			datav,
 			"Add Data Source",
-			"/api/manage/mediadata/form/"+typev+"/"+configv.Name,
+			"/api/manage/mediadata/form/"+typev+"/"+idx,
 			csrfToken,
 			accordionId,
 		),
@@ -1430,7 +1444,7 @@ func renderMediaConfigSections(
 			"import-"+typev+"-"+configv.Name,
 			DataImport,
 			"Add Data Import",
-			"/api/manage/mediaimport/form/"+typev+"/"+configv.Name,
+			"/api/manage/mediaimport/form/"+typev+"/"+idx,
 			csrfToken,
 			accordionId,
 		),
@@ -1441,7 +1455,7 @@ func renderMediaConfigSections(
 			"lists-"+typev+"-"+configv.Name,
 			Lists,
 			"Add List",
-			"/api/manage/medialists/form/"+typev+"/"+configv.Name,
+			"/api/manage/medialists/form/"+typev+"/"+idx,
 			csrfToken,
 			accordionId,
 		),
@@ -1452,7 +1466,7 @@ func renderMediaConfigSections(
 			"notifications-"+typev+"-"+configv.Name,
 			Notification,
 			"Add Notification",
-			"/api/manage/medianotification/form/"+typev+"/"+configv.Name,
+			"/api/manage/medianotification/form/"+typev+"/"+idx,
 			csrfToken,
 			accordionId,
 		),
@@ -1530,28 +1544,28 @@ func renderMediaArraySection(
 // renderMediaConfig renders the media configuration section.
 func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents.Node {
 	Movies := make([]gomponents.Node, 0, len(configv.Movies))
-	for _, mediaType := range configv.Movies {
-		Movies = append(Movies, renderMediaForm("movies", &mediaType, csrfToken))
+	for i, mediaType := range configv.Movies {
+		Movies = append(Movies, renderMediaForm("movies", i, &mediaType, csrfToken))
 	}
 
 	Series := make([]gomponents.Node, 0, len(configv.Series))
-	for _, mediaType := range configv.Series {
-		Series = append(Series, renderMediaForm("series", &mediaType, csrfToken))
+	for i, mediaType := range configv.Series {
+		Series = append(Series, renderMediaForm("series", i, &mediaType, csrfToken))
 	}
 
 	Books := make([]gomponents.Node, 0, len(configv.Books))
-	for _, mediaType := range configv.Books {
-		Books = append(Books, renderMediaForm("books", &mediaType, csrfToken))
+	for i, mediaType := range configv.Books {
+		Books = append(Books, renderMediaForm("books", i, &mediaType, csrfToken))
 	}
 
 	AudioBooks := make([]gomponents.Node, 0, len(configv.AudioBooks))
-	for _, mediaType := range configv.AudioBooks {
-		AudioBooks = append(AudioBooks, renderMediaForm("audiobooks", &mediaType, csrfToken))
+	for i, mediaType := range configv.AudioBooks {
+		AudioBooks = append(AudioBooks, renderMediaForm("audiobooks", i, &mediaType, csrfToken))
 	}
 
 	Music := make([]gomponents.Node, 0, len(configv.Music))
-	for _, mediaType := range configv.Music {
-		Music = append(Music, renderMediaForm("music", &mediaType, csrfToken))
+	for i, mediaType := range configv.Music {
+		Music = append(Music, renderMediaForm("music", i, &mediaType, csrfToken))
 	}
 
 	return html.Div(
@@ -1661,10 +1675,11 @@ func renderMediaConfig(configv *config.MediaConfig, csrfToken string) gomponents
 	)
 }
 
-func renderDownloaderForm(configv *config.DownloaderConfig, csrfToken string) gomponents.Node {
+// renderDownloaderForm renders one row; idx is the row index used in the form field names.
+func renderDownloaderForm(idx int, configv *config.DownloaderConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
-	group := "downloader_" + configv.Name
+	group := "downloader_" + strconv.Itoa(idx)
 
 	return renderOptimizedArrayItemForm("downloader", configv.Name, "Downloader", configv,
 		renderDownloaderConfigSections(configv, group, comments, displayNames, csrfToken))
@@ -1851,16 +1866,17 @@ func renderDownloaderConfig(configv []config.DownloaderConfig, csrfToken string)
 		configv,
 		csrfToken,
 		options,
-		func(config config.DownloaderConfig, _ string) gomponents.Node {
-			return renderDownloaderForm(&config, csrfToken)
+		func(i int, config config.DownloaderConfig, _ string) gomponents.Node {
+			return renderDownloaderForm(i, &config, csrfToken)
 		},
 	)
 }
 
-func renderListsForm(configv *config.ListsConfig, csrfToken string) gomponents.Node {
+// renderListsForm renders one row; idx is the row index used in the form field names.
+func renderListsForm(idx int, configv *config.ListsConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
-	group := "lists_" + configv.Name
+	group := "lists_" + strconv.Itoa(idx)
 
 	return renderOptimizedArrayItemForm("lists", configv.Name, "List", configv,
 		renderListsConfigSections(configv, group, comments, displayNames, csrfToken))
@@ -2002,7 +2018,7 @@ func renderListsConfigSections(
 					Type:  "select",
 					Value: configv.TraktListType,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"movie", "show"},
+						"options": {"", "movie", "show"},
 					}),
 				},
 			},
@@ -2042,6 +2058,7 @@ func renderListsConfigSections(
 			[]FormFieldDefinition{
 				{Name: "TmdbDiscover", Type: "array", Value: configv.TmdbDiscover, Options: nil},
 				{Name: "TmdbList", Type: "arrayint", Value: configv.TmdbList, Options: nil},
+				{Name: "TmdbPages", Type: "number", Value: configv.TmdbPages, Options: nil},
 				{
 					Name:    "RemoveFromList",
 					Type:    "checkbox",
@@ -2066,7 +2083,7 @@ func renderListsConfigSections(
 			false,
 			[]FormFieldDefinition{
 				{Name: "PlexServerURL", Type: "text", Value: configv.PlexServerURL, Options: nil},
-				{Name: "PlexToken", Type: "text", Value: configv.PlexToken, Options: nil},
+				{Name: "PlexToken", Type: "password", Value: configv.PlexToken, Options: nil},
 				{Name: "PlexUsername", Type: "text", Value: configv.PlexUsername, Options: nil},
 				{
 					Name:    "JellyfinServerURL",
@@ -2074,7 +2091,7 @@ func renderListsConfigSections(
 					Value:   configv.JellyfinServerURL,
 					Options: nil,
 				},
-				{Name: "JellyfinToken", Type: "text", Value: configv.JellyfinToken, Options: nil},
+				{Name: "JellyfinToken", Type: "password", Value: configv.JellyfinToken, Options: nil},
 				{
 					Name:    "JellyfinUsername",
 					Type:    "text",
@@ -2103,7 +2120,7 @@ func renderListsConfigSections(
 					Type:  "select",
 					Value: configv.MovieScraperType,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"htmlxpath", "csrfapi", "project1service", "algolia"},
+						"options": {"", "htmlxpath", "csrfapi", "project1service", "algolia"},
 					}),
 				},
 				{
@@ -2213,7 +2230,7 @@ func renderListsConfigSections(
 					Type:  "select",
 					Value: configv.MoviePaginationType,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"increment", "urlpattern"},
+						"options": {"", "sequential", "offset"},
 					}),
 				},
 				{
@@ -2419,7 +2436,7 @@ func renderListsConfigSections(
 				{Name: "IRCNick", Type: "text", Value: configv.IRCNick, Options: nil},
 				{
 					Name:    "IRCNickServPassword",
-					Type:    "text",
+					Type:    "password",
 					Value:   configv.IRCNickServPassword,
 					Options: nil,
 				},
@@ -2473,16 +2490,17 @@ func renderListsConfig(configv []config.ListsConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.ListsConfig, _ string) gomponents.Node {
-			return renderListsForm(&config, csrfToken)
+		func(i int, config config.ListsConfig, _ string) gomponents.Node {
+			return renderListsForm(i, &config, csrfToken)
 		},
 	)
 }
 
-func renderIndexersForm(configv *config.IndexersConfig, csrfToken string) gomponents.Node {
+// renderIndexersForm renders one row; idx is the row index used in the form field names.
+func renderIndexersForm(idx int, configv *config.IndexersConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
-	group := "indexers_" + configv.Name
+	group := "indexers_" + strconv.Itoa(idx)
 
 	return renderOptimizedArrayItemForm("indexers", configv.Name, "Indexer", configv,
 		renderIndexersConfigSections(configv, group, comments, displayNames, csrfToken))
@@ -2720,16 +2738,17 @@ func renderIndexersConfig(configv []config.IndexersConfig, csrfToken string) gom
 		configv,
 		csrfToken,
 		options,
-		func(config config.IndexersConfig, _ string) gomponents.Node {
-			return renderIndexersForm(&config, csrfToken)
+		func(i int, config config.IndexersConfig, _ string) gomponents.Node {
+			return renderIndexersForm(i, &config, csrfToken)
 		},
 	)
 }
 
-func renderPathsForm(configv *config.PathsConfig, csrfToken string) gomponents.Node {
+// renderPathsForm renders one row; idx is the row index used in the form field names.
+func renderPathsForm(idx int, configv *config.PathsConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
-	group := "paths_" + configv.Name
+	group := "paths_" + strconv.Itoa(idx)
 
 	return renderOptimizedArrayItemForm("paths", configv.Name, "Path", configv,
 		renderPathsConfigSections(configv, group, comments, displayNames, csrfToken))
@@ -2943,16 +2962,17 @@ func renderPathsConfig(configv []config.PathsConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.PathsConfig, itemCsrfToken string) gomponents.Node {
-			return renderPathsForm(&config, itemCsrfToken)
+		func(i int, config config.PathsConfig, itemCsrfToken string) gomponents.Node {
+			return renderPathsForm(i, &config, itemCsrfToken)
 		},
 	)
 }
 
-func renderNotificationForm(configv *config.NotificationConfig, csrfToken string) gomponents.Node {
+// renderNotificationForm renders one row; idx is the row index used in the form field names.
+func renderNotificationForm(idx int, configv *config.NotificationConfig, csrfToken string) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
-	group := "notifications_" + configv.Name
+	group := "notifications_" + strconv.Itoa(idx)
 
 	return renderOptimizedArrayItemForm("notifications", configv.Name, "Notification", configv,
 		renderNotificationConfigSections(configv, group, comments, displayNames, csrfToken))
@@ -3027,7 +3047,7 @@ func renderNotificationConfigSections(
 			),
 			false,
 			[]FormFieldDefinition{
-				{Name: "Apikey", Type: "text", Value: configv.Apikey, Options: nil},
+				{Name: "Apikey", Type: "password", Value: configv.Apikey, Options: nil},
 				{Name: "Recipient", Type: "text", Value: configv.Recipient, Options: nil},
 				{Name: "Outputto", Type: "text", Value: configv.Outputto, Options: nil},
 				{Name: "ServerURL", Type: "text", Value: configv.ServerURL, Options: nil},
@@ -3066,16 +3086,17 @@ func renderNotificationConfig(
 		configv,
 		csrfToken,
 		options,
-		func(config config.NotificationConfig, _ string) gomponents.Node {
-			return renderNotificationForm(&config, csrfToken)
+		func(i int, config config.NotificationConfig, _ string) gomponents.Node {
+			return renderNotificationForm(i, &config, csrfToken)
 		},
 	)
 }
 
-func renderRegexForm(configv *config.RegexConfig) gomponents.Node {
+// renderRegexForm renders one row; idx is the row index used in the form field names.
+func renderRegexForm(idx int, configv *config.RegexConfig) gomponents.Node {
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
-	group := "regex_" + configv.Name
+	group := "regex_" + strconv.Itoa(idx)
 
 	return renderOptimizedArrayItemForm("regex", configv.Name, "Regex", configv,
 		renderRegexConfigSections(configv, group, comments, displayNames))
@@ -3140,8 +3161,8 @@ func renderRegexConfig(configv []config.RegexConfig, csrfToken string) gomponent
 		configv,
 		csrfToken,
 		options,
-		func(config config.RegexConfig, _ string) gomponents.Node {
-			return renderRegexForm(&config)
+		func(i int, config config.RegexConfig, _ string) gomponents.Node {
+			return renderRegexForm(i, &config)
 		},
 	)
 }
@@ -3241,8 +3262,9 @@ func renderQualityIndexerForm(
 	)
 }
 
-func renderQualityForm(configv *config.QualityConfig, csrfToken string) gomponents.Node {
-	group := "quality_main_" + configv.Name
+// renderQualityForm renders one row; idx is the row index used in the form field names.
+func renderQualityForm(idx int, configv *config.QualityConfig, csrfToken string) gomponents.Node {
+	group := "quality_main_" + strconv.Itoa(idx)
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 
@@ -3270,7 +3292,7 @@ func renderQualityForm(configv *config.QualityConfig, csrfToken string) gomponen
 			html.Div(
 				html.Class(ClassCardBody),
 				// Organized quality sections
-				renderQualityConfigSections(configv, group, comments, displayNames, csrfToken),
+				renderQualityConfigSections(idx, configv, group, comments, displayNames, csrfToken),
 			),
 		),
 	)
@@ -3278,6 +3300,7 @@ func renderQualityForm(configv *config.QualityConfig, csrfToken string) gomponen
 
 // renderQualityConfigSections organizes quality fields into logical groups.
 func renderQualityConfigSections(
+	idx int,
 	configv *config.QualityConfig,
 	group string,
 	comments map[string]string,
@@ -3293,7 +3316,7 @@ func renderQualityConfigSections(
 	for i, qualityReorder := range configv.QualityReorder {
 		QualityReorder = append(
 			QualityReorder,
-			renderQualityReorderForm(i, configv.Name, &qualityReorder),
+			renderQualityReorderForm(i, strconv.Itoa(idx), &qualityReorder),
 		)
 	}
 
@@ -3301,7 +3324,7 @@ func renderQualityConfigSections(
 	for i, qualityIndexer := range configv.Indexer {
 		QualityIndexer = append(
 			QualityIndexer,
-			renderQualityIndexerForm(i, configv.Name, &qualityIndexer),
+			renderQualityIndexerForm(i, strconv.Itoa(idx), &qualityIndexer),
 		)
 	}
 
@@ -3553,7 +3576,7 @@ func renderQualityConfigSections(
 			"reorder-quality-"+configv.Name,
 			QualityReorder,
 			"Add Reorder Rule",
-			"/api/manage/qualityreorder/form/"+configv.Name,
+			"/api/manage/qualityreorder/form/"+strconv.Itoa(idx),
 			csrfToken,
 			accordionId,
 		),
@@ -3564,7 +3587,7 @@ func renderQualityConfigSections(
 			"indexer-quality-"+configv.Name,
 			QualityIndexer,
 			"Add Indexer Setting",
-			"/api/manage/qualityindexer/form/"+configv.Name,
+			"/api/manage/qualityindexer/form/"+strconv.Itoa(idx),
 			csrfToken,
 			accordionId,
 		),
@@ -3574,8 +3597,8 @@ func renderQualityConfigSections(
 // renderQualityConfig renders the quality configuration section.
 func renderQualityConfig(configv []config.QualityConfig, csrfToken string) gomponents.Node {
 	elements := make([]gomponents.Node, 0, len(configv))
-	for _, quality := range configv {
-		elements = append(elements, renderQualityForm(&quality, csrfToken))
+	for i, quality := range configv {
+		elements = append(elements, renderQualityForm(i, &quality, csrfToken))
 	}
 
 	return html.Div(
@@ -3613,8 +3636,9 @@ func renderQualityConfig(configv []config.QualityConfig, csrfToken string) gompo
 	)
 }
 
-func renderSchedulerForm(configv *config.SchedulerConfig) gomponents.Node {
-	group := "scheduler_" + configv.Name
+// renderSchedulerForm renders one row; idx is the row index used in the form field names.
+func renderSchedulerForm(idx int, configv *config.SchedulerConfig) gomponents.Node {
+	group := "scheduler_" + strconv.Itoa(idx)
 	comments := logger.GetFieldComments(configv)
 	displayNames := logger.GetFieldDisplayNames(configv)
 
@@ -3731,6 +3755,66 @@ func renderSchedulerConfigSections(
 					Name:  "CronFeedsRefreshMoviesFull",
 					Type:  "text",
 					Value: configv.CronFeedsRefreshMoviesFull,
+				},
+				{
+					Name:  "IntervalFeedsRefreshBooks",
+					Type:  "text",
+					Value: configv.IntervalFeedsRefreshBooks,
+				},
+				{
+					Name:  "CronFeedsRefreshBooks",
+					Type:  "text",
+					Value: configv.CronFeedsRefreshBooks,
+				},
+				{
+					Name:  "IntervalFeedsRefreshBooksFull",
+					Type:  "text",
+					Value: configv.IntervalFeedsRefreshBooksFull,
+				},
+				{
+					Name:  "CronFeedsRefreshBooksFull",
+					Type:  "text",
+					Value: configv.CronFeedsRefreshBooksFull,
+				},
+				{
+					Name:  "IntervalFeedsRefreshAudiobooks",
+					Type:  "text",
+					Value: configv.IntervalFeedsRefreshAudiobooks,
+				},
+				{
+					Name:  "CronFeedsRefreshAudiobooks",
+					Type:  "text",
+					Value: configv.CronFeedsRefreshAudiobooks,
+				},
+				{
+					Name:  "IntervalFeedsRefreshAudiobooksFull",
+					Type:  "text",
+					Value: configv.IntervalFeedsRefreshAudiobooksFull,
+				},
+				{
+					Name:  "CronFeedsRefreshAudiobooksFull",
+					Type:  "text",
+					Value: configv.CronFeedsRefreshAudiobooksFull,
+				},
+				{
+					Name:  "IntervalFeedsRefreshMusic",
+					Type:  "text",
+					Value: configv.IntervalFeedsRefreshMusic,
+				},
+				{
+					Name:  "CronFeedsRefreshMusic",
+					Type:  "text",
+					Value: configv.CronFeedsRefreshMusic,
+				},
+				{
+					Name:  "IntervalFeedsRefreshMusicFull",
+					Type:  "text",
+					Value: configv.IntervalFeedsRefreshMusicFull,
+				},
+				{
+					Name:  "CronFeedsRefreshMusicFull",
+					Type:  "text",
+					Value: configv.CronFeedsRefreshMusicFull,
 				},
 			},
 			group,
@@ -3970,6 +4054,66 @@ func renderSchedulerConfig(configv []config.SchedulerConfig, csrfToken string) g
 	return renderConfigSection(configv, csrfToken, options, renderSchedulerForm)
 }
 
+// jsString returns s as a JavaScript string literal. The result is meant for
+// attribute values (onclick etc.), which gomponents HTML-escapes on output.
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// selectOptionsWithCurrent returns opts plus the current value when it is not
+// one of them, so a saved value outside the hard-coded list is shown and
+// posted back unchanged instead of the browser submitting the first option.
+// An empty current value is not added; call sites where empty is a legal value
+// list "" among their options instead.
+func selectOptionsWithCurrent(opts []string, value any) []string {
+	current, _ := value.(string)
+	if current == "" || slices.Contains(opts, current) {
+		return slices.Clone(opts)
+	}
+
+	return append(slices.Clone(opts), current)
+}
+
+// arrayPresentMarker renders the hidden marker that tells the parser an array
+// widget was on the form even when all of its entries were removed.
+func arrayPresentMarker(fieldName string) gomponents.Node {
+	return html.Input(
+		html.Type("hidden"),
+		html.Name(fieldName+arrayPresentSuffix),
+		html.Value("1"),
+	)
+}
+
+func arrayRemoveRowButton() gomponents.Node {
+	return html.Button(
+		html.Class(ClassBtnDanger),
+		html.Type("button"),
+		gomponents.Attr("onclick", "if(this.parentElement) this.parentElement.remove()"),
+		html.I(html.Class("fa fa-trash")),
+	)
+}
+
+// arrayAddRowButton renders the "Add Item" button of an array widget. The new
+// row's markup travels in the button's own data attribute, so every widget
+// instance adds inputs with its own field name (no shared global function).
+// rowInputs must already be HTML-escaped where it embeds values.
+func arrayAddRowButton(rowInputs string) gomponents.Node {
+	return html.Button(
+		html.Class(ClassBtnPrimary),
+		html.Type("button"),
+		html.Data(
+			"row-html",
+			rowInputs+`<button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>`,
+		),
+		gomponents.Attr(
+			"onclick",
+			"var r=document.createElement('div');r.className='d-flex mb-2';r.innerHTML=this.dataset.rowHtml;this.parentElement.insertBefore(r,this);",
+		),
+		gomponents.Text("Add Item"),
+	)
+}
+
 // renderFormGroup renders a form group with label and input.
 func renderFormGroup(
 	group string,
@@ -4043,19 +4187,22 @@ func renderFormGroup(
 			}
 		}
 
-		input = html.Select(
-			html.Class("form-select selectpicker"),
-			html.Multiple(),
-			html.Data("live-search", "true"),
-			html.ID(group+"_"+name),
-			html.Name(group+"_"+name),
-			gomponents.Group(optionElements),
+		input = html.Div(
+			html.Select(
+				html.Class("form-select selectpicker"),
+				html.Multiple(),
+				html.Data("live-search", "true"),
+				html.ID(group+"_"+name),
+				html.Name(group+"_"+name),
+				gomponents.Group(optionElements),
+			),
+			arrayPresentMarker(group+"_"+name),
 		)
 
 	case "select":
 		var optionElements []gomponents.Node
 		if opts, ok := options["options"]; ok {
-			opts2 := sort.StringSlice(opts)
+			opts2 := sort.StringSlice(selectOptionsWithCurrent(opts, value))
 			opts2.Sort()
 
 			for _, opt := range opts2 {
@@ -4086,7 +4233,7 @@ func renderFormGroup(
 		// Select with preview link and modal - used for template reference fields
 		var optionElements []gomponents.Node
 		if opts, ok := options["options"]; ok {
-			opts2 := sort.StringSlice(opts)
+			opts2 := sort.StringSlice(selectOptionsWithCurrent(opts, value))
 			opts2.Sort()
 
 			for _, opt := range opts2 {
@@ -4129,10 +4276,10 @@ func renderFormGroup(
 				gomponents.Attr(
 					"onclick",
 					fmt.Sprintf(
-						"showConfigPreview('%s', document.getElementById('%s').value, '%s')",
-						templateInfo.Type,
-						selectID,
-						name,
+						"showConfigPreview(%s, document.getElementById(%s).value, %s)",
+						jsString(templateInfo.Type),
+						jsString(selectID),
+						jsString(name),
 					),
 				),
 				html.I(html.Class("fas fa-eye")),
@@ -4145,9 +4292,9 @@ func renderFormGroup(
 				gomponents.Attr(
 					"onclick",
 					fmt.Sprintf(
-						"openConfigPage('%s', document.getElementById('%s').value)",
-						templateInfo.URL,
-						selectID,
+						"openConfigPage(%s, document.getElementById(%s).value)",
+						jsString(templateInfo.URL),
+						jsString(selectID),
 					),
 				),
 				html.I(html.Class("fas fa-external-link-alt")),
@@ -4188,7 +4335,7 @@ func renderFormGroup(
 			html.ID(group+"_"+name),
 			html.Name(group+"_"+name),
 			html.Rows("3"),
-			html.Value(value.(string)),
+			gomponents.Text(fmt.Sprintf("%v", value)),
 		)
 
 	case "text":
@@ -4227,136 +4374,84 @@ func renderFormGroup(
 		input = createFormField("number", group+"_"+name, setvalue, "", nil)
 
 	case "array":
-		input = html.Div(
-			html.ID(group+"_"+name+"-container"),
-			gomponents.Group(
-				func() []gomponents.Node {
-					var nodes []gomponents.Node
-					for _, v := range value.([]string) {
-						nodes = append(nodes, html.Div(
-							html.Class(ClassDFlex),
-							html.Input(
-								html.Class(ClassFormControl+" me-2"),
-								html.Type("text"),
-								html.Name(group+"_"+name),
-								html.Value(v),
-							),
-							html.Button(
-								html.Class(ClassBtnDanger),
-								html.Type("button"),
-								gomponents.Attr(
-									"onclick",
-									"if(this.parentElement) this.parentElement.remove()",
-								),
-								html.I(html.Class("fa fa-trash")),
-							),
-						))
-					}
-
-					return append(nodes,
-						html.Button(
-							html.Class(ClassBtnPrimary),
-							html.Type("button"),
-							gomponents.Attr(
-								"onclick",
-								fmt.Sprintf("addArray%sItem('%s', '%s')", name, group, name),
-							),
-							gomponents.Text("Add Item"),
-						),
-						html.Script(gomponents.Rawf(`
-							function addArray%sItem(group, name) {
-								const container = document.getElementById(group + '_' + name + '-container');
-								const newRow = document.createElement('div');
-								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<input class="form-control me-2" type="text" name="%s"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
-								container.insertBefore(newRow, container.lastElementChild);
-							}
-						`, name, group+"_"+name)),
-					)
-				}(),
-			),
-		)
-
-	case "arrayselectarray":
-		var optionString strings.Builder
-		if opts, ok := options["options"]; ok {
-			opts2 := sort.StringSlice(opts)
-			opts2.Sort()
-
-			for _, opt := range opts2 {
-				optionString.WriteString("<option value=\"" + opt + "\">" + opt + "</option>")
-			}
+		fieldName := group + "_" + name
+		nodes := []gomponents.Node{
+			html.ID(fieldName + "-container"),
+			arrayPresentMarker(fieldName),
 		}
 
-		input = html.Div(
-			html.ID(group+"_"+name+"-container"),
-			gomponents.Group(
-				func() []gomponents.Node {
-					var nodes []gomponents.Node
-					for _, v := range value.([]string) {
-						var optionElements []gomponents.Node
-						if opts, ok := options["options"]; ok {
-							opts2 := sort.StringSlice(opts)
-							opts2.Sort()
+		for _, v := range value.([]string) {
+			nodes = append(nodes, html.Div(
+				html.Class(ClassDFlex),
+				html.Input(
+					html.Class(ClassFormControl+" me-2"),
+					html.Type("text"),
+					html.Name(fieldName),
+					html.Value(v),
+				),
+				arrayRemoveRowButton(),
+			))
+		}
 
-							for _, opt := range opts2 {
-								if opt == v {
-									optionElements = append(optionElements, html.Option(
-										html.Value(opt),
-										gomponents.Text(opt),
-										html.Selected(),
-									))
-								} else {
-									optionElements = append(optionElements, html.Option(
-										html.Value(opt),
-										gomponents.Text(opt),
-									))
-								}
-							}
-						}
+		input = html.Div(append(nodes, arrayAddRowButton(
+			`<input class="form-control me-2" type="text" name="`+html2.EscapeString(fieldName)+`">`,
+		))...)
 
-						nodes = append(nodes, html.Div(
-							html.Class(ClassDFlex),
-							html.Select(
-								html.Class(ClassFormSelect),
-								html.Name(group+"_"+name),
-								gomponents.Group(optionElements),
-							),
-							html.Button(
-								html.Class(ClassBtnDanger),
-								html.Type("button"),
-								gomponents.Attr(
-									"onclick",
-									"if(this.parentElement) this.parentElement.remove()",
-								),
-								html.I(html.Class("fa fa-trash")),
-							),
-						))
-					}
+	case "arrayselectarray":
+		fieldName := group + "_" + name
 
-					return append(nodes,
-						html.Button(
-							html.Class(ClassBtnPrimary),
-							html.Type("button"),
-							gomponents.Attr(
-								"onclick",
-								fmt.Sprintf("addArray%sItem('%s', '%s')", name, group, name),
-							),
-							gomponents.Text("Add Item"),
-						),
-						html.Script(gomponents.Rawf(`
-							function addArray%sItem(group, name) {
-								const container = document.getElementById(group + '_' + name + '-container');
-								const newRow = document.createElement('div');
-								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<select class="form-select me-2" name="%s">%s</select><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
-								container.insertBefore(newRow, container.lastElementChild);
-							}
-						`, name, group+"_"+name, optionString.String())),
-					)
-				}(),
-			),
-		)
+		var opts2 sort.StringSlice
+		if opts, ok := options["options"]; ok {
+			opts2 = sort.StringSlice(slices.Clone(opts))
+			opts2.Sort()
+		}
+
+		var optionString strings.Builder
+		for _, opt := range opts2 {
+			optionString.WriteString("<option value=\"")
+			optionString.WriteString(html2.EscapeString(opt))
+			optionString.WriteString("\">")
+			optionString.WriteString(html2.EscapeString(opt))
+			optionString.WriteString("</option>")
+		}
+
+		nodes := []gomponents.Node{
+			html.ID(fieldName + "-container"),
+			arrayPresentMarker(fieldName),
+		}
+
+		for _, v := range value.([]string) {
+			optionElements := make([]gomponents.Node, 0, len(opts2)+1)
+			for _, opt := range selectOptionsWithCurrent(opts2, v) {
+				if opt == v {
+					optionElements = append(optionElements, html.Option(
+						html.Value(opt),
+						gomponents.Text(opt),
+						html.Selected(),
+					))
+				} else {
+					optionElements = append(optionElements, html.Option(
+						html.Value(opt),
+						gomponents.Text(opt),
+					))
+				}
+			}
+
+			nodes = append(nodes, html.Div(
+				html.Class(ClassDFlex),
+				html.Select(
+					html.Class(ClassFormSelect),
+					html.Name(fieldName),
+					gomponents.Group(optionElements),
+				),
+				arrayRemoveRowButton(),
+			))
+		}
+
+		input = html.Div(append(nodes, arrayAddRowButton(
+			`<select class="form-select me-2" name="`+html2.EscapeString(fieldName)+`">`+
+				optionString.String()+`</select>`,
+		))...)
 
 	case "arrayselect":
 		var (
@@ -4415,57 +4510,31 @@ func renderFormGroup(
 		)
 
 	case "arrayint":
-		input = html.Div(
-			html.ID(group+"_"+name+"-container"),
-			gomponents.Group(
-				func() []gomponents.Node {
-					var nodes []gomponents.Node
-					for _, v := range value.([]int) {
-						nodes = append(nodes, html.Div(
-							html.Class(ClassDFlex),
-							html.Input(
-								html.Class(ClassFormControl+" me-2"),
-								html.Type("number"),
-								html.Name(group+"_"+name),
-								html.Value(strconv.Itoa(v)),
-							),
-							html.Button(
-								html.Class(ClassBtnDanger),
-								html.Type("button"),
-								gomponents.Attr(
-									"onclick",
-									"if(this.parentElement) this.parentElement.remove()",
-								),
-								html.I(html.Class("fa fa-trash")),
-							),
-						))
-					}
+		fieldName := group + "_" + name
+		nodes := []gomponents.Node{
+			html.ID(fieldName + "-container"),
+			arrayPresentMarker(fieldName),
+		}
 
-					return append(nodes,
-						html.Button(
-							html.Class(ClassBtnPrimary),
-							html.Type("button"),
-							gomponents.Attr(
-								"onclick",
-								fmt.Sprintf("addArray%sIntItem('%s', '%s')", name, group, name),
-							),
-							gomponents.Text("Add Item"),
-						),
-						html.Script(gomponents.Rawf(`
-							function addArray%sIntItem(group, name) {
-								const container = document.getElementById(group + '_' + name + '-container');
-								const newRow = document.createElement('div');
-								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<input class="form-control me-2" type="number" name="%s"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
-								container.insertBefore(newRow, container.lastElementChild);
-							}
-						`, name, group+"_"+name)),
-					)
-				}(),
-			),
-		)
+		for _, v := range value.([]int) {
+			nodes = append(nodes, html.Div(
+				html.Class(ClassDFlex),
+				html.Input(
+					html.Class(ClassFormControl+" me-2"),
+					html.Type("number"),
+					html.Name(fieldName),
+					html.Value(strconv.Itoa(v)),
+				),
+				arrayRemoveRowButton(),
+			))
+		}
+
+		input = html.Div(append(nodes, arrayAddRowButton(
+			`<input class="form-control me-2" type="number" name="`+html2.EscapeString(fieldName)+`">`,
+		))...)
 
 	case "floatmap":
+		fieldName := group + "_" + name
 		m, _ := value.(map[string]float64)
 
 		keys := make([]string, 0, len(m))
@@ -4475,64 +4544,39 @@ func renderFormGroup(
 
 		sort.Strings(keys)
 
-		input = html.Div(
-			html.ID(group+"_"+name+"-container"),
-			gomponents.Group(
-				func() []gomponents.Node {
-					var nodes []gomponents.Node
-					for _, k := range keys {
-						nodes = append(nodes, html.Div(
-							html.Class(ClassDFlex+" mb-2"),
-							html.Input(
-								html.Class(ClassFormControl+" me-2"),
-								html.Type("text"),
-								html.Placeholder("source"),
-								html.Name(group+"_"+name+"_key"),
-								html.Value(k),
-							),
-							html.Input(
-								html.Class(ClassFormControl+" me-2"),
-								html.Type("number"),
-								gomponents.Attr("step", "any"),
-								html.Placeholder("penalty"),
-								html.Name(group+"_"+name+"_value"),
-								html.Value(strconv.FormatFloat(m[k], 'f', -1, 64)),
-							),
-							html.Button(
-								html.Class(ClassBtnDanger),
-								html.Type("button"),
-								gomponents.Attr(
-									"onclick",
-									"if(this.parentElement) this.parentElement.remove()",
-								),
-								html.I(html.Class("fa fa-trash")),
-							),
-						))
-					}
+		nodes := []gomponents.Node{
+			html.ID(fieldName + "-container"),
+			arrayPresentMarker(fieldName + "_key"),
+		}
 
-					return append(nodes,
-						html.Button(
-							html.Class(ClassBtnPrimary),
-							html.Type("button"),
-							gomponents.Attr(
-								"onclick",
-								fmt.Sprintf("addMap%sItem('%s', '%s')", name, group, name),
-							),
-							gomponents.Text("Add Item"),
-						),
-						html.Script(gomponents.Rawf(`
-							function addMap%sItem(group, name) {
-								const container = document.getElementById(group + '_' + name + '-container');
-								const newRow = document.createElement('div');
-								newRow.className = 'd-flex mb-2';
-								newRow.innerHTML = '<input class="form-control me-2" type="text" placeholder="source" name="%s_key"><input class="form-control me-2" type="number" step="any" placeholder="penalty" name="%s_value"><button class="btn btn-danger" type="button" onclick="if(this.parentElement) this.parentElement.remove()"><i class="fa fa-trash"></i></button>';
-								container.insertBefore(newRow, container.lastElementChild);
-							}
-						`, name, group+"_"+name, group+"_"+name)),
-					)
-				}(),
-			),
-		)
+		for _, k := range keys {
+			nodes = append(nodes, html.Div(
+				html.Class(ClassDFlex+" mb-2"),
+				html.Input(
+					html.Class(ClassFormControl+" me-2"),
+					html.Type("text"),
+					html.Placeholder("source"),
+					html.Name(fieldName+"_key"),
+					html.Value(k),
+				),
+				html.Input(
+					html.Class(ClassFormControl+" me-2"),
+					html.Type("number"),
+					gomponents.Attr("step", "any"),
+					html.Placeholder("penalty"),
+					html.Name(fieldName+"_value"),
+					html.Value(strconv.FormatFloat(m[k], 'f', -1, 64)),
+				),
+				arrayRemoveRowButton(),
+			))
+		}
+
+		input = html.Div(append(nodes, arrayAddRowButton(
+			`<input class="form-control me-2" type="text" placeholder="source" name="`+
+				html2.EscapeString(fieldName+"_key")+
+				`"><input class="form-control me-2" type="number" step="any" placeholder="penalty" name="`+
+				html2.EscapeString(fieldName+"_value")+`">`,
+		))...)
 
 	default:
 		input = createFormField(inputType, group+"_"+name, "", "", nil)
@@ -4743,6 +4787,8 @@ func renderTestParsePage(csrfToken string) gomponents.Node {
 				"options": qualities,
 			}),
 
+			mediaConfigQualityScript("testparse_ConfigKey", "testparse_QualityKey"),
+
 			renderFormGroup("testparse", map[string]string{
 				"UsePath": "Parse as full path instead of just filename",
 			}, map[string]string{
@@ -4770,7 +4816,7 @@ func renderTestParsePage(csrfToken string) gomponents.Node {
 					"btn btn-secondary ml-2",
 					gomponents.Attr(
 						"onclick",
-						"document.getElementById('parseTestForm').reset(); document.getElementById('parseResults').innerHTML = '';",
+						"document.getElementById('parseTestForm').reset(); document.getElementById('testparse_ConfigKey').dispatchEvent(new Event('change')); document.getElementById('parseResults').innerHTML = '';",
 					),
 				),
 			),
@@ -5057,7 +5103,7 @@ func renderComponentToString(node gomponents.Node) string {
 // renderTraktAuthPage renders a page for Trakt authentication.
 func renderTraktAuthPage(csrfToken string) gomponents.Node {
 	// Check current token status
-	token := apiexternal.GetTraktToken()
+	token := traktToken()
 	hasValidToken := token != nil && token.AccessToken != ""
 
 	return html.Div(

@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/subtle"
+	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -20,9 +21,7 @@ type JSONNaming struct {
 
 // Jsonresults is referenced only from Swagger @Success doc comments (never
 // constructed in code), so it exists purely to document the shape of the
-// accepted/denied lists for swag codegen. Its element type follows the
-// live apiexternal_v2.Nzbwithprio type, which superseded the old
-// apiexternal.Nzbwithprio/Nzb types package-wide.
+// accepted/denied lists for swag codegen.
 type Jsonresults struct {
 	Accepted []apiexternal_v2.Nzbwithprio `json:"accepted"`
 	Denied   []apiexternal_v2.Nzbwithprio `json:"denied"`
@@ -135,6 +134,8 @@ func apiAllGetUpgradeInc(c *gin.Context) {
 	sendSuccess(c, StrOK)
 }
 
+var emptyAPIKeyLogOnce sync.Once
+
 // checkauth validates API key authentication for requests.
 // It checks for the "apikey" query parameter and compares it against
 // the configured WebAPIKey. Returns 401 Unauthorized if validation fails.
@@ -147,6 +148,25 @@ func checkauth(c *gin.Context) {
 	}
 
 	expected := config.GetSettingsGeneral().WebAPIKey
+	if expected == "" {
+		// ConstantTimeCompare of two empty slices returns 1, so an unset key
+		// would otherwise open the whole REST API to "?apikey=".
+		emptyAPIKeyLogOnce.Do(func() {
+			logger.Logtype("error", 0).
+				Msg("REST API disabled: general.webapikey is empty - set an API key in the config to enable API access")
+		})
+		sendUnauthorized(c, "unauthorized - api key not configured")
+		c.Abort()
+
+		return
+	}
+
+	if apikey == "" {
+		sendUnauthorized(c, "unauthorized - wrong apikey in query")
+		c.Abort()
+		return
+	}
+
 	if subtle.ConstantTimeCompare([]byte(apikey), []byte(expected)) != 1 {
 		sendUnauthorized(c, "unauthorized - wrong apikey in query")
 		c.Abort()

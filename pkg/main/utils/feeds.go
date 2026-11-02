@@ -6,14 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/trakt"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
@@ -44,6 +48,11 @@ type feedResults struct {
 	Audiobooks []config.ManualConfig // Configuration for audiobooks (author, book series, or single audiobook)
 	Albums     []config.ManualConfig // Configuration for music (artist, album series, or single album)
 	AddAll     bool
+
+	// ircKey/ircLines are the IRC session and announce lines this feed
+	// drained, until the caller commits or requeues them.
+	ircKey   string
+	ircLines []string
 }
 
 // Sentinel errors for feed processing.
@@ -54,6 +63,7 @@ var (
 	errlistnameempty         = errors.New("list type empty")
 	errPlexConfigMissing     = errors.New("plex server URL, token, and username are required")
 	errJellyfinConfigMissing = errors.New("jellyfin server URL, API key, and username are required")
+	errTraktNotInitialized   = errors.New("trakt provider not initialized")
 	errScraperTypeMissing    = errors.New(
 		"movie_scraper_type is required for moviescraper list type",
 	)
@@ -121,6 +131,8 @@ func Init() {
 			b.Albums = b.Albums[:0]
 		}
 
+		b.ircKey, b.ircLines = "", nil
+
 		return false
 	})
 }
@@ -149,26 +161,25 @@ func waitRateLimiter(limiter *slidingwindow.Limiter) {
 func (d *feedResults) gettraktmovielist(usetraktmovie int, cfglist *config.MediaListsConfig) error {
 	waitRateLimiter(providers.GetTrakt().GetRateLimiter())
 
+	provider := providers.GetTrakt()
+
+	var seq iter.Seq[apiexternal_v2.MovieSearchResult]
+
 	switch usetraktmovie {
 	case 1:
-		for arr := range apiexternal.GetTraktMoviePopular(&cfglist.CfgList.Limit, cfglist.CfgList.URL) {
-			checkaddimdbfeed(&arr.IDs.Imdb, cfglist, d)
-		}
-
+		seq = traktSeq("popular movies", cfglist.CfgList.Limit, traktMovies(provider.GetPopularMovies, cfglist.CfgList.URL))
 	case 2:
-		for arr := range apiexternal.GetTraktMovieTrending(&cfglist.CfgList.Limit, cfglist.CfgList.URL) {
-			checkaddimdbfeed(&arr.IDs.Imdb, cfglist, d)
-		}
-
+		seq = traktSeq("trending movies", cfglist.CfgList.Limit, traktMovies(provider.GetTrendingMovies, cfglist.CfgList.URL))
 	case 3:
-		for arr := range apiexternal.GetTraktMovieAnticipated(&cfglist.CfgList.Limit, cfglist.CfgList.URL) {
-			checkaddimdbfeed(&arr.IDs.Imdb, cfglist, d)
-		}
-
+		seq = traktSeq("anticipated movies", cfglist.CfgList.Limit, traktMovies(provider.GetUpcomingMovies, cfglist.CfgList.URL))
 	case 4:
 		return d.getTraktUserMovieList(cfglist)
 	default:
 		return errwrongtype
+	}
+
+	for arr := range seq {
+		checkaddimdbfeed(&arr.IMDbID, cfglist, d)
 	}
 
 	return nil
@@ -186,26 +197,30 @@ func (d *feedResults) getTraktUserMovieList(cfglist *config.MediaListsConfig) er
 
 	waitRateLimiter(providers.GetTrakt().GetRateLimiter())
 
-	arr, err := apiexternal.GetTraktUserList(
-		cfglist.CfgList.TraktUsername,
-		cfglist.CfgList.TraktListName,
-		cfglist.CfgList.TraktListType,
-		&cfglist.CfgList.Limit,
-	)
+	arr, err := traktUserList(cfglist)
 	if err != nil {
 		return err
 	}
 
 	removeFromList := cfglist.CfgList.RemoveFromList && cfglist.CfgList.TraktListName != "watchlist"
 	for idx := range arr {
-		if checkaddimdbfeed(&arr[idx].Movie.IDs.Imdb, cfglist, d) && removeFromList {
-			if err := apiexternal.RemoveMovieFromTraktUserList(
+		if arr[idx].Movie == nil {
+			continue
+		}
+
+		imdb := arr[idx].Movie.IDs.IMDB
+		checkaddimdbfeed(&imdb, cfglist, d)
+
+		// Remove both newly added and already tracked entries, like gettmdblist.
+		if removeFromList && imdb != "" {
+			if err := providers.GetTrakt().RemoveMovieFromTraktUserList(
+				context.Background(),
 				cfglist.CfgList.TraktUsername,
 				cfglist.CfgList.TraktListName,
-				arr[idx].Movie.IDs.Imdb,
+				imdb,
 			); err != nil {
 				logger.Logtype("warn", 1).
-					Str("imdb", arr[idx].Movie.IDs.Imdb).
+					Str("imdb", imdb).
 					Str("list", cfglist.CfgList.TraktListName).
 					Err(err).
 					Msg("Failed to remove movie from Trakt user list")
@@ -216,12 +231,38 @@ func (d *feedResults) getTraktUserMovieList(cfglist *config.MediaListsConfig) er
 	return nil
 }
 
+// traktUserList returns the items of the list's Trakt user list or
+// watchlist, capped at a configured limit > 0.
+func traktUserList(cfglist *config.MediaListsConfig) ([]trakt.TraktUserListItem, error) {
+	provider := providers.GetTrakt()
+	if provider == nil {
+		return nil, errTraktNotInitialized
+	}
+
+	items, err := provider.GetTraktUserList(
+		context.Background(),
+		cfglist.CfgList.TraktUsername,
+		cfglist.CfgList.TraktListName,
+		cfglist.CfgList.TraktListType,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if n, convErr := strconv.Atoi(strings.TrimSpace(cfglist.CfgList.Limit)); convErr == nil && n > 0 && n < len(items) {
+		items = items[:n]
+	}
+
+	return items, nil
+}
+
 // gettmdbmoviepopular retrieves a list of popular movies from The Movie Database (TMDb).
 // It gets the IMDB ID for each movie and adds it to the d.Movies slice.
 func (d *feedResults) gettmdbmoviepopular(cfglist *config.MediaListsConfig) error {
-	waitRateLimiter(providers.GetTMDB().GetRateLimiter())
+	provider := providers.GetTMDB()
+	waitRateLimiter(provider.GetRateLimiter())
 
-	arr, err := apiexternal.GetTmdbPopularMovies(&cfglist.CfgList.Limit)
+	arr, err := tmdbMovieList(cfglist.CfgList.Limit, provider.GetPopularMovies)
 	if err != nil {
 		return err
 	}
@@ -232,9 +273,10 @@ func (d *feedResults) gettmdbmoviepopular(cfglist *config.MediaListsConfig) erro
 // gettmdbmovietrending retrieves a list of trending movies from The Movie Database (TMDb).
 // It gets the IMDB ID for each movie and adds it to the d.Movies slice.
 func (d *feedResults) gettmdbmovietrending(cfglist *config.MediaListsConfig) error {
-	waitRateLimiter(providers.GetTMDB().GetRateLimiter())
+	provider := providers.GetTMDB()
+	waitRateLimiter(provider.GetRateLimiter())
 
-	arr, err := apiexternal.GetTmdbTrendingMovies(&cfglist.CfgList.Limit)
+	arr, err := tmdbMovieList(cfglist.CfgList.Limit, provider.GetTrendingMovies)
 	if err != nil {
 		return err
 	}
@@ -245,9 +287,10 @@ func (d *feedResults) gettmdbmovietrending(cfglist *config.MediaListsConfig) err
 // gettmdbmovieupcoming retrieves a list of upcoming movies from The Movie Database (TMDb).
 // It gets the IMDB ID for each movie and adds it to the d.Movies slice.
 func (d *feedResults) gettmdbmovieupcoming(cfglist *config.MediaListsConfig) error {
-	waitRateLimiter(providers.GetTMDB().GetRateLimiter())
+	provider := providers.GetTMDB()
+	waitRateLimiter(provider.GetRateLimiter())
 
-	arr, err := apiexternal.GetTmdbUpcomingMovies(&cfglist.CfgList.Limit)
+	arr, err := tmdbMovieList(cfglist.CfgList.Limit, provider.GetUpcomingMovies)
 	if err != nil {
 		return err
 	}
@@ -258,9 +301,10 @@ func (d *feedResults) gettmdbmovieupcoming(cfglist *config.MediaListsConfig) err
 // gettmdbseriepopular retrieves a list of popular TV series from The Movie Database (TMDb).
 // It gets the TVDB ID for each series and adds it to the d.Series slice.
 func (d *feedResults) gettmdbseriepopular(cfglist *config.MediaListsConfig) error {
-	waitRateLimiter(providers.GetTMDB().GetRateLimiter())
+	provider := providers.GetTMDB()
+	waitRateLimiter(provider.GetRateLimiter())
 
-	arr, err := apiexternal.GetTmdbPopularSeries(&cfglist.CfgList.Limit)
+	arr, err := tmdbSerieList(cfglist.CfgList.Limit, provider.GetPopularSeries)
 	if err != nil {
 		return err
 	}
@@ -271,9 +315,10 @@ func (d *feedResults) gettmdbseriepopular(cfglist *config.MediaListsConfig) erro
 // gettmdbserietrending retrieves a list of trending TV series from The Movie Database (TMDb).
 // It gets the TVDB ID for each series and adds it to the d.Series slice.
 func (d *feedResults) gettmdbserietrending(cfglist *config.MediaListsConfig) error {
-	waitRateLimiter(providers.GetTMDB().GetRateLimiter())
+	provider := providers.GetTMDB()
+	waitRateLimiter(provider.GetRateLimiter())
 
-	arr, err := apiexternal.GetTmdbTrendingSeries(&cfglist.CfgList.Limit)
+	arr, err := tmdbSerieList(cfglist.CfgList.Limit, provider.GetTrendingSeries)
 	if err != nil {
 		return err
 	}
@@ -283,63 +328,90 @@ func (d *feedResults) gettmdbserietrending(cfglist *config.MediaListsConfig) err
 
 // processTmdbMovieResults processes TMDB movie search results and adds allowed movies to d.Movies.
 func (d *feedResults) processTmdbMovieResults(
-	arr *apiexternal.TheMovieDBSearch,
+	arr []apiexternal_v2.MovieSearchResult,
 	cfglist *config.MediaListsConfig,
 ) error {
-	if arr == nil {
-		return nil
-	}
-
 	var allowed bool
-	for idx := range arr.Results {
-		moviedbexternal, err := apiexternal.GetTmdbMovieExternal(arr.Results[idx].ID)
+	for idx := range arr {
+		imdbID, err := tmdbMovieIMDbID(arr[idx].ID)
 		if err != nil {
 			logger.Logtype("debug", 1).
-				Int(logger.StrImdb, arr.Results[idx].ID).
+				Int(logger.StrImdb, arr[idx].ID).
 				Err(err).
 				Msg("imdb id could not be retrieved")
 
 			continue
 		}
 
-		allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
+		allowed, _ = importfeed.AllowMovieImport(&imdbID, cfglist.CfgList)
 		if allowed || d.AddAll {
-			d.Movies = append(d.Movies, moviedbexternal.ImdbID)
+			d.Movies = append(d.Movies, imdbID)
 		}
 	}
 
 	return nil
 }
 
-// processTmdbSeriesResults processes TMDB series search results and adds series to d.Series.
-func (d *feedResults) processTmdbSeriesResults(
-	arr *apiexternal.TheMovieDBSearchTV,
-	_ *config.MediaListsConfig,
-) error {
-	if arr == nil {
-		return nil
+// tmdbMovieIMDbID returns the IMDB ID of a TMDB movie, logger.ErrNoID when
+// TMDB has none.
+func tmdbMovieIMDbID(tmdbID int) (string, error) {
+	provider := providers.GetTMDB()
+	if provider == nil {
+		return "", logger.ErrNotFound
 	}
 
+	ids, err := provider.GetMovieExternalIDs(context.Background(), tmdbID)
+	if err != nil {
+		return "", err
+	}
+
+	if ids == nil || ids.IMDbID == "" {
+		return "", logger.ErrNoID
+	}
+
+	return ids.IMDbID, nil
+}
+
+// tmdbSerieTVDbID returns the TVDB ID of a TMDB series, 0 when unknown.
+func tmdbSerieTVDbID(tmdbID int) int {
+	provider := providers.GetTMDB()
+	if provider == nil {
+		return 0
+	}
+
+	ids, err := provider.GetSeriesExternalIDs(context.Background(), tmdbID)
+	if err != nil || ids == nil {
+		return 0
+	}
+
+	return ids.TVDbID
+}
+
+// processTmdbSeriesResults processes TMDB series search results and adds series to d.Series.
+func (d *feedResults) processTmdbSeriesResults(
+	arr []apiexternal_v2.SeriesSearchResult,
+	_ *config.MediaListsConfig,
+) error {
 	var imdbid string
-	for idx := range arr.Results {
+	for idx := range arr {
 		database.Scanrowsdyn(
 			false,
 			"select id from dbseries where moviedb_id = ?",
 			&imdbid,
-			&arr.Results[idx].ID,
+			&arr[idx].ID,
 		)
 
 		if imdbid != "" && !d.AddAll {
 			continue
 		}
 
-		moviedbexternal, err := apiexternal.GetTVExternal(arr.Results[idx].ID)
-		if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
+		tvdbID := tmdbSerieTVDbID(arr[idx].ID)
+		if tvdbID == 0 {
 			continue
 		}
 
 		d.Series = append(d.Series, config.ManualConfig{
-			Name: arr.Results[idx].Name, TvdbID: moviedbexternal.TvdbID,
+			Name: arr[idx].Name, TvdbID: tvdbID,
 		})
 	}
 
@@ -389,62 +461,78 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 		allowed bool
 	)
 
-	tmdbLimiter := providers.GetTMDB().GetRateLimiter()
+	tmdbp := providers.GetTMDB()
+	tmdbLimiter := tmdbp.GetRateLimiter()
+
+	pages := cfglist.CfgList.GetTmdbPages()
 
 	for idxdiscover := range cfglist.CfgList.TmdbDiscover {
 		query := cfglist.CfgList.TmdbDiscover[idxdiscover]
 
-		waitRateLimiter(tmdbLimiter)
-
-		arr, err := apiexternal.DiscoverTmdbMovie(query)
-		if err != nil {
-			logger.Logtype("debug", 1).
-				Str("query", query).
-				Err(err).
-				Msg("discover could not be executed")
-
-			continue
-		}
-
-		for idx := range arr.Results {
+		for page := 1; page <= pages; page++ {
 			waitRateLimiter(tmdbLimiter)
 
-			movieid = importfeed.MovieFindDBIDByTmdbID(&arr.Results[idx].ID)
-			if movieid != 0 {
-				if getmovieid(&movieid, cfglist) && !d.AddAll {
+			arr, err := tmdbp.DiscoverMovies(context.Background(), query, page)
+			if err != nil {
+				logger.Logtype("debug", 1).
+					Str("query", query).
+					Int("page", page).
+					Err(err).
+					Msg("discover could not be executed")
+
+				break
+			}
+
+			if len(arr.Results) == 0 {
+				break
+			}
+
+			for idx := range arr.Results {
+				waitRateLimiter(tmdbLimiter)
+
+				movieid = importfeed.MovieFindDBIDByTmdbID(&arr.Results[idx].ID)
+				if movieid != 0 {
+					if getmovieid(&movieid, cfglist) && !d.AddAll {
+						continue
+					}
+
+					if hasIgnoreMapLists {
+						if useMediaCache {
+							if database.CacheOneStringTwoIntIndexFunc(
+								logger.CacheMovie,
+								func(elem *syncops.DbstaticOneStringTwoInt) bool {
+									return elem.Num1 == movieid &&
+										logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
+								},
+							) {
+								continue
+							}
+						} else if listnamefilter != "" && slices.Contains(existing, movieid) {
+							continue
+						}
+					}
+				}
+
+				imdbID, err := tmdbMovieIMDbID(arr.Results[idx].ID)
+				if err != nil {
+					logger.Logtype("debug", 1).
+						Int(logger.StrImdb, arr.Results[idx].ID).
+						Err(err).
+						Msg("imdb id could not be retrieved")
+
 					continue
 				}
 
-				if hasIgnoreMapLists {
-					if useMediaCache {
-						if database.CacheOneStringTwoIntIndexFunc(
-							logger.CacheMovie,
-							func(elem *syncops.DbstaticOneStringTwoInt) bool {
-								return elem.Num1 == movieid &&
-									logger.SlicesContainsI(cfglist.IgnoreMapLists, elem.Str)
-							},
-						) {
-							continue
-						}
-					} else if listnamefilter != "" && slices.Contains(existing, movieid) {
-						continue
-					}
+				allowed, _ = importfeed.AllowMovieImport(&imdbID, cfglist.CfgList)
+				if allowed || d.AddAll {
+					d.Movies = append(d.Movies, imdbID)
 				}
 			}
 
-			moviedbexternal, err := apiexternal.GetTmdbMovieExternal(arr.Results[idx].ID)
-			if err != nil {
-				logger.Logtype("debug", 1).
-					Int(logger.StrImdb, arr.Results[idx].ID).
-					Err(err).
-					Msg("imdb id could not be retrieved")
-
-				continue
-			}
-
-			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
-			if allowed || d.AddAll {
-				d.Movies = append(d.Movies, moviedbexternal.ImdbID)
+			// TMDB reports how many pages the query actually has; stop there so a
+			// generous tmdb_pages costs no extra requests.
+			if arr.TotalPages > 0 && page >= arr.TotalPages {
+				break
 			}
 		}
 	}
@@ -459,40 +547,56 @@ func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) erro
 		return nil
 	}
 
-	var (
-		imdbid          string
-		moviedbexternal *apiexternal.TheMovieDBTVExternal
-	)
+	var imdbid string
 
-	tmdbLimiter := providers.GetTMDB().GetRateLimiter()
+	tmdbp := providers.GetTMDB()
+	tmdbLimiter := tmdbp.GetRateLimiter()
+
+	pages := cfglist.CfgList.GetTmdbPages()
 
 	for idxdiscover := range cfglist.CfgList.TmdbDiscover {
-		waitRateLimiter(tmdbLimiter)
+		for page := 1; page <= pages; page++ {
+			waitRateLimiter(tmdbLimiter)
 
-		arr, err := apiexternal.DiscoverTmdbSerie(cfglist.CfgList.TmdbDiscover[idxdiscover])
-		if err != nil {
-			continue
-		}
-
-		for idx := range arr.Results {
-			database.Scanrowsdyn(
-				false,
-				"select id from dbseries where moviedb_id = ?",
-				&imdbid,
-				&arr.Results[idx].ID,
+			arr, err := tmdbp.DiscoverTV(
+				context.Background(),
+				cfglist.CfgList.TmdbDiscover[idxdiscover],
+				page,
 			)
+			if err != nil {
+				break
+			}
 
-			if imdbid == "" || d.AddAll {
-				waitRateLimiter(tmdbLimiter)
+			if len(arr.Results) == 0 {
+				break
+			}
 
-				moviedbexternal, err = apiexternal.GetTVExternal(arr.Results[idx].ID)
-				if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
-					continue
+			for idx := range arr.Results {
+				database.Scanrowsdyn(
+					false,
+					"select id from dbseries where moviedb_id = ?",
+					&imdbid,
+					&arr.Results[idx].ID,
+				)
+
+				if imdbid == "" || d.AddAll {
+					waitRateLimiter(tmdbLimiter)
+
+					tvdbID := tmdbSerieTVDbID(arr.Results[idx].ID)
+					if tvdbID == 0 {
+						continue
+					}
+
+					d.Series = append(d.Series, config.ManualConfig{
+						Name: arr.Results[idx].Name, TvdbID: tvdbID,
+					})
 				}
+			}
 
-				d.Series = append(d.Series, config.ManualConfig{
-					Name: arr.Results[idx].Name, TvdbID: moviedbexternal.TvdbID,
-				})
+			// TMDB reports how many pages the query actually has; stop there so a
+			// generous tmdb_pages costs no extra requests.
+			if arr.TotalPages > 0 && page >= arr.TotalPages {
+				break
 			}
 		}
 	}
@@ -503,46 +607,64 @@ func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) erro
 // gettmdbshowlist retrieves a list of TV shows from The Movie Database (TMDb) based on the configuration settings in the provided MediaListsConfig.
 // It iterates through the TmdbList configuration, fetching the TV show details from TMDb and adding them to the d.Series slice if they are not already in the database.
 func (d *feedResults) gettmdbshowlist(cfglist *config.MediaListsConfig) error {
-	if len(cfglist.CfgList.TmdbDiscover) == 0 {
+	// Guards the slice this function actually iterates. It checked TmdbDiscover,
+	// so a series list with tmdb_list set but no tmdb_discover imported nothing.
+	if len(cfglist.CfgList.TmdbList) == 0 {
 		return nil
 	}
 
-	var (
-		imdbid          string
-		moviedbexternal *apiexternal.TheMovieDBTVExternal
-	)
+	var imdbid string
 
-	tmdbLimiter := providers.GetTMDB().GetRateLimiter()
+	tmdbp := providers.GetTMDB()
+	tmdbLimiter := tmdbp.GetRateLimiter()
+	pages := cfglist.CfgList.GetTmdbPages()
+
 	for idxdiscover := range cfglist.CfgList.TmdbList {
-		waitRateLimiter(tmdbLimiter)
-
-		arr, err := apiexternal.GetTmdbList(cfglist.CfgList.TmdbList[idxdiscover])
-		if err != nil {
-			continue
-		}
-
-		for idx := range arr.Items {
-			database.Scanrowsdyn(
-				false,
-				"select id from dbseries where moviedb_id = ?",
-				&imdbid,
-				&arr.Items[idx].ID,
-			)
-
-			if imdbid != "" && !d.AddAll {
-				continue
-			}
-
+		for page := 1; page <= pages; page++ {
 			waitRateLimiter(tmdbLimiter)
 
-			moviedbexternal, err = apiexternal.GetTVExternal(arr.Items[idx].ID)
-			if err != nil || moviedbexternal == nil || moviedbexternal.TvdbID == 0 {
-				continue
+			arr, err := tmdbp.GetTMDBList(context.Background(), cfglist.CfgList.TmdbList[idxdiscover], page)
+			if err != nil {
+				break
 			}
 
-			d.Series = append(d.Series, config.ManualConfig{
-				Name: arr.Items[idx].Name, TvdbID: moviedbexternal.TvdbID,
-			})
+			if len(arr.Items) == 0 {
+				break
+			}
+
+			for idx := range arr.Items {
+				database.Scanrowsdyn(
+					false,
+					"select id from dbseries where moviedb_id = ?",
+					&imdbid,
+					&arr.Items[idx].ID,
+				)
+
+				if imdbid != "" && !d.AddAll {
+					continue
+				}
+
+				waitRateLimiter(tmdbLimiter)
+
+				tvdbID := tmdbSerieTVDbID(arr.Items[idx].ID)
+				if tvdbID == 0 {
+					continue
+				}
+
+				// TV entries carry name, movie entries title.
+				name := arr.Items[idx].Title
+				if name == "" {
+					name = arr.Items[idx].Name
+				}
+
+				d.Series = append(d.Series, config.ManualConfig{Name: name, TvdbID: tvdbID})
+			}
+
+			// TMDB reports how many pages the query actually has; stop there so a
+			// generous tmdb_pages costs no extra requests.
+			if arr.TotalPages > 0 && page >= arr.TotalPages {
+				break
+			}
 		}
 	}
 
@@ -637,19 +759,42 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 		allowed bool
 	)
 
-	tmdbLimiter := providers.GetTMDB().GetRateLimiter()
-	for idxlist := range cfglist.CfgList.TmdbList {
-		waitRateLimiter(tmdbLimiter)
+	tmdbp := providers.GetTMDB()
+	tmdbLimiter := tmdbp.GetRateLimiter()
+	pages := cfglist.CfgList.GetTmdbPages()
 
-		arr, err := apiexternal.GetTmdbList(cfglist.CfgList.TmdbList[idxlist])
-		if err != nil {
-			continue
+	for idxlist := range cfglist.CfgList.TmdbList {
+		listID := cfglist.CfgList.TmdbList[idxlist]
+
+		// Collect every requested page before processing any item. This function
+		// can remove items from the source list, and removing while paging
+		// forward shifts the remaining pages and silently skips entries.
+		var items []int
+
+		for page := 1; page <= pages; page++ {
+			waitRateLimiter(tmdbLimiter)
+
+			arr, err := tmdbp.GetTMDBList(context.Background(), listID, page)
+			if err != nil {
+				break
+			}
+
+			if len(arr.Items) == 0 {
+				break
+			}
+
+			for idx := range arr.Items {
+				items = append(items, arr.Items[idx].ID)
+			}
+
+			// TMDB reports how many pages the list actually has; stop there so a
+			// generous tmdb_pages costs no extra requests.
+			if arr.TotalPages > 0 && page >= arr.TotalPages {
+				break
+			}
 		}
 
-		listID := cfglist.CfgList.TmdbList[idxlist]
-		for idx := range arr.Items {
-			itemID := arr.Items[idx].ID
-
+		for _, itemID := range items {
 			waitRateLimiter(tmdbLimiter)
 
 			movieid = importfeed.MovieFindDBIDByTmdbID(&itemID)
@@ -657,7 +802,7 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 			if movieid != 0 {
 				if getmovieid(&movieid, cfglist) && !d.AddAll {
 					if removeFromList {
-						apiexternal.RemoveFromTmdbList(listID, itemID)
+						tmdbp.RemoveFromTMDBList(context.Background(), listID, itemID)
 					}
 
 					continue
@@ -673,14 +818,14 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 							},
 						) {
 							if removeFromList {
-								apiexternal.RemoveFromTmdbList(listID, itemID)
+								tmdbp.RemoveFromTMDBList(context.Background(), listID, itemID)
 							}
 
 							continue
 						}
 					} else if listnamefilter != "" && slices.Contains(existing, movieid) {
 						if removeFromList {
-							apiexternal.RemoveFromTmdbList(listID, itemID)
+							tmdbp.RemoveFromTMDBList(context.Background(), listID, itemID)
 						}
 
 						continue
@@ -688,7 +833,9 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 				}
 			}
 
-			moviedbexternal, err := apiexternal.GetTmdbMovieExternal(itemID)
+			// Without an IMDB id nothing is imported, so the item must also
+			// stay on the TMDB list.
+			imdbID, err := tmdbMovieIMDbID(itemID)
 			if err != nil {
 				logger.Logtype("debug", 1).
 					Int(logger.StrImdb, itemID).
@@ -698,15 +845,15 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 				continue
 			}
 
-			allowed, _ = importfeed.AllowMovieImport(&moviedbexternal.ImdbID, cfglist.CfgList)
+			allowed, _ = importfeed.AllowMovieImport(&imdbID, cfglist.CfgList)
 			if !allowed && !d.AddAll {
 				continue
 			}
 
-			d.Movies = append(d.Movies, moviedbexternal.ImdbID)
+			d.Movies = append(d.Movies, imdbID)
 
 			if removeFromList {
-				apiexternal.RemoveFromTmdbList(listID, itemID)
+				tmdbp.RemoveFromTMDBList(context.Background(), listID, itemID)
 			}
 		}
 	}
@@ -726,32 +873,45 @@ func (d *feedResults) gettmdblist(cfglist *config.MediaListsConfig) error {
 func (d *feedResults) gettraktserielist(usetraktserie int, cfglist *config.MediaListsConfig) error {
 	waitRateLimiter(providers.GetTrakt().GetRateLimiter())
 
+	provider := providers.GetTrakt()
+
+	var seq iter.Seq[apiexternal_v2.SeriesSearchResult]
+
 	switch usetraktserie {
 	case 1:
-		for arr := range apiexternal.GetTraktSeriePopular(&cfglist.CfgList.Limit, cfglist.CfgList.URL) {
-			d.Series = append(d.Series, config.ManualConfig{
-				Name: arr.Title, TvdbID: arr.IDs.Tvdb,
-			})
-		}
-
+		seq = traktSeq("popular series", cfglist.CfgList.Limit, traktSeries(provider.GetPopularSeries, cfglist.CfgList.URL))
 	case 2:
-		for arr := range apiexternal.GetTraktSerieTrending(&cfglist.CfgList.Limit, cfglist.CfgList.URL) {
-			d.Series = append(d.Series, config.ManualConfig{
-				Name: arr.Title, TvdbID: arr.IDs.Tvdb,
-			})
-		}
-
+		seq = traktSeq("trending series", cfglist.CfgList.Limit, traktSeries(provider.GetTrendingSeries, cfglist.CfgList.URL))
 	case 3:
-		for arr := range apiexternal.GetTraktSerieAnticipated(&cfglist.CfgList.Limit, cfglist.CfgList.URL) {
-			d.Series = append(d.Series, config.ManualConfig{
-				Name: arr.Title, TvdbID: arr.IDs.Tvdb,
-			})
-		}
+		seq = traktSeq(
+			"anticipated series",
+			cfglist.CfgList.Limit,
+			func(ctx context.Context, page, size int) ([]apiexternal_v2.SeriesSearchResult, int, error) {
+				items, err := provider.GetTraktSerieAnticipated(ctx, page, size, cfglist.CfgList.URL)
+				if err != nil {
+					return nil, 0, err
+				}
 
+				out := make([]apiexternal_v2.SeriesSearchResult, 0, len(items))
+				for i := range items {
+					if show := items[i].Show; show != nil {
+						out = append(out, apiexternal_v2.SeriesSearchResult{
+							ID: show.IDs.Trakt, Name: show.Title, TVDbID: show.IDs.TVDB, IMDbID: show.IDs.IMDB,
+						})
+					}
+				}
+
+				return out, len(items), nil
+			},
+		)
 	case 4:
 		return d.getTraktUserSeriesList(cfglist)
 	default:
 		return errwrongtype
+	}
+
+	for arr := range seq {
+		checkaddtvdbfeed(arr.TVDbID, arr.Name, cfglist, d)
 	}
 
 	return nil
@@ -769,12 +929,7 @@ func (d *feedResults) getTraktUserSeriesList(cfglist *config.MediaListsConfig) e
 
 	waitRateLimiter(providers.GetTrakt().GetRateLimiter())
 
-	arr, err := apiexternal.GetTraktUserList(
-		cfglist.CfgList.TraktUsername,
-		cfglist.CfgList.TraktListName,
-		cfglist.CfgList.TraktListType,
-		&cfglist.CfgList.Limit,
-	)
+	arr, err := traktUserList(cfglist)
 	if err != nil {
 		return err
 	}
@@ -783,21 +938,23 @@ func (d *feedResults) getTraktUserSeriesList(cfglist *config.MediaListsConfig) e
 	// protects a user's Trakt watchlist from being auto-emptied by this feed.
 	removeFromList := cfglist.CfgList.RemoveFromList && cfglist.CfgList.TraktListName != "watchlist"
 	for idx := range arr {
-		if !checkaddtvdbfeed(arr[idx].Serie.IDs.Tvdb, arr[idx].Serie.Title, cfglist, d) {
+		show := arr[idx].Show
+		if show == nil {
 			continue
 		}
-		if removeFromList {
-			// Was arr[idx].Movie.IDs.Tvdb - Movie is never populated for a
-			// show-type list entry (only Serie is), so this always passed
-			// tvdb id 0, matching nothing on Trakt's side and making
-			// "Remove From List" a silent no-op for every series list.
-			if err := apiexternal.RemoveSerieFromTraktUserList(
+
+		checkaddtvdbfeed(show.IDs.TVDB, show.Title, cfglist, d)
+
+		// Remove both newly added and already tracked entries, like gettmdblist.
+		if removeFromList && show.IDs.TVDB != 0 {
+			if err := providers.GetTrakt().RemoveSerieFromTraktUserList(
+				context.Background(),
 				cfglist.CfgList.TraktUsername,
 				cfglist.CfgList.TraktListName,
-				arr[idx].Serie.IDs.Tvdb,
+				show.IDs.TVDB,
 			); err != nil {
 				logger.Logtype("warn", 1).
-					Int("tvdb", arr[idx].Serie.IDs.Tvdb).
+					Int("tvdb", show.IDs.TVDB).
 					Str("list", cfglist.CfgList.TraktListName).
 					Err(err).
 					Msg("Failed to remove series from Trakt user list")
@@ -857,17 +1014,34 @@ func getmusicconfig(cfglist *config.ListsConfig) ([]config.ManualConfig, error) 
 // exists for this list, applying any configured filters, and adding allowed
 // movies to the results list.
 func (d *feedResults) getimdbcsv(cfglistp *config.MediaListsConfig) error {
-	return apiexternal.ProcessHTTP(
-		nil,
+	ctx := context.Background()
+
+	return csvListClient().MakeRequestWithGracePeriod(
+		ctx,
+		http.MethodGet,
 		cfglistp.CfgList.URL,
-		false,
-		func(ctx context.Context, r *http.Response) error {
+		nil,
+		nil,
+		func(r *http.Response) error {
 			d.parseimdbcsv(ctx, r.Body, cfglistp)
 			return nil
 		},
-		nil,
+		30*time.Second,
 	)
 }
+
+// csvListClient is the HTTP client for CSV list downloads (10 calls per
+// second, 30s timeout).
+var csvListClient = sync.OnceValue(func() *base.BaseClient {
+	return base.NewBaseClient(base.ClientConfig{
+		Name:             "imdbcsv",
+		Timeout:          30 * time.Second,
+		AuthType:         base.AuthNone,
+		RateLimitCalls:   10,
+		RateLimitSeconds: 1,
+		UserAgent:        config.GetSettingsGeneral().UserAgent,
+	})
+})
 
 // parseimdbcsv parses an IMDB CSV file from the provided io.ReadCloser, filters the movies based on the given configuration,
 // and appends the allowed movie IDs to the d.Movies slice.
@@ -1084,7 +1258,7 @@ func Feeds(
 	// Any officialcharts.com chart is supported — just change the chart slug and/or chart-ID in the URL.
 	// Configure ChartEntryNodeXPath, ChartTitleXPath, ChartArtistXPath in the list config.
 	case "musiccharts":
-		return d, d.getmusiccharts(list)
+		return d, d.getmusiccharts(ctx, list)
 
 	case "lastfmtopartists":
 		return d, d.getlastfmtopartists(ctx, list, cfgp)
@@ -1097,7 +1271,7 @@ func Feeds(
 	//   https://www.bestsellerliste.de/spiegel-bestseller-taschenbuecher-belletristik/
 	// Configure ChartEntryNodeXPath, ChartTitleXPath, ChartArtistXPath in the list config.
 	case "bookbestsellers":
-		return d, d.getbookbestsellers(list)
+		return d, d.getbookbestsellers(ctx, list)
 
 	// IRC announce channel monitoring.
 	// Connects to irc_server, joins irc_channels and parses announce lines with
@@ -1144,10 +1318,15 @@ func (d *feedResults) getplexwatchlist(cfglist *config.MediaListsConfig) error {
 		Str("server", cfglist.CfgList.PlexServerURL).
 		Msg("Fetching Plex watchlist")
 
-	watchlistItems, err := apiexternal.GetPlexWatchlist(
+	plexp := providers.GetPlex()
+	if plexp == nil {
+		return errPlexConfigMissing
+	}
+
+	watchlistItems, err := plexp.GetWatchlist(
+		context.Background(),
 		cfglist.CfgList.PlexServerURL,
 		cfglist.CfgList.PlexToken,
-		cfglist.CfgList.PlexUsername,
 	)
 	if err != nil {
 		return err
@@ -1158,9 +1337,9 @@ func (d *feedResults) getplexwatchlist(cfglist *config.MediaListsConfig) error {
 		Msg("Processing Plex watchlist items")
 
 	for i := range watchlistItems {
-		if apiexternal.IsPlexItemMovie(watchlistItems[i]) {
+		if watchlistItems[i].IsMovie() {
 			// Process movie
-			imdbID := apiexternal.ExtractIMDBFromPlexItem(watchlistItems[i])
+			imdbID := watchlistItems[i].IMDbID()
 			if imdbID != "" {
 				checkaddimdbfeed(&imdbID, cfglist, d)
 			} else {
@@ -1168,14 +1347,11 @@ func (d *feedResults) getplexwatchlist(cfglist *config.MediaListsConfig) error {
 					Str("title", watchlistItems[i].Title).
 					Msg("No IMDB ID found for Plex movie")
 			}
-		} else if apiexternal.IsPlexItemShow(watchlistItems[i]) {
+		} else if watchlistItems[i].IsShow() {
 			// Process TV show
-			tvdbID := apiexternal.ExtractTVDBFromPlexItem(watchlistItems[i])
+			tvdbID := watchlistItems[i].TVDbID()
 			if tvdbID != 0 {
-				d.Series = append(d.Series, config.ManualConfig{
-					Name:   watchlistItems[i].Title,
-					TvdbID: tvdbID,
-				})
+				checkaddtvdbfeed(tvdbID, watchlistItems[i].Title, cfglist, d)
 			} else {
 				logger.Logtype("debug", 1).
 					Str("title", watchlistItems[i].Title).
@@ -1198,7 +1374,13 @@ func (d *feedResults) getjellyfinwatchlist(cfglist *config.MediaListsConfig) err
 		Str("server", cfglist.CfgList.JellyfinServerURL).
 		Msg("Fetching Jellyfin watchlist")
 
-	watchlistItems, err := apiexternal.GetJellyfinWatchlist(
+	jellyfinp := providers.GetJellyfin()
+	if jellyfinp == nil {
+		return errJellyfinConfigMissing
+	}
+
+	watchlistItems, err := jellyfinp.GetWatchlist(
+		context.Background(),
 		cfglist.CfgList.JellyfinServerURL,
 		cfglist.CfgList.JellyfinToken,
 		cfglist.CfgList.JellyfinUsername,
@@ -1212,27 +1394,24 @@ func (d *feedResults) getjellyfinwatchlist(cfglist *config.MediaListsConfig) err
 		Msg("Processing Jellyfin watchlist items")
 
 	for i := range watchlistItems {
-		if apiexternal.IsJellyfinItemMovie(watchlistItems[i]) {
+		if watchlistItems[i].IsMovie() {
 			// Process movie
-			imdbID := apiexternal.ExtractIMDBFromJellyfinItem(watchlistItems[i])
+			imdbID := watchlistItems[i].IMDbID()
 			if imdbID != "" {
 				checkaddimdbfeed(&imdbID, cfglist, d)
 			} else {
 				logger.Logtype("debug", 1).
-					Str("title", apiexternal.GetJellyfinItemTitle(watchlistItems[i])).
+					Str("title", watchlistItems[i].Title()).
 					Msg("No IMDB ID found for Jellyfin movie")
 			}
-		} else if apiexternal.IsJellyfinItemSeries(watchlistItems[i]) {
+		} else if watchlistItems[i].IsSeries() {
 			// Process TV series
-			tvdbID := apiexternal.ExtractTVDBFromJellyfinItem(watchlistItems[i])
+			tvdbID := watchlistItems[i].TVDbID()
 			if tvdbID != 0 {
-				d.Series = append(d.Series, config.ManualConfig{
-					Name:   apiexternal.GetJellyfinItemTitle(watchlistItems[i]),
-					TvdbID: tvdbID,
-				})
+				checkaddtvdbfeed(tvdbID, watchlistItems[i].Title(), cfglist, d)
 			} else {
 				logger.Logtype("debug", 1).
-					Str("title", apiexternal.GetJellyfinItemTitle(watchlistItems[i])).
+					Str("title", watchlistItems[i].Title()).
 					Msg("No TVDB ID found for Jellyfin series")
 			}
 		}
@@ -1353,7 +1532,15 @@ func runMovieHTMLXPathScraper(
 	// Scrape movies (limit to 10 pages for now)
 	imdbIDs, err := scraper.Scrape(ctx, 10)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scrape movies: %w", err)
+		if len(imdbIDs) == 0 {
+			return nil, fmt.Errorf("failed to scrape movies: %w", err)
+		}
+
+		logger.Logtype("warn", 0).
+			Err(err).
+			Str("list", cfglist.CfgList.Name).
+			Int("imdb_ids", len(imdbIDs)).
+			Msg("Movie scraper stopped early; using ids from earlier pages")
 	}
 
 	return imdbIDs, nil
@@ -1380,8 +1567,8 @@ func extractChartText(node *html.Node, xpath, attr string) string {
 // fetchAndParseChartPage fetches url, parses the HTML and calls fn with the document root.
 // The request is bounded by a timeout so a slow or hung chart server cannot block
 // the feed job indefinitely.
-func fetchAndParseChartPage(url string, fn func(*html.Node)) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+func fetchAndParseChartPage(ctx context.Context, url string, fn func(*html.Node)) error {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -1444,7 +1631,10 @@ type chartScrapeConfig struct {
 	table, dbTable, fkColumn   string
 	errURL, errEntry, errTitle error
 	logMsg                     string
-	appendResult               func(title, artist string)
+	// artistMatch is an SQL condition (one ? placeholder) restricting a
+	// title match to entries by the scraped artist/author.
+	artistMatch  string
+	appendResult func(title, artist string)
 }
 
 // scrapeChart fetches an HTML chart/bestseller page and appends matching entries
@@ -1452,6 +1642,7 @@ type chartScrapeConfig struct {
 // in an ignore-template list, and moves entries found in a replace-template list to
 // the current list. Shared by getmusiccharts and getbookbestsellers.
 func (d *feedResults) scrapeChart(
+	ctx context.Context,
 	cfglist *config.MediaListsConfig,
 	sc *chartScrapeConfig,
 ) error {
@@ -1470,22 +1661,29 @@ func (d *feedResults) scrapeChart(
 	// Pre-build query strings once; per-entry args are built inside the loop.
 	join := sc.table + " JOIN " + sc.dbTable + " ON " + sc.table + "." + sc.fkColumn + " = " + sc.dbTable + ".id"
 	titleMatch := "LOWER(" + sc.dbTable + ".title) = LOWER(?) AND " + sc.table + ".listname IN (?"
+	// Same as titleMatch plus the artist/author condition; used when the chart
+	// provides an artist so same-titled entries by other artists don't match.
+	titleArtistMatch := "LOWER(" + sc.dbTable + ".title) = LOWER(?) AND " + sc.artistMatch +
+		" AND " + sc.table + ".listname IN (?"
+	useArtist := sc.artistMatch != "" && cfglist.CfgList.ChartArtistXPath != ""
 
 	checkIgnore := cfglist.IgnoreMapListsLen >= 1
 	ignoreQuery := "SELECT count() FROM " + join + " WHERE " + titleMatch + cfglist.IgnoreMapListsQu + ")"
+	ignoreArtistQuery := "SELECT count() FROM " + join + " WHERE " + titleArtistMatch + cfglist.IgnoreMapListsQu + ")"
 
 	checkReplace := cfglist.ReplaceMapListsLen >= 1
 
-	var replaceQuery, updateListnameQuery, updateListnameQualityQuery string
+	var replaceQuery, replaceArtistQuery, updateListnameQuery, updateListnameQualityQuery string
 	if checkReplace {
 		replaceQu := strings.Repeat(",?", cfglist.ReplaceMapListsLen-1)
 
 		replaceQuery = "SELECT " + sc.table + ".id FROM " + join + " WHERE " + titleMatch + replaceQu + ")"
+		replaceArtistQuery = "SELECT " + sc.table + ".id FROM " + join + " WHERE " + titleArtistMatch + replaceQu + ")"
 		updateListnameQuery = "UPDATE " + sc.table + " SET listname = ? WHERE id = ?"
 		updateListnameQualityQuery = "UPDATE " + sc.table + " SET listname = ?, quality_profile = ? WHERE id = ?"
 	}
 
-	return fetchAndParseChartPage(cfglist.CfgList.URL, func(doc *html.Node) {
+	return fetchAndParseChartPage(ctx, cfglist.CfgList.URL, func(doc *html.Node) {
 		nodes := htmlquery.Find(doc, cfglist.CfgList.ChartEntryNodeXPath)
 
 		if limit, err := strconv.Atoi(
@@ -1507,30 +1705,49 @@ func (d *feedResults) scrapeChart(
 				continue
 			}
 
+			scrapedArtist := extractChartText(
+				node,
+				cfglist.CfgList.ChartArtistXPath,
+				cfglist.CfgList.ChartArtistAttribute,
+			)
+			matchArtist := useArtist && scrapedArtist != ""
+
 			// Skip entries that are already tracked in any ignore-template list.
 			if checkIgnore {
-				qargs := make([]any, 0, cfglist.IgnoreMapListsLen+1)
+				qargs := make([]any, 0, cfglist.IgnoreMapListsLen+2)
 
+				query := ignoreQuery
 				qargs = append(qargs, title)
+				if matchArtist {
+					query = ignoreArtistQuery
+					qargs = append(qargs, scrapedArtist)
+				}
+
 				for i := range cfglist.IgnoreMapLists {
 					qargs = append(qargs, cfglist.IgnoreMapLists[i])
 				}
 
-				if database.Getdatarow[uint](false, ignoreQuery, qargs...) > 0 {
+				if database.Getdatarow[uint](false, query, qargs...) > 0 {
 					continue
 				}
 			}
 
 			// Move entries that exist in a replace-template list to the current list.
 			if checkReplace {
-				rqargs := make([]any, 0, cfglist.ReplaceMapListsLen+1)
+				rqargs := make([]any, 0, cfglist.ReplaceMapListsLen+2)
 
+				query := replaceQuery
 				rqargs = append(rqargs, title)
+				if matchArtist {
+					query = replaceArtistQuery
+					rqargs = append(rqargs, scrapedArtist)
+				}
+
 				for i := range cfglist.ReplaceMapLists {
 					rqargs = append(rqargs, cfglist.ReplaceMapLists[i])
 				}
 
-				if id := database.Getdatarow[uint](false, replaceQuery, rqargs...); id > 0 {
+				if id := database.Getdatarow[uint](false, query, rqargs...); id > 0 {
 					if cfglist.TemplateQuality == "" {
 						database.ExecN(updateListnameQuery, &cfglist.Name, &id)
 					} else {
@@ -1544,11 +1761,7 @@ func (d *feedResults) scrapeChart(
 				}
 			}
 
-			artist := extractChartText(
-				node,
-				cfglist.CfgList.ChartArtistXPath,
-				cfglist.CfgList.ChartArtistAttribute,
-			)
+			artist := scrapedArtist
 			if artist == "" {
 				artist = cfglist.CfgList.ChartDefaultArtist
 			}
@@ -1565,8 +1778,8 @@ func (d *feedResults) scrapeChart(
 	})
 }
 
-func (d *feedResults) getmusiccharts(cfglist *config.MediaListsConfig) error {
-	return d.scrapeChart(cfglist, &chartScrapeConfig{
+func (d *feedResults) getmusiccharts(ctx context.Context, cfglist *config.MediaListsConfig) error {
+	return d.scrapeChart(ctx, cfglist, &chartScrapeConfig{
 		table:    "albums",
 		dbTable:  "dbalbums",
 		fkColumn: "dbalbum_id",
@@ -1574,6 +1787,8 @@ func (d *feedResults) getmusiccharts(cfglist *config.MediaListsConfig) error {
 		errEntry: errMusicchartsEntryNodeRequired,
 		errTitle: errMusicchartsTitleRequired,
 		logMsg:   "music chart fetched",
+		artistMatch: "EXISTS (SELECT 1 FROM dbalbum_artists x JOIN dbartists y ON y.id = x.dbartist_id " +
+			"WHERE x.dbalbum_id = dbalbums.id AND LOWER(y.name) = LOWER(?))",
 		appendResult: func(title, artist string) {
 			d.Albums = append(d.Albums, config.ManualConfig{Name: title, ArtistName: artist})
 		},
@@ -1593,8 +1808,8 @@ func (d *feedResults) getmusiccharts(cfglist *config.MediaListsConfig) error {
 //   - ChartTitleXPath:     XPath (relative to entry) for the book title
 //   - ChartArtistXPath:    XPath (relative to entry) for the author name (optional)
 //   - ChartTitleAttribute / ChartArtistAttribute: use an HTML attribute instead of inner text
-func (d *feedResults) getbookbestsellers(cfglist *config.MediaListsConfig) error {
-	return d.scrapeChart(cfglist, &chartScrapeConfig{
+func (d *feedResults) getbookbestsellers(ctx context.Context, cfglist *config.MediaListsConfig) error {
+	return d.scrapeChart(ctx, cfglist, &chartScrapeConfig{
 		table:    "books",
 		dbTable:  "dbbooks",
 		fkColumn: "dbbook_id",
@@ -1602,6 +1817,8 @@ func (d *feedResults) getbookbestsellers(cfglist *config.MediaListsConfig) error
 		errEntry: errBookbestsellersEntryRequired,
 		errTitle: errBookbestsellersTitleRequired,
 		logMsg:   "book bestseller list fetched",
+		artistMatch: "EXISTS (SELECT 1 FROM dbauthors y WHERE LOWER(y.name) = LOWER(?) AND " +
+			"(y.id = dbbooks.dbauthor_id OR y.id IN (SELECT dbauthor_id FROM dbbook_authors WHERE dbbook_id = dbbooks.id)))",
 		appendResult: func(title, author string) {
 			d.Books = append(d.Books, config.ManualConfig{Name: title, AuthorName: author})
 		},
@@ -1644,7 +1861,15 @@ func runMovieCSRFAPIScraper(
 	// Scrape movies (limit to 10 pages for now)
 	imdbIDs, err := scraper.Scrape(ctx, 10)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scrape movies: %w", err)
+		if len(imdbIDs) == 0 {
+			return nil, fmt.Errorf("failed to scrape movies: %w", err)
+		}
+
+		logger.Logtype("warn", 0).
+			Err(err).
+			Str("list", cfglist.CfgList.Name).
+			Int("imdb_ids", len(imdbIDs)).
+			Msg("Movie scraper stopped early; using ids from earlier pages")
 	}
 
 	return imdbIDs, nil

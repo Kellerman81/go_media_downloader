@@ -2,8 +2,10 @@ package lastfm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -118,6 +120,45 @@ func endpoint(method string, extra ...string) string {
 	return ep
 }
 
+// lfmErrorResponse is Last.fm's error payload, which may arrive with HTTP 200.
+type lfmErrorResponse struct {
+	Error   int    `json:"error"`
+	Message string `json:"message"`
+}
+
+// lfmErrNotFound is the code for an unknown artist/album/track ("Invalid
+// resource specified").
+const lfmErrNotFound = 6
+
+// get performs a GET and decodes into out, turning Last.fm error payloads
+// into errors instead of silently empty results.
+func (p *Provider) get(ctx context.Context, ep string, out any) error {
+	var raw json.RawMessage
+	if err := p.MakeRequest(ctx, "GET", ep, nil, &raw, nil); err != nil {
+		return err
+	}
+
+	if err := checkLFMError(raw); err != nil {
+		return err
+	}
+
+	return json.Unmarshal(raw, out)
+}
+
+func checkLFMError(raw []byte) error {
+	var e lfmErrorResponse
+	if json.Unmarshal(raw, &e) != nil || e.Error == 0 {
+		return nil
+	}
+
+	msg := logger.JoinStrings("lastfm error ", strconv.Itoa(e.Error), ": ", e.Message)
+	if e.Error == lfmErrNotFound {
+		return fmt.Errorf("%s: %w", msg, logger.ErrNotFound)
+	}
+
+	return errors.New(msg)
+}
+
 //
 // Chart Methods
 //
@@ -139,7 +180,7 @@ func (p *Provider) GetTopArtists(ctx context.Context, page, limit int) ([]ChartE
 	)
 
 	var resp lfmChartTopArtistsResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -162,7 +203,7 @@ func (p *Provider) GetTopTracks(ctx context.Context, page, limit int) ([]ChartEn
 	)
 
 	var resp lfmChartTopTracksResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -191,7 +232,7 @@ func (p *Provider) GetTopArtistsByCountry(
 	)
 
 	var resp lfmGeoTopArtistsResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -219,7 +260,7 @@ func (p *Provider) GetTopTracksByCountry(
 	)
 
 	var resp lfmGeoTopTracksResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -248,7 +289,7 @@ func (p *Provider) GetTopAlbumsByTag(
 	)
 
 	var resp lfmTagTopAlbumsResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -277,7 +318,7 @@ func (p *Provider) GetTopArtistsByTag(
 
 	// tag.gettopartists returns the same shape as chart.gettopartists
 	var resp lfmChartTopArtistsResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -308,7 +349,7 @@ func (p *Provider) GetArtistInfo(
 	ep := endpoint("artist.getinfo", extra...)
 
 	var resp lfmArtistInfoResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -335,7 +376,7 @@ func (p *Provider) GetAlbumInfo(
 	ep := endpoint("album.getinfo", extra...)
 
 	var resp lfmAlbumInfoResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -362,7 +403,7 @@ func (p *Provider) SearchArtists(
 	)
 
 	var resp lfmArtistSearchResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 
@@ -385,7 +426,7 @@ func (p *Provider) SearchAlbums(
 	)
 
 	var resp lfmAlbumSearchResponse
-	if err := p.MakeRequest(ctx, "GET", ep, nil, &resp, nil); err != nil {
+	if err := p.get(ctx, ep, &resp); err != nil {
 		return nil, err
 	}
 

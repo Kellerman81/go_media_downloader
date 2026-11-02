@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
@@ -40,9 +42,18 @@ type IdentificationResult struct {
 	DiscNumber     int
 }
 
+// configuredFpcalcPath returns the configured fpcalc path, or "" when config isn't loaded.
+func configuredFpcalcPath() string {
+	if general := config.GetSettingsGeneral(); general != nil {
+		return general.FpcalcPath
+	}
+
+	return ""
+}
+
 // GenerateFingerprint creates a Chromaprint fingerprint for an audio file using fpcalc.
 func GenerateFingerprint(ctx context.Context, audioPath string) (*FingerprintResult, error) {
-	fpcalcPath := config.GetSettingsGeneral().FpcalcPath
+	fpcalcPath := configuredFpcalcPath()
 	if fpcalcPath == "" {
 		fpcalcPath = "fpcalc" // Default to PATH
 	}
@@ -85,20 +96,50 @@ func IdentifyTrack(
 		return nil, errors.New("no matches found")
 	}
 
-	// Get the best match (highest score)
-	bestMatch := matches[0]
+	best := bestAcoustIDMatch(matches)
+	if best == nil {
+		return nil, fmt.Errorf("no match with score >= %.2f", acoustIDMinScore)
+	}
+
+	title := best.RecordingTitle
+	if title == "" {
+		title = best.Title
+	}
+
+	artist := best.ArtistName
+	if artist == "" && len(best.Artists) > 0 {
+		artist = strings.Join(best.Artists, ", ")
+	}
 
 	return &IdentificationResult{
-		AcoustID:       bestMatch.AcoustID,
-		Score:          bestMatch.Score,
-		MusicBrainzID:  bestMatch.MusicBrainzID,
-		ReleaseID:      bestMatch.ReleaseID,
-		RecordingTitle: bestMatch.RecordingTitle,
-		Artist:         bestMatch.ArtistName,
-		Album:          bestMatch.Album,
-		TrackNumber:    bestMatch.TrackNumber,
-		DiscNumber:     bestMatch.DiscNumber,
+		AcoustID:       best.AcoustID,
+		Score:          best.Score,
+		MusicBrainzID:  best.MusicBrainzID,
+		ReleaseID:      best.ReleaseID,
+		RecordingTitle: title,
+		Artist:         artist,
+		Album:          best.Album,
+		TrackNumber:    best.TrackNumber,
+		DiscNumber:     best.DiscNumber,
 	}, nil
+}
+
+// acoustIDMinScore is the minimum AcoustID match score accepted as an
+// identification; below it the fingerprint match is too weak to tag from.
+const acoustIDMinScore = 0.5
+
+// bestAcoustIDMatch returns the highest-scoring match, or nil when none
+// reaches acoustIDMinScore. The response is not guaranteed to be sorted.
+func bestAcoustIDMatch(matches []apiexternal_v2.RecordingMatch) *apiexternal_v2.RecordingMatch {
+	var best *apiexternal_v2.RecordingMatch
+
+	for i := range matches {
+		if matches[i].Score >= acoustIDMinScore && (best == nil || matches[i].Score > best.Score) {
+			best = &matches[i]
+		}
+	}
+
+	return best
 }
 
 // FingerprintReleaseIDs returns all unique MusicBrainz release IDs from AcoustID for an
@@ -142,7 +183,7 @@ func FingerprintAndIdentify(ctx context.Context, audioPath string) (*Identificat
 		return nil, errors.New("AcoustID provider not initialized")
 	}
 
-	if config.GetSettingsGeneral().FpcalcPath == "" && !commandExists("fpcalc") {
+	if configuredFpcalcPath() == "" && !commandExists("fpcalc") {
 		return nil, errors.New("fpcalc not found in PATH and FpcalcPath not configured")
 	}
 

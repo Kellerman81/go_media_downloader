@@ -338,12 +338,26 @@ func CacheThreeStringIntIndexFuncFast(s string, u *string) uint {
 		return CacheThreeStringIntIndexFunc(s, u)
 	}
 
-	// Try indexed lookup first
-	indexMap := cache.indexThreeStringByStr3.GetVal(s)
-	if indexMap != nil {
-		if entry, exists := indexMap[normalizeKey(*u)]; exists {
-			return entry.Num2
-		}
+	// Try indexed lookup first. The inner map is read under the SyncMap lock
+	// because appendIndex* mutates it in place.
+	key := normalizeKey(*u)
+
+	var (
+		id    uint
+		found bool
+	)
+
+	cache.indexThreeStringByStr3.ReadInPlace(
+		s,
+		func(indexMap map[string]*syncops.DbstaticThreeStringTwoInt) {
+			if entry, exists := indexMap[key]; exists {
+				id, found = entry.Num2, true
+			}
+		},
+	)
+
+	if found {
+		return id
 	}
 
 	// Fallback if index not built or not found
@@ -357,11 +371,22 @@ func CacheThreeStringIntIndexFuncGetYearFast(s string, id uint) uint16 {
 		return CacheThreeStringIntIndexFuncGetYear(s, id)
 	}
 
-	indexMap := cache.indexThreeStringByNum2.GetVal(s)
-	if indexMap != nil {
-		if entry, exists := indexMap[id]; exists {
-			return uint16(entry.Num1) //nolint:gosec // safe: value within target type range
-		}
+	var (
+		year  uint16
+		found bool
+	)
+
+	cache.indexThreeStringByNum2.ReadInPlace(
+		s,
+		func(indexMap map[uint]*syncops.DbstaticThreeStringTwoInt) {
+			if entry, exists := indexMap[id]; exists {
+				year, found = uint16(entry.Num1), true //nolint:gosec // safe: value within target type range
+			}
+		},
+	)
+
+	if found {
+		return year
 	}
 
 	return CacheThreeStringIntIndexFuncGetYear(s, id)
@@ -374,12 +399,24 @@ func CacheOneStringTwoIntIndexFuncRetFast(s string, id uint, listname string) ui
 		return CacheOneStringTwoIntIndexFuncRet(s, id, listname)
 	}
 
-	indexMap := cache.indexTwoIntComposite.GetVal(s)
-	if indexMap != nil {
-		key := makeCompositeKey(id, listname)
-		if entry, exists := indexMap[key]; exists {
-			return entry.Num2
-		}
+	key := makeCompositeKey(id, listname)
+
+	var (
+		listid uint
+		found  bool
+	)
+
+	cache.indexTwoIntComposite.ReadInPlace(
+		s,
+		func(indexMap map[string]*syncops.DbstaticOneStringTwoInt) {
+			if entry, exists := indexMap[key]; exists {
+				listid, found = entry.Num2, true
+			}
+		},
+	)
+
+	if found {
+		return listid
 	}
 
 	return CacheOneStringTwoIntIndexFuncRet(s, id, listname)
@@ -394,11 +431,21 @@ func FindSeriesIDByTitleFast(title string) uint {
 	}
 
 	// Try alternate titles cache first (most common)
-	altIndexMap := cache.indexTwoStringByStr1.GetVal(logger.CacheDBSeriesAlt)
-	if altIndexMap != nil {
-		if entries, exists := altIndexMap[normalizeKey(title)]; exists && len(entries) > 0 {
-			return entries[0].Num
-		}
+	key := normalizeKey(title)
+
+	var id uint
+
+	cache.indexTwoStringByStr1.ReadInPlace(
+		logger.CacheDBSeriesAlt,
+		func(altIndexMap map[string][]*syncops.DbstaticTwoStringOneInt) {
+			if entries, exists := altIndexMap[key]; exists && len(entries) > 0 {
+				id = entries[0].Num
+			}
+		},
+	)
+
+	if id != 0 {
+		return id
 	}
 
 	// Fallback: For main series cache, we'd need to build a title->ID index
@@ -413,9 +460,21 @@ func SlicesCacheContainsIFast(isType uint, query string, w *string) bool {
 		return SlicesCacheContainsI(isType, query, w)
 	}
 
-	indexMap := cache.indexStringSet.GetVal(mtstrings.GetStringsMap(isType, query))
-	if indexMap != nil {
-		_, exists := indexMap[normalizeKey(*w)]
+	key := normalizeKey(*w)
+
+	var exists, indexed bool
+
+	cache.indexStringSet.ReadInPlace(
+		mtstrings.GetStringsMap(isType, query),
+		func(indexMap map[string]struct{}) {
+			if indexMap != nil {
+				indexed = true
+				_, exists = indexMap[key]
+			}
+		},
+	)
+
+	if indexed {
 		return exists
 	}
 

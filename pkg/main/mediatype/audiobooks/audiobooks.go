@@ -5,11 +5,11 @@ package audiobooks
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -214,8 +214,13 @@ func (h *handler) GetDBIDsFull(
 		return logger.ErrNotFoundDbaudiobook
 	}
 
-	// Find audiobook in lists (if not already found by wanted-list search)
+	// Find audiobook in lists (if not already found by wanted-list search);
+	// a pre-set ID still needs its ListID resolved.
 	if m.AudiobookID != 0 {
+		if m.ListID == -1 {
+			m.ListID = database.GetMediaListIDGetListname(cfgp, &m.AudiobookID)
+		}
+
 		return nil
 	}
 
@@ -332,7 +337,7 @@ func (*handler) PerformIDSearch(
 	_ *config.QualityConfig,
 	_ *apiexternal_v2.Nzbwithprio,
 	_ int,
-	_ *apiexternal.NzbSlice,
+	_ *apiexternal_v2.NzbSlice,
 ) error {
 	// Audiobooks don't support ID-based search like IMDB/TVDB
 	// They use query-based search only
@@ -481,18 +486,25 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		)
 	}
 
-	database.ExecN(
+	if audiobookID == 0 || dbaudiobookID == 0 {
+		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+	}
+
+	var indexerName string
+	if nzb.NZB.Indexer != nil {
+		indexerName = nzb.NZB.Indexer.Name
+	}
+
+	return database.ExecNErr(
 		"Insert into audiobook_histories (title, url, target, indexer, downloaded_at, audiobook_id, dbaudiobook_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
 		&targetPath,
-		&nzb.NZB.Indexer.Name,
+		&indexerName,
 		&audiobookID,
 		&dbaudiobookID,
 		&qualityProfile,
 	)
-
-	return nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for an audiobook download.
@@ -574,7 +586,7 @@ func (*handler) GetNzbID(entry *apiexternal_v2.Nzbwithprio) uint {
 	return entry.NzbaudiobookID
 }
 
-// GetNzbIDP returns the NzbaudiobookID field.
+// GetNzbIDP returns a pointer to the NzbaudiobookID field.
 func (*handler) GetNzbIDP(entry *apiexternal_v2.Nzbwithprio) *uint {
 	return &entry.NzbaudiobookID
 }
@@ -730,7 +742,7 @@ func refreshListArgs(cfgp *config.MediaTypeConfig) []any {
 	return args
 }
 
-// GetRefreshIncData returns data for incremental refresh (100 most recently updated
+// GetRefreshIncData returns data for incremental refresh (100 least recently updated
 // ASIN IDs in the config's lists).
 func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	if cfgp == nil || cfgp.ListsLen == 0 {
@@ -742,7 +754,7 @@ func (*handler) GetRefreshIncData(cfgp *config.MediaTypeConfig) any {
 	return database.GetrowsN[string](
 		false,
 		100,
-		"select distinct dbaudiobooks.asin from dbaudiobooks inner join audiobooks on audiobooks.dbaudiobook_id = dbaudiobooks.id where dbaudiobooks.asin != '' and audiobooks.listname in (?"+cfgp.ListsQu+") group by dbaudiobooks.asin order by dbaudiobooks.updated_at desc limit 100",
+		"select distinct dbaudiobooks.asin from dbaudiobooks inner join audiobooks on audiobooks.dbaudiobook_id = dbaudiobooks.id where dbaudiobooks.asin != '' and audiobooks.listname in (?"+cfgp.ListsQu+") group by dbaudiobooks.asin order by dbaudiobooks.updated_at asc limit 100",
 		args...,
 	)
 }
@@ -848,15 +860,6 @@ func (*handler) SupportsAbsoluteEpisode() bool { return false }
 
 // HandleRSSListID does nothing for audiobooks - list ID is determined by audiobook lookup.
 func (*handler) HandleRSSListID(_ *apiexternal_v2.Nzbwithprio, _ int) {}
-
-// CheckEpisodeMatch returns false - audiobooks don't have episode validation.
-func (*handler) CheckEpisodeMatch(
-	_, _ *apiexternal_v2.Nzbwithprio,
-	_ string,
-	_ func(string, *apiexternal_v2.Nzbwithprio),
-) bool {
-	return false
-}
 
 // SupportsVideoFile returns false - audiobooks use audio files, not video.
 func (*handler) SupportsVideoFile() bool { return false }

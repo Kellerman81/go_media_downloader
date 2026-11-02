@@ -129,7 +129,11 @@ function showEventDetails(id, title, type, network, season, episode, date, overv
 		detailsHTML += '<tr><td class="fw-bold">List:</td><td><span class="badge bg-secondary">' + listname + '</span></td></tr>';
 	}
 
-	detailsHTML += '<tr><td class="fw-bold">Date:</td><td>' + new Date(date).toLocaleDateString() + '</td></tr>';
+	// A bare YYYY-MM-DD is parsed by Date() as UTC midnight, which shows the
+	// previous day in timezones west of UTC; build it as a local date instead.
+	var dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+	var eventDate = dateParts ? new Date(+dateParts[1], +dateParts[2] - 1, +dateParts[3]) : new Date(date);
+	detailsHTML += '<tr><td class="fw-bold">Date:</td><td>' + escapeCalendarHtml(eventDate.toLocaleDateString()) + '</td></tr>';
 
 	if (network) {
 		detailsHTML += '<tr><td class="fw-bold">Network:</td><td>' + network + '</td></tr>';
@@ -217,7 +221,12 @@ function searchCalendarEvent(id, type, searchByTitle) {
 
 	confirmAction('Please confirm', confirmMsg, function() {
 		gmdApiProxyFetch(url)
-		.then(response => response.json())
+		.then(response => response.json().catch(() => ({})).then(data => {
+			if (!response.ok) {
+				throw new Error((data && data.error) || ('HTTP ' + response.status));
+			}
+			return data;
+		}))
 		.then(data => {
 			var msg = 'Search completed!\n';
 			msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';

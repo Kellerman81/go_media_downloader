@@ -1,5 +1,45 @@
 definitions:
-  api.JsonNaming:
+  api.ClientStats:
+    properties:
+      avg_response_time_ms:
+        type: number
+      circuit_breaker_state:
+        type: string
+      failure_count:
+        type: integer
+      last_error_at:
+        type: string
+      last_error_message:
+        type: string
+      last_request_at:
+        type: string
+      name:
+        type: string
+      next_available_at:
+        type: string
+      requests_1h:
+        type: integer
+      requests_24h:
+        type: integer
+      requests_total:
+        type: integer
+      success_count:
+        type: integer
+    type: object
+  api.HTTPStatistics:
+    properties:
+      client_stats:
+        additionalProperties:
+          $ref: '#/definitions/api.ClientStats'
+        type: object
+      success_rate:
+        type: number
+      total_clients:
+        type: integer
+      total_requests:
+        type: integer
+    type: object
+  api.JSONNaming:
     properties:
       filename:
         type: string
@@ -33,12 +73,121 @@ definitions:
     properties:
       accepted:
         items:
-          $ref: '#/definitions/apiexternal.Nzbwithprio'
+          $ref: '#/definitions/apiexternal_v2.Nzbwithprio'
         type: array
       denied:
         items:
-          $ref: '#/definitions/apiexternal.Nzbwithprio'
+          $ref: '#/definitions/apiexternal_v2.Nzbwithprio'
         type: array
+    type: object
+  api.MediaLibraryStats:
+    properties:
+      available:
+        type: integer
+      by_list:
+        additionalProperties:
+          type: integer
+        type: object
+      by_quality:
+        additionalProperties:
+          type: integer
+        type: object
+      missing:
+        type: integer
+      quality_reached:
+        type: integer
+      total:
+        type: integer
+      upgrade_available:
+        type: integer
+    type: object
+  api.MovieStatistics:
+    properties:
+      available_movies:
+        type: integer
+      by_list:
+        additionalProperties:
+          type: integer
+        type: object
+      by_quality:
+        additionalProperties:
+          type: integer
+        type: object
+      missing_movies:
+        type: integer
+      quality_reached:
+        type: integer
+      total_movies:
+        type: integer
+      total_size_bytes:
+        type: integer
+      upgrade_available:
+        type: integer
+    type: object
+  api.OverallStatistics:
+    properties:
+      audiobooks:
+        $ref: '#/definitions/api.MediaLibraryStats'
+      books:
+        $ref: '#/definitions/api.MediaLibraryStats'
+      http:
+        $ref: '#/definitions/api.HTTPStatistics'
+      movies:
+        $ref: '#/definitions/api.MovieStatistics'
+      music:
+        $ref: '#/definitions/api.MediaLibraryStats'
+      series:
+        $ref: '#/definitions/api.SeriesStatistics'
+      storage:
+        $ref: '#/definitions/api.StorageStatistics'
+      system:
+        $ref: '#/definitions/api.SystemStatistics'
+      workers:
+        $ref: '#/definitions/worker.Stats'
+    type: object
+  api.PathStatistic:
+    properties:
+      file_count:
+        type: integer
+      folder_count:
+        type: integer
+      partial:
+        type: boolean
+      path:
+        type: string
+      total_size:
+        type: integer
+    type: object
+  api.SeriesStatistics:
+    properties:
+      available_episodes:
+        type: integer
+      available_series:
+        type: integer
+      by_list:
+        additionalProperties:
+          type: integer
+        type: object
+      by_quality:
+        additionalProperties:
+          type: integer
+        type: object
+      missing_episodes:
+        type: integer
+      missing_series:
+        type: integer
+      quality_reached:
+        type: integer
+      total_episodes:
+        type: integer
+      total_seasons:
+        type: integer
+      total_series:
+        type: integer
+      total_size_bytes:
+        type: integer
+      upgrade_available:
+        type: integer
     type: object
   api.Statsresults:
     properties:
@@ -54,6 +203,85 @@ definitions:
         type: integer
       NumGoroutine:
         type: integer
+      WorkerStats:
+        $ref: '#/definitions/worker.Stats'
+    type: object
+  api.StorageStatistics:
+    properties:
+      by_path:
+        additionalProperties:
+          $ref: '#/definitions/api.PathStatistic'
+        type: object
+      partial:
+        description: |-
+          Partial is set when at least one path walk hit the request deadline,
+          so the counts are lower bounds.
+        type: boolean
+      total_file_count:
+        type: integer
+      total_paths:
+        type: integer
+    type: object
+  api.SystemStatistics:
+    properties:
+      gc_count:
+        type: integer
+      go_routines:
+        description: Alias for JavaScript compatibility
+        type: integer
+      goarch:
+        type: string
+      goos:
+        type: string
+      last_gc_time:
+        type: string
+      memory_alloc_mb:
+        type: number
+      memory_sys_mb:
+        type: number
+      num_cpu:
+        type: integer
+      num_goroutine:
+        type: integer
+      uptime_seconds:
+        type: integer
+    type: object
+  api.apiAlbumForceMatchJSON:
+    properties:
+      configentry:
+        type: string
+      folder:
+        type: string
+      forced_id:
+        type: string
+      grouptype:
+        type: string
+      preview:
+        type: boolean
+      sourcepathtemplate:
+        type: string
+      targetpathtemplate:
+        type: string
+    required:
+    - configentry
+    - folder
+    - forced_id
+    - grouptype
+    - sourcepathtemplate
+    - targetpathtemplate
+    type: object
+  api.apiCacheAddJSON:
+    properties:
+      cache_type:
+        type: string
+      key:
+        type: string
+      value:
+        type: string
+    required:
+    - cache_type
+    - key
+    - value
     type: object
   api.apiNameInput:
     properties:
@@ -104,749 +332,81 @@ definitions:
       year:
         type: boolean
     type: object
-  apiexternal.FileParser:
+  apiexternal_v2.Nzb:
     properties:
-      allowsearchtitle:
+      category:
         description: |-
-          Listname           string
-          ListCfg          *config.ListsConfig
-        type: boolean
-      cfgp:
-        $ref: '#/definitions/config.MediaTypeConfig'
-      filled:
-        type: boolean
-      m:
-        $ref: '#/definitions/database.ParseInfo'
-      str:
+          Category is the Newznab category ID from the indexer (e.g. "3010" for MP3, "3040" for Lossless).
+          Used as a fallback to infer audio format when none is present in the release title.
         type: string
-    type: object
-  apiexternal.Nzbwithprio:
-    properties:
-      additionalReason:
-        type: string
-      dbid:
-        type: integer
-      dontSearch:
-        type: boolean
-      dontUpgrade:
-        type: boolean
-      info:
-        allOf:
-        - $ref: '#/definitions/apiexternal.FileParser'
-        description: Indexer          string
-      listname:
-        type: string
-      minimumPriority:
-        type: integer
-      nzb:
-        $ref: '#/definitions/apiexternal.nzb'
-      nzbepisodeID:
-        type: integer
-      nzbmovieID:
-        type: integer
-      quality:
-        description: QualityTemplate  string
-        type: string
-      reason:
-        type: string
-      wantedAlternates:
-        description: WantedSlug       string
-        items:
-          $ref: '#/definitions/database.DbstaticTwoString'
-        type: array
-      wantedTitle:
-        type: string
-    type: object
-  apiexternal.TraktMovie:
-    properties:
-      ids:
-        $ref: '#/definitions/apiexternal.ids'
-      title:
-        type: string
-      year:
-        type: integer
-    type: object
-  apiexternal.TraktSerie:
-    properties:
-      ids:
-        $ref: '#/definitions/apiexternal.ids'
-      title:
-        type: string
-      year:
-        type: integer
-    type: object
-  apiexternal.TraktUserList:
-    properties:
-      movie:
-        $ref: '#/definitions/apiexternal.TraktMovie'
-      show:
-        $ref: '#/definitions/apiexternal.TraktSerie'
-      type:
-        description: |-
-          Rank      int        `json:"rank"`
-          ID        int        `json:"id"`
-          Notes     string     `json:"notes"`
-        type: string
-    type: object
-  apiexternal.ids:
-    properties:
-      imdb:
-        type: string
-      slug:
-        type: string
-      tmdb:
-        type: integer
-      trakt:
-        type: integer
-      tvdb:
-        type: integer
-      tvrage:
-        type: integer
-    type: object
-  apiexternal.nzb:
-    properties:
       download_url:
-        description: |-
-          Torznab specific stuff
-          Seeders     int    `json:"seeders,omitempty"`
-          Peers       int    `json:"peers,omitempty"`
-          InfoHash    string `json:"infohash,omitempty"`
         type: string
       episode:
         type: string
       id:
         type: string
       imdb:
-        description: Movie Specific stuff
         type: string
-      indexer:
-        allOf:
-        - $ref: '#/definitions/config.IndexersConfig'
-        description: |-
-          Indexer string `json:"indexer,omitempty"`
-          Quality string `json:"quality,omitempty"`
       is_torrent:
         type: boolean
-      quality:
-        $ref: '#/definitions/config.QualityConfig'
+      pub_date:
+        type: string
       season:
         type: string
       size:
-        description: Description string    `json:"description,omitempty"`
         type: integer
       source_endpoint:
         type: string
       title:
         type: string
       tvdbid:
-        description: TV Specific stuff
         type: integer
     type: object
-  config.DownloaderConfig:
+  apiexternal_v2.Nzbwithprio:
     properties:
-      addPaused:
-        type: boolean
-      delugeDlTo:
-        type: string
-      delugeMoveAfter:
-        type: boolean
-      delugeMoveTo:
-        type: string
-      dlType:
-        type: string
-      enabled:
-        type: boolean
-      hostname:
-        type: string
-      name:
-        type: string
-      password:
-        type: string
-      port:
+      additional_reason: {}
+      additional_reason_int:
         type: integer
-      priority:
+      additional_reason_str:
+        type: string
+      dbid:
         type: integer
-      username:
-        type: string
-    type: object
-  config.IndexersConfig:
-    properties:
-      addquotesfortitlequery:
+      dont_search:
         type: boolean
-      apikey:
-        type: string
-      customapi:
-        type: string
-      customrsscategory:
-        type: string
-      customrssurl:
-        type: string
-      customurl:
-        type: string
-      disableCompression:
+      dont_upgrade:
         type: boolean
-      disableTLSVerify:
+      id_searched:
         type: boolean
-      enabled:
-        type: boolean
-      indexerType:
+      info:
+        $ref: '#/definitions/database.ParseInfo'
+      listname:
         type: string
-      limitercalls:
+      minimum_priority:
         type: integer
-      limitercallsDaily:
+      nzb:
+        $ref: '#/definitions/apiexternal_v2.Nzb'
+      nzb_album_id:
         type: integer
-      limiterseconds:
+      nzb_audiobook_id:
         type: integer
-      maxAge:
+      nzb_book_id:
         type: integer
-      maxEntries:
+      nzb_episode_id:
         type: integer
-      name:
+      nzb_movie_id:
+        type: integer
+      quality:
         type: string
-      outputAsJSON:
-        type: boolean
-      rssEntriesloop:
-        type: integer
-      rssenabled:
-        type: boolean
-      timeoutSeconds:
-        type: integer
-      trustWithIMDBIDs:
-        type: boolean
-      trustWithTVDBIDs:
-        type: boolean
-      url:
+      reason:
         type: string
-      userid:
+      search_for:
+        description: Complete search query (e.g., "Album Title Artist Name" for music)
         type: string
-    type: object
-  config.ListsConfig:
-    properties:
-      enabled:
-        type: boolean
-      excludegenre:
+      wanted_alternates:
         items:
-          type: string
+          $ref: '#/definitions/syncops.DbstaticTwoStringOneInt'
         type: array
-      excludegenreLen:
-        type: integer
-      includegenre:
-        items:
-          type: string
-        type: array
-      includegenreLen:
-        type: integer
-      limit:
-        type: string
-      listType:
-        type: string
-      minRating:
-        type: number
-      minVotes:
-        type: integer
-      name:
-        type: string
-      seriesConfigFile:
-        type: string
-      traktListName:
-        type: string
-      traktListType:
-        type: string
-      traktUsername:
-        type: string
-      url:
-        type: string
-    type: object
-  config.MediaDataConfig:
-    properties:
-      addFound:
-        type: boolean
-      addFoundList:
-        type: string
-      addFoundListCfg:
-        $ref: '#/definitions/config.ListsConfig'
-      cfgPath:
-        $ref: '#/definitions/config.PathsConfig'
-      templatePath:
-        type: string
-    type: object
-  config.MediaDataImportConfig:
-    properties:
-      cfgPath:
-        $ref: '#/definitions/config.PathsConfig'
-      templatePath:
-        type: string
-    type: object
-  config.MediaListsConfig:
-    properties:
-      addfound:
-        type: boolean
-      cfgList:
-        $ref: '#/definitions/config.ListsConfig'
-      cfgQuality:
-        $ref: '#/definitions/config.QualityConfig'
-      cfgScheduler:
-        $ref: '#/definitions/config.SchedulerConfig'
-      enabled:
-        type: boolean
-      ignoreMapLists:
-        items:
-          type: string
-        type: array
-      ignoreMapListsInt:
-        items: {}
-        type: array
-      ignoreMapListsLen:
-        type: integer
-      ignoreMapListsQu:
-        type: string
-      name:
-        type: string
-      replaceMapLists:
-        items:
-          type: string
-        type: array
-      replaceMapListsLen:
-        type: integer
-      templateList:
-        type: string
-      templateQuality:
-        type: string
-      templateScheduler:
-        type: string
-    type: object
-  config.MediaTypeConfig:
-    properties:
-      cfgQuality:
-        $ref: '#/definitions/config.QualityConfig'
-      cfgScheduler:
-        $ref: '#/definitions/config.SchedulerConfig'
-      data:
-        items:
-          $ref: '#/definitions/config.MediaDataConfig'
-        type: array
-      dataImport:
-        items:
-          $ref: '#/definitions/config.MediaDataImportConfig'
-        type: array
-      dataLen:
-        type: integer
-      defaultQuality:
-        type: string
-      defaultResolution:
-        type: string
-      lists:
-        items:
-          $ref: '#/definitions/config.MediaListsConfig'
-        type: array
-      listsInt:
-        items: {}
-        type: array
-      listsLen:
-        type: integer
-      listsMap:
-        additionalProperties:
-          $ref: '#/definitions/config.MediaListsConfig'
-        type: object
-      listsQu:
-        type: string
-      listsQualities:
-        items:
-          type: string
-        type: array
-      metadataLanguage:
-        type: string
-      metadataTitleLanguages:
-        items:
-          type: string
-        type: array
-      metadataTitleLanguagesLen:
-        type: integer
-      name:
-        type: string
-      namePrefix:
-        type: string
-      naming:
-        type: string
-      notification:
-        items:
-          $ref: '#/definitions/config.mediaNotificationConfig'
-        type: array
-      searchmissingIncremental:
-        type: integer
-      searchupgradeIncremental:
-        type: integer
-      structure:
-        type: boolean
-      templateQuality:
-        type: string
-      templateScheduler:
-        type: string
-      useseries:
-        type: boolean
-    type: object
-  config.NotificationConfig:
-    properties:
-      apikey:
-        type: string
-      name:
-        type: string
-      notificationType:
-        type: string
-      outputto:
-        type: string
-      recipient:
-        type: string
-    type: object
-  config.PathsConfig:
-    properties:
-      allowedLanguages:
-        items:
-          type: string
-        type: array
-      allowedLanguagesLen:
-        type: integer
-      allowedOtherExtensions:
-        items:
-          type: string
-        type: array
-      allowedOtherExtensionsLen:
-        type: integer
-      allowedOtherExtensionsNoRename:
-        items:
-          type: string
-        type: array
-      allowedOtherExtensionsNoRenameLen:
-        type: integer
-      allowedVideoExtensions:
-        items:
-          type: string
-        type: array
-      allowedVideoExtensionsLen:
-        type: integer
-      allowedVideoExtensionsNoRename:
-        items:
-          type: string
-        type: array
-      allowedVideoExtensionsNoRenameLen:
-        type: integer
-      blocked:
-        items:
-          type: string
-        type: array
-      blockedLen:
-        type: integer
-      checkRuntime:
-        type: boolean
-      cleanupsizeMB:
-        type: integer
-      deleteDisallowed:
-        type: boolean
-      deleteWrongLanguage:
-        type: boolean
-      deleteWrongRuntime:
-        type: boolean
-      disallowed:
-        items:
-          type: string
-        type: array
-      disallowedLen:
-        type: integer
-      maxRuntimeDifference:
-        type: integer
-      maxSize:
-        type: integer
-      maxSizeByte:
-        type: integer
-      minSize:
-        type: integer
-      minSizeByte:
-        type: integer
-      minVideoSize:
-        type: integer
-      minVideoSizeByte:
-        type: integer
-      missingScanInterval:
-        type: integer
-      missingScanReleaseDatePre:
-        type: integer
-      moveReplaced:
-        type: boolean
-      moveReplacedTargetPath:
-        type: string
-      name:
-        type: string
-      path:
-        type: string
-      presortFolderPath:
-        type: string
-      replacelower:
-        type: boolean
-      setChmod:
-        type: string
-      setChmodFolder:
-        type: string
-      upgrade:
-        type: boolean
-      upgradeScanInterval:
-        type: integer
-      usepresort:
-        type: boolean
-    type: object
-  config.QualityConfig:
-    properties:
-      backupSearchForAlternateTitle:
-        type: boolean
-      backupSearchForTitle:
-        type: boolean
-      checkTitle:
-        type: boolean
-      checkUntilFirstFound:
-        type: boolean
-      checkYear:
-        type: boolean
-      checkYear1:
-        type: boolean
-      cutoffPriority:
-        type: integer
-      cutoffQuality:
-        type: string
-      cutoffResolution:
-        type: string
-      excludeYearFromTitleSearch:
-        type: boolean
-      indexer:
-        items:
-          $ref: '#/definitions/config.QualityIndexerConfig'
-        type: array
-      indexerLen:
-        type: integer
-      name:
-        type: string
-      qualityReorder:
-        items:
-          $ref: '#/definitions/config.QualityReorderConfig'
-        type: array
-      qualityReorderLen:
-        type: integer
-      searchForAlternateTitleIfEmpty:
-        type: boolean
-      searchForTitleIfEmpty:
-        type: boolean
-      titleStripPrefixForSearch:
-        items:
-          type: string
-        type: array
-      titleStripPrefixForSearchLen:
-        type: integer
-      titleStripSuffixForSearch:
-        items:
-          type: string
-        type: array
-      titleStripSuffixForSearchLen:
-        type: integer
-      useForPriorityAudio:
-        type: boolean
-      useForPriorityCodec:
-        type: boolean
-      useForPriorityMinDifference:
-        type: integer
-      useForPriorityOther:
-        type: boolean
-      useForPriorityQuality:
-        type: boolean
-      useForPriorityResolution:
-        type: boolean
-      wantedAudio:
-        items:
-          type: string
-        type: array
-      wantedAudioLen:
-        type: integer
-      wantedCodec:
-        items:
-          type: string
-        type: array
-      wantedCodecLen:
-        type: integer
-      wantedQuality:
-        items:
-          type: string
-        type: array
-      wantedQualityLen:
-        type: integer
-      wantedResolution:
-        items:
-          type: string
-        type: array
-      wantedResolutionLen:
-        type: integer
-    type: object
-  config.QualityIndexerConfig:
-    properties:
-      additionalQueryParams:
-        type: string
-      categoriesIndexer:
-        type: string
-      categoryDowloader:
-        type: string
-      cfgDownloader:
-        $ref: '#/definitions/config.DownloaderConfig'
-      cfgIndexer:
-        $ref: '#/definitions/config.IndexersConfig'
-      cfgPath:
-        $ref: '#/definitions/config.PathsConfig'
-      cfgRegex:
-        $ref: '#/definitions/config.RegexConfig'
-      historyCheckTitle:
-        type: boolean
-      skipEmptySize:
-        type: boolean
-      templateDownloader:
-        type: string
-      templateIndexer:
-        type: string
-      templatePathNzb:
-        type: string
-      templateRegex:
-        type: string
-    type: object
-  config.QualityReorderConfig:
-    properties:
-      name:
-        type: string
-      newpriority:
-        type: integer
-      reorderType:
-        type: string
-    type: object
-  config.RegexConfig:
-    properties:
-      name:
-        type: string
-      rejected:
-        items:
-          type: string
-        type: array
-      rejectedLen:
-        type: integer
-      required:
-        items:
-          type: string
-        type: array
-      requiredLen:
-        type: integer
-    type: object
-  config.SchedulerConfig:
-    properties:
-      cronDatabaseBackup:
-        type: string
-      cronDatabaseCheck:
-        type: string
-      cronFeeds:
-        type: string
-      cronFeedsRefreshMovies:
-        type: string
-      cronFeedsRefreshMoviesFull:
-        type: string
-      cronFeedsRefreshSeries:
-        type: string
-      cronFeedsRefreshSeriesFull:
-        type: string
-      cronImdb:
-        type: string
-      cronIndexerMissing:
-        type: string
-      cronIndexerMissingFull:
-        type: string
-      cronIndexerMissingFullTitle:
-        type: string
-      cronIndexerMissingTitle:
-        type: string
-      cronIndexerRss:
-        type: string
-      cronIndexerRssSeasons:
-        type: string
-      cronIndexerRssSeasonsAll:
-        type: string
-      cronIndexerUpgrade:
-        type: string
-      cronIndexerUpgradeFull:
-        type: string
-      cronIndexerUpgradeFullTitle:
-        type: string
-      cronIndexerUpgradeTitle:
-        type: string
-      cronScanData:
-        type: string
-      cronScanDataFlags:
-        type: string
-      cronScanDataMissing:
-        type: string
-      cronScanDataimport:
-        type: string
-      intervalDatabaseBackup:
-        type: string
-      intervalDatabaseCheck:
-        type: string
-      intervalFeeds:
-        type: string
-      intervalFeedsRefreshMovies:
-        type: string
-      intervalFeedsRefreshMoviesFull:
-        type: string
-      intervalFeedsRefreshSeries:
-        type: string
-      intervalFeedsRefreshSeriesFull:
-        type: string
-      intervalImdb:
-        type: string
-      intervalIndexerMissing:
-        type: string
-      intervalIndexerMissingFull:
-        type: string
-      intervalIndexerMissingFullTitle:
-        type: string
-      intervalIndexerMissingTitle:
-        type: string
-      intervalIndexerRss:
-        type: string
-      intervalIndexerRssSeasons:
-        type: string
-      intervalIndexerRssSeasonsAll:
-        type: string
-      intervalIndexerUpgrade:
-        type: string
-      intervalIndexerUpgradeFull:
-        type: string
-      intervalIndexerUpgradeFullTitle:
-        type: string
-      intervalIndexerUpgradeTitle:
-        type: string
-      intervalScanData:
-        type: string
-      intervalScanDataFlags:
-        type: string
-      intervalScanDataMissing:
-        type: string
-      intervalScanDataimport:
-        type: string
-      name:
-        type: string
-    type: object
-  config.mediaNotificationConfig:
-    properties:
-      cfgNotification:
-        $ref: '#/definitions/config.NotificationConfig'
-      event:
-        type: string
-      mapNotification:
-        type: string
-      message:
-        type: string
-      replacedPrefix:
-        type: string
-      title:
+      wanted_title:
         type: string
     type: object
   database.Dbmovie:
@@ -918,8 +478,6 @@ definitions:
     type: object
   database.Dbserie:
     properties:
-      aliases:
-        type: string
       banner:
         type: string
       createdAt:
@@ -981,6 +539,8 @@ definitions:
     type: object
   database.DbserieEpisode:
     properties:
+      absoluteEpisode:
+        type: integer
       createdAt:
         type: string
       dbserieID:
@@ -999,18 +559,15 @@ definitions:
         type: string
       runtime:
         type: integer
+      scraperID:
+        type: string
+      scraperURL:
+        type: string
       season:
         type: string
       title:
         type: string
       updatedAt:
-        type: string
-    type: object
-  database.DbstaticTwoString:
-    properties:
-      str1:
-        type: string
-      str2:
         type: string
     type: object
   database.JobHistory:
@@ -1080,81 +637,176 @@ definitions:
     type: object
   database.ParseInfo:
     properties:
-      audio:
+      absolute_episode:
+        description: AbsoluteEpisode is the absolute episode number (for anime and
+          shows with continuous numbering)
+        type: integer
+      albumid:
+        description: AlbumID is the application ID of the music album
+        type: integer
+      artist:
+        description: Artist is the artist name for music
         type: string
+      asin:
+        description: ASIN is the Amazon ASIN identifier for audiobooks
+        type: string
+      audio:
+        description: Audio is the audio description
+        type: string
+      audio_bit_depth:
+        description: AudioBitDepth is the bit depth (16, 24, 32) for lossless audio
+        type: integer
+      audio_bitrate:
+        description: AudioBitrate is the audio bitrate in kbps for music/audiobooks
+        type: integer
+      audio_format:
+        description: AudioFormat is the audio codec/format (mp3, flac, aac, etc.)
+          for music/audiobooks
+        type: string
+      audio_format_id:
+        description: AudioFormatID is the database ID for the audio format
+        type: integer
+      audio_sample_rate:
+        description: AudioSampleRate is the sample rate in Hz for music/audiobooks
+        type: integer
+      audiobookid:
+        description: AudiobookID is the application ID of the audiobook
+        type: integer
       audioid:
+        description: AudioID is the database ID of the audio
+        type: integer
+      bookid:
+        description: BookID is the application ID of the book
         type: integer
       codec:
+        description: Codec is the video codec
         type: string
       codecid:
+        description: CodecID is the database ID of the codec
         type: integer
       date:
+        description: Date is the release date
         type: string
+      dbalbumid:
+        description: DbalbumID is the database ID of the music album
+        type: integer
+      dbaudiobookid:
+        description: DbaudiobookID is the database ID of the audiobook
+        type: integer
+      dbbookid:
+        description: DbbookID is the database ID of the book
+        type: integer
       dbmovieid:
+        description: DbmovieID is the database ID of the movie
         type: integer
       dbserieepisodeid:
+        description: DbserieEpisodeID is the database ID of the episode
         type: integer
       dbserieid:
+        description: DbserieID is the database ID of the TV series
         type: integer
       episode:
+        description: Episode is the episode number, if applicable
         type: integer
       episodestr:
+        description: EpisodeStr is the episode number as a string, if applicable
         type: string
       extended:
+        description: Extended is a flag indicating if it is an extended version
         type: boolean
       file:
+        description: File is the path to the media file
         type: string
+      firstIDX:
+        type: integer
+      firstYearIDX:
+        type: integer
       height:
+        description: Height is the video height in pixels
         type: integer
       identifier:
+        description: Identifier is an identifier string
         type: string
       imdb:
+        description: Imdb is the IMDB ID
+        type: string
+      isbn:
+        description: ISBN is the ISBN-13 or ISBN-10 identifier for books
         type: string
       languages:
+        description: Languages is a list of language codes
         items:
           type: string
         type: array
       listID:
-        description: |-
-          Listname         string   `json:"listname,omitempty"`
-          ListCfg *config.ListsConfig
+        description: ListID is the ID of the list this came from
         type: integer
       movieid:
+        description: MovieID is the application ID of the movie
         type: integer
+      musicbrainz_id:
+        description: MusicBrainzID is the MusicBrainz release ID for music
+        type: string
       priority:
+        description: Priority is the priority for downloading
         type: integer
       proper:
+        description: Proper is a flag indicating if it is a proper release
         type: boolean
       quality:
+        description: Quality is the video quality description
         type: string
       qualityid:
+        description: QualityID is the database ID of the quality
         type: integer
-      qualityset:
-        $ref: '#/definitions/config.QualityConfig'
       repack:
+        description: Repack is a flag indicating if it is a repack release
         type: boolean
       resolution:
+        description: Resolution is the video resolution
         type: string
       resolutionid:
+        description: ResolutionID is the database ID of the resolution
         type: integer
+      retail:
+        description: Retail is a flag indicating a retail ebook release (books only)
+        type: boolean
       runtime:
+        description: Runtime is the runtime in minutes
         type: integer
       season:
-        description: SluggedTitle     string
+        description: Season is the season number, if applicable
         type: integer
       seasonstr:
+        description: SeasonStr is the season number as a string, if applicable
         type: string
       serieepisodeid:
+        description: SerieEpisodeID is the application ID of the episode
         type: integer
       serieid:
+        description: SerieID is the application ID of the TV series
         type: integer
+      str:
+        description: used internally
+        type: string
+      tempID:
+        type: integer
+      tempTitle:
+        type: string
       title:
+        description: Title is the title of the media
         type: string
       tvdb:
+        description: Tvdb is the TVDB ID
+        type: string
+      upc:
+        description: UPC is the Universal Product Code for music
         type: string
       width:
+        description: Width is the video width in pixels
         type: integer
       year:
+        description: Year is the year of release
         type: integer
     type: object
   database.Qualities:
@@ -1267,6 +919,8 @@ definitions:
     type: object
   database.ResultSerieEpisodes:
     properties:
+      absoluteEpisode:
+        type: integer
       blacklisted:
         type: boolean
       createdAt:
@@ -1301,6 +955,10 @@ definitions:
         type: string
       runtime:
         type: integer
+      scraperID:
+        type: string
+      scraperURL:
+        type: string
       season:
         type: string
       title:
@@ -1379,6 +1037,8 @@ definitions:
     type: object
   database.Serie:
     properties:
+      aliases:
+        type: string
       createdAt:
         type: string
       dbserieID:
@@ -1392,6 +1052,8 @@ definitions:
       ignoreRuntime:
         type: boolean
       listname:
+        type: string
+      qualityProfile:
         type: string
       rootpath:
         type: string
@@ -1448,8 +1110,13 @@ definitions:
       updatedAt:
         type: string
     type: object
+  gin.H:
+    additionalProperties: {}
+    type: object
   parser.Prioarr:
     properties:
+      audioFormatID:
+        type: integer
       audioID:
         type: integer
       codecID:
@@ -1463,45 +1130,230 @@ definitions:
       resolutionID:
         type: integer
     type: object
-  worker.Job:
+  structure.AlbumForceMatchPreview:
+    properties:
+      artist:
+        type: string
+      folder_target:
+        description: computed target folder path
+        type: string
+      title:
+        type: string
+      tracks:
+        items:
+          $ref: '#/definitions/structure.AlbumForceMatchTrack'
+        type: array
+      year:
+        type: integer
+    type: object
+  structure.AlbumForceMatchTrack:
+    properties:
+      db_runtime_ms:
+        type: integer
+      disc_number:
+        type: integer
+      source:
+        description: current file path (basename)
+        type: string
+      target:
+        description: target filename after rename
+        type: string
+      title:
+        type: string
+      track_number:
+        type: integer
+    type: object
+  syncops.DbstaticTwoStringOneInt:
+    properties:
+      num:
+        type: integer
+      str1:
+        type: string
+      str2:
+        type: string
+    type: object
+  syncops.Job:
     properties:
       added:
         type: string
       id:
-        type: string
+        type: integer
       name:
         type: string
       queue:
         type: string
       schedulerID:
-        type: string
+        type: integer
       started:
         type: string
     type: object
-  worker.JobSchedule:
+  syncops.JobSchedule:
     properties:
       cronID:
         type: integer
       cronSchedule:
         type: string
       id:
-        type: string
+        type: integer
       interval:
         type: string
       isRunning:
         type: boolean
       jobID:
-        type: string
+        type: integer
       jobName:
         type: string
       lastRun:
         type: string
       nextRun:
         type: string
+      queue:
+        description: worker queue; selects the cron instance on removal
+        type: string
       scheduleString:
         type: string
       scheduleTyp:
         type: string
+    type: object
+  trakt.TraktIDs:
+    properties:
+      imdb:
+        type: string
+      slug:
+        type: string
+      tmdb:
+        type: integer
+      trakt:
+        type: integer
+      tvdb:
+        type: integer
+    type: object
+  trakt.TraktMovie:
+    properties:
+      certification:
+        type: string
+      genres:
+        items:
+          type: string
+        type: array
+      homepage:
+        type: string
+      ids:
+        $ref: '#/definitions/trakt.TraktIDs'
+      language:
+        type: string
+      overview:
+        type: string
+      rating:
+        type: number
+      released:
+        type: string
+      runtime:
+        type: integer
+      tagline:
+        type: string
+      title:
+        type: string
+      trailer:
+        type: string
+      votes:
+        type: integer
+      year:
+        type: integer
+    type: object
+  trakt.TraktShow:
+    properties:
+      aired_episodes:
+        type: integer
+      certification:
+        type: string
+      country:
+        type: string
+      first_aired:
+        type: string
+      genres:
+        items:
+          type: string
+        type: array
+      homepage:
+        type: string
+      ids:
+        $ref: '#/definitions/trakt.TraktIDs'
+      language:
+        type: string
+      network:
+        type: string
+      overview:
+        type: string
+      rating:
+        type: number
+      runtime:
+        type: integer
+      status:
+        type: string
+      title:
+        type: string
+      trailer:
+        type: string
+      votes:
+        type: integer
+      year:
+        type: integer
+    type: object
+  trakt.TraktUserListItem:
+    properties:
+      listed_at:
+        type: string
+      movie:
+        $ref: '#/definitions/trakt.TraktMovie'
+      rank:
+        type: integer
+      show:
+        $ref: '#/definitions/trakt.TraktShow'
+      type:
+        type: string
+    type: object
+  worker.Stats:
+    properties:
+      ListQueue:
+        additionalProperties:
+          $ref: '#/definitions/syncops.Job'
+        type: object
+      ListSchedule:
+        additionalProperties:
+          $ref: '#/definitions/syncops.JobSchedule'
+        type: object
+      WorkerFiles:
+        $ref: '#/definitions/worker.StatsDetail'
+      WorkerIndex:
+        $ref: '#/definitions/worker.StatsDetail'
+      WorkerIndexRSS:
+        $ref: '#/definitions/worker.StatsDetail'
+      WorkerMeta:
+        $ref: '#/definitions/worker.StatsDetail'
+      WorkerParse:
+        $ref: '#/definitions/worker.StatsDetail'
+      WorkerRSS:
+        $ref: '#/definitions/worker.StatsDetail'
+      WorkerSearch:
+        $ref: '#/definitions/worker.StatsDetail'
+    type: object
+  worker.StatsDetail:
+    properties:
+      CompletedTasks:
+        type: integer
+      DroppedTasks:
+        type: integer
+      FailedTasks:
+        type: integer
+      RunningWorkers:
+        type: integer
+      SubmittedTasks:
+        type: integer
+      SuccessfulTasks:
+        type: integer
+      WaitingTasks:
+        type: integer
     type: object
 host: localhost:9090
 info:
@@ -1509,9 +1361,176 @@ info:
   title: Go Media Downloader API
   version: "1.0"
 paths:
+  /api/admin:
+    get:
+      description: Serves the admin web interface
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: HTML content
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Admin Web Interface
+      tags:
+      - admin
+  /api/admin/table/{name}/delete/{index}:
+    post:
+      description: Deletes a record from the specified table
+      parameters:
+      - description: Table name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Record index
+        in: path
+        name: index
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Delete Table Record
+      tags:
+      - admin
+  /api/admin/table/{name}/insert:
+    post:
+      description: Inserts a new record into the specified table
+      parameters:
+      - description: Table name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Record data
+        in: body
+        name: data
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Insert Table Record
+      tags:
+      - admin
+  /api/admin/table/{name}/update/{index}:
+    post:
+      description: Updates a record in the specified table
+      parameters:
+      - description: Table name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Record index
+        in: path
+        name: index
+        required: true
+        type: integer
+      - description: Record data
+        in: body
+        name: data
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Update Table Record
+      tags:
+      - admin
+  /api/album/force-match:
+    post:
+      description: Match a folder against a specific MBID or ASIN and either preview
+        the rename plan or execute the full organize workflow
+      parameters:
+      - description: Config
+        in: body
+        name: config
+        required: true
+        schema:
+          $ref: '#/definitions/api.apiAlbumForceMatchJSON'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/structure.AlbumForceMatchPreview'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Force-match album folder
+      tags:
+      - general
   /api/all/data:
     get:
-      description: Search all folders of movies and series for new entries
+      description: Search all folders of every configured media type for new entries
       parameters:
       - description: apikey
         in: query
@@ -1532,7 +1551,7 @@ paths:
       - data
   /api/all/feeds:
     get:
-      description: Search all feeds of movies and series for new entries
+      description: Search all feeds of every configured media type for new entries
       parameters:
       - description: apikey
         in: query
@@ -1553,7 +1572,7 @@ paths:
       - feeds
   /api/all/search/missing/full:
     get:
-      description: Search all media of movies and series for missing releases
+      description: Search all media of every configured media type for missing releases
       parameters:
       - description: apikey
         in: query
@@ -1574,7 +1593,8 @@ paths:
       - search
   /api/all/search/missing/inc:
     get:
-      description: Search all media of movies and series for missing releases (incremental)
+      description: Search all media of every configured media type for missing releases
+        (incremental)
       parameters:
       - description: apikey
         in: query
@@ -1595,7 +1615,7 @@ paths:
       - search
   /api/all/search/rss:
     get:
-      description: Search all rss feeds of movies and series for new releases
+      description: Search all rss feeds of every configured media type for new releases
       parameters:
       - description: apikey
         in: query
@@ -1616,7 +1636,7 @@ paths:
       - search
   /api/all/search/upgrade/full:
     get:
-      description: Search all media of movies and series for upgrades
+      description: Search all media of every configured media type for upgrades
       parameters:
       - description: apikey
         in: query
@@ -1637,7 +1657,7 @@ paths:
       - search
   /api/all/search/upgrade/inc:
     get:
-      description: Search all media of movies and series for upgrades (incremental)
+      description: Search all media of every configured media type for upgrades (incremental)
       parameters:
       - description: apikey
         in: query
@@ -1656,6 +1676,949 @@ paths:
       summary: Search all Upgrades Incremental
       tags:
       - search
+  /api/audiobooks:
+    get:
+      description: List all audiobooks from the database
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Audiobooks (Database)
+      tags:
+      - audiobook
+  /api/audiobooks/{id}:
+    delete:
+      description: Deletes an audiobook from the database
+      parameters:
+      - description: Audiobook ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Delete Audiobook
+      tags:
+      - audiobook
+  /api/audiobooks/all/refresh:
+    get:
+      description: Refreshes Audiobook Metadata
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh Audiobooks (Incremental)
+      tags:
+      - audiobook
+  /api/audiobooks/all/refreshall:
+    get:
+      description: Refreshes Audiobook Metadata
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh Audiobooks
+      tags:
+      - audiobook
+  /api/audiobooks/author/add/{name}/{listname}:
+    get:
+      description: Adds an Audnex author (by Audible ASIN) to the given list and imports
+        all their audiobooks in the background.
+      parameters:
+      - description: Media config name (without 'audiobook_' prefix)
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: List name within the media config
+        in: path
+        name: listname
+        required: true
+        type: string
+      - description: Audnex/Audible author ASIN
+        in: query
+        name: author_id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Add Audiobook Author and Import Audiobooks
+      tags:
+      - audiobook
+  /api/audiobooks/job/{job}:
+    get:
+      description: Starts a Job for all audiobook configurations
+      parameters:
+      - description: Job Name
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns job name started
+          schema:
+            type: string
+        "204":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Start All Audiobook Jobs
+      tags:
+      - audiobook
+  /api/audiobooks/job/{job}/{name}:
+    get:
+      description: Starts a Job for a specific audiobook configuration
+      parameters:
+      - description: Job Name
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns job name started
+          schema:
+            type: string
+        "204":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Start Audiobook Jobs
+      tags:
+      - audiobook
+  /api/audiobooks/list/{name}:
+    get:
+      description: List audiobooks filtered by list name
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Audiobooks by List Name
+      tags:
+      - audiobook
+  /api/audiobooks/refresh/{id}:
+    get:
+      description: Refreshes specific Audiobook Metadata
+      parameters:
+      - description: Audiobook ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh a single Audiobook
+      tags:
+      - audiobook
+  /api/audiobooks/rss/search/list/{group}:
+    get:
+      description: Trigger RSS search for audiobook list
+      parameters:
+      - description: Group Name
+        in: path
+        name: group
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: RSS Search Audiobooks List
+      tags:
+      - audiobook
+  /api/audiobooks/search/authors/missing/{name}:
+    get:
+      description: Search for missing audiobooks by author name (up to 20 random authors)
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Missing Audiobooks by Author
+      tags:
+      - audiobook
+  /api/audiobooks/search/authors/upgrade/{name}:
+    get:
+      description: Search for audiobooks needing quality upgrade by author name (up
+        to 20 random authors)
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Upgrade Audiobooks by Author
+      tags:
+      - audiobook
+  /api/audiobooks/search/history/clear/{name}:
+    get:
+      description: Clear search history for audiobook list
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Audiobook History by Name
+      tags:
+      - audiobook
+  /api/audiobooks/search/history/clearid/{id}:
+    get:
+      description: Clear search history entry by ID
+      parameters:
+      - description: History ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Audiobook History by ID
+      tags:
+      - audiobook
+  /api/audiobooks/search/list/{id}:
+    get:
+      description: Search for all audiobooks in a list
+      parameters:
+      - description: List Name
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Audiobooks by List
+      tags:
+      - audiobook
+  /api/books:
+    get:
+      description: List all books from the database
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Books (Database)
+      tags:
+      - book
+  /api/books/{id}:
+    delete:
+      description: Deletes a book from the database
+      parameters:
+      - description: Book ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Delete Book
+      tags:
+      - book
+  /api/books/feeds/date/{name}/{listname}:
+    get:
+      description: Runs the feeds import for a single book bestseller list using a
+        date-specific URL
+      parameters:
+      - description: Media config name (e.g. mybooks)
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: List name (e.g. spiegel-hardcover)
+        in: path
+        name: listname
+        required: true
+        type: string
+      - description: Date in YYYY-MM-DD format
+        in: query
+        name: date
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "400":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Import Book Bestseller List for a Specific Date
+      tags:
+      - book
+  /api/books/job/{job}:
+    get:
+      description: Starts a Job for all book configurations
+      parameters:
+      - description: Job Name
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns job name started
+          schema:
+            type: string
+        "204":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Start All Book Jobs
+      tags:
+      - book
+  /api/books/job/{job}/{name}:
+    get:
+      description: Starts a Job for a specific book configuration
+      parameters:
+      - description: Job Name
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns job name started
+          schema:
+            type: string
+        "204":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Start Book Jobs
+      tags:
+      - book
+  /api/books/list/{name}:
+    get:
+      description: List books filtered by list name
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Books by List Name
+      tags:
+      - book
+  /api/books/rss/search/list/{group}:
+    get:
+      description: Trigger RSS search for book list
+      parameters:
+      - description: Group Name
+        in: path
+        name: group
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: RSS Search Books List
+      tags:
+      - book
+  /api/books/search/authors/missing/{name}:
+    get:
+      description: Search for missing books by author name (up to 20 random authors)
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Missing Books by Author
+      tags:
+      - book
+  /api/books/search/authors/upgrade/{name}:
+    get:
+      description: Search for books needing quality upgrade by author name (up to
+        20 random authors)
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Upgrade Books by Author
+      tags:
+      - book
+  /api/books/search/history/clear/{name}:
+    get:
+      description: Clear search history for book list
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Book History by Name
+      tags:
+      - book
+  /api/books/search/history/clearid/{id}:
+    get:
+      description: Clear search history entry by ID
+      parameters:
+      - description: History ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Book History by ID
+      tags:
+      - book
+  /api/books/search/list/{id}:
+    get:
+      description: Search for all books in a list
+      parameters:
+      - description: List Name
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Books by List
+      tags:
+      - book
+  /api/cache/add:
+    post:
+      description: Manually add an entry to a specific cache
+      parameters:
+      - description: Cache entry data
+        in: body
+        name: cache
+        required: true
+        schema:
+          $ref: '#/definitions/api.apiCacheAddJSON'
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns ok
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Jsondata'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Add Cache Entry
+      tags:
+      - cache
+  /api/cache/clear/{type}:
+    delete:
+      description: Clear all entries from a specific cache type
+      parameters:
+      - description: Cache type to clear
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns ok
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Jsondata'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Cache Type
+      tags:
+      - cache
+  /api/cache/list:
+    get:
+      description: List all available cache types and their current status
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: cache types and status
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Jsondata'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Cache Types
+      tags:
+      - cache
+  /api/cache/refresh:
+    get:
+      description: Manually trigger a full cache refresh for database tables
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns ok
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Jsondata'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh Cache
+      tags:
+      - cache
+  /api/cache/remove/{key}:
+    delete:
+      description: Remove a specific cache entry by key
+      parameters:
+      - description: Cache key to remove
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns ok
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Jsondata'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Remove Cache Entry
+      tags:
+      - cache
   /api/config/all:
     get:
       description: Get All Config Parameters
@@ -1770,8 +2733,7 @@ paths:
             allOf:
             - $ref: '#/definitions/api.Jsondata'
             - properties:
-                data:
-                  type: object
+                data: {}
               type: object
         "401":
           description: Unauthorized
@@ -1850,8 +2812,7 @@ paths:
         in: body
         name: config
         required: true
-        schema:
-          type: object
+        schema: {}
       - description: 'Type Name: ex. quality_SD'
         in: path
         name: name
@@ -1907,6 +2868,30 @@ paths:
       summary: Backup DB
       tags:
       - database
+  /api/db/cleanuporphans:
+    get:
+      description: Deletes child rows whose parent rows no longer exist, per the schema's
+        foreign-key relationships. Returns deleted row counts per table.
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Cleanup Orphaned Rows
+      tags:
+      - database
   /api/db/clear/{name}:
     delete:
       description: Clears a DB Table
@@ -1954,10 +2939,20 @@ paths:
       summary: Clear Caches
       tags:
       - database
-  /api/db/close:
-    get:
-      description: Closes all database connections
+  /api/db/delete/{name}/{id}:
+    delete:
+      description: Deletes a Row from a DB Table
       parameters:
+      - description: Table Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Row ID
+        in: path
+        name: id
+        required: true
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -1972,7 +2967,7 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/api.Jsonerror'
-      summary: Close DB
+      summary: Delete Row from DB Table
       tags:
       - database
   /api/db/integrity:
@@ -2498,12 +3493,17 @@ paths:
         name: nzb
         required: true
         schema:
-          $ref: '#/definitions/apiexternal.Nzbwithprio'
+          $ref: '#/definitions/apiexternal_v2.Nzbwithprio'
       - description: Movie ID
         in: path
         name: id
         required: true
         type: integer
+      - description: Indexer config name the release came from
+        in: query
+        name: indexer
+        required: true
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -2688,6 +3688,508 @@ paths:
       summary: List Unmatched Movies
       tags:
       - movie
+  /api/music:
+    get:
+      description: List all albums from the database
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Albums (Database)
+      tags:
+      - music
+  /api/music/{id}:
+    delete:
+      description: Deletes an album from the database
+      parameters:
+      - description: Album ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Delete Album
+      tags:
+      - music
+  /api/music/all/refresh:
+    get:
+      description: Refreshes Album Metadata from MusicBrainz
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh Music (Incremental)
+      tags:
+      - music
+  /api/music/all/refreshall:
+    get:
+      description: Refreshes Album Metadata from MusicBrainz
+      parameters:
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh Music
+      tags:
+      - music
+  /api/music/artist/add/{name}/{listname}:
+    get:
+      description: Adds a MusicBrainz artist to dbartists and the given list (track_mode=albums),
+        then imports all their albums in the background.
+      parameters:
+      - description: Media config name (without 'music_' prefix)
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: List name within the media config
+        in: path
+        name: listname
+        required: true
+        type: string
+      - description: MusicBrainz artist ID
+        in: query
+        name: artist_id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Add Music Artist and Import Albums
+      tags:
+      - music
+  /api/music/artists:
+    get:
+      description: List all artists from the database
+      parameters:
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Artists
+      tags:
+      - music
+  /api/music/feeds/date/{name}/{listname}:
+    get:
+      description: Runs the feeds import for a single music chart list using a date-specific
+        URL
+      parameters:
+      - description: Media config name (e.g. mycharts)
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: List name (e.g. offiziellecharts-compilations)
+        in: path
+        name: listname
+        required: true
+        type: string
+      - description: Date in YYYY-MM-DD format
+        in: query
+        name: date
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "400":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Import Music Chart for a Specific Date
+      tags:
+      - music
+  /api/music/job/{job}:
+    get:
+      description: Starts a Job for all music configurations
+      parameters:
+      - description: Job Name
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns job name started
+          schema:
+            type: string
+        "204":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Start All Music Jobs
+      tags:
+      - music
+  /api/music/job/{job}/{name}:
+    get:
+      description: Starts a Job for a specific music configuration
+      parameters:
+      - description: Job Name
+        in: path
+        name: job
+        required: true
+        type: string
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns job name started
+          schema:
+            type: string
+        "204":
+          description: error message
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Start Music Jobs
+      tags:
+      - music
+  /api/music/list/{name}:
+    get:
+      description: List albums filtered by list name
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Order By
+        in: query
+        name: order
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Jsondatarows'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: List Albums by List Name
+      tags:
+      - music
+  /api/music/refresh/{id}:
+    get:
+      description: Refreshes specific Album Metadata from MusicBrainz
+      parameters:
+      - description: Album ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: returns started
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Refresh a single Album
+      tags:
+      - music
+  /api/music/rss/search/list/{group}:
+    get:
+      description: Trigger RSS search for music list
+      parameters:
+      - description: Group Name
+        in: path
+        name: group
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: RSS Search Music List
+      tags:
+      - music
+  /api/music/search/artists/missing/{name}:
+    get:
+      description: Search for missing albums by artist name (up to 20 random artists)
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Missing Albums by Artist
+      tags:
+      - music
+  /api/music/search/artists/upgrade/{name}:
+    get:
+      description: Search for albums needing quality upgrade by artist name (up to
+        20 random artists)
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Upgrade Albums by Artist
+      tags:
+      - music
+  /api/music/search/history/clear/{name}:
+    get:
+      description: Clear search history for music list
+      parameters:
+      - description: List Name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Music History by Name
+      tags:
+      - music
+  /api/music/search/history/clearid/{id}:
+    get:
+      description: Clear search history entry by ID
+      parameters:
+      - description: History ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clear Music History by ID
+      tags:
+      - music
+  /api/music/search/list/{id}:
+    get:
+      description: Search for all albums in a list
+      parameters:
+      - description: List Name
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Search Albums by List
+      tags:
+      - music
   /api/naming:
     post:
       description: Test your Naming Convention
@@ -2707,7 +4209,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.JsonNaming'
+            $ref: '#/definitions/api.JSONNaming'
         "400":
           description: Bad Request
           schema:
@@ -2742,7 +4244,7 @@ paths:
             - $ref: '#/definitions/api.Jsondata'
             - properties:
                 data:
-                  $ref: '#/definitions/apiexternal.FileParser'
+                  $ref: '#/definitions/database.ParseInfo'
               type: object
         "400":
           description: Bad Request
@@ -2778,9 +4280,7 @@ paths:
             - $ref: '#/definitions/api.Jsondataerror'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/apiexternal.FileParser'
-                  type: array
+                  $ref: '#/definitions/database.ParseInfo'
               type: object
         "400":
           description: Bad Request
@@ -3009,9 +4509,9 @@ paths:
             - $ref: '#/definitions/api.Jsondata'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/worker.Job'
-                  type: array
+                  additionalProperties:
+                    $ref: '#/definitions/syncops.Job'
+                  type: object
               type: object
         "401":
           description: Unauthorized
@@ -3020,6 +4520,40 @@ paths:
       summary: Queue
       tags:
       - general
+  /api/queue/cancel/{id}:
+    delete:
+      description: Cancel a running or pending job in the queue
+      parameters:
+      - description: Queue job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/gin.H'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Cancel Queue Job
+      tags:
+      - queue
   /api/queue/history:
     get:
       description: Lists Started Jobs and finished but not queued jobs
@@ -3077,9 +4611,9 @@ paths:
             - $ref: '#/definitions/api.Jsondata'
             - properties:
                 data:
-                  items:
-                    $ref: '#/definitions/worker.JobSchedule'
-                  type: array
+                  additionalProperties:
+                    $ref: '#/definitions/syncops.JobSchedule'
+                  type: object
               type: object
         "401":
           description: Unauthorized
@@ -3527,12 +5061,17 @@ paths:
         name: nzb
         required: true
         schema:
-          $ref: '#/definitions/apiexternal.Nzbwithprio'
+          $ref: '#/definitions/apiexternal_v2.Nzbwithprio'
       - description: Episode ID
         in: path
         name: id
         required: true
         type: integer
+      - description: Indexer config name the release came from
+        in: query
+        name: indexer
+        required: true
+        type: string
       - description: apikey
         in: query
         name: apikey
@@ -3727,7 +5266,7 @@ paths:
     delete:
       description: Delete Series
       parameters:
-      - description: Series ID
+      - description: Series list entry ID (series.id)
         in: path
         name: id
         required: true
@@ -3792,6 +5331,46 @@ paths:
           schema:
             $ref: '#/definitions/api.Jsonerror'
       summary: List Series (List)
+      tags:
+      - series
+  /api/series/metadata/{tvdb}:
+    get:
+      description: Gets metadata of a series by TVDB ID (for testing). Use ?update=1
+        to save results to DB.
+      parameters:
+      - description: TVDB ID
+        in: path
+        name: tvdb
+        required: true
+        type: integer
+      - description: 'Provider: tvdb (default), tmdb, trakt'
+        in: query
+        name: provider
+        type: string
+      - description: 'Save to DB: 1'
+        in: query
+        name: update
+        type: string
+      - description: apikey
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.Jsondata'
+            - properties:
+                data:
+                  $ref: '#/definitions/database.Dbserie'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Get Series Metadata
       tags:
       - series
   /api/series/refresh/{id}:
@@ -4099,12 +5678,17 @@ paths:
       - series
   /api/slug:
     get:
-      description: Regenerates Slugs
+      description: Regenerates slugs for all tables. By default only populates empty
+        slugs. Use force=true to regenerate all slugs.
       parameters:
       - description: apikey
         in: query
         name: apikey
         required: true
+        type: string
+      - description: Set to 'true' to regenerate all slugs, not just empty ones
+        in: query
+        name: force
         type: string
       responses:
         "200":
@@ -4118,6 +5702,99 @@ paths:
       summary: Refresh Slugs
       tags:
       - general
+  /api/statistics:
+    get:
+      description: Retrieves comprehensive system statistics including movies, series,
+        storage, HTTP, and system performance
+      parameters:
+      - description: API Key
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.OverallStatistics'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Get Statistics
+      tags:
+      - statistics
+  /api/statistics/movies:
+    get:
+      description: Retrieves movie-specific statistics
+      parameters:
+      - description: API Key
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.MovieStatistics'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Get Movie Statistics
+      tags:
+      - statistics
+  /api/statistics/series:
+    get:
+      description: Retrieves series-specific statistics
+      parameters:
+      - description: API Key
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SeriesStatistics'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Get Series Statistics
+      tags:
+      - statistics
+  /api/statistics/workers:
+    get:
+      description: Retrieves worker pool statistics
+      parameters:
+      - description: API Key
+        in: query
+        name: apikey
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/worker.Stats'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Get Worker Statistics
+      tags:
+      - statistics
   /api/structure:
     post:
       description: Structure a single folder
@@ -4191,8 +5868,7 @@ paths:
             allOf:
             - $ref: '#/definitions/api.Jsondata'
             - properties:
-                data:
-                  type: object
+                data: {}
               type: object
         "401":
           description: Unauthorized
@@ -4229,7 +5905,7 @@ paths:
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/apiexternal.TraktUserList'
+                    $ref: '#/definitions/trakt.TraktUserListItem'
                   type: array
               type: object
         "401":
@@ -4239,6 +5915,24 @@ paths:
       summary: Trakt Get List (Auth Test)
       tags:
       - general
+  /web/admin/statistics:
+    get:
+      description: Renders the main statistics dashboard with system performance and
+        media library analytics
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Statistics dashboard HTML
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Statistics Dashboard Page
+      tags:
+      - web
 schemes:
 - http
 - https

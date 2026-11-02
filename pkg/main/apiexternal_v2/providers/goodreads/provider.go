@@ -38,6 +38,17 @@ func NewProviderWithConfig(cfg base.ClientConfig, apiKey string) *Provider {
 		cfg.Timeout = 30 * time.Second
 	}
 
+	// The configured Goodreads limits apply to every instance; the built-in
+	// limits below are only the fallback for 0.
+	general := config.GetSettingsGeneral()
+	if cfg.RateLimitCalls == 0 {
+		cfg.RateLimitCalls = general.GoodreadsLimiterCalls
+	}
+
+	if cfg.RateLimitSeconds == 0 {
+		cfg.RateLimitSeconds = int(general.GoodreadsLimiterSeconds)
+	}
+
 	if cfg.RateLimitCalls == 0 {
 		cfg.RateLimitCalls = 1 // Goodreads is strict
 	}
@@ -168,7 +179,7 @@ func (p *Provider) GetAuthorByID(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/author/show/%s?key=%s", url.PathEscape(id), p.apiKey)
+	endpoint := fmt.Sprintf("/author/show/%s?key=%s&format=xml", url.PathEscape(id), p.apiKey)
 
 	var response grAuthorResponse
 
@@ -222,7 +233,7 @@ func (p *Provider) GetSeriesByID(
 		return nil, errors.New("goodreads API key is required")
 	}
 
-	endpoint := fmt.Sprintf("/series/%s?key=%s", url.PathEscape(id), p.apiKey)
+	endpoint := fmt.Sprintf("/series/%s?key=%s&format=xml", url.PathEscape(id), p.apiKey)
 
 	var response grSeriesResponse
 

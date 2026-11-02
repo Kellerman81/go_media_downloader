@@ -7,27 +7,34 @@ func processSyncMapCheckExpires(syncMapInterface any, op SyncOperation) bool {
 	switch op.MapType {
 	case MapTypeString:
 		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]string]) {
-			s.CheckExpires(op.Key, op.Extend, op.Duration)
+			setExpired(op, s.CheckExpires(op.Key, op.Extend, op.Duration))
 		})
 
 	case MapTypeTwoString:
 		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticTwoStringOneInt]) {
-			s.CheckExpires(op.Key, op.Extend, op.Duration)
+			setExpired(op, s.CheckExpires(op.Key, op.Extend, op.Duration))
 		})
 
 	case MapTypeThreeString:
 		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticThreeStringTwoInt]) {
-			s.CheckExpires(op.Key, op.Extend, op.Duration)
+			setExpired(op, s.CheckExpires(op.Key, op.Extend, op.Duration))
 		})
 
 	case MapTypeTwoInt:
 		return syncMapMetaOp(syncMapInterface, func(s *SyncMap[[]DbstaticOneStringTwoInt]) {
-			s.CheckExpires(op.Key, op.Extend, op.Duration)
+			setExpired(op, s.CheckExpires(op.Key, op.Extend, op.Duration))
 		})
 
 	default:
 		// Other map types do not support CheckExpires
 		return false
+	}
+}
+
+// setExpired stores a CheckExpires result for the queued caller, if it asked for one.
+func setExpired(op SyncOperation, expired bool) {
+	if op.ExpiredOut != nil {
+		*op.ExpiredOut = expired
 	}
 }
 

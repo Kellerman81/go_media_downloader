@@ -62,6 +62,9 @@ type StorageStatistics struct {
 	TotalPaths     int                      `json:"total_paths"`
 	ByPath         map[string]PathStatistic `json:"by_path"`
 	TotalFileCount int64                    `json:"total_file_count"`
+	// Partial is set when at least one path walk hit the request deadline,
+	// so the counts are lower bounds.
+	Partial bool `json:"partial,omitempty"`
 }
 
 // PathStatistic contains statistics for a single storage path.
@@ -70,6 +73,7 @@ type PathStatistic struct {
 	FileCount   int64  `json:"file_count"`
 	FolderCount int64  `json:"folder_count"`
 	TotalSize   int64  `json:"total_size"`
+	Partial     bool   `json:"partial,omitempty"`
 }
 
 // HTTPStatistics contains HTTP client statistics.
@@ -393,7 +397,35 @@ func mediaTypeConfigured(kind string) bool {
 // with an already-expired context, returned nothing, and was dropped — so only
 // the first big path showed up. Running them in parallel gives every path the
 // full deadline window independently.
+//
+// Complete results are cached for storageStatsCacheTTL; walking every library
+// on each dashboard refresh is expensive.
 func getStorageStatistics(ctx context.Context) StorageStatistics {
+	storageStatsCache.mu.Lock()
+	defer storageStatsCache.mu.Unlock()
+
+	if !storageStatsCache.at.IsZero() && time.Since(storageStatsCache.at) < storageStatsCacheTTL {
+		return storageStatsCache.stats
+	}
+
+	stats := collectStorageStatistics(ctx)
+	if !stats.Partial {
+		storageStatsCache.stats = stats
+		storageStatsCache.at = time.Now()
+	}
+
+	return stats
+}
+
+const storageStatsCacheTTL = 5 * time.Minute
+
+var storageStatsCache struct {
+	mu    sync.Mutex
+	at    time.Time
+	stats StorageStatistics
+}
+
+func collectStorageStatistics(ctx context.Context) StorageStatistics {
 	stats := StorageStatistics{
 		ByPath: make(map[string]PathStatistic),
 	}
@@ -442,6 +474,8 @@ func getStorageStatistics(ctx context.Context) StorageStatistics {
 		return nil
 	})
 
+	jobs = dropNestedPathJobs(jobs, func(j pathJob) (string, uint) { return j.path, j.mediaType })
+
 	// Walk every path concurrently; each is independent filesystem I/O.
 	results := make([]PathStatistic, len(jobs))
 
@@ -462,6 +496,10 @@ func getStorageStatistics(ctx context.Context) StorageStatistics {
 
 	for i := range jobs {
 		ps := results[i]
+		if ps.Partial {
+			stats.Partial = true
+		}
+
 		if ps.FileCount > 0 || ps.FolderCount > 0 {
 			stats.ByPath[jobs[i].key] = ps
 			stats.TotalFileCount += ps.FileCount
@@ -470,6 +508,40 @@ func getStorageStatistics(ctx context.Context) StorageStatistics {
 	}
 
 	return stats
+}
+
+// dropNestedPathJobs removes jobs whose path lies inside another job's path
+// of the same media type, so overlapping configured paths aren't walked and
+// counted twice.
+func dropNestedPathJobs[T any](jobs []T, key func(T) (string, uint)) []T {
+	out := jobs[:0:0]
+
+	for i := range jobs {
+		pi, ti := key(jobs[i])
+		nested := false
+
+		for j := range jobs {
+			if i == j {
+				continue
+			}
+
+			pj, tj := key(jobs[j])
+			if tj != ti || filepath.Clean(pj) == filepath.Clean(pi) {
+				continue
+			}
+
+			if pathWithinAny(filepath.Clean(pi), []string{filepath.Clean(pj)}) {
+				nested = true
+				break
+			}
+		}
+
+		if !nested {
+			out = append(out, jobs[i])
+		}
+	}
+
+	return out
 }
 
 // walkPath walks a filesystem path and returns statistics, counting files that
@@ -519,8 +591,9 @@ func walkPath(ctx context.Context, rootPath string, mediaType uint) PathStatisti
 		return nil
 	})
 
-	if err != nil && !errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		stat.Partial = true
+	} else if err != nil {
 		logger.Logtype(logger.StatusError, 1).
 			Str("path", rootPath).
 			Err(err).

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/gin-gonic/gin"
@@ -78,6 +79,31 @@ func parsePaginationParams(ctx *gin.Context) PaginationParams {
 	}
 
 	return params
+}
+
+// Page-size bounds for list endpoints over tables that are too large to
+// return unpaginated (dbbooks, dbaudiobooks, dbalbums, dbartists).
+const (
+	defaultListLimit = 100
+	maxListLimit     = 1000
+)
+
+// boundPagination applies defaultListLimit when no limit was requested and
+// caps the limit at maxListLimit, keeping the offset consistent with Page.
+func boundPagination(params *PaginationParams) {
+	switch {
+	case params.Limit == 0:
+		params.Limit = defaultListLimit
+	case params.Limit > maxListLimit:
+		params.Limit = maxListLimit
+	default:
+		return
+	}
+
+	params.Offset = 0
+	if params.Page >= 2 {
+		params.Offset = uint(params.Page-1) * params.Limit //nolint:gosec // guarded: page>=2
+	}
 }
 
 // orderClauseRegex allowlists a plain `ORDER BY` fragment: one or more
@@ -287,7 +313,57 @@ func findCfgpAndListID(
 		}
 	}
 
+	// Lists are matched case-insensitively as a fallback, like the
+	// listname comparisons in the database.
+	for i := range entries {
+		cfgp := config.GetSettingsMedia(prefix + entries[i].Name)
+		if cfgp == nil {
+			continue
+		}
+
+		for idx := range cfgp.Lists {
+			if strings.EqualFold(cfgp.Lists[idx].Name, listName) {
+				return cfgp, idx
+			}
+		}
+	}
+
 	return nil, -1
+}
+
+// mediaEntriesForKind returns the media configs of one kind ("movie",
+// "serie", "book", "audiobook").
+func mediaEntriesForKind(kind string) []config.MediaTypeConfig {
+	allMedia := config.GetSettingsMediaAll()
+	if allMedia == nil {
+		return nil
+	}
+
+	switch kind {
+	case "movie":
+		return allMedia.Movies
+	case "serie":
+		return allMedia.Series
+	case "book":
+		return allMedia.Books
+	case "audiobook":
+		return allMedia.AudioBooks
+	}
+
+	return nil
+}
+
+// configuredListName validates a submitted list name against the configured
+// lists of one media kind ("movie", "serie", "book", "audiobook") and returns
+// the configured spelling. On failure it writes a 400 and returns false.
+func configuredListName(c *gin.Context, listName, kind string) (string, bool) {
+	if cfgp, listid := findCfgpAndListID(listName, kind+"_", mediaEntriesForKind(kind)); cfgp != nil && listid >= 0 {
+		return cfgp.Lists[listid].Name, true
+	}
+
+	c.JSON(http.StatusBadRequest, gin.H{"error": "List '" + listName + "' is not configured for " + kind + "s"})
+
+	return "", false
 }
 
 // getCSRFToken extracts CSRF token from gin context if available.
@@ -297,4 +373,27 @@ func getCSRFToken(c *gin.Context) string {
 	}
 
 	return ""
+}
+
+// setManualDownloadIndexer resolves the indexer of a manually posted release.
+// NZB.Indexer is tagged json:"-" so it can never arrive in the body, yet the
+// downloader dereferences it - the client names the indexer config via the
+// "indexer" query parameter instead. Writes a 400 and returns false when it is
+// missing or unknown.
+func setManualDownloadIndexer(c *gin.Context, nzb *apiexternal_v2.Nzbwithprio) bool {
+	name := c.Query("indexer")
+	if name == "" {
+		sendBadRequest(c, "indexer required")
+		return false
+	}
+
+	indexer := config.GetSettingsIndexer(name)
+	if indexer == nil {
+		sendBadRequest(c, "indexer "+name+" not found")
+		return false
+	}
+
+	nzb.NZB.Indexer = indexer
+
+	return true
 }

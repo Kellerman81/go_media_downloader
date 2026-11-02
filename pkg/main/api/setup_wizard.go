@@ -23,14 +23,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -602,15 +598,35 @@ func wizardNamingDefault(key string) string {
 	}
 }
 
-func wizardUpsertMediaGroup(list *[]config.MediaTypeConfig, mtc config.MediaTypeConfig) {
-	for i := range *list {
-		if (*list)[i].Name == mtc.Name {
-			(*list)[i] = mtc
-			return
+// wizardConflicts lists the config entries the finalize step would overwrite
+// for the given groups: an existing media group of the same name (its data,
+// import, notification and list settings would be lost) or an existing
+// "<name>-Quality" / "<name>-Regex" profile.
+func wizardConflicts(mc *config.MediaConfig, groups []wizardMediaGroupDef, state wizardState) []string {
+	regexNames := wizardNames(config.GetSettingsRegexAll(), func(r config.RegexConfig) string { return r.Name })
+
+	var conflicts []string
+
+	for _, d := range groups {
+		name := state.Groups[d.key].Name
+
+		for _, existing := range *d.target(mc) {
+			if strings.EqualFold(existing.Name, name) {
+				conflicts = append(conflicts, d.label+" media group \""+name+"\"")
+				break
+			}
+		}
+
+		if _, ok := config.GetSettingsQualityOk(name + "-Quality"); ok {
+			conflicts = append(conflicts, "quality profile \""+name+"-Quality\"")
+		}
+
+		if wizardNameExists(regexNames, name+"-Regex") {
+			conflicts = append(conflicts, "regex profile \""+name+"-Regex\"")
 		}
 	}
 
-	*list = append(*list, mtc)
+	return conflicts
 }
 
 // wizardEnsureDefaultScheduler creates a single shared "Wizard-Default"
@@ -807,7 +823,7 @@ func wizardSavePathsStep(
 		groups = map[string]wizardGroupState{}
 	}
 
-	var created []string
+	var created, failed []string
 
 	for _, d := range wizardEnabledGroups(state) {
 		g := groups[d.key]
@@ -816,7 +832,9 @@ func wizardSavePathsStep(
 			cfg := config.PathsConfig{Name: g.Name + "-Library", Path: lib}
 			wizardApplyExtensions(&cfg, d.qualityKind)
 
-			if err := config.UpdateCfgEntry(config.Conf{Name: "path_" + cfg.Name, Data: cfg}); err == nil {
+			if err := config.UpdateCfgEntry(config.Conf{Name: "path_" + cfg.Name, Data: cfg}); err != nil {
+				failed = append(failed, cfg.Name+": "+err.Error())
+			} else {
 				g.LibraryPath = cfg.Name
 				created = append(created, cfg.Name)
 			}
@@ -826,13 +844,19 @@ func wizardSavePathsStep(
 			cfg := config.PathsConfig{Name: g.Name + "-Import", Path: imp}
 			wizardApplyExtensions(&cfg, d.qualityKind)
 
-			if err := config.UpdateCfgEntry(config.Conf{Name: "path_" + cfg.Name, Data: cfg}); err == nil {
+			if err := config.UpdateCfgEntry(config.Conf{Name: "path_" + cfg.Name, Data: cfg}); err != nil {
+				failed = append(failed, cfg.Name+": "+err.Error())
+			} else {
 				g.ImportPath = cfg.Name
 				created = append(created, cfg.Name)
 			}
 		}
 
 		groups[d.key] = g
+	}
+
+	if len(failed) > 0 {
+		return renderAlert("Failed to save path(s): "+strings.Join(failed, "; "), "danger"), groups
 	}
 
 	if len(created) == 0 {
@@ -868,7 +892,7 @@ func renderWizardStepIndexer(csrfToken string) gomponents.Node {
 					),
 					renderFormGroup(
 						"wizard_indexer",
-						map[string]string{"IndexerType": "Newznab (Usenet) or Torznab (torrent)"},
+						map[string]string{"IndexerType": "Newznab (Usenet) or Torznab (torrent). Torznab is saved as newznab; torrent results are detected from a URL containing \"torznab\" or \"torrent\"."},
 						map[string]string{"IndexerType": "Indexer Type"},
 						"IndexerType", "select", "newznab",
 						map[string][]string{"options": {"newznab", "torznab"}},
@@ -915,7 +939,10 @@ func wizardSaveIndexerStep(c *gin.Context) (alert, name string) {
 		nm = "MyIndexer"
 	}
 
-	if indexerType == "" {
+	// The searcher only queries IndexerType "newznab"; the newznab provider
+	// serves Torznab too and detects it from the URL, so torznab is stored as
+	// newznab rather than producing an indexer that is never searched.
+	if indexerType == "" || strings.EqualFold(indexerType, "torznab") {
 		indexerType = "newznab"
 	}
 
@@ -934,6 +961,8 @@ func wizardSaveIndexerStep(c *gin.Context) (alert, name string) {
 	if err := config.UpdateCfgEntry(config.Conf{Name: "indexer_" + nm, Data: cfg}); err != nil {
 		return renderAlert("Failed to save indexer: "+err.Error(), "danger"), ""
 	}
+
+	providers.ReloadClientProviders()
 
 	return renderAlert("Indexer '"+nm+"' saved.", "success"), nm
 }
@@ -1082,6 +1111,8 @@ func wizardSaveDownloaderStep(c *gin.Context) (alert, name string) {
 		return renderAlert("Failed to save download client: "+err.Error(), "danger"), ""
 	}
 
+	providers.ReloadClientProviders()
+
 	return renderAlert("Download client '"+nm+"' saved.", "success"), nm
 }
 
@@ -1130,45 +1161,26 @@ func wizardTestDownloaderConnection(
 	port int,
 	username, password string,
 ) error {
-	switch dlType {
-	case "qbittorrent":
-		p, err := qbittorrent.NewProvider(hostname, port, username, password, false)
-		if err != nil {
-			return err
-		}
-
-		return p.TestConnection(ctx)
-	case "sabnzbd":
-		// SABnzbd authenticates via API key only - the wizard reuses the Password field for it.
-		p, err := sabnzbd.NewProvider(hostname, port, password, false)
-		if err != nil {
-			return err
-		}
-
-		return p.TestConnection(ctx)
-	case "nzbget":
-		p, err := nzbget.NewProvider(hostname, port, username, password, false)
-		if err != nil {
-			return err
-		}
-
-		return p.TestConnection(ctx)
-	case "deluge":
-		p := deluge.NewProvider(fmt.Sprintf("http://%s:%d", hostname, port), username, password)
-		return p.TestConnection(ctx)
-	case "transmission":
-		p := transmission.NewProvider(fmt.Sprintf("http://%s:%d", hostname, port), username, password)
-		return p.TestConnection(ctx)
-	case "rtorrent":
-		p, err := rtorrent.NewProvider(hostname, port, username, password, false, "")
-		if err != nil {
-			return err
-		}
-
-		return p.TestConnection(ctx)
-	default:
-		return fmt.Errorf("unknown download client type: %s", dlType)
+	client, err := providers.NewDownloadClient(&config.DownloaderConfig{
+		Name:     "wizard-test",
+		DlType:   dlType,
+		Hostname: hostname,
+		Port:     port,
+		Username: username,
+		Password: password,
+	})
+	if err != nil {
+		return err
 	}
+
+	tester, ok := client.(interface {
+		TestConnection(ctx context.Context) error
+	})
+	if !ok {
+		return fmt.Errorf("download client type %s has no connection test", dlType)
+	}
+
+	return tester.TestConnection(ctx)
 }
 
 // ---- Step 5: Lists ----
@@ -1276,6 +1288,15 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 		Music:      append([]config.MediaTypeConfig(nil), live.Music...),
 	}
 
+	if conflicts := wizardConflicts(&mc, wizardEnabledGroups(state), state); len(conflicts) > 0 {
+		return renderAlert(
+			"Nothing was saved: these already exist and the wizard would overwrite them: "+
+				strings.Join(conflicts, ", ")+
+				". Choose different group names in step 1, or edit the existing entries under Settings.",
+			"danger",
+		)
+	}
+
 	// A quality/regex/scheduler profile is created for every enabled group
 	// regardless of whether an indexer/downloader were configured in steps 3/4
 	// - otherwise TemplateQuality/TemplateScheduler are left blank and the
@@ -1285,7 +1306,7 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 	// to fill in under Settings -> Quality).
 	wizardEnsureDefaultScheduler()
 
-	scheduler := wizardDefaultName
+	schedulerName := wizardDefaultName
 
 	var created []string
 
@@ -1295,7 +1316,7 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 		mtc := config.MediaTypeConfig{
 			Name:              g.Name,
 			Naming:            wizardNamingDefault(d.key),
-			TemplateScheduler: scheduler,
+			TemplateScheduler: schedulerName,
 			AudibleRegion:     d.audibleRegion,
 		}
 
@@ -1312,7 +1333,9 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 
 		regexCfg := wizardRegexDefaults(d.qualityKind)
 		regexCfg.Name = regexName
-		_ = config.UpdateCfgEntry(config.Conf{Name: "regex_" + regexName, Data: regexCfg})
+		if err := config.UpdateCfgEntry(config.Conf{Name: "regex_" + regexName, Data: regexCfg}); err != nil {
+			return renderAlert("Failed to save regex "+regexName+": "+err.Error(), "danger")
+		}
 
 		quality := wizardQualityDefaults(d.qualityKind)
 		quality.Name = qualityName
@@ -1320,10 +1343,14 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 			TemplateIndexer:    state.Indexer,    // may be "" if step 3 was skipped
 			TemplateDownloader: state.Downloader, // may be "" if step 4 was skipped
 			TemplateRegex:      regexName,
-			TemplatePathNzb:    g.LibraryPath,
+			// The client's save location: downloads land in the import
+			// folder so the organizer can move them into the library.
+			TemplatePathNzb: g.ImportPath,
 		}}
 
-		_ = config.UpdateCfgEntry(config.Conf{Name: "quality_" + qualityName, Data: quality})
+		if err := config.UpdateCfgEntry(config.Conf{Name: "quality_" + qualityName, Data: quality}); err != nil {
+			return renderAlert("Failed to save quality "+qualityName+": "+err.Error(), "danger")
+		}
 
 		mtc.TemplateQuality = qualityName
 
@@ -1333,12 +1360,12 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 				Name:              g.Name + "-" + l,
 				TemplateList:      l,
 				TemplateQuality:   qualityName,
-				TemplateScheduler: scheduler,
+				TemplateScheduler: schedulerName,
 				Enabled:           true,
 			})
 		}
 
-		wizardUpsertMediaGroup(d.target(&mc), mtc)
+		*d.target(&mc) = append(*d.target(&mc), mtc)
 		created = append(created, g.Name)
 	}
 
@@ -1351,12 +1378,13 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 	}
 
 	wizardEnableScheduler()
+	scheduler.Reload()
 
 	return renderAlert(
 		"Media group(s) saved: "+strings.Join(
 			created,
 			", ",
-		)+". Restart the application so the scheduler and workers pick everything up.",
+		)+". Schedules and download clients have been updated - no restart needed.",
 		"success",
 	)
 }
@@ -1364,9 +1392,8 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 // wizardEnableScheduler flips General.SchedulerDisabled off if it's still the
 // ClearCfg fresh-install default (true) - a user who just finished the wizard
 // clearly wants automated searches to actually run. This takes effect
-// immediately for future job dispatch (utils/jobs.go reads it live), but the
-// scheduler/worker goroutines themselves are only wired up at startup, hence
-// the restart advice shown on the Finish step.
+// immediately for future job dispatch (utils/jobs.go reads it live); the
+// schedules themselves are applied by the scheduler.Reload in the finalize step.
 func wizardEnableScheduler() {
 	general := config.GetSettingsGeneral()
 	if general == nil || !general.SchedulerDisabled {
@@ -1396,13 +1423,6 @@ func renderWizardStepFinish() gomponents.Node {
 			"fa-solid fa-flag-checkered",
 			"Setup Complete",
 			"Fine-tune anything, or add more paths, indexers, lists, and media groups, from Configuration in the sidebar.",
-		),
-		html.Div(
-			html.Class("alert alert-warning d-flex align-items-center"),
-			html.I(html.Class("fa-solid fa-triangle-exclamation me-2")),
-			html.Div(gomponents.Text(
-				"Restart the application now. Paths/indexers/downloaders/lists/media groups take effect immediately, but the scheduler and worker pools that actually run searches and downloads are only set up at startup.",
-			)),
 		),
 		html.Ul(
 			html.Li(gomponents.Text(fmt.Sprintf("%d path(s) configured", len(paths)))),

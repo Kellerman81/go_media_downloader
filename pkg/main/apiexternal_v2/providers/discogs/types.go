@@ -650,22 +650,30 @@ func convertMasterToDetails(master *discogsMasterResponse) *apiexternal_v2.Relea
 	// Tracklist
 	if len(master.Tracklist) > 0 {
 		tracks := make([]apiexternal_v2.Track, 0, len(master.Tracklist))
-		for seq := range master.Tracklist {
-			disc, trackNum := parseDiscTrack(master.Tracklist[seq].Position)
+		seq := 0
+		for i := range master.Tracklist {
+			t := &master.Tracklist[i]
+			if t.Type != "track" && t.Type != "" {
+				continue
+			}
+
+			seq++
+
+			disc, trackNum := parseDiscTrack(t.Position)
 			if disc == 0 {
 				disc = 1
 			}
 
 			if trackNum == 0 {
-				trackNum = seq + 1
+				trackNum = seq
 			}
 
 			track := apiexternal_v2.Track{
-				Title:       master.Tracklist[seq].Title,
-				Position:    seq + 1,
+				Title:       t.Title,
+				Position:    seq,
 				TrackNumber: trackNum,
 				DiscNumber:  disc,
-				Duration:    parseDuration(master.Tracklist[seq].Duration),
+				Duration:    parseDuration(t.Duration),
 			}
 
 			tracks = append(tracks, track)
@@ -753,46 +761,69 @@ func convertLabelReleasesToResults(
 // Helper Functions
 //
 
-// parseDiscogsDate parses Discogs date format (YYYY-MM-DD or variations).
+// parseDiscogsDate parses Discogs dates. Discogs pads unknown parts with
+// zeros ("1999-00-00", "1999-05-00"); those are treated as year-only /
+// year-month.
 func parseDiscogsDate(dateStr string) time.Time {
+	dateStr = strings.TrimSpace(dateStr)
 	if dateStr == "" {
 		return time.Time{}
 	}
 
-	layouts := []string{
-		"2006-01-02",
-		"2006-01",
-		"2006",
+	parts := strings.Split(dateStr, "-")
+	if len(parts) > 3 {
+		return time.Time{}
 	}
 
-	for i := range layouts {
-		if t, err := time.Parse(layouts[i], dateStr); err == nil {
-			return t
+	nums := [3]int{0, 1, 1}
+	for i := range parts {
+		n, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return time.Time{}
 		}
+
+		if i > 0 && n == 0 {
+			break
+		}
+
+		nums[i] = n
 	}
 
-	return time.Time{}
+	if nums[0] <= 0 || nums[1] > 12 || nums[2] > 31 {
+		return time.Time{}
+	}
+
+	t := time.Date(nums[0], time.Month(nums[1]), nums[2], 0, 0, 0, 0, time.UTC)
+	if t.Day() != nums[2] {
+		return time.Time{}
+	}
+
+	return t
 }
 
-// parseDuration parses Discogs duration format (M:SS or MM:SS).
+// parseDuration parses Discogs duration format (M:SS, MM:SS or H:MM:SS).
 func parseDuration(durStr string) time.Duration {
+	durStr = strings.TrimSpace(durStr)
 	if durStr == "" {
 		return 0
 	}
 
 	parts := strings.Split(durStr, ":")
-	if len(parts) != 2 {
+	if len(parts) < 2 || len(parts) > 3 {
 		return 0
 	}
 
-	minutes, err1 := strconv.Atoi(parts[0])
+	var total time.Duration
+	for i := range parts {
+		n, err := strconv.Atoi(parts[i])
+		if err != nil || n < 0 {
+			return 0
+		}
 
-	seconds, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return 0
+		total = total*60 + time.Duration(n)
 	}
 
-	return time.Duration(minutes)*time.Minute + time.Duration(seconds)*time.Second
+	return total * time.Second
 }
 
 // parseVinylSidePosition parses a vinyl-style position string ("A1", "A-1",

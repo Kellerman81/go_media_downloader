@@ -3,6 +3,8 @@ package syncops
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -10,59 +12,21 @@ import (
 
 func TestSyncOpsManagerInit(t *testing.T) {
 	// Reset global manager for test
-	manager = nil
+	manager.Store(nil)
 	initOnce = sync.Once{}
 
 	InitSyncOps()
 
-	if manager == nil {
+	if manager.Load() == nil {
 		t.Fatal("Manager should be initialized")
 	}
 
-	if !manager.writerActive.Load() {
+	if !manager.Load().writerActive.Load() {
 		t.Fatal("Writer should be active")
 	}
 
 	// Cleanup
 	Shutdown()
-}
-
-func TestSyncMapOperations(t *testing.T) {
-	// Initialize syncops manager
-	InitSyncOps()
-	defer Shutdown()
-
-	// Create test SyncMaps
-	stringMap := NewSyncMap[[]string](10)
-
-	// Register the maps
-	RegisterSyncMap(MapTypeString, stringMap)
-
-	// Test SyncMap Add operation
-	testStrings := []string{"test1", "test2", "test3"}
-	QueueSyncMapAdd(
-		MapTypeString,
-		"testkey",
-		testStrings,
-		time.Now().Unix()+3600,
-		false,
-		time.Now().Unix(),
-	)
-
-	// Test UpdateVal operation
-	newStrings := []string{"updated1", "updated2"}
-	QueueSyncMapUpdateVal(MapTypeString, "testkey", newStrings)
-
-	// Test UpdateExpire operation
-	newExpire := time.Now().Unix() + 7200
-	QueueSyncMapUpdateExpire(MapTypeString, "testkey", newExpire)
-
-	// Test UpdateLastscan operation
-	newLastscan := time.Now().Unix()
-	QueueSyncMapUpdateLastscan(MapTypeString, "testkey", newLastscan)
-
-	// Test Delete operation
-	QueueSyncMapDelete(MapTypeString, "testkey")
 }
 
 func TestWorkerMapOperations(t *testing.T) {
@@ -133,7 +97,7 @@ func TestWorkerMapOperations(t *testing.T) {
 // MapType replaces the first (the warning itself is a log side-effect).
 func TestRegisterSyncMapOverwriteWarns(t *testing.T) {
 	initOnce = sync.Once{}
-	manager = nil
+	manager.Store(nil)
 	InitSyncOps()
 	defer Shutdown()
 
@@ -159,7 +123,7 @@ func TestRegisterSyncMapOverwriteWarns(t *testing.T) {
 // instead of silently succeeding.
 func TestQueueOperationReturnsFailure(t *testing.T) {
 	initOnce = sync.Once{}
-	manager = nil
+	manager.Store(nil)
 	InitSyncOps()
 	defer Shutdown()
 
@@ -185,34 +149,12 @@ func TestQueueOperationReturnsFailure(t *testing.T) {
 	}
 }
 
-// TestAddIfAbsent verifies the atomic check-then-add semantics importfeed relies on.
-func TestAddIfAbsent(t *testing.T) {
-	sm := NewSyncMap[struct{}](10)
-
-	if !sm.AddIfAbsent("job", struct{}{}, 0) {
-		t.Fatal("first AddIfAbsent should win")
-	}
-	if sm.AddIfAbsent("job", struct{}{}, 0) {
-		t.Fatal("second AddIfAbsent should lose while entry is live")
-	}
-
-	// An expired entry can be taken over.
-	sm.Delete("job")
-	expired := time.Now().Add(-time.Hour).UnixNano()
-	if !sm.AddIfAbsent("job2", struct{}{}, expired) {
-		t.Fatal("AddIfAbsent into empty map should win")
-	}
-	if !sm.AddIfAbsent("job2", struct{}{}, 0) {
-		t.Fatal("AddIfAbsent should take over an expired entry")
-	}
-}
-
 // TestShutdownUnderLoad spams operations from many goroutines while Shutdown is
 // called concurrently. It must not panic (no send on closed channel) and every
 // caller must return rather than block forever.
 func TestShutdownUnderLoad(t *testing.T) {
 	initOnce = sync.Once{}
-	manager = nil
+	manager.Store(nil)
 	InitSyncOps()
 
 	sm := NewSyncMap[[]string](100)
@@ -324,7 +266,7 @@ func TestQueueFullScenario(t *testing.T) {
 
 func TestRegisterSyncMapTypes(t *testing.T) {
 	// Reset global manager for test
-	manager = nil
+	manager.Store(nil)
 	initOnce = sync.Once{}
 
 	// Initialize syncops manager
@@ -343,8 +285,8 @@ func TestRegisterSyncMapTypes(t *testing.T) {
 	RegisterSyncMap(MapTypeTwoInt, twoIntMap)
 
 	// Test that all maps are registered
-	if len(manager.syncMaps) != 4 {
-		t.Fatalf("Expected 4 registered maps, got %d", len(manager.syncMaps))
+	if len(manager.Load().syncMaps) != 4 {
+		t.Fatalf("Expected 4 registered maps, got %d", len(manager.Load().syncMaps))
 	}
 
 	// Test operations on each type
@@ -388,7 +330,7 @@ func TestShutdownAndReinitialization(t *testing.T) {
 	// Initialize syncops manager
 	InitSyncOps()
 
-	if manager == nil {
+	if manager.Load() == nil {
 		t.Fatal("Manager should be initialized")
 	}
 
@@ -396,7 +338,7 @@ func TestShutdownAndReinitialization(t *testing.T) {
 	Shutdown()
 
 	// Manager should still exist but not be active
-	if manager.writerActive.Load() {
+	if manager.Load().writerActive.Load() {
 		t.Fatal("Writer should not be active after shutdown")
 	}
 
@@ -404,18 +346,18 @@ func TestShutdownAndReinitialization(t *testing.T) {
 	InitSyncOps()
 
 	// Should still use the same manager instance but it should be inactive
-	if manager.writerActive.Load() {
+	if manager.Load().writerActive.Load() {
 		t.Fatal("Writer should not be active after sync.Once prevents reinitialization")
 	}
 
 	// Reset for proper reinitialization
-	manager = nil
+	manager.Store(nil)
 	initOnce = sync.Once{}
 
 	InitSyncOps()
 	defer Shutdown()
 
-	if !manager.writerActive.Load() {
+	if !manager.Load().writerActive.Load() {
 		t.Fatal("Writer should be active after proper reinitialization")
 	}
 }
@@ -908,146 +850,220 @@ func TestConcurrentAddDeleteVerification(t *testing.T) {
 	})
 }
 
-// TestSyncOpsDebug tests basic syncops functionality
-func TestSyncOpsDebug(t *testing.T) {
+func freshManager(t *testing.T) {
+	t.Helper()
+
 	initOnce = sync.Once{}
+	manager.Store(nil)
 	InitSyncOps()
-	defer Shutdown()
+	t.Cleanup(Shutdown)
+}
 
-	// Test 1: Test SyncMap directly
-	t.Run("DirectSyncMapTest", func(t *testing.T) {
-		stringMap := NewSyncMap[[]string](10)
+func TestSliceAppendCreatesMissingKey(t *testing.T) {
+	sm := NewSyncMap[[]DbstaticOneStringTwoInt](1)
 
-		// Test direct Add (bypassing queue system)
-		testData := []string{"direct1", "direct2"}
-		stringMap.Add("direct_key", testData, time.Now().Unix()+3600, false, time.Now().Unix())
+	freshManager(t)
+	RegisterSyncMap(MapTypeTwoInt, sm)
 
-		// Verify it exists
-		if !stringMap.Check("direct_key") {
-			t.Error("Direct Add failed - key should exist")
+	v := DbstaticOneStringTwoInt{Str: "a", Num1: 1, Num2: 2}
+	if !QueueSliceAppend(MapTypeTwoInt, "k", v) {
+		t.Fatal("QueueSliceAppend failed")
+	}
+
+	QueueSliceAppend(MapTypeTwoInt, "k", v) // duplicate is ignored
+
+	if got := sm.GetVal("k"); len(got) != 1 || got[0] != v {
+		t.Fatalf("expected the key to be created with one element, got %v", got)
+	}
+}
+
+func TestQueueOpsReportFailure(t *testing.T) {
+	freshManager(t)
+
+	if QueueSyncMapAdd(MapType("unregistered"), "k", []string{}, 0, false, 0) {
+		t.Fatal("op on an unregistered MapType reported success")
+	}
+
+	Shutdown()
+
+	if QueueFunc(func() {}) {
+		t.Fatal("op after Shutdown reported success")
+	}
+}
+
+func TestQueueAtomicStringOps(t *testing.T) {
+	freshManager(t)
+
+	sm := NewSyncMap[[]string](4)
+	RegisterSyncMap(MapTypeString, sm)
+
+	if !QueueAtomicAppendString(MapTypeString, "k", "a") || !QueueAtomicAppendString(MapTypeString, "k", "b") ||
+		!QueueAtomicAppendString(MapTypeString, "k", "a") {
+		t.Fatal("append reported failure")
+	}
+
+	if got := sm.GetVal("k"); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("after append = %v, want [a b] (duplicates skipped)", got)
+	}
+
+	if !QueueAtomicRemoveString(MapTypeString, "k", "a") || !QueueAtomicRemoveString(MapTypeString, "k", "zz") ||
+		!QueueAtomicRemoveString(MapTypeString, "missing", "a") {
+		t.Fatal("remove reported failure")
+	}
+
+	if got := sm.GetVal("k"); !slices.Equal(got, []string{"b"}) {
+		t.Fatalf("after remove = %v, want [b]", got)
+	}
+
+	// Atomic string ops only apply to the string map type.
+	RegisterSyncMap(MapTypeTwoString, NewSyncMap[[]DbstaticTwoStringOneInt](1))
+
+	if QueueAtomicAppendString(MapTypeTwoString, "k", "a") || QueueAtomicRemoveString(MapTypeTwoString, "k", "a") {
+		t.Error("atomic string op on a non-string map reported success")
+	}
+}
+
+// TestQueueAtomicStringOpsConcurrent runs appends and removes from many
+// goroutines while readers copy the slice. Run with -race.
+func TestQueueAtomicStringOpsConcurrent(t *testing.T) {
+	freshManager(t)
+
+	sm := NewSyncMap[[]string](1)
+	RegisterSyncMap(MapTypeString, sm)
+
+	var wg sync.WaitGroup
+	for w := range 8 {
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+
+			for i := range 50 {
+				v := strconv.Itoa(w*100 + i)
+				QueueAtomicAppendString(MapTypeString, "k", v)
+
+				if i%2 == 1 {
+					QueueAtomicRemoveString(MapTypeString, "k", v)
+				}
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			for range 50 {
+				sm.ReadInPlace("k", func(v []string) { _ = len(v) })
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if got := len(sm.GetVal("k")); got != 8*25 {
+		t.Fatalf("len = %d, want %d", got, 8*25)
+	}
+}
+
+func TestQueueDeleteFuncsAllMapTypes(t *testing.T) {
+	freshManager(t)
+
+	two := NewSyncMap[[]DbstaticTwoStringOneInt](1)
+	three := NewSyncMap[[]DbstaticThreeStringTwoInt](1)
+	twoInt := NewSyncMap[[]DbstaticOneStringTwoInt](1)
+
+	RegisterSyncMap(MapTypeTwoString, two)
+	RegisterSyncMap(MapTypeThreeString, three)
+	RegisterSyncMap(MapTypeTwoInt, twoInt)
+
+	two.Add("k", nil, 1, false, 0)
+	three.Add("k", nil, 1, false, 0)
+	twoInt.Add("k", nil, 1, false, 0)
+
+	all := func(int64) bool { return true }
+	for _, mt := range []MapType{MapTypeTwoString, MapTypeThreeString, MapTypeTwoInt} {
+		if !QueueSyncMapDeleteFuncExpires(mt, all) {
+			t.Errorf("%s: DeleteFuncExpires failed", mt)
 		}
+	}
 
-		// Verify content
-		retrieved := stringMap.GetVal("direct_key")
-		if len(retrieved) != 2 || retrieved[0] != "direct1" || retrieved[1] != "direct2" {
-			t.Errorf("Direct Add content mismatch: expected [direct1, direct2], got %v", retrieved)
+	if two.Check("k") || three.Check("k") || twoInt.Check("k") {
+		t.Error("entries survived DeleteFuncExpires")
+	}
+
+	two.Add("k", []DbstaticTwoStringOneInt{{Str1: "a"}}, 0, false, 0)
+
+	if !QueueSyncMapDeleteFunc(MapTypeTwoString, func(v []DbstaticTwoStringOneInt) bool { return len(v) == 1 }) ||
+		two.Check("k") {
+		t.Error("typed DeleteFunc on twostring map failed")
+	}
+}
+
+func TestQueueSyncMapCheckExpires(t *testing.T) {
+	freshManager(t)
+
+	sm := NewSyncMap[[]string](4)
+	RegisterSyncMap(MapTypeString, sm)
+
+	sm.Add("forever", nil, 0, false, 0)
+	sm.Add("fresh", nil, time.Now().Add(time.Hour).UnixNano(), false, 0)
+	sm.Add("stale", nil, time.Now().Add(-time.Hour).UnixNano(), false, 0)
+
+	cases := []struct {
+		key    string
+		extend bool
+		want   bool
+	}{
+		{"forever", false, false},
+		{"fresh", false, false},
+		{"missing", false, true},
+		{"stale", true, true},
+		// The previous call extended it by 2 hours.
+		{"stale", false, false},
+	}
+
+	for _, c := range cases {
+		if got := QueueSyncMapCheckExpires(MapTypeString, c.key, c.extend, 2); got != c.want {
+			t.Errorf("CheckExpires(%q, %t) = %t, want %t", c.key, c.extend, got, c.want)
 		}
+	}
 
-		// Test direct Delete
-		stringMap.Delete("direct_key")
-		if stringMap.Check("direct_key") {
-			t.Error("Direct Delete failed - key should not exist")
-		}
-	})
+	// Unsupported map types report "not expired" so callers keep their data.
+	RegisterSyncMap(MapTypeStructEmpty, NewSyncMap[struct{}](1))
 
-	// Test 2: Test SyncMapUint directly
-	t.Run("DirectSyncMapUintTest", func(t *testing.T) {
-		scheduleMap := NewSyncMapUint[JobSchedule](10)
+	if QueueSyncMapCheckExpires(MapTypeStructEmpty, "k", false, 1) {
+		t.Error("unsupported map type reported expired")
+	}
+}
 
-		// Test direct Add
-		testSchedule := JobSchedule{
-			ID:      100,
-			JobName: "direct_test",
-		}
-		scheduleMap.Add(100, testSchedule)
+func TestQueueWorkerMapDeleteQueue(t *testing.T) {
+	freshManager(t)
 
-		// Verify it exists
-		if !scheduleMap.Check(100) {
-			t.Error("Direct SyncMapUint Add failed - key should exist")
-		}
+	jobs := NewSyncMapUint[Job](4)
+	RegisterSyncMap(MapTypeQueue, jobs)
 
-		// Verify content
-		retrieved := scheduleMap.GetVal(100)
-		if retrieved.ID != 100 || retrieved.JobName != "direct_test" {
-			t.Errorf(
-				"Direct SyncMapUint content mismatch: expected {100, direct_test}, got {%d, %s}",
-				retrieved.ID,
-				retrieved.JobName,
-			)
-		}
+	jobs.Add(1, Job{ID: 1, Queue: "Data"})
+	jobs.Add(2, Job{ID: 2, Queue: "Data", Started: time.Now()})
+	jobs.Add(3, Job{ID: 3, Queue: "Search", Started: time.Now()})
 
-		// Test direct Delete
-		scheduleMap.Delete(100)
-		if scheduleMap.Check(100) {
-			t.Error("Direct SyncMapUint Delete failed - key should not exist")
-		}
-	})
+	if !QueueWorkerMapDeleteQueue(MapTypeQueue, "Data", true) {
+		t.Fatal("DeleteQueue (started only) failed")
+	}
 
-	// Test 3: Test queued operations with registration
-	t.Run("QueuedOperationsTest", func(t *testing.T) {
-		stringMap := NewSyncMap[[]string](10)
-		RegisterSyncMap(MapTypeString, stringMap)
+	if !jobs.Check(1) || jobs.Check(2) || !jobs.Check(3) {
+		t.Fatalf("started-only delete left %v", jobs.GetMap())
+	}
 
-		testData := []string{"queued1", "queued2"}
+	if !QueueWorkerMapDeleteQueue(MapTypeQueue, "Data", false) {
+		t.Fatal("DeleteQueue (all) failed")
+	}
 
-		// Queue Add operation
-		QueueSyncMapAdd(
-			MapTypeString,
-			"queued_key",
-			testData,
-			time.Now().Unix()+3600,
-			false,
-			time.Now().Unix(),
-		)
+	if jobs.Check(1) || !jobs.Check(3) {
+		t.Fatalf("queue delete left %v", jobs.GetMap())
+	}
 
-		// Since operations are synchronous, this should be immediate
-		if !stringMap.Check("queued_key") {
-			t.Error("Queued Add failed - key should exist immediately after synchronous operation")
-		}
+	RegisterSyncMap(MapTypeSchedule, NewSyncMapUint[JobSchedule](1))
 
-		// Verify content
-		retrieved := stringMap.GetVal("queued_key")
-		if len(retrieved) != 2 || retrieved[0] != "queued1" || retrieved[1] != "queued2" {
-			t.Errorf("Queued Add content mismatch: expected [queued1, queued2], got %v", retrieved)
-		}
-
-		// Queue Delete operation
-		QueueSyncMapDelete(MapTypeString, "queued_key")
-
-		// Verify it's deleted
-		if stringMap.Check("queued_key") {
-			t.Error("Queued Delete failed - key should not exist after synchronous operation")
-		}
-	})
-
-	// Test 4: Test worker map operations
-	t.Run("QueuedWorkerMapTest", func(t *testing.T) {
-		scheduleMap := NewSyncMapUint[JobSchedule](10)
-		RegisterSyncMap(MapTypeSchedule, scheduleMap)
-
-		testSchedule := JobSchedule{
-			ID:      200,
-			JobName: "queued_test",
-		}
-
-		// Queue Add operation
-		QueueWorkerMapAdd(MapTypeSchedule, 200, testSchedule)
-
-		// Since operations are synchronous, this should be immediate
-		if !scheduleMap.Check(200) {
-			t.Error(
-				"Queued Worker Add failed - key should exist immediately after synchronous operation",
-			)
-		}
-
-		// Verify content
-		retrieved := scheduleMap.GetVal(200)
-		if retrieved.ID != 200 || retrieved.JobName != "queued_test" {
-			t.Errorf(
-				"Queued Worker Add content mismatch: expected {200, queued_test}, got {%d, %s}",
-				retrieved.ID,
-				retrieved.JobName,
-			)
-		}
-
-		// Queue Delete operation
-		QueueWorkerMapDelete(MapTypeSchedule, 200)
-
-		// Verify it's deleted
-		if scheduleMap.Check(200) {
-			t.Error(
-				"Queued Worker Delete failed - key should not exist after synchronous operation",
-			)
-		}
-	})
+	if QueueWorkerMapDeleteQueue(MapTypeSchedule, "Data", false) {
+		t.Error("DeleteQueue on the schedule map reported success")
+	}
 }

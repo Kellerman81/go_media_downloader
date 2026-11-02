@@ -52,8 +52,11 @@ type JobSchedule struct {
 	CancelFunc     context.CancelFunc `json:"-"`
 	CronSchedule   cron.Schedule
 	JobName        string
+	JobFunc        string // job function name, looked up per Cfgpstr
+	Cfgpstr        string
 	ScheduleTyp    string
 	ScheduleString string
+	Queue          string // worker queue; selects the cron instance on removal
 	LastRun        time.Time
 	NextRun        time.Time
 	Interval       time.Duration
@@ -61,6 +64,7 @@ type JobSchedule struct {
 	JobID          uint32
 	ID             uint32
 	IsRunning      bool
+	Paused         bool // stopped by the user; fires but submits no jobs
 }
 
 // OpType defines operation types for the unified single-writer system.
@@ -133,6 +137,11 @@ type SyncOperation struct {
 	IsStarted bool   // For queue-based deletion
 
 	Fn func() // For OpFunc operations
+
+	// ExpiredOut receives the CheckExpires result. Written by the writer
+	// goroutine before it signals ResultCh, so the caller may read it after a
+	// successful QueueOperation.
+	ExpiredOut *bool
 }
 
 // SyncOpsManager manages all synchronized operations across the application.
@@ -148,9 +157,16 @@ type SyncOpsManager struct {
 }
 
 var (
-	// Global manager instance.
-	manager  *SyncOpsManager
+	// Global manager instance. Atomic because InitSyncOps/RegisterSyncMap/
+	// Shutdown and every QueueOperation read or replace it from different
+	// goroutines.
+	manager  atomic.Pointer[SyncOpsManager]
 	initOnce sync.Once
+
+	// Failure kinds that are logged only once (they would otherwise repeat for
+	// every queued operation while the condition persists).
+	loggedNoManager      atomic.Bool
+	loggedWriterInactive atomic.Bool
 
 	// resultChPool reuses the per-call result channels. The channels have a
 	// buffer of 1 so the writer's result send can never block, and they are
@@ -168,13 +184,14 @@ func InitSyncOps() {
 			context.Background(),
 		)
 
-		manager = &SyncOpsManager{
+		m := &SyncOpsManager{
 			opQueue:  make(chan SyncOperation, 1024),
 			ctx:      ctx,
 			cancel:   cancel,
 			syncMaps: make(map[MapType]any),
 		}
-		manager.startWriter()
+		m.startWriter()
+		manager.Store(m)
 	})
 }
 
@@ -187,14 +204,19 @@ func InitSyncOps() {
 // MapType silently stop reaching the old map. That is almost never intended (each
 // MapType should have exactly one owner), so an overwrite is logged as a warning.
 func RegisterSyncMap(mapType MapType, syncMap any) {
-	if manager == nil {
+	if manager.Load() == nil {
 		InitSyncOps()
 	}
 
-	manager.syncMapsMu.Lock()
-	defer manager.syncMapsMu.Unlock()
+	m := manager.Load()
+	if m == nil {
+		return
+	}
 
-	if existing, ok := manager.syncMaps[mapType]; ok && existing != syncMap {
+	m.syncMapsMu.Lock()
+	defer m.syncMapsMu.Unlock()
+
+	if existing, ok := m.syncMaps[mapType]; ok && existing != syncMap {
 		logger.Logtype("warn", 0).
 			Str("maptype", string(mapType)).
 			Str("existing", reflect.TypeOf(existing).String()).
@@ -202,16 +224,36 @@ func RegisterSyncMap(mapType MapType, syncMap any) {
 			Msg("RegisterSyncMap overwrote an existing registration - queued operations now target the new map")
 	}
 
-	manager.syncMaps[mapType] = syncMap
+	m.syncMaps[mapType] = syncMap
 }
 
 // QueueOperation submits a synchronization operation to the single-writer goroutine and
 // blocks until it completes. Returns true if the operation was processed successfully,
 // false if it failed (map not registered, type mismatch) or the manager is shut down.
-// Failures are also logged by the writer, so callers may ignore the return value.
+// Failures are logged (map/value mismatches by the writer, a missing or stopped
+// manager once per process here), so callers only need the return value when
+// they can act on it.
 func QueueOperation(op SyncOperation) bool {
-	m := manager
-	if m == nil || !m.writerActive.Load() {
+	m := manager.Load()
+	if m == nil {
+		if loggedNoManager.CompareAndSwap(false, true) {
+			logger.Logtype("error", 1).
+				Str("op", string(op.OpType)).
+				Str("maptype", string(op.MapType)).
+				Msg("syncops: operation dropped - manager not initialized (InitSyncOps not called yet); further drops are not logged")
+		}
+
+		return false
+	}
+
+	if !m.writerActive.Load() {
+		if loggedWriterInactive.CompareAndSwap(false, true) {
+			logger.Logtype("error", 1).
+				Str("op", string(op.OpType)).
+				Str("maptype", string(op.MapType)).
+				Msg("syncops: operation dropped - writer is not active (shut down); further drops are not logged")
+		}
+
 		return false
 	}
 
@@ -249,6 +291,9 @@ func QueueOperation(op SyncOperation) bool {
 	}
 }
 
+// The Queue* wrappers below return QueueOperation's result: false means the
+// operation was dropped (see QueueOperation for the logged failure kinds).
+
 // QueueSyncMapAdd queues an Add operation for a SyncMap with full metadata.
 // Stores a key-value pair along with expiration time, IMDB flag, and last scan timestamp.
 // The operation is processed atomically by the single-writer goroutine to ensure thread safety.
@@ -259,8 +304,8 @@ func QueueSyncMapAdd(
 	expires int64,
 	imdb bool,
 	lastscan int64,
-) {
-	QueueOperation(SyncOperation{
+) bool {
+	return QueueOperation(SyncOperation{
 		OpType:   OpSyncMapAdd,
 		MapType:  mapType,
 		Key:      key,
@@ -274,8 +319,8 @@ func QueueSyncMapAdd(
 // QueueSyncMapUpdateVal queues a value update operation for an existing SyncMap entry.
 // Modifies only the value while preserving expiration, IMDB flag, and last scan metadata.
 // The operation is processed atomically by the single-writer goroutine to ensure thread safety.
-func QueueSyncMapUpdateVal(mapType MapType, key string, value any) {
-	QueueOperation(SyncOperation{
+func QueueSyncMapUpdateVal(mapType MapType, key string, value any) bool {
+	return QueueOperation(SyncOperation{
 		OpType:  OpSyncMapUpdateVal,
 		MapType: mapType,
 		Key:     key,
@@ -286,8 +331,8 @@ func QueueSyncMapUpdateVal(mapType MapType, key string, value any) {
 // QueueSyncMapUpdateExpire queues an expiration time update for an existing SyncMap entry.
 // Modifies only the expiration timestamp while preserving the value, IMDB flag, and last scan data.
 // Pass 0 to disable expiration or a Unix timestamp for specific expiry time.
-func QueueSyncMapUpdateExpire(mapType MapType, key string, expires int64) {
-	QueueOperation(SyncOperation{
+func QueueSyncMapUpdateExpire(mapType MapType, key string, expires int64) bool {
+	return QueueOperation(SyncOperation{
 		OpType:  OpSyncMapUpdateExpire,
 		MapType: mapType,
 		Key:     key,
@@ -298,8 +343,8 @@ func QueueSyncMapUpdateExpire(mapType MapType, key string, expires int64) {
 // QueueSyncMapUpdateLastscan queues a last scan timestamp update for tracking purposes.
 // Updates when a key was last processed or accessed for maintenance operations.
 // Preserves the value, expiration time, and IMDB flag while updating scan metadata.
-func QueueSyncMapUpdateLastscan(mapType MapType, key string, lastscan int64) {
-	QueueOperation(SyncOperation{
+func QueueSyncMapUpdateLastscan(mapType MapType, key string, lastscan int64) bool {
+	return QueueOperation(SyncOperation{
 		OpType:   OpSyncMapUpdateLscan,
 		MapType:  mapType,
 		Key:      key,
@@ -310,8 +355,8 @@ func QueueSyncMapUpdateLastscan(mapType MapType, key string, lastscan int64) {
 // QueueSyncMapDelete queues a complete removal operation for a SyncMap entry.
 // Removes the key and all associated metadata including value, expiration, IMDB flag, and last scan time.
 // The operation is processed atomically by the single-writer goroutine to ensure thread safety.
-func QueueSyncMapDelete(mapType MapType, key string) {
-	QueueOperation(SyncOperation{
+func QueueSyncMapDelete(mapType MapType, key string) bool {
+	return QueueOperation(SyncOperation{
 		OpType:  OpSyncMapDelete,
 		MapType: mapType,
 		Key:     key,
@@ -321,8 +366,8 @@ func QueueSyncMapDelete(mapType MapType, key string) {
 // QueueWorkerMapAdd queues an Add operation for worker pool SyncMapUint instances.
 // Used for managing jobs and schedules with uint32 keys. Supports JobSchedule and Job types
 // for worker pool management. The operation is processed atomically by the single-writer goroutine.
-func QueueWorkerMapAdd(mapType MapType, key uint32, value any) {
-	QueueOperation(SyncOperation{
+func QueueWorkerMapAdd(mapType MapType, key uint32, value any) bool {
+	return QueueOperation(SyncOperation{
 		OpType:    OpWorkerMapAdd,
 		MapType:   mapType,
 		KeyUint32: key,
@@ -333,8 +378,8 @@ func QueueWorkerMapAdd(mapType MapType, key uint32, value any) {
 // QueueWorkerMapUpdate queues a value update operation for worker pool SyncMapUint instances.
 // Modifies existing job or schedule entries identified by uint32 keys. Used for updating
 // job status, schedule information, or other worker pool related data atomically.
-func QueueWorkerMapUpdate(mapType MapType, key uint32, value any) {
-	QueueOperation(SyncOperation{
+func QueueWorkerMapUpdate(mapType MapType, key uint32, value any) bool {
+	return QueueOperation(SyncOperation{
 		OpType:    OpWorkerMapUpdate,
 		MapType:   mapType,
 		KeyUint32: key,
@@ -345,8 +390,8 @@ func QueueWorkerMapUpdate(mapType MapType, key uint32, value any) {
 // QueueWorkerMapDelete queues a removal operation for worker pool SyncMapUint entries.
 // Removes jobs or schedules identified by uint32 keys from worker pool management maps.
 // Used for cleanup when jobs complete or schedules are cancelled.
-func QueueWorkerMapDelete(mapType MapType, key uint32) {
-	QueueOperation(SyncOperation{
+func QueueWorkerMapDelete(mapType MapType, key uint32) bool {
+	return QueueOperation(SyncOperation{
 		OpType:    OpWorkerMapDelete,
 		MapType:   mapType,
 		KeyUint32: key,
@@ -356,8 +401,8 @@ func QueueWorkerMapDelete(mapType MapType, key uint32) {
 // QueueWorkerMapDeleteQueue queues conditional deletion of jobs from worker queues.
 // Removes all jobs matching the specified queue name, with optional filtering by started status.
 // Used for bulk cleanup operations when clearing queues or removing specific job categories.
-func QueueWorkerMapDeleteQueue(mapType MapType, queue string, isStarted bool) {
-	QueueOperation(SyncOperation{
+func QueueWorkerMapDeleteQueue(mapType MapType, queue string, isStarted bool) bool {
+	return QueueOperation(SyncOperation{
 		OpType:    OpWorkerMapDeleteQueue,
 		MapType:   mapType,
 		Queue:     queue,
@@ -368,8 +413,8 @@ func QueueWorkerMapDeleteQueue(mapType MapType, queue string, isStarted bool) {
 // QueueSliceAppend queues an atomic append operation for slice-based SyncMap values.
 // Safely adds elements to slices stored in SyncMaps while checking for duplicates.
 // Supports string slices and database static type slices with type-safe operations.
-func QueueSliceAppend(mapType MapType, key string, value any) {
-	QueueOperation(SyncOperation{
+func QueueSliceAppend(mapType MapType, key string, value any) bool {
+	return QueueOperation(SyncOperation{
 		OpType:  OpSliceAppend,
 		MapType: mapType,
 		Key:     key,
@@ -380,22 +425,31 @@ func QueueSliceAppend(mapType MapType, key string, value any) {
 // QueueSyncMapCheckExpires queues an expiration check operation for SyncMap entries.
 // Verifies if a key has expired and optionally extends the expiration time by the specified
 // duration in hours. Used for cache management and automatic cleanup of stale entries.
-func QueueSyncMapCheckExpires(mapType MapType, key string, extend bool, duration int) {
-	QueueOperation(SyncOperation{
-		OpType:   OpSyncMapCheckExpires,
-		MapType:  mapType,
-		Key:      key,
-		Extend:   extend,
-		Duration: duration,
-	})
+// Returns the SyncMap.CheckExpires result: true when the key is expired or missing.
+// When the operation itself fails (manager down, map not registered) the key is
+// reported as not expired, so callers keep serving what they already have.
+func QueueSyncMapCheckExpires(mapType MapType, key string, extend bool, duration int) bool {
+	expired := new(bool)
+	if !QueueOperation(SyncOperation{
+		OpType:     OpSyncMapCheckExpires,
+		MapType:    mapType,
+		Key:        key,
+		Extend:     extend,
+		Duration:   duration,
+		ExpiredOut: expired,
+	}) {
+		return false
+	}
+
+	return *expired
 }
 
 // QueueSyncMapDeleteFunc queues a conditional deletion operation using a custom filter function.
 // Removes all entries where the filter function returns true when applied to the value.
 // The filter function must not call QueueOperation or RegisterSyncMap - it runs inside
 // the single writer goroutine, which would deadlock waiting on itself.
-func QueueSyncMapDeleteFunc(mapType MapType, filterFunc any) {
-	QueueOperation(SyncOperation{
+func QueueSyncMapDeleteFunc(mapType MapType, filterFunc any) bool {
+	return QueueOperation(SyncOperation{
 		OpType:     OpSyncMapDeleteFunc,
 		MapType:    mapType,
 		FilterFunc: filterFunc,
@@ -406,8 +460,8 @@ func QueueSyncMapDeleteFunc(mapType MapType, filterFunc any) {
 // Removes entries where the filter function returns true when applied to the expiration timestamp.
 // The filter function must not call QueueOperation or RegisterSyncMap - it runs inside
 // the single writer goroutine, which would deadlock waiting on itself.
-func QueueSyncMapDeleteFuncExpires(mapType MapType, filterFunc any) {
-	QueueOperation(SyncOperation{
+func QueueSyncMapDeleteFuncExpires(mapType MapType, filterFunc any) bool {
+	return QueueOperation(SyncOperation{
 		OpType:     OpSyncMapDeleteFuncExpires,
 		MapType:    mapType,
 		FilterFunc: filterFunc,
@@ -417,8 +471,8 @@ func QueueSyncMapDeleteFuncExpires(mapType MapType, filterFunc any) {
 // QueueAtomicAppendString queues an atomic string append operation for string slice values.
 // Safely appends a string to a string slice stored in a SyncMap while checking for duplicates.
 // Pre-allocates extra capacity to reduce future allocations for better performance.
-func QueueAtomicAppendString(mapType MapType, key string, value string) {
-	QueueOperation(SyncOperation{
+func QueueAtomicAppendString(mapType MapType, key string, value string) bool {
+	return QueueOperation(SyncOperation{
 		OpType:  OpAtomicAppendString,
 		MapType: mapType,
 		Key:     key,
@@ -429,8 +483,8 @@ func QueueAtomicAppendString(mapType MapType, key string, value string) {
 // QueueAtomicRemoveString queues an atomic string removal operation for string slice values.
 // Safely removes a specific string from a string slice stored in a SyncMap.
 // Creates a new slice without the specified value, maintaining order of remaining elements.
-func QueueAtomicRemoveString(mapType MapType, key string, value string) {
-	QueueOperation(SyncOperation{
+func QueueAtomicRemoveString(mapType MapType, key string, value string) bool {
+	return QueueOperation(SyncOperation{
 		OpType:  OpAtomicRemoveString,
 		MapType: mapType,
 		Key:     key,
@@ -443,8 +497,8 @@ func QueueAtomicRemoveString(mapType MapType, key string, value string) {
 // index builds and concurrent slice appends.
 // fn must not call QueueOperation or RegisterSyncMap - it runs inside the single
 // writer goroutine, which would deadlock waiting on itself.
-func QueueFunc(fn func()) {
-	QueueOperation(SyncOperation{
+func QueueFunc(fn func()) bool {
+	return QueueOperation(SyncOperation{
 		OpType: OpFunc,
 		Fn:     fn,
 	})
@@ -456,7 +510,7 @@ func QueueFunc(fn func()) {
 // their waiting callers) before exiting. The operation channel is never closed,
 // so concurrent QueueOperation calls cannot panic. Safe to call multiple times.
 func Shutdown() {
-	m := manager
+	m := manager.Load()
 	if m == nil {
 		return
 	}
@@ -920,8 +974,8 @@ func processWorkerMapDeleteQueue(syncMapInterface any, op SyncOperation) bool {
 
 // sliceAppend asserts the map to SyncMap[[]T] and the value to element type T,
 // then appends the value to the slice for op.Key unless it is already present.
-// Keys without an existing entry are left untouched (matching historical behavior:
-// appends only extend slices that a full Add created first).
+// A missing key is created with a one-element slice and no expiry, consistent
+// with AtomicAppendToStringSlice.
 func sliceAppend[T comparable](syncMapInterface any, op SyncOperation) bool {
 	syncMap, ok := syncMapInterface.(*SyncMap[[]T])
 	if !ok {
@@ -933,14 +987,17 @@ func sliceAppend[T comparable](syncMapInterface any, op SyncOperation) bool {
 		return false
 	}
 
-	if syncMap.Check(op.Key) {
-		current := syncMap.GetVal(op.Key)
-		if slices.Contains(current, value) {
-			return true // Already exists
-		}
-
-		syncMap.UpdateVal(op.Key, append(current, value))
+	if !syncMap.Check(op.Key) {
+		syncMap.Add(op.Key, []T{value}, 0, false, 0)
+		return true
 	}
+
+	current := syncMap.GetVal(op.Key)
+	if slices.Contains(current, value) {
+		return true // Already exists
+	}
+
+	syncMap.UpdateVal(op.Key, append(current, value))
 
 	return true
 }

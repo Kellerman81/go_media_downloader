@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,10 +103,37 @@ func getSeriesConfigFiles() ([]string, error) {
 	return files, nil
 }
 
+// errInvalidSeriesConfigFile is returned for a series config file name that is
+// not a plain *.toml file name inside the config directory.
+var errInvalidSeriesConfigFile = errors.New("invalid series config file name")
+
+// seriesConfigPath resolves a user-supplied series config file name to a path
+// inside the config directory. Only bare "*.toml" names (no directories, not
+// the main config.toml) are accepted.
+func seriesConfigPath(filename string) (string, error) {
+	if filename == "" || filename != filepath.Base(filename) ||
+		strings.ContainsAny(filename, `/\`) ||
+		!strings.EqualFold(filepath.Ext(filename), ".toml") ||
+		strings.EqualFold(filename, "config.toml") {
+		return "", fmt.Errorf("%w: %q", errInvalidSeriesConfigFile, filename)
+	}
+
+	configDir := filepath.Clean(config.GetConfigDir())
+	filePath := filepath.Join(configDir, filename)
+
+	if filepath.Dir(filePath) != configDir {
+		return "", fmt.Errorf("%w: %q", errInvalidSeriesConfigFile, filename)
+	}
+
+	return filePath, nil
+}
+
 // loadSeriesConfigFile loads a MainSerieConfig from the specified file.
 func loadSeriesConfigFile(filename string) (*config.MainManualConfig, error) {
-	configDir := config.GetConfigDir()
-	filePath := filepath.Join(configDir, filename)
+	filePath, err := seriesConfigPath(filename)
+	if err != nil {
+		return nil, err
+	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -122,8 +150,10 @@ func loadSeriesConfigFile(filename string) (*config.MainManualConfig, error) {
 
 // saveSeriesConfigFile saves a MainSerieConfig to the specified file.
 func saveSeriesConfigFile(filename string, cfg *config.MainManualConfig) error {
-	configDir := config.GetConfigDir()
-	filePath := filepath.Join(configDir, filename)
+	filePath, err := seriesConfigPath(filename)
+	if err != nil {
+		return err
+	}
 
 	data, err := toml.Marshal(cfg)
 	if err != nil {
@@ -224,7 +254,7 @@ func renderFileOptions(files []string, selectedFile string) gomponents.Node {
 func renderSeriesConfigEditor(
 	filename string,
 	cfg *config.MainManualConfig,
-	_ string,
+	csrfToken string,
 ) gomponents.Node {
 	// Safety check for nil config
 	if cfg == nil {
@@ -277,7 +307,7 @@ func renderSeriesConfigEditor(
 
 					// Series list
 					gomponents.If(len(cfg.Config) > 0,
-						renderSeriesList(filename, cfg.Config),
+						renderSeriesList(filename, cfg.Config, csrfToken),
 					),
 				),
 			),
@@ -286,7 +316,11 @@ func renderSeriesConfigEditor(
 }
 
 // renderSeriesList renders the list of series configurations.
-func renderSeriesList(filename string, series []config.ManualConfig) gomponents.Node {
+func renderSeriesList(
+	filename string,
+	series []config.ManualConfig,
+	csrfToken string,
+) gomponents.Node {
 	return html.Div(
 		html.Class("table-responsive"),
 		html.Table(
@@ -302,14 +336,18 @@ func renderSeriesList(filename string, series []config.ManualConfig) gomponents.
 				),
 			),
 			html.TBody(
-				renderSeriesRows(filename, series),
+				renderSeriesRows(filename, series, csrfToken),
 			),
 		),
 	)
 }
 
 // renderSeriesRows renders table rows for each series.
-func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.Node {
+func renderSeriesRows(
+	filename string,
+	series []config.ManualConfig,
+	csrfToken string,
+) gomponents.Node {
 	rows := make([]gomponents.Node, 0, len(series))
 	for i, s := range series {
 		searchStatus := "Enabled"
@@ -335,20 +373,22 @@ func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.
 					),
 					html.I(html.Class("fa-solid fa-edit")),
 				),
-				html.A(
-					html.Class("btn btn-sm btn-danger"),
-					html.Href(
-						fmt.Sprintf(
-							"/api/admin/seriesconfig/delete?file=%s&index=%d",
-							url.QueryEscape(filename),
-							i,
+				html.Form(
+					html.Class("d-inline"),
+					html.Method("POST"),
+					html.Action("/api/admin/seriesconfig/delete"),
+					html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+					html.Input(html.Type("hidden"), html.Name("file"), html.Value(filename)),
+					html.Input(html.Type("hidden"), html.Name("index"), html.Value(strconv.Itoa(i))),
+					html.Button(
+						html.Type("button"),
+						html.Class("btn btn-sm btn-danger"),
+						gomponents.Attr(
+							"onclick",
+							"var f=this.form; confirmAction('Delete series configuration', 'Delete this series configuration? This cannot be undone.', function(){ f.submit(); });",
 						),
+						html.I(html.Class("fa-solid fa-trash")),
 					),
-					gomponents.Attr(
-						"onclick",
-						"event.preventDefault(); var h=this.href; confirmAction('Delete series configuration', 'Delete this series configuration? This cannot be undone.', function(){ window.location.href=h; });",
-					),
-					html.I(html.Class("fa-solid fa-trash")),
 				),
 			),
 		))
@@ -359,8 +399,8 @@ func renderSeriesRows(filename string, series []config.ManualConfig) gomponents.
 
 // handleSeriesConfigDelete handles deletion of a series entry.
 func handleSeriesConfigDelete(ctx *gin.Context) {
-	filename := ctx.Query("file")
-	index := ctx.Query("index")
+	filename := ctx.PostForm("file")
+	index := ctx.PostForm("index")
 
 	if filename == "" || index == "" {
 		sendBadRequest(ctx, "Missing file or index parameter")
@@ -397,7 +437,7 @@ func handleSeriesConfigDelete(ctx *gin.Context) {
 	}
 
 	// Redirect back
-	ctx.Redirect(http.StatusFound, "/api/admin/seriesconfig?file="+filename)
+	ctx.Redirect(http.StatusSeeOther, "/api/admin/seriesconfig?file="+url.QueryEscape(filename))
 }
 
 // handleSeriesConfigEdit handles the edit form page.

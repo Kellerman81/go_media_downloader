@@ -6,6 +6,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	appconfig "github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
@@ -33,6 +34,17 @@ func NewProviderWithConfig(config base.ClientConfig) *Provider {
 
 	if config.Timeout == 0 {
 		config.Timeout = 30 * time.Second
+	}
+
+	// The configured Audnex limits apply to every instance; the built-in
+	// limits below are only the fallback for 0.
+	general := appconfig.GetSettingsGeneral()
+	if config.RateLimitCalls == 0 {
+		config.RateLimitCalls = general.AudnexLimiterCalls
+	}
+
+	if config.RateLimitSeconds == 0 {
+		config.RateLimitSeconds = int(general.AudnexLimiterSeconds)
 	}
 
 	if config.RateLimitCalls == 0 {

@@ -67,38 +67,81 @@ func (s *SyncMap[T]) AddIfAbsent(key string, value T, expires int64) bool {
 	return true
 }
 
-// ModifyInPlace calls fn on the value stored for key.
-// Intended for reference-type values (maps, slices) that need in-place mutation
-// without replacing the outer SyncMap entry. No-ops if the key does not exist.
-// fn is called outside any lock so it is safe for fn to call other SyncMap or
-// QueueOperation functions without risking a deadlock.
-func (s *SyncMap[T]) ModifyInPlace(key string, fn func(T)) {
-	s.mu.RLock()
+// DeleteIfMatch atomically removes key only when its current value satisfies
+// match, and reports whether it was removed. It is a compare-and-delete: an
+// owner can release a key without clobbering an entry a newer owner stored
+// under the same key in the meantime. match runs under the write lock and must
+// not call back into this map.
+func (s *SyncMap[T]) DeleteIfMatch(key string, match func(T) bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	e, ok := s.m[key]
-	s.mu.RUnlock()
+	if !ok || !match(e.value) {
+		return false
+	}
 
-	if ok {
+	delete(s.m, key)
+
+	return true
+}
+
+// ModifyInPlace calls fn on the value stored for key while holding the write
+// lock. Intended for reference-type values (maps, slices) that need in-place
+// mutation without replacing the outer SyncMap entry. No-ops if the key does
+// not exist. Readers that index into such a reference value must do so via
+// ReadInPlace: a value obtained through GetVal escapes the lock, and reading an
+// inner map while fn writes it is a fatal concurrent map access.
+// fn must not call back into this SyncMap (it would deadlock on the lock).
+func (s *SyncMap[T]) ModifyInPlace(key string, fn func(T)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if e, ok := s.m[key]; ok {
 		fn(e.value)
 	}
 }
 
-// UpdateVal modifies the value for an existing key in the SyncMap.
+// ReadInPlace calls fn on the value stored for key while holding the read lock
+// and reports whether the key exists. It is the reader counterpart of
+// ModifyInPlace for reference-type values. fn must not retain the value or
+// call back into this SyncMap's write paths.
+func (s *SyncMap[T]) ReadInPlace(key string, fn func(T)) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	e, ok := s.m[key]
+	if ok {
+		fn(e.value)
+	}
+
+	return ok
+}
+
+// UpdateVal modifies the value for an existing key in the SyncMap and reports
+// whether the key existed. A missing key is left absent - use Add to create
+// entries, so an update racing a delete cannot resurrect the entry.
 // Does not affect expiration time, IMDB flag, or last scan metadata.
 // This operation is NOT thread-safe and should only be called from the
 // SyncOpsManager single writer goroutine.
-func (s *SyncMap[T]) UpdateVal(key string, value T) {
+func (s *SyncMap[T]) UpdateVal(key string, value T) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	e := s.m[key]
+	e, ok := s.m[key]
+	if !ok {
+		return false
+	}
 
 	e.value = value
 	s.m[key] = e
+
+	return true
 }
 
-// UpdateExpire modifies the expiration timestamp for an existing key.
-// Only updates if the key exists and currently has a non-zero expiration time.
+// UpdateExpire sets the expiration timestamp for an existing key, whatever
+// its current expiry (including 0, e.g. for keys created by
+// AtomicAppendToStringSlice). Missing keys are ignored.
 // Pass 0 to disable expiration or a Unix timestamp for specific expiry.
 // This operation is NOT thread-safe and should only be called from the
 // SyncOpsManager single writer goroutine.
@@ -106,7 +149,7 @@ func (s *SyncMap[T]) UpdateExpire(key string, value int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if e, ok := s.m[key]; ok && e.expires != 0 {
+	if e, ok := s.m[key]; ok {
 		e.expires = value
 		s.m[key] = e
 	}
@@ -174,7 +217,11 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 	defer s.mu.Unlock()
 
 	e, exists := s.m[key]
-	if !exists || e.expires == 0 {
+	if !exists {
+		return true
+	}
+
+	if e.expires == 0 {
 		return false
 	}
 
@@ -192,8 +239,8 @@ func (s *SyncMap[T]) CheckExpires(key string, extend bool, dur int) bool {
 }
 
 // DeleteFunc deletes all entries for which the provided function returns true.
-// The whole scan-and-delete runs under the write lock, so fn must not call other
-// SyncMap or QueueOperation functions. In the single-writer model that is already
+// The whole scan-and-delete runs under the write lock, so fn must not call back
+// into this map or call QueueOperation functions. In the single-writer model that is already
 // the contract: deletions only run inside the writer goroutine.
 func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 	s.mu.Lock()
@@ -201,6 +248,19 @@ func (s *SyncMap[T]) DeleteFunc(fn func(T) bool) {
 
 	for key, e := range s.m {
 		if fn(e.value) {
+			delete(s.m, key)
+		}
+	}
+}
+
+// DeleteKeyFunc deletes all entries whose key fn reports true for. Runs under
+// the write lock, so fn must not call back into this map.
+func (s *SyncMap[T]) DeleteKeyFunc(fn func(key string) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key := range s.m {
+		if fn(key) {
 			delete(s.m, key)
 		}
 	}
@@ -243,14 +303,23 @@ func (s *SyncMapUint[T]) Add(key uint32, value T) {
 	s.m[key] = value
 }
 
-// UpdateVal modifies the value for an existing key in the SyncMapUint.
+// UpdateVal modifies the value for an existing key in the SyncMapUint and
+// reports whether the key existed. A missing key is left absent - use Add to
+// create entries, so e.g. a job-state update racing the job's removal cannot
+// resurrect it.
 // This operation is NOT thread-safe and should only be called from the
 // SyncOpsManager single writer goroutine.
-func (s *SyncMapUint[T]) UpdateVal(key uint32, value T) {
+func (s *SyncMapUint[T]) UpdateVal(key uint32, value T) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if _, ok := s.m[key]; !ok {
+		return false
+	}
+
 	s.m[key] = value
+
+	return true
 }
 
 // Delete removes the given key from the SyncMapUint.
@@ -282,8 +351,8 @@ func (s *SyncMapUint[T]) GetVal(key uint32) T {
 }
 
 // DeleteIf removes all entries for which the provided function returns true.
-// The whole scan-and-delete runs under the write lock, so fn must not call other
-// SyncMap or QueueOperation functions. In the single-writer model that is already
+// The whole scan-and-delete runs under the write lock, so fn must not call back
+// into this map or call QueueOperation functions. In the single-writer model that is already
 // the contract: deletions only run inside the writer goroutine.
 func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 	s.mu.Lock()
@@ -298,6 +367,10 @@ func (s *SyncMapUint[T]) DeleteIf(fn func(uint32, T) bool) {
 
 // ForEach executes a function for each key-value pair in the map while holding a read lock.
 // This is a read operation and is safe for concurrent access.
+// fn runs under the read lock: it must not write to this map, neither directly
+// nor via a synchronous Queue* operation targeting it (the writer goroutine would
+// block on the lock while fn waits on the writer - a deadlock). Collect what is
+// needed and act after ForEach returns.
 func (s *SyncMapUint[T]) ForEach(fn func(uint32, T)) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -322,6 +395,7 @@ func (s *SyncMapUint[T]) GetMap() map[uint32]T {
 // FindFirst searches for the first element that matches the predicate function.
 // Returns the key, value, and whether a match was found.
 // This is a read operation and is safe for concurrent access.
+// predicate runs under the read lock; the same restrictions as ForEach apply.
 func (s *SyncMapUint[T]) FindFirst(predicate func(uint32, T) bool) (uint32, T, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -339,6 +413,7 @@ func (s *SyncMapUint[T]) FindFirst(predicate func(uint32, T) bool) (uint32, T, b
 
 // Exists checks if any entry matches the given predicate function.
 // This is a read operation and is safe for concurrent access.
+// predicate runs under the read lock; the same restrictions as ForEach apply.
 func (s *SyncMapUint[T]) Exists(predicate func(uint32, T) bool) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
