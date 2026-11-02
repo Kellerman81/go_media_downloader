@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.25.0-bookworm AS builder
+FROM golang:1.26.10-bookworm AS builder
 
 LABEL org.opencontainers.image.authors="Kellerman81 <Kellerman81@gmail.com>"
 
@@ -65,6 +65,8 @@ RUN apt-get update && \
         graphviz \
         gv \
         tzdata \
+        libchromaprint-tools \
+        unzip unrar \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
