@@ -582,22 +582,12 @@ func addAudiobookFilesToDatabase(
 	// 	Int("listid", listid).
 	// 	Int("trackCount", len(album.Tracks)).
 	// 	Msg("DEBUG: addAudiobookFilesToDatabase called")
-	if album.DatabaseID == 0 || listid == -1 {
-		// logger.Logtype("debug", 0).
-		// 	Str("folder", folder).
-		// 	Uint("databaseID", album.DatabaseID).
-		// 	Int("listid", listid).
-		// 	Msg("DEBUG: addAudiobookFilesToDatabase returning false - invalid IDs")
+	if album.DatabaseID == 0 {
 		return false
 	}
 
-	// Resolve the correct audiobooks.id (list entry) from dbaudiobook_id + listname
-	var listname string
-	if listid >= 0 && listid < len(cfgp.Lists) {
-		listname = cfgp.Lists[listid].Name
-	}
-
-	audiobookListID := database.GetAudiobookListEntryID(&album.DatabaseID, &listname)
+	// An audiobook in no list yet is added to list listid.
+	audiobookListID := EnsureAudiobookListEntry(&album.DatabaseID, cfgp, listid)
 	if audiobookListID == 0 {
 		// logger.Logtype("error", 1).
 		// 	Str("folder", folder).
@@ -688,23 +678,16 @@ func addAlbumFilesToDatabase(
 	cfgp *config.MediaTypeConfig,
 	listid int,
 ) bool {
-	if album.DatabaseID == 0 || listid == -1 {
+	if album.DatabaseID == 0 {
 		return false
 	}
 
-	// Resolve the correct albums.id from dbalbum_id + listname
 	// album.DatabaseID is dbalbum_id, NOT albums.id
-	var listname string
-	if listid >= 0 && listid < len(cfgp.Lists) {
-		listname = cfgp.Lists[listid].Name
-	}
-
-	albumListID := database.GetAlbumListEntryID(&album.DatabaseID, &listname)
+	albumListID := EnsureAlbumListEntry(&album.DatabaseID, cfgp, listid)
 	if albumListID == 0 {
 		logger.Logtype("warn", 1).
 			Str("folder", folder).
 			Uint("dbalbumID", album.DatabaseID).
-			Str("listname", listname).
 			Msg("Could not find album list entry for dbalbum_id")
 
 		return false

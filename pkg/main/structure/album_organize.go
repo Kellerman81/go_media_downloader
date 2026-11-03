@@ -560,6 +560,10 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	listid := cfgp.GetMediaListsEntryListID(listname)
 	listEntryID := albumListEntryID(cfgp, listid, &album.DatabaseID)
 
+	if listEntryID == 0 {
+		listid, listEntryID = unlistedEntry(cfgp, dataCfg, &album.DatabaseID)
+	}
+
 	// Set the database ID based on media type
 	switch cfgp.IsType {
 	case config.MediaTypeAudiobook:
@@ -765,6 +769,10 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 
 		listid := cfgp.GetMediaListsEntryListID(listname)
 		listEntryID := albumListEntryID(cfgp, listid, &album.DatabaseID)
+
+		if listEntryID == 0 {
+			listid, listEntryID = unlistedEntry(cfgp, dataCfg, &album.DatabaseID)
+		}
 
 		m.DbaudiobookID = album.DatabaseID
 		m.AudiobookID = listEntryID
@@ -1130,6 +1138,41 @@ func (*Organizer) writeRenameLogSingle(
 	}
 
 	appendRenameLog(logPath, b.String())
+}
+
+// unlistedEntry adds a matched album or audiobook that is in no list - for
+// music typically a synthetic album the fallback providers built from a
+// non-MusicBrainz source - to the add_found list, so the moved files can be
+// recorded for it. It returns that list and the new entry; 0 entry when
+// add_found is off.
+func unlistedEntry(
+	cfgp *config.MediaTypeConfig,
+	dataCfg *config.MediaDataConfig,
+	dbid *uint,
+) (listid int, listEntryID uint) {
+	listid = -1
+	if dataCfg != nil && dataCfg.AddFound {
+		listid = cfgp.GetMediaListsEntryListID(dataCfg.AddFoundList)
+	}
+
+	table := "albums"
+
+	switch cfgp.IsType {
+	case config.MediaTypeMusic:
+		listEntryID = importfeed.EnsureAlbumListEntry(dbid, cfgp, listid)
+	case config.MediaTypeAudiobook:
+		table = "audiobooks"
+		listEntryID = importfeed.EnsureAudiobookListEntry(dbid, cfgp, listid)
+	default:
+		return -1, 0
+	}
+
+	if listEntryID > 0 && listid == -1 {
+		listid = cfgp.GetMediaListsEntryListID(database.Getdatarow[string](
+			false, "SELECT listname FROM "+table+" WHERE id = ?", &listEntryID))
+	}
+
+	return listid, listEntryID
 }
 
 // albumListEntryID resolves the albums.id / audiobooks.id list entry of dbid
@@ -2215,6 +2258,10 @@ func (s *Organizer) ForceMatchAlbumFolder(
 
 	listid := cfgp.GetMediaListsEntryListID(listname)
 	listEntryID := albumListEntryID(cfgp, listid, &album.DatabaseID)
+
+	if listEntryID == 0 && !preview {
+		listid, listEntryID = unlistedEntry(cfgp, dataCfg, &album.DatabaseID)
+	}
 
 	switch cfgp.IsType {
 	case config.MediaTypeAudiobook:

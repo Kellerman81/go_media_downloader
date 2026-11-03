@@ -1064,6 +1064,83 @@ func albumEntrySpec() mediaListEntrySpec {
 	}
 }
 
+// EnsureAlbumListEntry returns the albums.id entry of dbalbumID in the media
+// config's lists, preferring list listid. An album in none of them - one the
+// fallback providers built from a non-MusicBrainz source, or an older import
+// that left it unlisted - is added to list listid, so the files found for it
+// are recorded instead of the folder being matched again on every scan.
+// listid -1 only looks the entry up. Returns 0 when there is none and none
+// could be created (the list's ignore lists exclude the album).
+func EnsureAlbumListEntry(dbalbumID *uint, cfgp *config.MediaTypeConfig, listid int) uint {
+	return ensureListEntry(albumEntrySpec(), "dbalbums", dbalbumID, cfgp, listid)
+}
+
+// EnsureAudiobookListEntry is EnsureAlbumListEntry for audiobooks.
+func EnsureAudiobookListEntry(dbaudiobookID *uint, cfgp *config.MediaTypeConfig, listid int) uint {
+	return ensureListEntry(audiobookEntrySpec(), "dbaudiobooks", dbaudiobookID, cfgp, listid)
+}
+
+// ensureListEntry implements EnsureAlbumListEntry for the list table of s;
+// dbTable holds the item's title.
+func ensureListEntry(
+	s mediaListEntrySpec,
+	dbTable string,
+	dbid *uint,
+	cfgp *config.MediaTypeConfig,
+	listid int,
+) uint {
+	if dbid == nil || *dbid == 0 || cfgp == nil {
+		return 0
+	}
+
+	var preferList string
+	if listid >= 0 && listid < len(cfgp.Lists) {
+		preferList = cfgp.Lists[listid].Name
+	}
+
+	if id := trackedIDInConfigList(s.table, s.idCol, dbid, cfgp, preferList); id > 0 {
+		return id
+	}
+
+	if preferList == "" {
+		return 0
+	}
+
+	title := database.Getdatarow[string](false, "SELECT title FROM "+dbTable+" WHERE id = ?", dbid)
+	if err := checkaddMediaEntry(dbid, cfgp, &cfgp.Lists[listid], title, s); err != nil {
+		logger.Logtype("debug", 1).
+			Err(err).
+			Uint(s.idCol, *dbid).
+			Str("listname", preferList).
+			Msg(s.logItemType + " could not be added to list")
+
+		return 0
+	}
+
+	id := database.Getdatarow[uint](false,
+		"SELECT id FROM "+s.table+" WHERE "+s.idCol+" = ? AND listname = ? COLLATE NOCASE",
+		dbid, &preferList)
+	if id > 0 {
+		logger.Logtype("info", 1).
+			Uint(s.idCol, *dbid).
+			Str("title", title).
+			Str("listname", preferList).
+			Msg("Added unlisted " + strings.ToLower(s.logItemType) + " to list")
+	}
+
+	return id
+}
+
+// addFoundListID is the list EnsureAlbumListEntry may add an album to: the
+// add_found list, and only while add_found is on.
+func addFoundListID(cfgp *config.MediaTypeConfig, data *config.MediaDataConfig) int {
+	if data == nil || !data.AddFound {
+		return -1
+	}
+
+	return cfgp.GetMediaListsEntryListID(data.AddFoundList)
+}
+
 // updateDbalbum updates the dbalbum record in the database.
 func updateDbalbum(dbalbum *database.Dbalbum) {
 	if dbalbum.Slug == "" {

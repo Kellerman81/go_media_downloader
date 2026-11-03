@@ -41,7 +41,7 @@ type tcache struct {
 	indexThreeStringByNum2 *syncops.SyncMap[map[uint]*syncops.DbstaticThreeStringTwoInt]   // DB ID -> entry
 	indexTwoIntComposite   *syncops.SyncMap[map[string]*syncops.DbstaticOneStringTwoInt]   // "mediaID:listname" -> entry
 	indexTwoStringByStr1   *syncops.SyncMap[map[string][]*syncops.DbstaticTwoStringOneInt] // title -> entries (one-to-many)
-	indexStringSet         *syncops.SyncMap[map[string]struct{}]                           // normalized string -> exists
+	indexStringSet         *syncops.SyncMap[map[uint64]struct{}]                           // hashKey(string) -> exists
 
 	janitor       *time.Timer
 	janitorCtx    context.Context
@@ -607,7 +607,7 @@ func ClearCaches() {
 	cache.indexTwoStringByStr1.DeleteFunc(
 		func(_ map[string][]*syncops.DbstaticTwoStringOneInt) bool { return true },
 	)
-	cache.indexStringSet.DeleteFunc(func(_ map[string]struct{}) bool { return true })
+	cache.indexStringSet.DeleteFunc(func(_ map[uint64]struct{}) bool { return true })
 	cache.indexTwoIntComposite.DeleteFunc(
 		func(_ map[string]*syncops.DbstaticOneStringTwoInt) bool { return true },
 	)
@@ -619,15 +619,15 @@ func ClearCaches() {
 }
 
 // AppendCache appends the given value v to the cached array for the given key a.
-// If the cache has an associated indexStringSet, the normalized key is also added
+// If the cache has an associated indexStringSet, the key's hash is also added
 // to that index so lookups remain consistent without a full rebuild.
 func AppendCache(a string, v string) {
 	syncops.QueueAtomicAppendString(syncops.MapTypeString, a, v)
 
 	if entry, ok := cacheDispatchMap[a]; ok && entry.indexKind == indexStringSet {
-		normalizedV := normalizeKey(v)
-		cache.indexStringSet.ModifyInPlace(a, func(m map[string]struct{}) {
-			m[normalizedV] = struct{}{}
+		key := hashKey(v)
+		cache.indexStringSet.ModifyInPlace(a, func(m map[uint64]struct{}) {
+			m[key] = struct{}{}
 		})
 	}
 }
@@ -718,14 +718,14 @@ func SlicesCacheContains(isType uint, query, v string) bool {
 
 // SlicesCacheContainsDelete removes an element matching v from the cached string
 // array identified by s. If the cache has an associated indexStringSet, the
-// normalized key is also removed from that index so lookups remain consistent.
+// key's hash is also removed from that index so lookups remain consistent.
 func SlicesCacheContainsDelete(s, v string) {
 	syncops.QueueAtomicRemoveString(syncops.MapTypeString, s, v)
 
 	if entry, ok := cacheDispatchMap[s]; ok && entry.indexKind == indexStringSet {
-		normalizedV := normalizeKey(v)
-		cache.indexStringSet.ModifyInPlace(s, func(m map[string]struct{}) {
-			delete(m, normalizedV)
+		key := hashKey(v)
+		cache.indexStringSet.ModifyInPlace(s, func(m map[uint64]struct{}) {
+			delete(m, key)
 		})
 	}
 }
@@ -1625,7 +1625,7 @@ func NewCache(cleaningInterval, extension time.Duration) {
 		cache.indexTwoStringByStr1 = syncops.NewSyncMap[map[string][]*syncops.DbstaticTwoStringOneInt](
 			20,
 		)
-		cache.indexStringSet = syncops.NewSyncMap[map[string]struct{}](20)
+		cache.indexStringSet = syncops.NewSyncMap[map[uint64]struct{}](20)
 
 		// Initialize syncops and register all SyncMaps
 		syncops.InitSyncOps()

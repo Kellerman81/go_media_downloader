@@ -2145,7 +2145,10 @@ func apiQueueCancel(ctx *gin.Context) {
 	// Cancel the job and remove it from the queue
 	worker.CancelQueueEntry(queueID)
 
-	sendJSONResponse(ctx, http.StatusOK, gin.H{
+	// Flat like the not-found reply above: the queue page reads data.success,
+	// and sendJSONResponse would nest it under "data", so a successful cancel
+	// was reported as failed.
+	ctx.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Queue job canceled successfully",
 	})

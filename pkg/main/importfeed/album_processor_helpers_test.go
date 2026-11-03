@@ -562,3 +562,39 @@ func TestApplyAudiobookRecommendation(t *testing.T) {
 		t.Error("contested weak audiobook match accepted")
 	}
 }
+
+func TestSyntheticAlbumsDropExcept(t *testing.T) {
+	useTestDB(t)
+
+	for _, q := range []string{
+		"insert into dbalbums (id, title) values (1, 'Winner'), (2, 'Loser'), (3, 'Listed meanwhile')",
+		"insert into dbtracks (dbalbum_id, title, disc_number, track_number) values (1, 'a', 1, 1), (2, 'b', 1, 1), (3, 'c', 1, 1)",
+		"insert into dbalbum_artists (dbalbum_id, dbartist_id) values (1, 1), (2, 1), (3, 1)",
+		"insert into albums (dbalbum_id, listname) values (3, 'Music Library')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, synthetic := withSyntheticAlbums(context.Background())
+	for _, id := range []uint{1, 2, 3} {
+		noteSyntheticAlbum(ctx, id)
+	}
+
+	noteSyntheticAlbum(context.Background(), 99) // no collector: ignored
+
+	synthetic.dropExcept(1)
+
+	for id, want := range map[int]int{1: 1, 2: 0, 3: 1} {
+		if got := database.Getdatarow[int](false, "select count() from dbalbums where id = ?", id); got != want {
+			t.Errorf("dbalbum %d rows = %d, want %d", id, got, want)
+		}
+	}
+
+	if got := database.Getdatarow[int](false,
+		"select (select count() from dbtracks where dbalbum_id = 2) + (select count() from dbalbum_artists where dbalbum_id = 2)",
+	); got != 0 {
+		t.Errorf("dropped album left %d child rows", got)
+	}
+}

@@ -724,7 +724,7 @@ func processAudioDirectory(
 			// 	Str("folder", dirPath).
 			// 	Int("subfolders", len(subDirs)).
 			// 	Msg("Processing large directory sequentially")
-			for i, subDir := range subDirs {
+			for i := range subDirs {
 				if err := ctx.Err(); err != nil {
 					return err
 				}
@@ -739,7 +739,7 @@ func processAudioDirectory(
 						Msg("Directory scan progress")
 				}
 
-				_ = processAudioDirectory(ctx, &subDir, cfgp, data, processedDirs)
+				_ = processAudioDirectory(ctx, &subDirs[i], cfgp, data, processedDirs)
 			}
 
 			// logger.Logtype("info", 0).
@@ -1042,7 +1042,14 @@ func processAudiobookFolder(
 	// 	Msg("DEBUG: About to add audiobook files to database")
 
 	// Step 9: Add files to database
-	return addAudiobookFilesToDatabase(ctx, folder, album, cfgp, listid)
+	// Only add_found may put an audiobook into the add_found list; otherwise
+	// the files are recorded only for an audiobook that is already listed.
+	entryList := matchedListID(cfgp, "audiobooks", "dbaudiobook_id", album.DatabaseID)
+	if entryList == -1 && data.AddFound {
+		entryList = cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	}
+
+	return addAudiobookFilesToDatabase(ctx, folder, album, cfgp, entryList)
 }
 
 // searchMusicBrainzByMetadata searches MusicBrainz for an album by artist, album title, and track count.
@@ -1599,7 +1606,14 @@ func processMusicFolder(
 		Msg("DEBUG: About to add music album files to database")
 
 	// Step 8: Add files to database (no language validation for music)
-	return addAlbumFilesToDatabase(ctx, folder, album, cfgp, listid)
+	// Only add_found may put an album into the add_found list; otherwise the
+	// files are recorded only for an album that is already listed.
+	entryList := matchedListID(cfgp, "albums", "dbalbum_id", album.DatabaseID)
+	if entryList == -1 && data.AddFound {
+		entryList = cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	}
+
+	return addAlbumFilesToDatabase(ctx, folder, album, cfgp, entryList)
 }
 
 // matchedListID returns the index of the config list that already tracks the
@@ -1699,28 +1713,21 @@ func addAudiobookFilesToDatabase(
 		Int("trackCount", len(album.Tracks)).
 		Msg("DEBUG: addAudiobookFilesToDatabase called")
 
-	if album.DatabaseID == 0 || listid == -1 {
+	if album.DatabaseID == 0 {
 		logger.Logtype("debug", 0).
 			Str("folder", folder).
-			Uint("databaseID", album.DatabaseID).
-			Int("listid", listid).
 			Msg("DEBUG: addAudiobookFilesToDatabase returning false - invalid IDs")
 
 		return false
 	}
 
-	// Resolve the correct audiobooks.id (list entry) from dbaudiobook_id + listname
-	var listname string
-	if listid >= 0 && listid < len(cfgp.Lists) {
-		listname = cfgp.Lists[listid].Name
-	}
-
-	audiobookListID := database.GetAudiobookListEntryID(&album.DatabaseID, &listname)
+	// An audiobook in no list yet is added to list listid; without that the
+	// folder stayed unlinked and was matched again on every scan.
+	audiobookListID := importfeed.EnsureAudiobookListEntry(&album.DatabaseID, cfgp, listid)
 	if audiobookListID == 0 {
 		logger.Logtype("error", 1).
 			Str("folder", folder).
 			Uint("dbaudiobookID", album.DatabaseID).
-			Str("listname", listname).
 			Msg("Could not find audiobook list entry for dbaudiobook_id")
 
 		return false
@@ -1830,23 +1837,18 @@ func addAlbumFilesToDatabase(
 	cfgp *config.MediaTypeConfig,
 	listid int,
 ) bool {
-	if album.DatabaseID == 0 || listid == -1 {
+	if album.DatabaseID == 0 {
 		return false
 	}
 
-	// Resolve the correct albums.id from dbalbum_id + listname
-	// album.DatabaseID is dbalbum_id, NOT albums.id
-	var listname string
-	if listid >= 0 && listid < len(cfgp.Lists) {
-		listname = cfgp.Lists[listid].Name
-	}
-
-	albumListID := database.GetAlbumListEntryID(&album.DatabaseID, &listname)
+	// album.DatabaseID is dbalbum_id, NOT albums.id. An album in no list yet
+	// is added to list listid; without that the folder stayed unlinked and was
+	// matched again on every scan.
+	albumListID := importfeed.EnsureAlbumListEntry(&album.DatabaseID, cfgp, listid)
 	if albumListID == 0 {
 		logger.Logtype("warn", 1).
 			Str("folder", folder).
 			Uint("dbalbumID", album.DatabaseID).
-			Str("listname", listname).
 			Msg("Could not find album list entry for dbalbum_id")
 
 		return false
@@ -1862,6 +1864,8 @@ func addAlbumFilesToDatabase(
 
 	// Add each file to the database
 	filesAdded := 0
+	var dbtrackID uint
+
 	for i := range album.Tracks {
 		if err := ctx.Err(); err != nil {
 			return false
@@ -1872,8 +1876,8 @@ func addAlbumFilesToDatabase(
 			continue
 		}
 
+		dbtrackID = 0
 		// Look up matching dbtrack_id from dbtracks table
-		var dbtrackID uint
 		database.Scanrowsdyn(
 			false,
 			"SELECT id FROM dbtracks WHERE dbalbum_id = ? AND track_number = ? AND disc_number = ?",

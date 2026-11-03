@@ -1054,6 +1054,7 @@ func (m *ParseInfo) RegexGetMatchesStr1(cfgp *config.MediaTypeConfig) {
 
 	if title != m.Title {
 		m.FindDbserieByNameWithSlug(title)
+		m.PreferOriginalDbserie(title)
 	}
 }
 
@@ -1067,6 +1068,53 @@ func (m *ParseInfo) FindDbserieByNameWithSlug(title string) {
 
 	if m.DbserieID == 0 {
 		m.FindDbserieByName(true)
+	}
+}
+
+// querySharedTitleSeries finds the series a title or alias names exactly
+// (?1 title, ?2 its slug) and keeps those that are also known by the title
+// qualified with their own first-aired year ("Charmed (2018)", "Charmed
+// 1998" both slug to "charmed-<year>"). Those year-qualified names mark a
+// real original/remake pair; a title shared only through a stray alias (TVDB
+// lists "Quantico" as an alias of Criminal Minds) has none and returns no row.
+// At least two such series must exist; then the one aired in the release year
+// (?3) wins, otherwise the oldest.
+const querySharedTitleSeries = `with shared as (
+	select id from dbseries where seriename = ?1 or slug = ?2
+	union select dbserie_id from dbserie_alternates where title = ?1 or slug = ?2
+), dated as (
+	select d.id, d.firstaired from shared s cross join dbseries d on d.id = s.id
+	where d.firstaired != '' and (
+		d.slug = ?2 || '-' || substr(d.firstaired, 1, 4)
+		or d.id in (select dbserie_id from dbserie_alternates where slug = ?2 || '-' || substr(d.firstaired, 1, 4)))
+)
+select id from dated where (select count(*) from dated) > 1
+order by substr(firstaired, 1, 4) = ?3 desc, firstaired limit 1`
+
+// PreferOriginalDbserie re-resolves a series found by title when that title is
+// shared by an original and its remake ("Charmed" 1998 and 2018). The name
+// lookups take the first hit, which is the remake whenever its main name is
+// the bare title. Releases follow the scene rule: the later show carries a
+// year ("Charmed.2018.S02E03") and the bare name means the original. So the
+// series aired in the release's year wins, otherwise the oldest.
+func (m *ParseInfo) PreferOriginalDbserie(title string) {
+	if m.DbserieID == 0 || title == "" {
+		return
+	}
+
+	// An empty slug would match every row whose slug was never populated.
+	slug := logger.StringToSlugCached(title)
+	if slug == "" {
+		return
+	}
+
+	year := logger.IntToString(m.Year)
+
+	var id uint
+	Scanrowsdyn(false, querySharedTitleSeries, &id, &title, &slug, &year)
+
+	if id != 0 {
+		m.DbserieID = id
 	}
 }
 

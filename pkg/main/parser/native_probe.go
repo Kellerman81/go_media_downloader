@@ -43,6 +43,13 @@ var errNativeUnsupported = errors.New("native probe: unsupported or insufficient
 // memory (moov atom / EBML head / AVI hdrl). Real headers are well under this.
 const maxHeaderProbe = 64 << 20
 
+// initialHeaderProbe is the first MKV/AVI read. Headers almost always fit, and
+// reading maxHeaderProbe of every file cost ~128 MB of allocations per probe.
+const initialHeaderProbe = 1 << 20
+
+// errHeaderIncomplete makes probeHead retry with maxHeaderProbe bytes.
+var errHeaderIncomplete = errors.New("native probe: header extends past read")
+
 // nativeProbe analyzes file by sniffing the container magic and dispatching to
 // the matching parser. Returns errNativeUnsupported when it cannot handle the
 // file so the caller can fall back to ffprobe.
@@ -525,12 +532,38 @@ func ebmlFloat(b []byte) float64 {
 	return 0
 }
 
-func probeMKV(f *os.File) (*ffProbeJSON, error) {
-	head, err := io.ReadAll(io.LimitReader(f, maxHeaderProbe))
+// probeHead reads the start of f and parses it, first initialHeaderProbe
+// bytes and then maxHeaderProbe when parse reports errHeaderIncomplete. final
+// is set when no larger read follows, so parse must use what it has.
+func probeHead(
+	f *os.File,
+	parse func(head []byte, final bool) (*ffProbeJSON, error),
+) (*ffProbeJSON, error) {
+	st, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
 
+	for _, n := range [...]int64{initialHeaderProbe, maxHeaderProbe} {
+		head := make([]byte, min(n, st.Size()))
+		if _, err := f.ReadAt(head, 0); err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+
+		out, err := parse(head, st.Size() <= n || n == maxHeaderProbe)
+		if !errors.Is(err, errHeaderIncomplete) {
+			return out, err
+		}
+	}
+
+	return nil, errNativeUnsupported
+}
+
+func probeMKV(f *os.File) (*ffProbeJSON, error) {
+	return probeHead(f, parseMKV)
+}
+
+func parseMKV(head []byte, final bool) (*ffProbeJSON, error) {
 	r := &ebmlReader{data: head}
 
 	// Top level: EBML header then Segment.
@@ -549,6 +582,10 @@ func probeMKV(f *os.File) (*ffProbeJSON, error) {
 	}
 
 	if segment == nil {
+		if !final {
+			return nil, errHeaderIncomplete
+		}
+
 		return nil, errNativeUnsupported
 	}
 
@@ -575,6 +612,12 @@ func probeMKV(f *os.File) (*ffProbeJSON, error) {
 			// Media data begins; header parsing is complete.
 			goto done
 		}
+	}
+
+	// The read ended before the first cluster: Info or Tracks may be cut off,
+	// which would silently drop streams.
+	if !final {
+		return nil, errHeaderIncomplete
 	}
 
 done:
@@ -792,18 +835,22 @@ func mkvAudioCodec(id string) string {
 // ---------------------------------------------------------------------------
 
 func probeAVI(f *os.File) (*ffProbeJSON, error) {
-	head, err := io.ReadAll(io.LimitReader(f, maxHeaderProbe))
-	if err != nil {
-		return nil, err
-	}
+	return probeHead(f, parseAVI)
+}
 
+func parseAVI(head []byte, final bool) (*ffProbeJSON, error) {
 	if len(head) < 12 || string(head[0:4]) != "RIFF" || string(head[8:12]) != "AVI " {
 		return nil, errNativeUnsupported
 	}
 
 	// Find the hdrl LIST.
+	// walkRiff skips a truncated chunk, so a cut-off hdrl is simply not found.
 	hdrl := findRiffList(head[12:], "hdrl")
 	if hdrl == nil {
+		if !final {
+			return nil, errHeaderIncomplete
+		}
+
 		return nil, errNativeUnsupported
 	}
 

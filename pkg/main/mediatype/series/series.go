@@ -207,6 +207,7 @@ func (h *handler) GetDBIDsFull(
 
 		if m.DbserieID == 0 {
 			m.FindDbserieByNameWithSlug(m.Title)
+			m.PreferOriginalDbserie(m.Title)
 		}
 	}
 

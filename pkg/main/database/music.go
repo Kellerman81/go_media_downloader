@@ -300,6 +300,14 @@ type AlbumSearchResult struct {
 	Artist       string
 }
 
+// preferListedAlbum orders album rows with a list entry first and returns the
+// first one. Several dbalbums rows can share artist and title - editions, or
+// synthetic albums a fallback provider left in no list - and the list-less
+// one cannot take the folder's files.
+func preferListedAlbum(idExpr string) string {
+	return "ORDER BY EXISTS (SELECT 1 FROM albums l WHERE l.dbalbum_id = " + idExpr + ") DESC LIMIT 1"
+}
+
 // FindAlbumByArtistTitle searches for an album by artist and title.
 // Returns the best matching album or an error if not found.
 // Uses artist-first lookup for better accuracy, with fallback to stripped title.
@@ -346,11 +354,11 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 
 			// Exact match
 			Scanrowsdyn(false,
-				`SELECT a.id FROM dbalbums a
+				logger.JoinStrings(`SELECT a.id FROM dbalbums a
 				 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
 				 AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))
-				 LIMIT 1`,
+				 `, preferListedAlbum("a.id")),
 				&result.ID, &artistIDs[artistid], title, &slug)
 
 			if result.ID > 0 {
@@ -364,11 +372,11 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 
 			// Try alternate titles
 			Scanrowsdyn(false,
-				`SELECT at.dbalbum_id FROM dbalbum_titles at
+				logger.JoinStrings(`SELECT at.dbalbum_id FROM dbalbum_titles at
 				 JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id
 				 WHERE aa.dbartist_id = ?
 				 AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))
-				 LIMIT 1`,
+				 `, preferListedAlbum("at.dbalbum_id")),
 				&result.ID, &artistIDs[artistid], title, &slug)
 
 			if result.ID > 0 {
@@ -387,11 +395,11 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 				var result AlbumSearchResult
 
 				Scanrowsdyn(false,
-					`SELECT a.id FROM dbalbums a
+					logger.JoinStrings(`SELECT a.id FROM dbalbums a
 					 JOIN dbalbum_artists aa ON a.id = aa.dbalbum_id
 					 WHERE aa.dbartist_id = ?
 					 AND (a.title = ? COLLATE NOCASE OR a.slug = NULLIF(?, ''))
-					 LIMIT 1`,
+					 `, preferListedAlbum("a.id")),
 					&result.ID, &artistIDs[artistID], &strippedTitle, &strippedSlug)
 
 				if result.ID > 0 {
@@ -406,11 +414,11 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 
 				// Try alternate titles with stripped version
 				Scanrowsdyn(false,
-					`SELECT at.dbalbum_id FROM dbalbum_titles at
+					logger.JoinStrings(`SELECT at.dbalbum_id FROM dbalbum_titles at
 					 JOIN dbalbum_artists aa ON at.dbalbum_id = aa.dbalbum_id
 					 WHERE aa.dbartist_id = ?
 					 AND (at.title = ? COLLATE NOCASE OR at.slug = NULLIF(?, ''))
-					 LIMIT 1`,
+					 `, preferListedAlbum("at.dbalbum_id")),
 					&result.ID, &artistIDs[artistID], &strippedTitle, &strippedSlug)
 
 				if result.ID > 0 {
@@ -438,7 +446,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 	var result AlbumSearchResult
 
 	Scanrowsdyn(false,
-		"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') LIMIT 1",
+		"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') "+preferListedAlbum("dbalbums.id"),
 		&result.ID, title, &slug)
 
 	if result.ID > 0 {
@@ -452,7 +460,7 @@ func FindAlbumByArtistTitle(artist, title *string) (*AlbumSearchResult, error) {
 	// Try stripped title without artist
 	if strippedTitle != *title && strippedTitle != "" {
 		Scanrowsdyn(false,
-			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') LIMIT 1",
+			"SELECT id FROM dbalbums WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') "+preferListedAlbum("dbalbums.id"),
 			&result.ID, &strippedTitle, &strippedSlug)
 
 		if result.ID > 0 {
@@ -782,7 +790,14 @@ func InsertAlbumFile(
 		return nil // Skip if no database ID
 	}
 
-	ExecN(
+	// The driver needs addresses, and every addressed parameter would move to
+	// the heap on its own; one struct makes it a single allocation.
+	ids := struct {
+		acoustid                      string
+		albumID, dbAlbumID, dbTrackID uint
+	}{acoustid, albumID, dbAlbumID, dbTrackID}
+
+	return ExecNErr(
 		"INSERT INTO [album_files] ([location],[filename],[extension],[format],[quality_profile],[file_size],[bitrate],[sample_rate],[bit_depth],[runtime_ms],[disc_number],[track_number],[acoustid],[album_id],[dbalbum_id],[dbtrack_id]) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		&track.Filepath,
 		&track.Filename,
@@ -796,13 +811,11 @@ func InsertAlbumFile(
 		&track.RuntimeMS,
 		&track.DiscNumber,
 		&track.TrackNumber,
-		&acoustid,
-		&albumID,
-		&dbAlbumID,
-		&dbTrackID,
+		&ids.acoustid,
+		&ids.albumID,
+		&ids.dbAlbumID,
+		&ids.dbTrackID,
 	)
-
-	return nil
 }
 
 // AlbumExistsByRootpath checks if an album with the given rootpath exists

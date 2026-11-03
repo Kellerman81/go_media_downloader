@@ -314,13 +314,54 @@ func buildIndexTwoStringByStr1(
 	return index
 }
 
+// hashKey returns the 64-bit FNV-1a hash of normalizeKey(s) without
+// building the normalized string. The string-set indexes store these hashes
+// instead of lowercased copies: the album and audiobook file caches hold
+// ~500k paths, and the copies cost ~90 MB of heap. With 64 bits a false
+// "contains" across 500k keys has a probability of about 1e-8.
+func hashKey(s string) uint64 {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+
+	h := uint64(offset64)
+
+	s = strings.TrimSpace(s)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x80 {
+			if c >= 'A' && c <= 'Z' {
+				c += 32
+			}
+
+			h = (h ^ uint64(c)) * prime64
+
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(s[i:])
+
+		var tmp [utf8.UTFMax]byte
+
+		n := utf8.EncodeRune(tmp[:], unicode.ToLower(r))
+		for _, b := range tmp[:n] {
+			h = (h ^ uint64(b)) * prime64
+		}
+
+		i += size - 1
+	}
+
+	return h
+}
+
 // buildIndexStringSet creates a set-based index for fast case-insensitive contains checks.
-func buildIndexStringSet(arr []string) map[string]struct{} {
-	index := make(map[string]struct{}, len(arr))
+func buildIndexStringSet(arr []string) map[uint64]struct{} {
+	index := make(map[uint64]struct{}, len(arr))
 
 	for i := range arr {
 		if arr[i] != "" {
-			index[normalizeKey(arr[i])] = struct{}{}
+			index[hashKey(arr[i])] = struct{}{}
 		}
 	}
 
@@ -460,13 +501,13 @@ func SlicesCacheContainsIFast(isType uint, query string, w *string) bool {
 		return SlicesCacheContainsI(isType, query, w)
 	}
 
-	key := normalizeKey(*w)
+	key := hashKey(*w)
 
 	var exists, indexed bool
 
 	cache.indexStringSet.ReadInPlace(
 		mtstrings.GetStringsMap(isType, query),
-		func(indexMap map[string]struct{}) {
+		func(indexMap map[uint64]struct{}) {
 			if indexMap != nil {
 				indexed = true
 				_, exists = indexMap[key]

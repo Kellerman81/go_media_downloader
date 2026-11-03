@@ -1695,6 +1695,9 @@ func (d *feedResults) scrapeChart(
 
 		var added int
 
+		qargs := make([]any, 0, cfglist.IgnoreMapListsLen+2)
+		rqargs := make([]any, 0, cfglist.ReplaceMapListsLen+2)
+
 		for _, node := range nodes {
 			title := extractChartText(
 				node,
@@ -1714,7 +1717,7 @@ func (d *feedResults) scrapeChart(
 
 			// Skip entries that are already tracked in any ignore-template list.
 			if checkIgnore {
-				qargs := make([]any, 0, cfglist.IgnoreMapListsLen+2)
+				qargs = qargs[:0]
 
 				query := ignoreQuery
 				qargs = append(qargs, title)
@@ -1734,7 +1737,7 @@ func (d *feedResults) scrapeChart(
 
 			// Move entries that exist in a replace-template list to the current list.
 			if checkReplace {
-				rqargs := make([]any, 0, cfglist.ReplaceMapListsLen+2)
+				rqargs = rqargs[:0]
 
 				query := replaceQuery
 				rqargs = append(rqargs, title)

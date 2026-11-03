@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -886,47 +887,28 @@ const enrichTagWorkers = 4
 // EnrichTracksWithTags reads tags for all tracks and updates their info.
 // This is called when we need full tag data for duration/chapter matching.
 // Tag reading is I/O bound, so files are read concurrently (bounded); each
-// goroutine writes only its own index, preserving order.
+// worker writes only the indexes it claims, preserving order. A fixed set of
+// workers pulls indexes instead of one goroutine per track, because every
+// spawned goroutine costs a heap-allocated closure.
 func EnrichTracksWithTags(tracks []TrackInfo) []TrackInfo {
 	enriched := make([]TrackInfo, len(tracks))
 
-	var wg sync.WaitGroup
+	var (
+		wg   sync.WaitGroup
+		next atomic.Int64
+	)
 
-	sem := make(chan struct{}, enrichTagWorkers)
+	for range min(enrichTagWorkers, len(tracks)) {
+		wg.Go(func() {
+			for {
+				i := int(next.Add(1) - 1)
+				if i >= len(tracks) {
+					return
+				}
 
-	for i := range tracks {
-		wg.Add(1)
-
-		sem <- struct{}{}
-
-		go func(i int) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			defer logger.HandlePanic()
-
-			track := tracks[i]
-
-			taggedTrack, err := ReadAudioTags(track.Filepath)
-			if err != nil {
-				// Keep original parsed data
-				enriched[i] = track
-				return
+				enrichTrack(&tracks[i], &enriched[i])
 			}
-
-			// Merge: prefer tag data but keep parsed data as fallback
-			enriched[i] = *taggedTrack
-			PutTrackInfo(taggedTrack)
-
-			enriched[i].Filepath = track.Filepath
-			// Keep parsed track number if tag didn't have one
-			if enriched[i].TrackNumber == 0 && track.TrackNumber > 0 {
-				enriched[i].TrackNumber = track.TrackNumber
-			}
-
-			if enriched[i].DiscNumber == 0 && track.DiscNumber > 0 {
-				enriched[i].DiscNumber = track.DiscNumber
-			}
-		}(i)
+		})
 	}
 
 	wg.Wait()
@@ -935,6 +917,33 @@ func EnrichTracksWithTags(tracks []TrackInfo) []TrackInfo {
 	NormalizeDiscTrackNumbers(enriched)
 
 	return enriched
+}
+
+// enrichTrack recovers its own panic so one bad file leaves only its own slot
+// unenriched instead of ending the worker and skipping the tracks after it.
+func enrichTrack(track, out *TrackInfo) {
+	defer logger.HandlePanic()
+
+	taggedTrack, err := ReadAudioTags(track.Filepath)
+	if err != nil {
+		// Keep original parsed data
+		*out = *track
+		return
+	}
+
+	// Merge: prefer tag data but keep parsed data as fallback
+	*out = *taggedTrack
+	PutTrackInfo(taggedTrack)
+
+	out.Filepath = track.Filepath
+	// Keep parsed track number if tag didn't have one
+	if out.TrackNumber == 0 && track.TrackNumber > 0 {
+		out.TrackNumber = track.TrackNumber
+	}
+
+	if out.DiscNumber == 0 && track.DiscNumber > 0 {
+		out.DiscNumber = track.DiscNumber
+	}
 }
 
 // NormalizeDiscTrackNumbers detects and splits encoded disc+track numbers.
@@ -1025,20 +1034,16 @@ func normalizeFromFilenames(tracks []TrackInfo) {
 		base := filepath.Base(t.Filepath)
 
 		// Extract leading number from filename
-		var numStr strings.Builder
-		for _, c := range base {
-			if c < '0' || c > '9' {
-				break
-			}
-
-			numStr.WriteString(string(c))
+		digits := 0
+		for digits < len(base) && base[digits] >= '0' && base[digits] <= '9' {
+			digits++
 		}
 
-		if len(numStr.String()) < 3 {
+		if digits < 3 {
 			return // Need at least 3 digits for disc+track encoding
 		}
 
-		num, err := strconv.Atoi(numStr.String())
+		num, err := strconv.Atoi(base[:digits])
 		if err != nil || num < 100 || num >= 1000 {
 			return
 		}

@@ -185,16 +185,25 @@ func MatchAudioFolderAsAlbum(
 	case config.MediaTypeAudiobook:
 		return matchAudiobookFolder(ctx, folder, files, cfgp, data, addToDatabase)
 	case config.MediaTypeMusic:
+		// Only the synthetic album the match settles on may stay; the other
+		// fallback candidates inserted on the way are removed again.
+		ctx, synthetic := withSyntheticAlbums(ctx)
+
 		result, status, report := matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase)
-		if status != "no_match" {
-			return result, status, report
+		if status == "no_match" {
+			// Fingerprint/LastFM fallback: only runs when normal matching found nothing.
+			folderArtist, folderAlbum, _ := parser_v2.ParseAudioFolder(folder)
+			if mbid := resolveAlbumMBID(ctx, folder, files, folderArtist, folderAlbum); mbid != "" {
+				result, status, report = matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase, mbid)
+			}
 		}
 
-		// Fingerprint/LastFM fallback: only runs when normal matching found nothing.
-		folderArtist, folderAlbum, _ := parser_v2.ParseAudioFolder(folder)
-		if mbid := resolveAlbumMBID(ctx, folder, files, folderArtist, folderAlbum); mbid != "" {
-			return matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase, mbid)
+		var keep uint
+		if result != nil && status == "" {
+			keep = result.DatabaseID
 		}
+
+		synthetic.dropExcept(keep)
 
 		return result, status, report
 
@@ -735,7 +744,7 @@ func matchAudiobookFolder(
 
 	// Step 9: Add files to database if requested
 	if addToDatabase {
-		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, listid) {
+		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, addFoundListID(cfgp, data)) {
 			return album, "no_match", nil
 		}
 
@@ -845,9 +854,8 @@ func matchAudiobookFolderForced(
 	}
 
 	// Step 5: persist to database if requested.
-	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
 	if addToDatabase {
-		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, listid) {
+		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, addFoundListID(cfgp, data)) {
 			return album, "no_match", nil
 		}
 
@@ -958,9 +966,8 @@ func matchMusicFolderForced(
 	}
 
 	// Step 5: persist to database if requested.
-	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
 	if addToDatabase {
-		if !addAlbumFilesToDatabase(ctx, folder, album, cfgp, listid) {
+		if !addAlbumFilesToDatabase(ctx, folder, album, cfgp, addFoundListID(cfgp, data)) {
 			return album, "no_match", nil
 		}
 
@@ -1402,7 +1409,7 @@ func matchMusicFolder(
 
 	// Step 8: Add files to database if requested (no language validation for music)
 	if addToDatabase {
-		if !addAlbumFilesToDatabase(ctx, folder, album, cfgp, listid) {
+		if !addAlbumFilesToDatabase(ctx, folder, album, cfgp, addFoundListID(cfgp, data)) {
 			return album, "no_match", nil
 		}
 
@@ -1700,6 +1707,7 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+						noteSyntheticAlbum(ctx, existingID)
 
 						lfmAltArtistName, lfmAltArtistMBID := releaseArtistName(
 							release.Artists,
@@ -1835,6 +1843,7 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+						noteSyntheticAlbum(ctx, existingID)
 
 						dgAltArtistName, dgAltArtistMBID := releaseArtistName(
 							release.Artists,
@@ -1934,6 +1943,7 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+						noteSyntheticAlbum(ctx, existingID)
 
 						dzAltArtistName, dzAltArtistMBID := releaseArtistName(
 							release.Artists,
@@ -2338,7 +2348,7 @@ func MatchSingleAudiobookFile(
 
 	// Add to database if requested
 	if addToDatabase {
-		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, listid) {
+		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, addFoundListID(cfgp, data)) {
 			return album, "no_match"
 		}
 	}

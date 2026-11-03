@@ -832,3 +832,50 @@ func TestRegexGetMatchesStr1(t *testing.T) {
 		}
 	}
 }
+
+func TestPreferOriginalDbserie(t *testing.T) {
+	db := useMigratedMainDB(t)
+
+	// Shaped like production: the 1998 show's main name is its German title,
+	// so the bare "Charmed" name lookup hits the 2018 remake first.
+	mustExec(t, db, "insert into dbseries (id, seriename, slug, firstaired) values (48, 'Charmed - Zauberhafte Hexen', 'charmed-zauberhafte-hexen', '1998-10-07')")
+	mustExec(t, db, "insert into dbseries (id, seriename, slug, firstaired) values (49, 'Charmed', 'charmed', '2018-10-14')")
+	mustExec(t, db, "insert into dbserie_alternates (dbserie_id, title, slug) values (48, 'Charmed', 'charmed')")
+	mustExec(t, db, "insert into dbserie_alternates (dbserie_id, title, slug) values (49, 'Charmed (2018)', 'charmed-2018')")
+	mustExec(t, db, "insert into dbserie_alternates (dbserie_id, title, slug) values (48, 'Charmed (1998)', 'charmed-1998')")
+	mustExec(t, db, "insert into dbseries (id, seriename, slug, firstaired) values (105, 'MacGyver', 'macgyver', '2016-09-23')")
+	mustExec(t, db, "insert into dbseries (id, seriename, slug, firstaired) values (263, 'MacGyver', 'macgyver', '1985-09-29')")
+	mustExec(t, db, "insert into dbserie_alternates (dbserie_id, title, slug) values (105, 'MacGyver 2016', 'macgyver-2016')")
+	mustExec(t, db, "insert into dbserie_alternates (dbserie_id, title, slug) values (263, 'MacGyver (1985)', 'macgyver-1985')")
+	// A title shared only through a stray alias: no year-qualified names, so
+	// the main-name hit stands although the alias owner is older.
+	mustExec(t, db, "insert into dbseries (id, seriename, slug, firstaired) values (144, 'Quantico', 'quantico', '2015-08-30')")
+	mustExec(t, db, "insert into dbseries (id, seriename, slug, firstaired) values (246, 'Criminal Minds', 'criminal-minds', '2005-09-22')")
+	mustExec(t, db, "insert into dbserie_alternates (dbserie_id, title, slug) values (246, 'Quantico', 'quantico')")
+
+	tests := []struct {
+		title string
+		year  uint16
+		want  uint
+	}{
+		{"Charmed", 0, 48},    // bare name is the original
+		{"charmed", 0, 48},    // case-insensitive
+		{"Charmed", 2018, 49}, // year picks the remake
+		{"MacGyver", 0, 263},
+		{"MacGyver", 2016, 105},
+		{"MacGyver", 1990, 263}, // no year match: oldest
+		{"Quantico", 0, 144},
+		{"Charmed - Zauberhafte Hexen", 0, 48},
+		{"Unknown Show", 0, 0},
+	}
+
+	for _, tt := range tests {
+		m := ParseInfo{Year: tt.year}
+		m.FindDbserieByNameWithSlug(tt.title)
+		m.PreferOriginalDbserie(tt.title)
+
+		if m.DbserieID != tt.want {
+			t.Errorf("%q (%d): DbserieID = %d, want %d", tt.title, tt.year, m.DbserieID, tt.want)
+		}
+	}
+}

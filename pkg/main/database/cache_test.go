@@ -220,8 +220,8 @@ func TestDropOrphanedIndexes(t *testing.T) {
 	const live, gone = "zzLiveKey", "zzGoneKey"
 
 	cache.itemsstring.Add(live, []string{"a"}, 0, false, 0)
-	cache.indexStringSet.Add(live, map[string]struct{}{"a": {}}, 0, false, 0)
-	cache.indexStringSet.Add(gone, map[string]struct{}{"b": {}}, 0, false, 0)
+	cache.indexStringSet.Add(live, map[uint64]struct{}{hashKey("a"): {}}, 0, false, 0)
+	cache.indexStringSet.Add(gone, map[uint64]struct{}{hashKey("b"): {}}, 0, false, 0)
 
 	t.Cleanup(func() {
 		cache.itemsstring.Delete(live)

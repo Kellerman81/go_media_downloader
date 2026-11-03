@@ -644,3 +644,69 @@ func TestValidateAlbum(t *testing.T) {
 		t.Errorf("multi-disc: %t %v", complete, missing)
 	}
 }
+
+func TestNormalizeFromFilenames(t *testing.T) {
+	mk := func(names ...string) []TrackInfo {
+		tracks := make([]TrackInfo, len(names))
+		for i, n := range names {
+			tracks[i] = TrackInfo{Filepath: "/music/Album/" + n, TrackNumber: 1}
+		}
+
+		return tracks
+	}
+
+	tracks := mk("101_a.mp3", "102_b.mp3", "201 - c.mp3", "202-d.mp3")
+	normalizeFromFilenames(tracks)
+
+	want := [][2]int{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
+	for i, w := range want {
+		if tracks[i].DiscNumber != w[0] || tracks[i].TrackNumber != w[1] {
+			t.Errorf("%s: disc/track = %d/%d, want %d/%d",
+				tracks[i].Filepath, tracks[i].DiscNumber, tracks[i].TrackNumber, w[0], w[1])
+		}
+	}
+
+	// Anything that isn't a clean 3-digit disc+track encoding leaves tracks alone.
+	for _, names := range [][]string{
+		{"01_a.mp3", "02_b.mp3", "03_c.mp3", "04_d.mp3"},      // 2 digits
+		{"101_a.mp3", "102_b.mp3", "103_c.mp3", "104_d.mp3"},  // one disc only
+		{"101_a.mp3", "102_b.mp3", "201_c.mp3", "x_d.mp3"},    // no number
+		{"101_a.mp3", "102_b.mp3", "201_c.mp3", "1000_d.mp3"}, // 4 digits
+	} {
+		tracks := mk(names...)
+		normalizeFromFilenames(tracks)
+
+		for _, tr := range tracks {
+			if tr.DiscNumber != 0 || tr.TrackNumber != 1 {
+				t.Errorf("%v: %s changed to disc/track %d/%d", names, tr.Filepath, tr.DiscNumber, tr.TrackNumber)
+			}
+		}
+	}
+}
+
+func TestEnrichTracksWithTagsKeepsOrderAndFallback(t *testing.T) {
+	// More tracks than workers, none readable: every slot must fall back to
+	// its own parsed data, in input order.
+	tracks := make([]TrackInfo, enrichTagWorkers*3+1)
+	for i := range tracks {
+		tracks[i] = TrackInfo{
+			Filepath:    filepath.Join(t.TempDir(), fmt.Sprintf("missing-%d.mp3", i)),
+			TrackNumber: i + 1,
+		}
+	}
+
+	got := EnrichTracksWithTags(tracks)
+	if len(got) != len(tracks) {
+		t.Fatalf("got %d tracks, want %d", len(got), len(tracks))
+	}
+
+	for i := range got {
+		if got[i].Filepath != tracks[i].Filepath || got[i].TrackNumber != tracks[i].TrackNumber {
+			t.Errorf("slot %d = %q #%d, want %q #%d", i, got[i].Filepath, got[i].TrackNumber, tracks[i].Filepath, tracks[i].TrackNumber)
+		}
+	}
+
+	if got := EnrichTracksWithTags(nil); len(got) != 0 {
+		t.Errorf("nil input gave %d tracks", len(got))
+	}
+}

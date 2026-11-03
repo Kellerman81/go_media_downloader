@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -205,6 +206,44 @@ func releaseMatchesMBFormats(r *apiexternal_v2.ReleaseSearchResult, formats []st
 	return true
 }
 
+// releaseImportFilters returns the release types and disc formats an artist
+// or series import accepts: the media config's allowed_release_types and
+// mb_media_formats (first data entry that sets them), with the entry's own
+// MBMediaFormats taking precedence. Without them an artist import adds every
+// edition MusicBrainz lists - vinyl, cassette, CD-R, singles.
+func releaseImportFilters(
+	album *config.ManualConfig,
+	cfgp *config.MediaTypeConfig,
+) (allowedTypes, mediaFormats []string) {
+	mediaFormats = album.MBMediaFormats
+
+	for i := range cfgp.Data {
+		if allowedTypes == nil && len(cfgp.Data[i].AllowedReleaseTypes) > 0 {
+			allowedTypes = cfgp.Data[i].AllowedReleaseTypes
+		}
+
+		if mediaFormats == nil && len(cfgp.Data[i].MBMediaFormats) > 0 {
+			mediaFormats = cfgp.Data[i].MBMediaFormats
+		}
+	}
+
+	return allowedTypes, mediaFormats
+}
+
+// groupHandled reports whether groupID was already handled in this import
+// run, recording it otherwise. Releases without a group are never skipped.
+func groupHandled(seen map[string]struct{}, groupID string) (handled bool) {
+	if groupID == "" {
+		return false
+	}
+
+	if _, handled = seen[groupID]; !handled {
+		seen[groupID] = struct{}{}
+	}
+
+	return handled
+}
+
 // importAlbumsByArtist imports all albums by an artist.
 func importAlbumsByArtist(
 	ctx context.Context,
@@ -216,7 +255,11 @@ func importAlbumsByArtist(
 	artistName := album.ArtistName
 	artistID := album.ArtistID
 
-	mediaFormats := album.MBMediaFormats
+	allowedTypes, mediaFormats := releaseImportFilters(album, cfgp)
+
+	// MusicBrainz lists every edition of an album as its own release; once one
+	// edition passed the filters, the others map to the same album.
+	seenGroups := make(map[string]struct{})
 
 	// importAllReleasesByMBID fetches all releases for a given MusicBrainz artist ID, paginating as needed.
 	importAllReleasesByMBID := func(mbid string) error {
@@ -236,7 +279,16 @@ func importAlbumsByArtist(
 					return err
 				}
 
+				if len(allowedTypes) > 0 && releases[i].Type != "" &&
+					!logger.SlicesContainsI(allowedTypes, releases[i].Type) {
+					continue
+				}
+
 				if !releaseMatchesMBFormats(&releases[i], mediaFormats) {
+					continue
+				}
+
+				if groupHandled(seenGroups, releases[i].ReleaseGroupID) {
 					continue
 				}
 
@@ -301,31 +353,43 @@ func importAlbumsBySeries(
 	listid int,
 	mbProvider *musicbrainz.Provider,
 ) error {
-	seriesName := album.AlbumSeriesName
-	if seriesName == "" {
-		seriesName = album.AlbumSeriesID
+	allowedTypes, mediaFormats := releaseImportFilters(album, cfgp)
+
+	// The MusicBrainz series lists exactly its release groups; without a
+	// configured ID it is looked up by name.
+	if album.AlbumSeriesID != "" {
+		releaseGroupIDs, err := getReleaseGroupsInSeries(ctx, album.AlbumSeriesID)
+		if err != nil {
+			return err
+		}
+
+		addSeriesReleaseGroups(ctx, releaseGroupIDs, "", cfgp, listid, allowedTypes, mediaFormats)
+
+		return nil
 	}
 
-	if seriesName != "" {
-		mediaFormats := album.MBMediaFormats
+	if album.AlbumSeriesName != "" {
+		if releaseGroupIDs := seriesReleaseGroupsByName(ctx, album.AlbumSeriesName); len(releaseGroupIDs) > 0 {
+			addSeriesReleaseGroups(ctx, releaseGroupIDs, "", cfgp, listid, allowedTypes, mediaFormats)
 
-		// Build Lucene query: optionally append format filter terms for server-side pre-filtering.
-		// Example: "Bravo Hits AND (format:CD)"
-		// seriesName is free-text user config (AlbumSeriesName/AlbumSeriesID) and
-		// must be Lucene-escaped, matching BuildArtistAlbumSearch elsewhere in
-		// this package - a series name containing Lucene special characters
-		// (":", "(", ")", etc, e.g. "Bravo Hits: The Collection (Vol. 2)")
-		// would otherwise produce a malformed or misinterpreted query.
-		escapedSeriesName := logger.LuceneEscape(seriesName)
-		query := escapedSeriesName
+			return nil
+		}
+	}
+
+	if seriesName := album.AlbumSeriesName; seriesName != "" {
+		// No MusicBrainz series of that name: fall back to the release title
+		// as a phrase. Unquoted, MusicBrainz ORs the words - "Future Trance"
+		// matched 61k releases with "Future" or "Trance" in them.
+		// Example: release:"Bravo Hits" AND (format:CD)
+		query := luceneFieldPhrase("release", seriesName)
 		if len(mediaFormats) > 0 {
 			fmtParts := make([]string, 0, len(mediaFormats))
 			for i := range mediaFormats {
-				fmtParts = append(fmtParts, "format:"+logger.LuceneEscape(mediaFormats[i]))
+				fmtParts = append(fmtParts, luceneFieldPhrase("format", mediaFormats[i]))
 			}
 
 			query = logger.JoinStrings(
-				escapedSeriesName,
+				query,
 				" AND (",
 				logger.JoinStringsSep(fmtParts, " OR "),
 				")",
@@ -341,6 +405,8 @@ func importAlbumsBySeries(
 		// a tracked-artist entry when artistName is non-empty) actually
 		// runs, instead of trackedArtistID staying permanently 0.
 		str := VariousArtistsName
+		seenGroups := make(map[string]struct{})
+
 		for offset := 0; ; offset += pageSize {
 			if err := logger.CheckContextEnded(ctx); err != nil {
 				return err
@@ -356,8 +422,17 @@ func importAlbumsBySeries(
 					return err
 				}
 
+				if len(allowedTypes) > 0 && releases[i].Type != "" &&
+					!logger.SlicesContainsI(allowedTypes, releases[i].Type) {
+					continue
+				}
+
 				// Client-side filter as a safety net (server-side Lucene filter is best-effort)
 				if !releaseMatchesMBFormats(&releases[i], mediaFormats) {
+					continue
+				}
+
+				if groupHandled(seenGroups, releases[i].ReleaseGroupID) {
 					continue
 				}
 
@@ -478,39 +553,6 @@ func addAlbumToDatabase(
 		return logger.ErrNotFound
 	}
 
-	// Fetch full release details to get tracks and calculate runtime
-	var (
-		releaseDetails *apiexternal_v2.ReleaseDetails
-		totalRuntimeMs int64
-	)
-
-	mbProvider := getMusicBrainzProvider()
-	if release.MusicBrainzID == "" && release.ReleaseGroupID != "" {
-		// Only the release group is known; GetReleaseByID and the
-		// musicbrainz_release_id column need an actual release of it.
-		if releaseID := resolveReleaseIDFromGroup(ctx, release.ReleaseGroupID); releaseID != "" {
-			r := *release
-			r.MusicBrainzID = releaseID
-			release = &r
-		}
-	}
-
-	if release.MusicBrainzID != "" {
-		mbid := release.MusicBrainzID
-
-		var err error
-
-		releaseDetails, err = retryOnRateLimit(ctx, func() (*apiexternal_v2.ReleaseDetails, error) {
-			return mbProvider.GetReleaseByID(ctx, mbid)
-		})
-		if err == nil && releaseDetails != nil {
-			// Calculate total runtime from tracks
-			for i := range releaseDetails.Tracks {
-				totalRuntimeMs += releaseDetails.Tracks[i].Duration.Milliseconds()
-			}
-		}
-	}
-
 	// Check if album already exists by various IDs
 	var existingID uint
 	if release.MusicBrainzID != "" {
@@ -566,6 +608,48 @@ func addAlbumToDatabase(
 			&existingID,
 			&release.Title, &releaseYear, &dedupArtist,
 		)
+	}
+
+	// Fetch full release details to get tracks and calculate runtime. Each
+	// fetch is a rate-limited MusicBrainz call, and artist imports re-run over
+	// every known album, so an album already in the database only gets them
+	// while its tracks or runtime are still missing.
+	var (
+		releaseDetails *apiexternal_v2.ReleaseDetails
+		totalRuntimeMs int64
+	)
+
+	if existingID == 0 || database.Getdatarow[uint](false,
+		`SELECT COUNT(*) FROM dbalbums WHERE id = ?
+		 AND (total_runtime_ms = 0 OR NOT EXISTS (SELECT 1 FROM dbtracks WHERE dbalbum_id = ?))`,
+		&existingID, &existingID,
+	) > 0 {
+		if release.MusicBrainzID == "" && release.ReleaseGroupID != "" {
+			// Only the release group is known; GetReleaseByID and the
+			// musicbrainz_release_id column need an actual release of it.
+			if releaseID := resolveReleaseIDFromGroup(ctx, release.ReleaseGroupID); releaseID != "" {
+				r := *release
+				r.MusicBrainzID = releaseID
+				release = &r
+			}
+		}
+
+		if release.MusicBrainzID != "" {
+			mbid := release.MusicBrainzID
+			mbProvider := getMusicBrainzProvider()
+
+			var err error
+
+			releaseDetails, err = retryOnRateLimit(ctx, func() (*apiexternal_v2.ReleaseDetails, error) {
+				return mbProvider.GetReleaseByID(ctx, mbid)
+			})
+			if err == nil && releaseDetails != nil {
+				// Calculate total runtime from tracks
+				for i := range releaseDetails.Tracks {
+					totalRuntimeMs += releaseDetails.Tracks[i].Duration.Milliseconds()
+				}
+			}
+		}
 	}
 
 	var dbalbumID uint
@@ -663,26 +747,21 @@ func addAlbumToDatabase(
 		releaseGroupID = releaseDetails.ReleaseGroupID
 	}
 
-	if releaseGroupID != "" && dbalbumID > 0 {
-		// Skip the HTTP call if series_name is already stored.
-		existing := database.Getdatarow[string](
-			false,
-			"SELECT series_name FROM dbalbums WHERE id = ? AND (series_name IS NOT NULL AND series_name != '')",
-			&dbalbumID,
-		)
-		if existing == "" {
-			_, seriesName, seriesErr := getSeriesIDFromReleaseGroup(ctx, releaseGroupID)
-			if seriesErr == nil && seriesName != "" {
-				database.ExecN(
-					"UPDATE dbalbums SET series_name = ? WHERE id = ?",
-					&seriesName,
-					&dbalbumID,
-				)
-				logger.Logtype("info", 1).
-					Str("album", release.Title).
-					Str("series", seriesName).
-					Msg("Stored album series name")
-			}
+	// Only for newly inserted albums: most albums are in no series, so their
+	// series_name stays empty and checking existing ones again would repeat a
+	// MusicBrainz call for every known album on every import run.
+	if releaseGroupID != "" && dbalbumID > 0 && existingID == 0 {
+		_, seriesName, seriesErr := getSeriesIDFromReleaseGroup(ctx, releaseGroupID)
+		if seriesErr == nil && seriesName != "" {
+			database.ExecN(
+				"UPDATE dbalbums SET series_name = ? WHERE id = ?",
+				&seriesName,
+				&dbalbumID,
+			)
+			logger.Logtype("info", 1).
+				Str("album", release.Title).
+				Str("series", seriesName).
+				Msg("Stored album series name")
 		}
 	}
 
@@ -1213,7 +1292,7 @@ type mbSeriesReleaseGroupsResponse struct {
 		ReleaseGroup struct {
 			ID    string `json:"id"`
 			Title string `json:"title"`
-		} `json:"release-group"`
+		} `json:"release_group"` // MusicBrainz relations use underscores here
 	} `json:"relations"`
 }
 
@@ -1261,7 +1340,7 @@ func getReleaseGroupsInSeries(ctx context.Context, seriesID string) ([]string, e
 	// Extract all release group IDs
 	var releaseGroupIDs []string
 	for i := range response.Relations {
-		if response.Relations[i].TargetType == "release-group" &&
+		if response.Relations[i].TargetType == "release_group" &&
 			response.Relations[i].Type == "part of" {
 			releaseGroupIDs = append(releaseGroupIDs, response.Relations[i].ReleaseGroup.ID)
 		}
@@ -1279,55 +1358,78 @@ func getReleaseGroupsInSeries(ctx context.Context, seriesID string) ([]string, e
 	return releaseGroupIDs, nil
 }
 
-// DiscoverAndAddSeriesAlbums discovers other albums in the same series and adds them to the database.
-// This is used for "Various Artists" compilations where albums are part of a MusicBrainz series (like "Bravo Hits").
-func DiscoverAndAddSeriesAlbums(
+// mbSeriesSearchResponse is the JSON response shape of a /series?query= search.
+type mbSeriesSearchResponse struct {
+	Series []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"series"`
+}
+
+// seriesReleaseGroupsByName returns the release groups of the release group
+// series named exactly name, nil when there is none. Names are not unique -
+// "Now That's What I Call Music!" exists for the UK (124 volumes) and the USA
+// (90), "Bääärenstark!!!" as main series (69) and a side series (5) - so with
+// several candidates the one with the most release groups wins.
+// album_series_id pins the choice and skips the search.
+func seriesReleaseGroupsByName(ctx context.Context, name string) []string {
+	endpoint := logger.JoinStrings(
+		"/series?query=", url.QueryEscape(luceneFieldPhrase("series", name)), "&limit=25&fmt=json",
+	)
+
+	var response mbSeriesSearchResponse
+	if err := getMusicBrainzProvider().MakeRequest(ctx, "GET", endpoint, nil, &response, nil); err != nil {
+		logger.Logtype("debug", 1).Err(err).Str("series", name).Msg("MusicBrainz series search failed")
+		return nil
+	}
+
+	var (
+		bestID     string
+		bestGroups []string
+	)
+
+	for i := range response.Series {
+		sr := &response.Series[i]
+		if !strings.EqualFold(sr.Name, name) || !strings.EqualFold(sr.Type, "Release group series") {
+			continue
+		}
+
+		groups, err := getReleaseGroupsInSeries(ctx, sr.ID)
+		if err == nil && len(groups) > len(bestGroups) {
+			bestID, bestGroups = sr.ID, groups
+		}
+	}
+
+	if bestID != "" {
+		logger.Logtype("info", 1).
+			Str("series", name).
+			Str("album_series_id", bestID).
+			Int("release_groups", len(bestGroups)).
+			Msg("Resolved album series by name; set album_series_id to pin it")
+	}
+
+	return bestGroups
+}
+
+// luceneFieldPhrase returns field:"value" - a phrase query, so all words of
+// value must match in order instead of any one of them.
+func luceneFieldPhrase(field, value string) string {
+	return logger.JoinStrings(field, `:"`, logger.LuceneEscape(value), `"`)
+}
+
+// addSeriesReleaseGroups adds one release of every release group not yet in
+// the database, filtered by release type and disc format, as a Various Artists
+// album. skipGroupID is left out. It returns the number of albums added.
+func addSeriesReleaseGroups(
 	ctx context.Context,
-	releaseGroupID string,
-	albumTitle string,
+	releaseGroupIDs []string,
+	skipGroupID string,
 	cfgp *config.MediaTypeConfig,
 	listid int,
 	allowedReleaseTypes []string,
 	mediaFormats []string,
 ) int {
-	if releaseGroupID == "" || listid == -1 {
-		return 0
-	}
-
-	logger.Logtype("info", 1).
-		Str("album", albumTitle).
-		Str("release_group_id", releaseGroupID).
-		Str("list", cfgp.Lists[listid].Name).
-		Msg("Checking if album is part of a series")
-
-	// Check if this release group is part of a series
-	seriesID, _, err := getSeriesIDFromReleaseGroup(ctx, releaseGroupID)
-	if err != nil {
-		logger.Logtype("debug", 1).
-			Str("release_group_id", releaseGroupID).
-			Err(err).
-			Msg("Release group is not part of a series")
-
-		return 0
-	}
-
-	// Get all release groups in the series
-	releaseGroupIDs, err := getReleaseGroupsInSeries(ctx, seriesID)
-	if err != nil {
-		logger.Logtype("debug", 1).
-			Str("series_id", seriesID).
-			Err(err).
-			Msg("Failed to get release groups from series")
-
-		return 0
-	}
-
-	logger.Logtype("info", 1).
-		Str("album", albumTitle).
-		Str("series_id", seriesID).
-		Int("release_groups_found", len(releaseGroupIDs)).
-		Msg("Found release groups in series")
-
 	mbProvider := getMusicBrainzProvider()
 	albumsAdded := 0
 
@@ -1338,7 +1440,24 @@ func DiscoverAndAddSeriesAlbums(
 		}
 
 		// Skip the original release group we already have
-		if releaseGroupIDs[j] == releaseGroupID {
+		if releaseGroupIDs[j] == skipGroupID {
+			continue
+		}
+
+		// Skip if we already have this album - before the details call, so a
+		// known series costs no MusicBrainz request per volume.
+		var existingID uint
+		database.Scanrowsdyn(
+			false,
+			"SELECT id FROM dbalbums WHERE musicbrainz_release_group_id = ?",
+			&existingID,
+			&releaseGroupIDs[j],
+		)
+
+		if existingID > 0 {
+			logger.Logtype("debug", 2).
+				Str("release_group_id", releaseGroupIDs[j]).
+				Msg("Album already in database, skipping")
 			continue
 		}
 
@@ -1350,22 +1469,6 @@ func DiscoverAndAddSeriesAlbums(
 				Err(err).
 				Msg("Failed to get release group details")
 
-			continue
-		}
-
-		// Skip if we already have this album
-		var existingID uint
-		database.Scanrowsdyn(
-			false,
-			"SELECT id FROM dbalbums WHERE musicbrainz_release_group_id = ?",
-			&existingID,
-			&releaseGroupIDs[j],
-		)
-
-		if existingID > 0 {
-			logger.Logtype("debug", 2).
-				Str("album", releaseGroupDetails.Title).
-				Msg("Album already in database, skipping")
 			continue
 		}
 
@@ -1449,6 +1552,62 @@ func DiscoverAndAddSeriesAlbums(
 				Msg("Failed to add album from series discovery")
 		}
 	}
+
+	return albumsAdded
+}
+
+// DiscoverAndAddSeriesAlbums discovers other albums in the same series and adds them to the database.
+// This is used for "Various Artists" compilations where albums are part of a MusicBrainz series (like "Bravo Hits").
+func DiscoverAndAddSeriesAlbums(
+	ctx context.Context,
+	releaseGroupID string,
+	albumTitle string,
+	cfgp *config.MediaTypeConfig,
+	listid int,
+	allowedReleaseTypes []string,
+	mediaFormats []string,
+) int {
+	if releaseGroupID == "" || listid == -1 {
+		return 0
+	}
+
+	logger.Logtype("info", 1).
+		Str("album", albumTitle).
+		Str("release_group_id", releaseGroupID).
+		Str("list", cfgp.Lists[listid].Name).
+		Msg("Checking if album is part of a series")
+
+	// Check if this release group is part of a series
+	seriesID, _, err := getSeriesIDFromReleaseGroup(ctx, releaseGroupID)
+	if err != nil {
+		logger.Logtype("debug", 1).
+			Str("release_group_id", releaseGroupID).
+			Err(err).
+			Msg("Release group is not part of a series")
+
+		return 0
+	}
+
+	// Get all release groups in the series
+	releaseGroupIDs, err := getReleaseGroupsInSeries(ctx, seriesID)
+	if err != nil {
+		logger.Logtype("debug", 1).
+			Str("series_id", seriesID).
+			Err(err).
+			Msg("Failed to get release groups from series")
+
+		return 0
+	}
+
+	logger.Logtype("info", 1).
+		Str("album", albumTitle).
+		Str("series_id", seriesID).
+		Int("release_groups_found", len(releaseGroupIDs)).
+		Msg("Found release groups in series")
+
+	albumsAdded := addSeriesReleaseGroups(
+		ctx, releaseGroupIDs, releaseGroupID, cfgp, listid, allowedReleaseTypes, mediaFormats,
+	)
 
 	if albumsAdded > 0 {
 		logger.Logtype("info", 0).

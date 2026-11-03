@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -521,6 +522,67 @@ func fallbackRuntimeWithinTolerance(
 	return true
 }
 
+// syntheticAlbumsKey carries the *syntheticAlbums of one folder match.
+type syntheticAlbumsKey struct{}
+
+// syntheticAlbums collects the synthetic dbalbums rows inserted while one
+// folder is matched. The fallback providers each insert their candidate
+// before scoring picks one, so the others must be removed again afterwards -
+// otherwise every match leaves orphan albums that belong to no list.
+type syntheticAlbums struct {
+	mu  sync.Mutex
+	ids []uint
+}
+
+// withSyntheticAlbums returns ctx with a fresh collector.
+func withSyntheticAlbums(ctx context.Context) (context.Context, *syntheticAlbums) {
+	s := &syntheticAlbums{}
+	return context.WithValue(ctx, syntheticAlbumsKey{}, s), s
+}
+
+// noteSyntheticAlbum records a synthetic album inserted under ctx; without a
+// collector (imports outside a folder match) it does nothing.
+func noteSyntheticAlbum(ctx context.Context, id uint) {
+	s, ok := ctx.Value(syntheticAlbumsKey{}).(*syntheticAlbums)
+	if !ok || id == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	s.ids = append(s.ids, id)
+	s.mu.Unlock()
+}
+
+// dropExcept deletes the collected albums other than keep. A row that gained
+// a list entry, files or history in the meantime is left alone.
+func (s *syntheticAlbums) dropExcept(keep uint) {
+	s.mu.Lock()
+	ids := s.ids
+	s.ids = nil
+	s.mu.Unlock()
+
+	for i := range ids {
+		if ids[i] == keep || database.Getdatarow[uint](false,
+			`SELECT EXISTS (SELECT 1 FROM albums WHERE dbalbum_id = ?1)
+			     OR EXISTS (SELECT 1 FROM album_files WHERE dbalbum_id = ?1)
+			     OR EXISTS (SELECT 1 FROM album_histories WHERE dbalbum_id = ?1)`,
+			&ids[i],
+		) > 0 {
+			continue
+		}
+
+		// foreign_keys is off, so the children go explicitly.
+		database.ExecN("DELETE FROM dbtracks WHERE dbalbum_id = ?", &ids[i])
+		database.ExecN("DELETE FROM dbalbum_artists WHERE dbalbum_id = ?", &ids[i])
+		database.ExecN("DELETE FROM dbalbum_titles WHERE dbalbum_id = ?", &ids[i])
+		database.ExecN("DELETE FROM dbalbums WHERE id = ?", &ids[i])
+
+		logger.Logtype("debug", 1).
+			Uint("dbalbumID", ids[i]).
+			Msg("Music fallback: removed synthetic album that lost the match")
+	}
+}
+
 // syntheticAlbum describes a provider release to insert as a synthetic
 // dbalbums row (one without a MusicBrainz release ID). Unused identifier
 // fields stay empty/zero and are stored as such.
@@ -548,6 +610,7 @@ type syntheticAlbum struct {
 // (insertSequentialTracks) over the collision-resolving insertSyntheticTracks.
 // Returns the new dbalbum ID, or 0 on failure (already logged).
 func insertSyntheticAlbum(
+	ctx context.Context,
 	sa *syntheticAlbum,
 	apiArtists []apiexternal_v2.ArtistRef,
 	localArtist *string,
@@ -593,6 +656,7 @@ func insertSyntheticAlbum(
 	}
 
 	albumID := logger.Int64ToUint(result)
+	noteSyntheticAlbum(ctx, albumID)
 
 	artistName, artistMBID := releaseArtistName(apiArtists, localArtist)
 	if artistID := addOrGetArtist(&artistName, &artistMBID); artistID > 0 {
@@ -2421,6 +2485,7 @@ func tryMusicLastFMFallback(
 
 		// Sequential track numbering — Last.fm sometimes numbers per-disc.
 		existingID = insertSyntheticAlbum(
+			ctx,
 			&syntheticAlbum{
 				title:          releaseTitleName(release.Title, albumTitle),
 				mbReleaseID:    lfmMBID,
@@ -2534,6 +2599,7 @@ func tryMusicDiscogsFallback(
 			}
 
 			existingID = insertSyntheticAlbum(
+				ctx,
 				&syntheticAlbum{
 					title:            releaseTitleName(release.Title, albumTitle),
 					discogsReleaseID: release.DiscogsID,
@@ -2636,6 +2702,7 @@ func tryMusicDeezerFallback(
 			}
 
 			existingID = insertSyntheticAlbum(
+				ctx,
 				&syntheticAlbum{
 					title:          releaseTitleName(release.Title, albumTitle),
 					upc:            release.Barcode,
@@ -2731,6 +2798,7 @@ func tryMusicTheAudioDBFallback(
 			}
 
 			existingID = insertSyntheticAlbum(
+				ctx,
 				&syntheticAlbum{
 					title:          releaseTitleName(results[i].Title, albumTitle),
 					year:           results[i].ReleaseYear,
@@ -2832,6 +2900,7 @@ func tryMusicItunesFallback(
 			}
 
 			existingID = insertSyntheticAlbum(
+				ctx,
 				&syntheticAlbum{
 					title:          releaseTitleName(release.Title, albumTitle),
 					year:           release.ReleaseYear,

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"encoding/binary"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -377,6 +378,60 @@ func TestNativeProbeSyntheticAVI(t *testing.T) {
 
 	if a == nil || a.CodecName != "ac3" || a.Channels != 6 || a.SampleRate != "48000" {
 		t.Errorf("audio = %+v", a)
+	}
+}
+
+// TestNativeProbeHeaderBeyondInitialRead covers headers that don't fit the
+// first initialHeaderProbe read: the probe must retry with the larger read
+// rather than return the streams of a cut-off Tracks element.
+func TestNativeProbeHeaderBeyondInitialRead(t *testing.T) {
+	pad := make([]byte, initialHeaderProbe+1024)
+
+	mkv := buildMKV()
+	// Void element (0xEC) between EBML head and Segment pushes Tracks past the
+	// first read; the trailing cluster keeps the file larger than both.
+	headEnd := len(ebmlElem(0x1A45DFA3, ebmlElem(0x4282, []byte("matroska"))))
+	mkvPadded := cat(mkv[:headEnd], ebmlElem(0xEC, pad), mkv[headEnd:])
+
+	r, err := nativeProbe(writeSample(t, "big.mkv", mkvPadded))
+	if err != nil {
+		t.Fatalf("mkv: %v", err)
+	}
+
+	if len(r.Streams) != 2 {
+		t.Errorf("mkv streams = %d, want 2", len(r.Streams))
+	}
+
+	avih := cat(le32(40_000), make([]byte, 12), le32(250), make([]byte, 36))
+	bih := cat(le32(40), le32(720), le32(480), make([]byte, 4), []byte("XVID"), make([]byte, 20))
+	hdrl := riffChunk("LIST", []byte("hdrl"),
+		riffChunk("avih", avih),
+		riffChunk("JUNK", pad),
+		riffChunk("LIST", []byte("strl"), riffChunk("strh", []byte("vids"), make([]byte, 52)), riffChunk("strf", bih)),
+	)
+	body := cat([]byte("AVI "), hdrl, riffChunk("LIST", []byte("movi"), make([]byte, 2048)))
+
+	r, err = nativeProbe(writeSample(t, "big.avi", cat([]byte("RIFF"), le32(uint32(len(body))), body)))
+	if err != nil {
+		t.Fatalf("avi: %v", err)
+	}
+
+	if v, _ := streamsByType(r); v == nil || v.Width != 720 {
+		t.Errorf("avi video = %+v", v)
+	}
+}
+
+func TestParseMKVTruncatedNeedsMore(t *testing.T) {
+	mkv := buildMKV()
+
+	// Cut inside Tracks: before the cluster, so the header is incomplete.
+	cut := mkv[:len(mkv)/2]
+	if _, err := parseMKV(cut, false); !errors.Is(err, errHeaderIncomplete) {
+		t.Errorf("non-final truncated read: err = %v, want errHeaderIncomplete", err)
+	}
+
+	if _, err := parseAVI(buildAVI()[:40], false); !errors.Is(err, errHeaderIncomplete) {
+		t.Errorf("non-final truncated avi: err = %v, want errHeaderIncomplete", err)
 	}
 }
 

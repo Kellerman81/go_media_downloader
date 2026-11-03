@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 	"testing"
@@ -308,5 +309,29 @@ func TestNormalizeKey(t *testing.T) {
 		if got := normalizeKey(tt.in); got != tt.want {
 			t.Errorf("normalizeKey(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestHashKeyMatchesNormalizeKey pins hashKey to FNV-1a of normalizeKey, so
+// the string-set index stays exactly as case-insensitive as before.
+func TestHashKeyMatchesNormalizeKey(t *testing.T) {
+	for _, s := range []string{
+		"", "  ", "/data2/Music/ABBA/Gold (1992)/01 - Dancing Queen.flac",
+		"  /Data/Ünïcödé/ÄÖÜ ẞ/Track.MP3 ", "already lower", "MiXeD-Case_123",
+	} {
+		h := fnv.New64a()
+		h.Write([]byte(normalizeKey(s)))
+
+		if got, want := hashKey(s), h.Sum64(); got != want {
+			t.Errorf("hashKey(%q) = %x, want FNV-1a of %q = %x", s, got, normalizeKey(s), want)
+		}
+	}
+
+	if hashKey("/A/B.flac") != hashKey(" /a/b.FLAC") {
+		t.Error("case and surrounding space must not change the hash")
+	}
+
+	if hashKey("/a/b.flac") == hashKey("/a/c.flac") {
+		t.Error("different paths hashed equal")
 	}
 }

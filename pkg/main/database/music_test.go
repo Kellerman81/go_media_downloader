@@ -132,3 +132,34 @@ func TestFindAlbumEmptySlugDoesNotMatchUnpopulatedSlug(t *testing.T) {
 		t.Fatalf("FindAlbumsByArtistTitle matched %d albums via empty slug", len(res))
 	}
 }
+
+func TestFindAlbumByArtistTitlePrefersListed(t *testing.T) {
+	seedMusic(t)
+
+	db := dbData
+	// An unlisted copy of "The Wall" with a lower id, as the fallback
+	// providers leave them: rowid order alone would return it first.
+	mustExec(t, db, "insert into dbalbums (id, title, slug) values (9, 'The Wall', 'the-wall')")
+	mustExec(t, db, "insert into dbalbum_artists (dbalbum_id, dbartist_id) values (9, 1)")
+
+	artist, title := "Pink Floyd", "The Wall"
+	for _, a := range []string{artist, ""} {
+		got, err := FindAlbumByArtistTitle(&a, &title)
+		if err != nil || got == nil || got.ID != 10 {
+			t.Errorf("artist %q: got %+v (%v), want the listed album 10", a, got, err)
+		}
+	}
+}
+
+func TestInsertAlbumFileReportsFailure(t *testing.T) {
+	seedMusic(t)
+
+	if err := ExecNErr("DROP TABLE album_files"); err != nil {
+		t.Fatal(err)
+	}
+
+	track := TrackFileInfo{Filepath: "/data/music/x/01.flac", Filename: "01.flac"}
+	if err := InsertAlbumFile(100, &track, "", 10, 0); err == nil {
+		t.Error("failed insert reported success")
+	}
+}

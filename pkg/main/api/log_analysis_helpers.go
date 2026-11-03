@@ -135,6 +135,12 @@ func performLogAnalysis(
 
 	// Common log timestamp patterns
 	timestampRegex := regexp.MustCompile(`(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})`)
+	timestampLayouts := []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05.000",
+	}
 
 	scanner := bufio.NewScanner(file)
 	var matchedLines int64
@@ -154,14 +160,7 @@ func performLogAnalysis(
 					err     error
 				)
 
-				layouts := []string{
-					"2006-01-02T15:04:05",
-					"2006-01-02 15:04:05",
-					"2006-01-02T15:04:05Z",
-					"2006-01-02 15:04:05.000",
-				}
-
-				for _, layout := range layouts {
+				for _, layout := range timestampLayouts {
 					if logTime, err = time.Parse(layout, timestampStr); err == nil {
 						break
 					}

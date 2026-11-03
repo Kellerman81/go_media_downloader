@@ -6,6 +6,8 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -75,5 +77,77 @@ func TestMediaEntrySpecsMatchSchema(t *testing.T) {
 		if spec.ignoredErr == nil || spec.cacheKey == "" {
 			t.Errorf("%s: incomplete spec %+v", spec.logItemType, spec)
 		}
+	}
+}
+
+func TestEnsureAlbumListEntry(t *testing.T) {
+	useTestDB(t)
+
+	if err := database.ExecNErr("insert into dbalbums (id, title) values (1, 'Synthetic')"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgp := &config.MediaTypeConfig{
+		Lists:      []config.MediaListsConfig{{Name: "Music Library"}},
+		ListsNames: []string{"Music Library"},
+		ListsLen:   1,
+	}
+
+	id := uint(1)
+
+	// listid -1 only looks up: an unlisted album stays unlisted.
+	if got := EnsureAlbumListEntry(&id, cfgp, -1); got != 0 {
+		t.Fatalf("lookup-only returned entry %d for an unlisted album", got)
+	}
+
+	entry := EnsureAlbumListEntry(&id, cfgp, 0)
+	if entry == 0 {
+		t.Fatal("no entry created in the add_found list")
+	}
+
+	if got := database.Getdatarow[string](false, "select listname from albums where id = ?", &entry); got != "Music Library" {
+		t.Errorf("entry list = %q", got)
+	}
+
+	// A second call finds the entry instead of adding another one.
+	if again := EnsureAlbumListEntry(&id, cfgp, 0); again != entry {
+		t.Errorf("second call = %d, want existing entry %d", again, entry)
+	}
+
+	if got := database.Getdatarow[int](false, "select count() from albums where dbalbum_id = 1"); got != 1 {
+		t.Errorf("list entries = %d, want 1", got)
+	}
+}
+
+func TestEnsureAudiobookListEntry(t *testing.T) {
+	useTestDB(t)
+
+	if err := database.ExecNErr("insert into dbaudiobooks (id, title) values (1, 'Unlisted')"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgp := &config.MediaTypeConfig{
+		Lists:      []config.MediaListsConfig{{Name: "Audiobook Library"}},
+		ListsNames: []string{"Audiobook Library"},
+		ListsLen:   1,
+	}
+
+	id := uint(1)
+
+	if got := EnsureAudiobookListEntry(&id, cfgp, -1); got != 0 {
+		t.Fatalf("lookup-only returned entry %d for an unlisted audiobook", got)
+	}
+
+	entry := EnsureAudiobookListEntry(&id, cfgp, 0)
+	if entry == 0 {
+		t.Fatal("no entry created in the add_found list")
+	}
+
+	if again := EnsureAudiobookListEntry(&id, cfgp, 0); again != entry {
+		t.Errorf("second call = %d, want existing entry %d", again, entry)
+	}
+
+	if got := database.Getdatarow[string](false, "select listname from audiobooks where dbaudiobook_id = 1"); got != "Audiobook Library" {
+		t.Errorf("entry list = %q", got)
 	}
 }
