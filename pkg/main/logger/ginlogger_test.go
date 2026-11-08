@@ -40,6 +40,17 @@ func TestRedactURL(t *testing.T) {
 	if got := RedactURL("http://h/api/admin"); got != "http://h/api/admin" {
 		t.Errorf("got %q", got)
 	}
+
+	for in, want := range map[string]string{
+		"https://discord.com/api/webhooks/123/abc-tok":        "https://discord.com/api/webhooks/123/REDACTED",
+		"https://hooks.slack.com/services/T1/B2/xyz":          "https://hooks.slack.com/services/REDACTED",
+		"https://api.telegram.org/bot12:AA-b/sendMessage?x=1": "https://api.telegram.org/botREDACTED/sendMessage?x=1",
+		"https://discordapp.com/api/webhooks/1/t?wait=true":   "https://discordapp.com/api/webhooks/1/REDACTED?wait=true",
+	} {
+		if got := RedactURL(in); got != want {
+			t.Errorf("RedactURL(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestRedactURLError(t *testing.T) {

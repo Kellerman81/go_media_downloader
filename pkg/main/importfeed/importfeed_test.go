@@ -5,6 +5,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 )
 
 func TestImportQualityConfigAndYearCandidate(t *testing.T) {
@@ -55,5 +56,30 @@ func TestImportQualityConfigAndYearCandidate(t *testing.T) {
 
 	if got := pickImdbYearCandidate(arr, m, cfgp); got != -1 {
 		t.Errorf("ambiguous yearless candidates must not match, got %d", got)
+	}
+}
+
+func TestCheckaddmovieentryNotifiesAddedToList(t *testing.T) {
+	useTestDB(t)
+
+	if err := database.ExecNErr("insert into dbmovies (id, title, year, imdb_id) values (1, 'Heat', 1995, 'tt0113277')"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgp, file := csvNotifyConfig(t, config.MediaTypeMovie, providers.EventAddedToList)
+	cfgp.Lists = []config.MediaListsConfig{{Name: "EN-watch"}}
+	cfgp.ListsNames = []string{"EN-watch"}
+	cfgp.ListsLen = 1
+	cfgp.ListsQu = ""
+
+	dbid := uint(1)
+	for range 2 {
+		if err := Checkaddmovieentry(&dbid, cfgp, &cfgp.Lists[0], "tt0113277"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := readFile(t, file); got != "added_to_list;movie;Heat;1995;tt0113277;EN-watch\n" {
+		t.Errorf("csv %q, want one added_to_list line", got)
 	}
 }

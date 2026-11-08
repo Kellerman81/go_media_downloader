@@ -26,6 +26,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/csrfapi"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/htmlxpath"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/movielists"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
@@ -70,6 +71,7 @@ var (
 	errScraperURLMissing = errors.New(
 		"movie_scraper_start_url is required for moviescraper list type",
 	)
+	errMovieListURLRequired         = errors.New("url is required for rottentomatoes and letterboxd list types")
 	errMusicchartsURLRequired       = errors.New("url is required for musiccharts list type")
 	errMusicchartsEntryNodeRequired = errors.New(
 		"chart_entry_node_xpath is required for musiccharts list type",
@@ -1183,6 +1185,9 @@ func Feeds(
 	case "moviescraper":
 		return d, d.getmoviescraper(ctx, cfgp, list)
 
+	case "rottentomatoes", "letterboxd":
+		return d, d.getmoviesitelist(ctx, cfgp, list)
+
 	case "traktpublicshowlist":
 		return d, d.gettraktserielist(4, list)
 	case "imdbcsv":
@@ -1457,6 +1462,84 @@ func (d *feedResults) getmoviescraper(
 	}
 
 	return nil
+}
+
+// getmoviesitelist imports a Rotten Tomatoes or Letterboxd list. Entries
+// with an IMDb link use it; the others are matched by title and year
+// (local IMDb data first, then the configured metadata sources).
+func (d *feedResults) getmoviesitelist(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	cfglist *config.MediaListsConfig,
+) error {
+	listURL := strings.TrimSpace(cfglist.CfgList.URL)
+	if listURL == "" {
+		return errMovieListURLRequired
+	}
+
+	client := movielists.NewClient(config.GetSettingsGeneral().UserAgent)
+
+	var (
+		movies []movielists.Movie
+		err    error
+	)
+
+	if cfglist.CfgList.ListType == "rottentomatoes" {
+		movies, err = client.RottenTomatoes(ctx, listURL)
+	} else {
+		movies, err = client.Letterboxd(ctx, listURL, 0)
+	}
+
+	if err != nil && len(movies) == 0 {
+		return err
+	}
+
+	limit, _ := strconv.Atoi(strings.TrimSpace(cfglist.CfgList.Limit))
+
+	var unmatched []string
+
+	for i := range movies {
+		if limit > 0 && i >= limit {
+			break
+		}
+
+		imdb := movies[i].ImdbID
+		if imdb == "" {
+			imdb = movieImdbByTitle(movies[i].Title, movies[i].Year, cfgp)
+		}
+
+		if imdb == "" {
+			unmatched = append(unmatched, fmt.Sprintf("%s (%d)", movies[i].Title, movies[i].Year))
+			continue
+		}
+
+		checkaddimdbfeed(&imdb, cfglist, d)
+	}
+
+	logger.Logtype("info", 1).
+		Str("list", cfglist.Name).
+		Str("type", cfglist.CfgList.ListType).
+		Int("entries", len(movies)).
+		Int("unmatched", len(unmatched)).
+		Strs("unmatched_titles", unmatched).
+		Msg("Movie list read")
+
+	return err
+}
+
+// movieImdbByTitle finds the IMDb ID of a movie by title and year.
+func movieImdbByTitle(title string, year int, cfgp *config.MediaTypeConfig) string {
+	m := database.PLParseInfo.Get()
+	defer m.Close()
+
+	m.Title = title
+	if year > 0 && year < 10000 {
+		m.Year = uint16(year)
+	}
+
+	importfeed.MovieFindImdbIDByTitle(true, m, cfgp)
+
+	return m.Imdb
 }
 
 // runMovieScraper executes the movie scraper and returns a list of IMDB IDs.

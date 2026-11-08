@@ -416,6 +416,16 @@ func GetMusicSourcePenalty(source string) float64 {
 	return cfg.MusicMetaSourcePenalties[source]
 }
 
+// GetSettingsDownloader returns the downloader config named name, or nil.
+func GetSettingsDownloader(name string) *DownloaderConfig {
+	currentSnapshot := getCurrentConfig()
+	if currentSnapshot == nil {
+		return nil
+	}
+
+	return currentSnapshot.Downloader[name]
+}
+
 func RangeSettingsDownloader(fn func(string, *DownloaderConfig)) {
 	currentSnapshot := getCurrentConfig()
 	if currentSnapshot == nil {

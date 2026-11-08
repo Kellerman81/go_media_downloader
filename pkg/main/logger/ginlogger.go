@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -341,8 +342,19 @@ func RedactQuery(raw string) string {
 	return JoinStringsSep(parts, "&")
 }
 
-// RedactURL applies RedactQuery to the query part of a full URL string.
+// secretPathRe matches the services that carry their credential in the URL
+// path: Discord and Slack webhooks and the Telegram bot API.
+var secretPathRe = regexp.MustCompile(
+	`(discord(?:app)?\.com/api/webhooks/[^/?#]+/|api\.telegram\.org/bot)[^/?#]+|(hooks\.slack\.com/services/)[^?#]+`)
+
+// RedactURL applies RedactQuery to the query part of a full URL string and
+// hides the credential of webhook-style URLs.
 func RedactURL(raw string) string {
+	if strings.Contains(raw, "/api/webhooks/") || strings.Contains(raw, "hooks.slack.com") ||
+		strings.Contains(raw, "api.telegram.org") {
+		raw = secretPathRe.ReplaceAllString(raw, "${1}${2}REDACTED")
+	}
+
 	base, query, ok := strings.Cut(raw, "?")
 	if !ok {
 		return raw

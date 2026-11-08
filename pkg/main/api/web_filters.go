@@ -143,7 +143,23 @@ type tableFilterField struct {
 var (
 	yesNoOptions = []string{"", "0", "1"}
 	yesNoLabels  = []string{"All", "No", "Yes"}
+
+	downloadStateOptions = []string{
+		"", "added", "downloading", "completed", "processed", "failed", "rejected", "removed",
+	}
+	downloadStateLabels = []string{
+		"All", "Added", "Downloading", "Completed", "Processed", "Failed", "Rejected", "Removed",
+	}
 )
+
+// downloadStateFilter filters a history table by its download state.
+func downloadStateFilter(table string) tableFilterField {
+	return tableFilterField{
+		Field: "download_state", Label: "Download State", Widget: "select",
+		Options: downloadStateOptions, OptionLabels: downloadStateLabels,
+		Clauses: []filterClause{legacyClause(eqCol(table + ".download_state")), eqCol(table + ".download_state")},
+	}
+}
 
 // filterFieldDefs is the single source of truth described above.
 var filterFieldDefs = map[string][]tableFilterField{
@@ -307,6 +323,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), like("listname")}},
 	},
 	"book_histories": {
+		downloadStateFilter("book_histories"),
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("book_histories.title")), like("book_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{legacyClause(like("indexer")), like("indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
@@ -378,6 +395,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), like("listname")}},
 	},
 	"audiobook_histories": {
+		downloadStateFilter("audiobook_histories"),
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("audiobook_histories.title")), like("audiobook_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{legacyClause(like("indexer")), like("indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
@@ -467,6 +485,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "listname", Label: "List Name", Widget: "text", Placeholder: "List name...", Clauses: []filterClause{legacyClause(like("listname")), like("listname")}},
 	},
 	"album_histories": {
+		downloadStateFilter("album_histories"),
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Release title...", Clauses: []filterClause{legacyClause(like("album_histories.title")), like("album_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{legacyClause(like("indexer")), like("indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "text", Placeholder: "Quality...", Clauses: []filterClause{legacyClause(like("quality_profile"))}},
@@ -502,6 +521,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "missing", Label: "Missing", Widget: "select", Options: []string{"", "1", "0"}, OptionLabels: []string{"All", "Missing", "Available"}, Clauses: []filterClause{literal01("serie_episodes.missing")}},
 	},
 	"movie_histories": {
+		downloadStateFilter("movie_histories"),
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Filter by title...", Clauses: []filterClause{like("movie_histories.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Filter by indexer...", Clauses: []filterClause{like("movie_histories.indexer")}},
 		{Field: "quality_profile", Label: "Quality Profile", Widget: "select-quality", Clauses: []filterClause{like("movie_histories.quality_profile")}},
@@ -518,6 +538,7 @@ var filterFieldDefs = map[string][]tableFilterField{
 		{Field: "series_rootpath", Label: "Root Path", Widget: "text", Placeholder: "Root path...", Clauses: []filterClause{like("series.rootpath")}},
 	},
 	"serie_episode_histories": {
+		downloadStateFilter("serie_episode_histories"),
 		{Field: "title", Label: "Title", Widget: "text", Placeholder: "Filter by title...", Clauses: []filterClause{like("serie_episode_histories.title")}},
 		{Field: "episode_title", Label: "Episode Title", Widget: "text", Placeholder: "Filter by episode title...", Clauses: []filterClause{like("dbserie_episodes.title")}},
 		{Field: "indexer", Label: "Indexer", Widget: "text", Placeholder: "Indexer...", Clauses: []filterClause{like("serie_episode_histories.indexer")}},

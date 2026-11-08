@@ -726,6 +726,7 @@ func addAlbumToDatabase(
 			Str("album", release.Title).
 			Uint("id", dbalbumID).
 			Msg("Added album to database")
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbalbumID)
 
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheThreeString(

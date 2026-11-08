@@ -401,7 +401,7 @@ func (*handler) SearchConfigByName(
 }
 
 // RecordDownloadHistory records a book download in the book_histories table.
-func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) (uint, error) {
 	var (
 		bookID, dbbookID uint
 		qualityProfile   string
@@ -424,7 +424,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 	}
 
 	if bookID == 0 || dbbookID == 0 {
-		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+		return 0, fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
 	}
 
 	var indexerName string
@@ -432,7 +432,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		indexerName = nzb.NZB.Indexer.Name
 	}
 
-	return database.ExecNErr(
+	id, err := database.ExecNid(
 		"Insert into book_histories (title, url, target, indexer, downloaded_at, book_id, dbbook_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
@@ -442,6 +442,11 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		&dbbookID,
 		&qualityProfile,
 	)
+	if err != nil {
+		return 0, err
+	}
+
+	return logger.Int64ToUint(id), nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for a book download.

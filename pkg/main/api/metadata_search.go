@@ -1234,6 +1234,8 @@ func AddMovieToDatabase(c *gin.Context) {
 		return
 	}
 
+	notifyManualAdd("movie", listName, uint(dbMovieID), len(movieExists) == 0) //nolint:gosec // row ids are positive
+
 	c.JSON(http.StatusOK, gin.H{"success": "Movie added successfully to " + listName})
 }
 
@@ -1421,6 +1423,8 @@ func AddSeriesToDatabase(c *gin.Context) {
 		)
 	}
 
+	notifyManualAdd("serie", listName, uint(dbSeriesID), len(seriesExists) == 0) //nolint:gosec // row ids are positive
+
 	c.JSON(http.StatusOK, gin.H{"success": "Series added successfully to " + listName})
 }
 
@@ -1550,6 +1554,8 @@ func AddMovieManual(c *gin.Context) {
 		return
 	}
 
+	notifyManualAdd("movie", listName, uint(dbMovieID), len(existing) == 0) //nolint:gosec // row ids are positive
+
 	c.JSON(http.StatusOK, gin.H{"success": "Movie added manually to " + listName})
 }
 
@@ -1673,6 +1679,8 @@ func AddSeriesManual(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series: " + err.Error()})
 		return
 	}
+
+	notifyManualAdd("serie", listName, uint(dbSerieID), len(existing) == 0) //nolint:gosec // row ids are positive
 
 	c.JSON(http.StatusOK, gin.H{"success": "Series added manually to " + listName})
 }

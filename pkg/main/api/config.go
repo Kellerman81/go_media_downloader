@@ -389,6 +389,7 @@ func createDownloaderConfig(index string, c *gin.Context) (config.DownloaderConf
 		SetInt(&cfg.Priority, "Priority").
 		SetBool(&cfg.AddPaused, "AddPaused").
 		SetBool(&cfg.DelugeMoveAfter, "DelugeMoveAfter").
+		SetBool(&cfg.RemoveFailed, "RemoveFailed").
 		SetBool(&cfg.Enabled, "Enabled")
 
 	return cfg, builder.Err()
@@ -605,6 +606,8 @@ func createNotificationConfig(index string, c *gin.Context) (config.Notification
 		SetString(&cfg.NotificationType, "NotificationType").
 		SetString(&cfg.Apikey, "Apikey").
 		SetString(&cfg.Recipient, "Recipient").
+		SetString(&cfg.Sender, "Sender").
+		SetString(&cfg.Command, "Command").
 		SetString(&cfg.Outputto, "Outputto").
 		SetString(&cfg.ServerURL, "ServerURL").
 		SetString(&cfg.AppriseURLs, "AppriseURLs").
@@ -1125,6 +1128,14 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 	// Cache refresh scheduling
 	if val := getFormField(c, prefix, index, "IntervalCacheRefresh"); val != "" {
 		addConfig.IntervalCacheRefresh = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalDownloadCheck"); val != "" {
+		addConfig.IntervalDownloadCheck = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronDownloadCheck"); val != "" {
+		addConfig.CronDownloadCheck = val
 	}
 
 	if val := getFormField(c, prefix, index, "CronCacheRefresh"); val != "" {

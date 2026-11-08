@@ -104,7 +104,7 @@ var (
 		"QueryMediaCountByList":    "select count() from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
 		"UpdateQualityReached":     "update serie_episodes set quality_reached = ? where id = ?",
 		"SelectRootpath":           "select rootpath from series where id = ?",
-		"InsertFile":               "insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"InsertFile":               "insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width, file_size, runtime_seconds, bitrate, languages) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		"UpdateMissingByID":        "update serie_episodes set missing = 0 where id = ?",
 		"UpdateQualityReachedByID": "update serie_episodes set quality_reached = ? where id = ?",
 		"UpdateQualityProfileByID": "update serie_episodes set quality_profile = ? where id = ?",
@@ -114,7 +114,7 @@ var (
 		"SelectEpisodeRuntime":     "select runtime, season from dbserie_episodes where id = ?",
 		"SelectIdentifiedBy":       "select identifiedby from dbseries where id = ?",
 		"SelectIgnoreRuntime":      "select ignore_runtime from serie_episodes where id = ?",
-		"InsertFileOrganize":       "insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"InsertFileOrganize":       "insert into serie_episode_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, height, width, file_size, runtime_seconds, bitrate, languages) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		"UpdateMissingReached":     "update serie_episodes SET missing = 0, quality_reached = ? where id = ?",
 	}
 )
@@ -520,7 +520,7 @@ func loadSeriesConfig(file string) ([]config.ManualConfig, error) {
 }
 
 // RecordDownloadHistory records a series episode download in the serie_episode_histories table.
-func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) (uint, error) {
 	var (
 		serieID, dbserieID, dbserieEpisodeID uint
 		qualityProfile                       string
@@ -554,7 +554,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 	}
 
 	if nzb.NzbepisodeID == 0 || serieID == 0 || dbserieID == 0 || dbserieEpisodeID == 0 {
-		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+		return 0, fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
 	}
 
 	var indexerName string
@@ -562,7 +562,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		indexerName = nzb.NZB.Indexer.Name
 	}
 
-	return database.ExecNErr(
+	id, err := database.ExecNid(
 		"Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
@@ -578,6 +578,11 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		&nzb.Info.AudioID,
 		&qualityProfile,
 	)
+	if err != nil {
+		return 0, err
+	}
+
+	return logger.Int64ToUint(id), nil
 }
 
 const strTvdbid = " (tvdb"

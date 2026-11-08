@@ -43,7 +43,7 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Lookup metadata from various providers (IMDB, TMDB, OMDB, Trakt, TVDB). Support for movies, TV series, and episodes with comprehensive information retrieval.",
+							"Look up metadata for movies, series, episodes, books, audiobooks and music, with the app's combined lookup or with any single provider. Every provider has a test value that is known to return a result.",
 						),
 					),
 				),
@@ -58,106 +58,64 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 				html.Class("row"),
 				html.Div(
 					html.Class("col-md-6"),
-					html.H5(
-						html.Class("form-section-title"),
-						gomponents.Text("Media Type & Identification"),
-					),
+					html.H5(html.Class("form-section-title"), gomponents.Text("What to look up")),
 
 					renderFormGroup("metadata", map[string]string{
-						"MediaType": "Select the type of media to lookup",
+						"MediaType": "Select the type of media to look up",
 					}, map[string]string{
 						"MediaType": "Media Type",
 					}, "MediaType", "select", "movie", map[string][]string{
-						"options": {"movie", "series", "episode", "book", "audiobook", "music"},
+						"options": mdKinds,
 					}),
 
-					html.Div(
-						html.ID("imdbField"),
-						renderFormGroup("metadata", map[string]string{
-							"ImdbID": "Enter an IMDB ID (e.g., 'tt0133093' for The Matrix)",
-						}, map[string]string{
-							"ImdbID": "IMDB ID",
-						}, "ImdbID", "text", "", nil),
-					),
-
-					html.Div(
-						html.ID("tvdbFields"),
-						html.Style("display: none;"),
-						renderFormGroup("metadata", map[string]string{
-							"TvdbID": "Enter a TVDB ID for series/episodes (e.g., '81189' for Breaking Bad)",
-						}, map[string]string{
-							"TvdbID": "TVDB ID",
-						}, "TvdbID", "text", "", nil),
-					),
-
-					html.Div(
-						html.ID("bookFields"),
-						html.Style("display: none;"),
-						renderFormGroup("metadata", map[string]string{
-							"ISBN": "Enter an ISBN-13 or ISBN-10 for book lookup (OpenLibrary)",
-						}, map[string]string{
-							"ISBN": "ISBN",
-						}, "ISBN", "text", "", nil),
-					),
-
-					html.Div(
-						html.ID("audiobookFields"),
-						html.Style("display: none;"),
-						renderFormGroup("metadata", map[string]string{
-							"ASIN": "Enter an Amazon ASIN for audiobook lookup (Audible/Audnex)",
-						}, map[string]string{
-							"ASIN": "ASIN",
-						}, "ASIN", "text", "", nil),
-					),
-
-					html.Div(
-						html.ID("musicFields"),
-						html.Style("display: none;"),
-						renderFormGroup("metadata", map[string]string{
-							"MBReleaseID": "Enter a MusicBrainz release ID for album lookup",
-						}, map[string]string{
-							"MBReleaseID": "MusicBrainz Release ID",
-						}, "MBReleaseID", "text", "", nil),
-					),
+					renderFormGroup("metadata", map[string]string{
+						"Provider": "The app lookup combines the configured sources and can update the database; " +
+							"a single provider shows exactly what that provider returns",
+					}, map[string]string{
+						"Provider": "Metadata Provider",
+					}, "Provider", "select", mdAppProvider, map[string][]string{
+						"options": {mdAppProvider},
+					}),
 				),
 
 				html.Div(
 					html.Class("col-md-6"),
-					html.H5(
-						html.Class("form-section-title"),
-						gomponents.Text("Additional Parameters"),
+					html.H5(html.Class("form-section-title"), gomponents.Text("Identifier")),
+
+					html.Div(
+						html.Class("mb-3"),
+						html.Label(html.For("metadata_Identifier"), html.Class("form-label"), html.ID("metadataIDLabel"),
+							gomponents.Text("ID")),
+						html.Div(
+							html.Class("input-group"),
+							html.Input(html.Type("text"), html.Class("form-control"), html.ID("metadata_Identifier"),
+								html.Name("metadata_Identifier")),
+							html.Button(html.Type("button"), html.Class("btn btn-outline-secondary"), html.ID("metadataTestValue"),
+								html.I(html.Class("fas fa-vial me-1")), gomponents.Text("Use test value")),
+						),
+						html.Small(html.Class("form-text text-muted"), html.ID("metadataTestHint")),
 					),
 
 					html.Div(
 						html.ID("episodeFields"),
 						html.Style("display: none;"),
-
-						renderFormGroup("metadata", map[string]string{
-							"Season": "Season number for episode lookup",
-						}, map[string]string{
-							"Season": "Season Number",
-						}, "Season", "number", "", nil),
-
-						renderFormGroup("metadata", map[string]string{
-							"Episode": "Episode number for episode lookup",
-						}, map[string]string{
-							"Episode": "Episode Number",
-						}, "Episode", "number", "", nil),
+						html.Class("row"),
+						html.Div(html.Class("col-6"),
+							renderFormGroup("metadata", map[string]string{"Season": "Season number"},
+								map[string]string{"Season": "Season"}, "Season", "number", "1", nil)),
+						html.Div(html.Class("col-6"),
+							renderFormGroup("metadata", map[string]string{"Episode": "Episode number"},
+								map[string]string{"Episode": "Episode"}, "Episode", "number", "1", nil)),
 					),
 
-					renderFormGroup("metadata", map[string]string{
-						"Provider": "Select metadata provider (leave empty for default behavior)",
-					}, map[string]string{
-						"Provider": "Metadata Provider",
-					}, "Provider", "select", "", map[string][]string{
-						"options": {"", "imdb", "tmdb", "omdb", "trakt", "tvdb"},
-					}),
-
-					renderFormGroup("metadata", map[string]string{
-						"UpdateDB": "Update the database with retrieved metadata",
-					}, map[string]string{
-						"UpdateDB": "Update Database",
-					}, "UpdateDB", "checkbox", false, nil),
+					html.Div(
+						html.ID("updateDBField"),
+						renderFormGroup("metadata", map[string]string{
+							"UpdateDB": "Save the retrieved metadata to the database (app lookup only)",
+						}, map[string]string{
+							"UpdateDB": "Update Database",
+						}, "UpdateDB", "checkbox", false, nil),
+					),
 				),
 			),
 
@@ -165,6 +123,7 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 				html.Class("form-group submit-group"),
 				html.Button(
 					html.Class(ClassBtnPrimary),
+					html.I(html.Class("fas fa-search")),
 					gomponents.Text("Get Metadata"),
 					html.Type("button"),
 					hx.Target("#metadataResults"),
@@ -175,11 +134,12 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 				),
 				html.Button(
 					html.Type("button"),
-					html.Class("btn btn-secondary ml-2"),
+					html.Class("btn btn-secondary"),
 					gomponents.Attr(
 						"onclick",
 						"document.getElementById('metadataTestForm').reset(); document.getElementById('metadataResults').innerHTML = '';",
 					),
+					html.I(html.Class("fas fa-rotate-left")),
 					gomponents.Text("Reset"),
 				),
 			),
@@ -227,7 +187,7 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 							html.I(html.Class("fas fa-film me-1")),
 							gomponents.Text("Movies"),
 						),
-						gomponents.Text("Use IMDB ID (e.g., 'tt0133093' for The Matrix)"),
+						gomponents.Text("App lookup: IMDb ID. TMDB: TMDB ID. OMDb and Trakt: IMDb ID"),
 					),
 					html.Li(
 						html.Class("mb-2"),
@@ -237,7 +197,7 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 							gomponents.Text("Series"),
 						),
 						gomponents.Text(
-							"Use IMDB ID or TVDB ID (e.g., TVDB '81189' for Breaking Bad)",
+							"App lookup: IMDb or TVDB ID. TVDB, TMDB and TVmaze: their own IDs. Trakt: IMDb ID",
 						),
 					),
 					html.Li(
@@ -247,7 +207,7 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 							html.I(html.Class("fas fa-play-circle me-1")),
 							gomponents.Text("Episodes"),
 						),
-						gomponents.Text("Use IMDB ID or TVDB ID plus season and episode numbers"),
+						gomponents.Text("The series ID of the chosen provider plus season and episode numbers"),
 					),
 				),
 
@@ -268,7 +228,7 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 								gomponents.Text("Providers: "),
 							),
 							gomponents.Text(
-								"Different providers offer different information. IMDB and TMDB are best for movies, TVDB is essential for TV series.",
+								"Each provider takes its own kind of ID; the ID label and 'Use test value' change with the provider. A provider without an API key in the config reports that it is not configured.",
 							),
 						),
 					),
@@ -278,29 +238,56 @@ func renderMovieMetadataPage(csrfToken string) gomponents.Node {
 					html.Class("mb-0"),
 					html.Strong(gomponents.Text("Update Database: ")),
 					gomponents.Text(
-						"Check this option to save retrieved metadata to your local database.",
+						"Only the app lookup can save the retrieved metadata to your local database; single providers are read-only.",
 					),
 				),
 			),
 		),
 
-		// Toggle which identifier fields are shown based on the selected media type.
+		// Fills the provider dropdown for the media type and the ID label and
+		// test value for the provider.
 		html.Script(gomponents.Raw(`
 			(function(){
-				function show(id,on){var e=document.getElementById(id); if(e) e.style.display = on ? '' : 'none';}
-				function upd(){
-					var sel=document.getElementById('metadata_MediaType'); if(!sel) return;
-					var t=sel.value;
-					show('imdbField', t==='movie'||t==='series'||t==='episode');
-					show('tvdbFields', t==='series'||t==='episode');
-					show('episodeFields', t==='episode');
-					show('bookFields', t==='book');
-					show('audiobookFields', t==='audiobook');
-					show('musicFields', t==='music');
+				var providers = `+mdProvidersJSON()+`;
+				function el(id){ return document.getElementById(id); }
+				function current(){
+					var t = el('metadata_MediaType'), p = el('metadata_Provider');
+					var list = providers[t ? t.value : ''] || [];
+					for (var i = 0; i < list.length; i++) { if (p && list[i].key === p.value) return list[i]; }
+					return list[0];
 				}
-				var sel=document.getElementById('metadata_MediaType');
-				if(sel){ sel.addEventListener('change', upd); upd(); }
-				else { document.addEventListener('DOMContentLoaded', function(){ var s=document.getElementById('metadata_MediaType'); if(s){ s.addEventListener('change', upd); upd(); } }); }
+				function updProvider(){
+					var c = current(); if (!c) return;
+					el('metadataIDLabel').textContent = c.idLabel;
+					el('metadata_Identifier').placeholder = 'e.g. ' + c.test;
+					el('metadataTestHint').textContent = 'Test value: ' + c.test;
+					el('updateDBField').style.display = c.key === 'app' ? '' : 'none';
+				}
+				function updType(){
+					var t = el('metadata_MediaType'), p = el('metadata_Provider');
+					if (!t || !p) return;
+					var keep = p.value;
+					p.innerHTML = '';
+					(providers[t.value] || []).forEach(function(e){
+						var o = document.createElement('option');
+						o.value = e.key; o.textContent = e.label;
+						p.appendChild(o);
+					});
+					p.value = keep; if (p.value !== keep) p.value = 'app';
+					el('episodeFields').style.display = t.value === 'episode' ? '' : 'none';
+					updProvider();
+				}
+				function init(){
+					var t = el('metadata_MediaType'); if (!t) return;
+					t.addEventListener('change', updType);
+					el('metadata_Provider').addEventListener('change', updProvider);
+					el('metadataTestValue').addEventListener('click', function(){
+						var c = current(); if (c) el('metadata_Identifier').value = c.test;
+					});
+					el('metadataTestForm').addEventListener('reset', function(){ setTimeout(updType, 0); });
+					updType();
+				}
+				if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 			})();
 		`)),
 	)
@@ -314,14 +301,50 @@ func HandleMovieMetadata(c *gin.Context) {
 	}
 
 	mediaType := c.PostForm("metadata_MediaType")
-	imdbID := c.PostForm("metadata_ImdbID")
-	tvdbID := c.PostForm("metadata_TvdbID")
-	provider := c.PostForm("metadata_Provider")
+	identifier := strings.TrimSpace(c.PostForm("metadata_Identifier"))
 	updateDB := formBool(c.PostForm("metadata_UpdateDB"))
 
-	isbn := strings.TrimSpace(c.PostForm("metadata_ISBN"))
-	asin := strings.TrimSpace(c.PostForm("metadata_ASIN"))
-	mbReleaseID := strings.TrimSpace(c.PostForm("metadata_MBReleaseID"))
+	prov, ok := findMDProvider(mediaType, c.PostForm("metadata_Provider"))
+	if !ok {
+		c.String(http.StatusOK, renderAlert("Unknown media type or provider", "danger"))
+		return
+	}
+
+	if identifier == "" {
+		c.String(http.StatusOK, renderAlert("Please enter the "+prov.IDLabel, "warning"))
+		return
+	}
+
+	if prov.lookup != nil {
+		season, _ := strconv.Atoi(c.PostForm("metadata_Season"))
+		episode, _ := strconv.Atoi(c.PostForm("metadata_Episode"))
+		c.String(http.StatusOK, runMDLookup(prov, identifier, season, episode))
+
+		return
+	}
+
+	// The app lookup takes the identifier as the field its media type uses;
+	// series and episodes accept an IMDb ID or a TVDB ID.
+	var imdbID, tvdbID, isbn, asin, mbReleaseID string
+
+	provider := ""
+
+	switch mediaType {
+	case "movie":
+		imdbID = identifier
+	case "series", "episode":
+		if strings.HasPrefix(identifier, "tt") {
+			imdbID = identifier
+		} else {
+			tvdbID = identifier
+		}
+	case "book":
+		isbn = identifier
+	case "audiobook":
+		asin = identifier
+	case "music":
+		mbReleaseID = identifier
+	}
 
 	// Validate required fields based on media type
 	switch mediaType {

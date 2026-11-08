@@ -17,12 +17,16 @@ import (
 const wantedPageSize = 50
 
 // wantedSection describes one media category shown on the Wanted page. The query
-// is assembled from parts so it can be filtered (search) and paginated.
+// is assembled from parts so it can be filtered and paginated. A title wanted
+// by several media groups (EN and DE) or lists has one row per list entry.
 type wantedSection struct {
 	Key        string // tab/media key used by the client-side search handler
+	Kind       string // media config kind for mediaEntriesForKind
 	Title      string
 	Icon       string
-	SelectExpr string // label expression + id, scanned positionally
+	LabelExpr  string // the row's display label
+	IDExpr     string // the list entry id the search endpoints take
+	ListExpr   string // the entry's list name
 	From       string // FROM ... JOIN ...
 	Where      string // base filter (missing = 1)
 	SearchExpr string // expression matched with LIKE when filtering
@@ -33,69 +37,84 @@ type wantedSection struct {
 var wantedSections = []wantedSection{
 	{
 		Key:        "movie",
+		Kind:       "movie",
 		Title:      "Movies",
 		Icon:       "fas fa-film",
-		SelectExpr: "dm.title, m.id",
+		LabelExpr:  "dm.title || CASE WHEN dm.year > 0 THEN ' (' || dm.year || ')' ELSE '' END",
+		IDExpr:     "m.id",
+		ListExpr:   "m.listname",
 		From:       "FROM movies m JOIN dbmovies dm ON dm.id = m.dbmovie_id",
 		Where:      "m.missing = 1",
 		SearchExpr: "dm.title",
-		OrderBy:    "ORDER BY dm.title",
+		OrderBy:    "ORDER BY dm.title, m.listname",
 	},
 	{
-		Key:        "episode",
-		Title:      "Episodes",
-		Icon:       "fas fa-tv",
-		SelectExpr: "ds.seriename || ' - ' || dse.identifier, se.id",
+		Key:       "episode",
+		Kind:      "serie",
+		Title:     "Episodes",
+		Icon:      "fas fa-tv",
+		LabelExpr: "ds.seriename || ' - ' || dse.identifier",
+		IDExpr:    "se.id",
+		ListExpr:  "s.listname",
 		From: "FROM serie_episodes se " +
 			"JOIN dbserie_episodes dse ON dse.id = se.dbserie_episode_id " +
 			"JOIN series s ON s.id = se.serie_id " +
 			"JOIN dbseries ds ON ds.id = s.dbserie_id",
 		Where:      "se.missing = 1",
 		SearchExpr: "(ds.seriename || ' ' || dse.identifier)",
-		OrderBy:    "ORDER BY ds.seriename, dse.identifier",
+		OrderBy:    "ORDER BY ds.seriename, dse.identifier, s.listname",
 	},
 	{
 		// dbalbums has no artist column; the (primary) artist comes from the
 		// dbalbum_artists -> dbartists join, fetched per-row as a subquery.
 		Key:   "album",
+		Kind:  "music",
 		Title: "Albums",
 		Icon:  "fas fa-compact-disc",
-		SelectExpr: "COALESCE((SELECT ar.name FROM dbalbum_artists aa " +
+		LabelExpr: "COALESCE((SELECT ar.name FROM dbalbum_artists aa " +
 			"JOIN dbartists ar ON ar.id = aa.dbartist_id " +
-			"WHERE aa.dbalbum_id = da.id LIMIT 1) || ' - ', '') || da.title, a.id",
+			"WHERE aa.dbalbum_id = da.id LIMIT 1) || ' - ', '') || da.title",
+		IDExpr:     "a.id",
+		ListExpr:   "a.listname",
 		From:       "FROM albums a JOIN dbalbums da ON da.id = a.dbalbum_id",
 		Where:      "a.missing = 1",
 		SearchExpr: "da.title",
 		// Push records with a blank title to the end so page 1 shows real titles.
-		OrderBy: "ORDER BY CASE WHEN da.title IS NULL OR da.title = '' THEN 1 ELSE 0 END, da.title",
+		OrderBy: "ORDER BY CASE WHEN da.title IS NULL OR da.title = '' THEN 1 ELSE 0 END, da.title, a.listname",
 	},
 	{
 		// dbbooks stores the author via dbauthor_id -> dbauthors, not a column.
 		Key:   "book",
+		Kind:  "book",
 		Title: "Books",
 		Icon:  "fas fa-book",
-		SelectExpr: "COALESCE((SELECT au.name FROM dbauthors au " +
-			"WHERE au.id = db.dbauthor_id) || ' - ', '') || db.title, b.id",
+		LabelExpr: "COALESCE((SELECT au.name FROM dbauthors au " +
+			"WHERE au.id = db.dbauthor_id) || ' - ', '') || db.title",
+		IDExpr:     "b.id",
+		ListExpr:   "b.listname",
 		From:       "FROM books b JOIN dbbooks db ON db.id = b.dbbook_id",
 		Where:      "b.missing = 1",
 		SearchExpr: "db.title",
-		OrderBy:    "ORDER BY CASE WHEN db.title IS NULL OR db.title = '' THEN 1 ELSE 0 END, db.title",
+		OrderBy:    "ORDER BY CASE WHEN db.title IS NULL OR db.title = '' THEN 1 ELSE 0 END, db.title, b.listname",
 	},
 	{
 		// Author comes from dbaudiobook_authors -> dbauthors. The title can be
 		// blank on shell records, so fall back to the linked print book's title.
 		Key:   "audiobook",
+		Kind:  "audiobook",
 		Title: "Audiobooks",
 		Icon:  "fas fa-headphones",
-		SelectExpr: "COALESCE((SELECT au.name FROM dbaudiobook_authors aba " +
+		LabelExpr: "COALESCE((SELECT au.name FROM dbaudiobook_authors aba " +
 			"JOIN dbauthors au ON au.id = aba.dbauthor_id " +
 			"WHERE aba.dbaudiobook_id = da.id LIMIT 1) || ' - ', '') || " +
 			"COALESCE(NULLIF(da.title, ''), " +
-			"(SELECT bk.title FROM dbbooks bk WHERE bk.id = da.dbbook_id), ''), ab.id",
+			"(SELECT bk.title FROM dbbooks bk WHERE bk.id = da.dbbook_id), '')",
+		IDExpr:     "ab.id",
+		ListExpr:   "ab.listname",
 		From:       "FROM audiobooks ab JOIN dbaudiobooks da ON da.id = ab.dbaudiobook_id",
 		Where:      "ab.missing = 1",
 		SearchExpr: "da.title",
-		OrderBy:    "ORDER BY CASE WHEN da.title IS NULL OR da.title = '' THEN 1 ELSE 0 END, da.title",
+		OrderBy:    "ORDER BY CASE WHEN da.title IS NULL OR da.title = '' THEN 1 ELSE 0 END, da.title, ab.listname",
 	},
 }
 
@@ -110,18 +129,104 @@ func findWantedSection(key string) (wantedSection, bool) {
 	return wantedSection{}, false
 }
 
-// countQuery / rowsQuery assemble the COUNT and paginated SELECT for a section,
-// optionally filtered by a LIKE search. Args are returned alongside.
-func (s wantedSection) countQuery(search string) (string, []any) {
+// wantedList is one configured list of a media group.
+type wantedList struct {
+	Group   string // the media group's name, e.g. "EN"
+	Name    string
+	Enabled bool
+}
+
+// lists returns the section's configured lists, in config order.
+func (s wantedSection) lists() []wantedList {
+	var out []wantedList
+
+	for _, m := range mediaEntriesForKind(s.Kind) {
+		for _, l := range m.Lists {
+			if l.Name != "" {
+				out = append(out, wantedList{Group: m.Name, Name: l.Name, Enabled: l.Enabled})
+			}
+		}
+	}
+
+	return out
+}
+
+// listInfo finds the configured list named name (list names are matched
+// case-insensitively, like the listname columns).
+func listInfo(lists []wantedList, name string) (wantedList, bool) {
+	for _, l := range lists {
+		if strings.EqualFold(l.Name, name) {
+			return l, true
+		}
+	}
+
+	return wantedList{}, false
+}
+
+// wantedFilter is what a tab is narrowed to.
+type wantedFilter struct {
+	Search string
+	Group  string // a media group name, "" for all
+	List   string // a list name, "" for all
+}
+
+func wantedFilterFrom(ctx *gin.Context) wantedFilter {
+	return wantedFilter{
+		Search: strings.TrimSpace(ctx.Query("q")),
+		Group:  ctx.Query("group"),
+		List:   ctx.Query("list"),
+	}
+}
+
+func (f wantedFilter) query() string {
+	return "&q=" + url.QueryEscape(f.Search) + "&group=" + url.QueryEscape(f.Group) + "&list=" + url.QueryEscape(f.List)
+}
+
+// where returns the section's WHERE clause for f and its args. A group
+// limits the rows to that group's lists.
+func (s wantedSection) where(f wantedFilter) (string, []any) {
 	where := s.Where
 
 	var args []any
-	if search != "" {
+
+	if f.Search != "" {
 		where += " AND " + s.SearchExpr + " LIKE ? ESCAPE '\\'"
 
-		args = append(args, "%"+escapeLikePattern(search)+"%")
+		args = append(args, "%"+escapeLikePattern(f.Search)+"%")
 	}
 
+	if f.List != "" {
+		where += " AND " + s.ListExpr + " = ? COLLATE NOCASE"
+
+		args = append(args, f.List)
+	}
+
+	if f.Group != "" {
+		var names []string
+
+		for _, l := range s.lists() {
+			if l.Group == f.Group {
+				names = append(names, l.Name)
+			}
+		}
+
+		if len(names) == 0 {
+			return where + " AND 0", args
+		}
+
+		where += " AND " + s.ListExpr + " COLLATE NOCASE IN (?" + strings.Repeat(", ?", len(names)-1) + ")"
+
+		for _, n := range names {
+			args = append(args, n)
+		}
+	}
+
+	return where, args
+}
+
+// countQuery / rowsQuery assemble the COUNT and paginated SELECT for a section.
+func (s wantedSection) countQuery(f wantedFilter) (string, []any) {
+	where, args := s.where(f)
 	return "SELECT COUNT(*) " + s.From + " WHERE " + where, args
 }
 
@@ -131,22 +236,19 @@ func escapeLikePattern(v string) string {
 	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(v)
 }
 
-func (s wantedSection) rowsQuery(search string, page int) (string, []any) {
-	where := s.Where
+func (s wantedSection) rowsQuery(f wantedFilter, page int) (string, []any) {
+	where, args := s.where(f)
+	args = append(args, wantedPageSize, (page-1)*wantedPageSize)
 
-	var args []any
-	if search != "" {
-		where += " AND " + s.SearchExpr + " LIKE ? ESCAPE '\\'"
+	return "SELECT " + s.LabelExpr + " AS label, " + s.IDExpr + " AS id, " + s.ListExpr + " AS listname " +
+		s.From + " WHERE " + where + " " + s.OrderBy + " LIMIT ? OFFSET ?", args
+}
 
-		args = append(args, "%"+escapeLikePattern(search)+"%")
-	}
-
-	offset := (page - 1) * wantedPageSize
-
-	args = append(args, wantedPageSize, offset)
-
-	return "SELECT " + s.SelectExpr + " " + s.From + " WHERE " + where +
-		" " + s.OrderBy + " LIMIT ? OFFSET ?", args
+// wantedRow is one missing list entry.
+type wantedRow struct {
+	Label    string `db:"label"`
+	ID       uint   `db:"id"`
+	Listname string `db:"listname"`
 }
 
 // renderWantedPage serves the full Wanted page.
@@ -167,7 +269,106 @@ func renderWantedPartial(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// renderWantedContent builds the tabbed shell. Each tab has a filter box and a
+// wantedFilterForm renders a tab's filters: text, media group and list. Any
+// change reloads page 1 of the tab's results with all three.
+func wantedFilterForm(s wantedSection, resID string) gomponents.Node {
+	lists := s.lists()
+
+	var groups []string
+
+	for _, l := range lists {
+		if len(groups) == 0 || groups[len(groups)-1] != l.Group {
+			groups = append(groups, l.Group)
+		}
+	}
+
+	groupOpts := []gomponents.Node{html.Option(html.Value(""), gomponents.Text("All media groups"))}
+	for _, g := range groups {
+		groupOpts = append(groupOpts, html.Option(html.Value(g), gomponents.Text(g)))
+	}
+
+	listOpts := []gomponents.Node{html.Option(html.Value(""), gomponents.Text("All lists"))}
+	for _, g := range groups {
+		opts := []gomponents.Node{gomponents.Attr("label", g)}
+
+		for _, l := range lists {
+			if l.Group != g {
+				continue
+			}
+
+			label := l.Name
+			if !l.Enabled {
+				label += " (disabled)"
+			}
+
+			opts = append(opts, html.Option(html.Value(l.Name), gomponents.Text(label)))
+		}
+
+		listOpts = append(listOpts, html.OptGroup(opts...))
+	}
+
+	// Each control reloads the results with the whole form's values.
+	reload := func(trigger string) gomponents.Node {
+		return gomponents.Group([]gomponents.Node{
+			hx.Get("/api/admin/wanted/tab?media=" + s.Key),
+			hx.Trigger(trigger),
+			hx.Include("closest form"),
+			hx.Target("#" + resID),
+			hx.Swap("innerHTML"),
+			hx.Indicator("#" + resID + "-ind"),
+		})
+	}
+
+	return html.Form(
+		html.Class("row g-2 mb-2"),
+		gomponents.Attr("onsubmit", "return false;"),
+		html.Div(
+			html.Class("col-md-6"),
+			html.Div(
+				html.Class("input-group input-group-sm"),
+				html.Span(
+					html.Class("input-group-text"),
+					html.I(html.Class("fas fa-magnifying-glass"), gomponents.Attr("aria-hidden", "true")),
+				),
+				html.Input(
+					html.Type("search"),
+					html.Class("form-control"),
+					html.Name("q"),
+					html.Placeholder("Filter "+strings.ToLower(s.Title)+"..."),
+					gomponents.Attr("aria-label", "Filter "+s.Title),
+					reload("keyup changed delay:350ms, search"),
+				),
+				html.Span(
+					html.ID(resID+"-ind"),
+					html.Class("input-group-text htmx-indicator"),
+					html.Div(html.Class("spinner-border spinner-border-sm")),
+				),
+			),
+		),
+		html.Div(
+			html.Class("col-md-3"),
+			html.Select(
+				html.Class("form-select form-select-sm"),
+				html.Name("group"),
+				gomponents.Attr("aria-label", "Media group"),
+				reload("change"),
+				gomponents.Group(groupOpts),
+			),
+		),
+		html.Div(
+			html.Class("col-md-3"),
+			html.Select(
+				html.Class("form-select form-select-sm"),
+				html.Name("list"),
+				gomponents.Attr("aria-label", "List"),
+				reload("change"),
+				gomponents.Group(listOpts),
+			),
+		),
+	)
+}
+
+// renderWantedContent builds the tabbed shell. Each tab has filters and a
 // results region that lazy-loads (and paginates) via HTMX.
 func renderWantedContent() gomponents.Node {
 	tabs := make([]gomponents.Node, 0, len(wantedSections))
@@ -178,7 +379,7 @@ func renderWantedContent() gomponents.Node {
 		tabID := "wanted-" + s.Key
 
 		// Total (unfiltered) count for the tab badge.
-		cq, _ := s.countQuery("")
+		cq, _ := s.countQuery(wantedFilter{})
 		total := int(database.Getdatarow[uint](false, cq))
 
 		linkClass := "nav-link"
@@ -217,35 +418,7 @@ func renderWantedContent() gomponents.Node {
 			gomponents.Attr("aria-labelledby", tabID+"-tab"),
 			html.Div(
 				html.Class("pt-3"),
-
-				// Filter box — typing reloads page 1 of this tab's results.
-				html.Div(
-					html.Class("input-group input-group-sm mb-2"),
-					html.Span(
-						html.Class("input-group-text"),
-						html.I(
-							html.Class("fas fa-magnifying-glass"),
-							gomponents.Attr("aria-hidden", "true"),
-						),
-					),
-					html.Input(
-						html.Type("search"),
-						html.Class("form-control"),
-						html.Name("q"),
-						html.Placeholder("Filter "+strings.ToLower(s.Title)+"..."),
-						gomponents.Attr("aria-label", "Filter "+s.Title),
-						hx.Get("/api/admin/wanted/tab?media="+s.Key),
-						hx.Trigger("keyup changed delay:350ms, search"),
-						hx.Target("#"+resID),
-						hx.Swap("innerHTML"),
-						hx.Indicator("#"+resID+"-ind"),
-					),
-					html.Span(
-						html.ID(resID+"-ind"),
-						html.Class("input-group-text htmx-indicator"),
-						html.Div(html.Class("spinner-border spinner-border-sm")),
-					),
-				),
+				wantedFilterForm(s, resID),
 
 				// Results region — lazy-loads the first page.
 				html.Div(
@@ -283,7 +456,8 @@ func renderWantedContent() gomponents.Node {
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Missing items across all media types. Filter, page through and search individually.",
+							"Missing list entries across all media types. A title wanted by several media groups "+
+								"or lists has a row per list; filter by group or list and search each entry.",
 						),
 					),
 				),
@@ -336,14 +510,14 @@ func renderWantedTab(ctx *gin.Context) {
 		return
 	}
 
-	search := strings.TrimSpace(ctx.Query("q"))
+	f := wantedFilterFrom(ctx)
 
 	page := 1
 	if p, err := strconv.Atoi(ctx.Query("page")); err == nil && p > 0 {
 		page = p
 	}
 
-	cq, cargs := sec.countQuery(search)
+	cq, cargs := sec.countQuery(f)
 	total := int(database.Getdatarow[uint](false, cq, cargs...))
 
 	// Clamp before querying so an out-of-range page shows the last page's
@@ -352,33 +526,54 @@ func renderWantedTab(ctx *gin.Context) {
 		page = totalPages
 	}
 
-	rq, rargs := sec.rowsQuery(search, page)
-	rows := database.GetrowsN[database.DbstaticOneStringOneUInt](
-		false,
-		uint(wantedPageSize),
-		rq,
-		rargs...)
+	rq, rargs := sec.rowsQuery(f, page)
+	rows := database.StructscanT[wantedRow](false, uint(wantedPageSize), rq, rargs...)
 
 	var buf strings.Builder
-	wantedResults(sec, search, page, total, rows).Render(&buf)
+	wantedResults(sec, f, page, total, rows).Render(&buf)
 	ctx.Header("Content-Type", "text/html; charset=utf-8")
 	ctx.String(http.StatusOK, buf.String())
+}
+
+// wantedListCells renders a row's media group and list, flagging lists that
+// are disabled or in no media group of this type.
+func wantedListCells(lists []wantedList, name string) []gomponents.Node {
+	l, ok := listInfo(lists, name)
+	if !ok {
+		return []gomponents.Node{
+			html.Td(html.Class("text-muted"), gomponents.Text("—")),
+			html.Td(
+				gomponents.Text(name+" "),
+				html.Span(html.Class("badge bg-warning text-dark"), gomponents.Text("not configured")),
+			),
+		}
+	}
+
+	list := []gomponents.Node{gomponents.Text(l.Name)}
+	if !l.Enabled {
+		list = append(list, gomponents.Text(" "), html.Span(html.Class("badge bg-secondary"), gomponents.Text("disabled")))
+	}
+
+	return []gomponents.Node{
+		html.Td(html.Span(html.Class("badge bg-light text-dark border"), gomponents.Text(l.Group))),
+		html.Td(list...),
+	}
 }
 
 // wantedResults renders the count summary, table and pagination for a tab page.
 func wantedResults(
 	sec wantedSection,
-	search string,
+	f wantedFilter,
 	page, total int,
-	rows []database.DbstaticOneStringOneUInt,
+	rows []wantedRow,
 ) gomponents.Node {
 	if total == 0 {
 		msg := "All " + strings.ToLower(sec.Title) + " are accounted for."
 		icon := "fas fa-check-circle"
 		color := "#28a745"
 
-		if search != "" {
-			msg = "No " + strings.ToLower(sec.Title) + " match \"" + search + "\"."
+		if f != (wantedFilter{}) {
+			msg = "No missing " + strings.ToLower(sec.Title) + " match the filter."
 			icon = "fas fa-magnifying-glass"
 			color = "#6c757d"
 		}
@@ -398,29 +593,31 @@ func wantedResults(
 
 	start := (page-1)*wantedPageSize + 1
 	end := start + len(rows) - 1
+	lists := sec.lists()
 
 	trs := make([]gomponents.Node, 0, len(rows))
 	for _, r := range rows {
-		idStr := strconv.FormatUint(uint64(r.Num), 10)
+		idStr := strconv.FormatUint(uint64(r.ID), 10)
 
-		trs = append(trs, html.Tr(
-			html.Td(gomponents.Text(r.Str)),
-			html.Td(
-				html.Class("text-end"),
-				html.Button(
-					html.Type("button"),
-					html.Class("btn btn-sm btn-outline-primary wanted-search-btn"),
-					html.Data("media", sec.Key),
-					html.Data("id", idStr),
-					gomponents.Attr("aria-label", "Search for "+r.Str),
-					html.I(
-						html.Class("fas fa-magnifying-glass me-1"),
-						gomponents.Attr("aria-hidden", "true"),
-					),
-					gomponents.Text("Search"),
+		cells := []gomponents.Node{html.Td(gomponents.Text(r.Label))}
+		cells = append(cells, wantedListCells(lists, r.Listname)...)
+		cells = append(cells, html.Td(
+			html.Class("text-end"),
+			html.Button(
+				html.Type("button"),
+				html.Class("btn btn-sm btn-outline-primary wanted-search-btn"),
+				html.Data("media", sec.Key),
+				html.Data("id", idStr),
+				gomponents.Attr("aria-label", "Search for "+r.Label+" in "+r.Listname),
+				html.I(
+					html.Class("fas fa-magnifying-glass me-1"),
+					gomponents.Attr("aria-hidden", "true"),
 				),
+				gomponents.Text("Search"),
 			),
 		))
+
+		trs = append(trs, html.Tr(cells...))
 	}
 
 	return html.Div(
@@ -436,6 +633,8 @@ func wantedResults(
 				html.THead(
 					html.Tr(
 						html.Th(gomponents.Attr("scope", "col"), gomponents.Text(sec.Title)),
+						html.Th(gomponents.Attr("scope", "col"), html.Style("width: 9rem;"), gomponents.Text("Media Group")),
+						html.Th(gomponents.Attr("scope", "col"), html.Style("width: 16rem;"), gomponents.Text("List")),
 						html.Th(
 							gomponents.Attr("scope", "col"),
 							html.Class("text-end"),
@@ -447,17 +646,18 @@ func wantedResults(
 				html.TBody(trs...),
 			),
 		),
-		wantedPagination(sec.Key, search, page, totalPages),
+		wantedPagination(sec.Key, f, page, totalPages),
 	)
 }
 
-// wantedPagination renders Prev/Next paging controls that swap the results region.
-func wantedPagination(key, search string, page, totalPages int) gomponents.Node {
+// wantedPagination renders paging controls that swap the results region and
+// keep the tab's filters.
+func wantedPagination(key string, f wantedFilter, page, totalPages int) gomponents.Node {
 	if totalPages <= 1 {
 		return gomponents.Text("")
 	}
 
-	base := "/api/admin/wanted/tab?media=" + key + "&q=" + url.QueryEscape(search) + "&page="
+	base := "/api/admin/wanted/tab?media=" + key + f.query() + "&page="
 	resTarget := "#wres-" + key
 
 	pageBtn := func(label string, target int, disabled bool) gomponents.Node {
@@ -522,7 +722,11 @@ func wantedScript() gomponents.Node {
 				btn.disabled = true;
 				btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Searching...';
 				gmdApiProxyFetch(url)
-					.then(function(r){ return r.json().catch(function(){ return {}; }); })
+					.then(function(r){
+						// 204 means no media group has this entry's list.
+						if (r.status === 204) { throw new Error('the entry\'s list is in no media group'); }
+						return r.json().catch(function(){ return {}; });
+					})
 					.then(function(data){
 						var accepted = (data && data.accepted) ? data.accepted.length : 0;
 						var denied = (data && data.denied) ? data.denied.length : 0;

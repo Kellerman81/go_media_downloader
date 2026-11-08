@@ -31,10 +31,11 @@ Inspirations: Radarr/Sonarr and Flexget and beets
 - Local Imdb Cache
 - Missing/Upgradeble monitoring of Episode/Movie/Music/Book/Audiobook
 - Search Newznab/Tornab Indexers
-- Download nzb to directory, to Nzbget and torrent/magnet to deluge (others might follow)
+- Download nzb/torrent to a directory or send them to one of 14 Usenet/torrent clients (see [Downloaders](#downloaders))
+- Track sent downloads (added, downloading with progress, completed, failed, removed) and what the structure job did with them (processed, rejected); a failed or rejected download makes the item searchable again, and failed downloads can be removed from the client (`remove_failed`)
 - Parse files/nzbs
 - Structure releases and delete lower quality files/nzbs
-- Send Notification after Download start and/or Download finish
+- Send Notifications through 19 services and local programs (see [Notifications](#notifications)) when a download starts, a file is organized or upgraded, an entry is added to a list, or a new title is added to the database
 - Scheduler interval based (every x Minutes, Hours, Days) and/or cron based
 - Api to start jobs, list/add/edit/delete movies/series/episodes, other actions. For API Call examples look at the Powershell examples in the api example file and at the Swagger Documentation
 - External Api Limiter to reduce the chance of getting blocked
@@ -57,6 +58,7 @@ Inspirations: Radarr/Sonarr and Flexget and beets
 - Plex Watchlist (Movies + Shows)
 - Jellyfin Watchlist (Movies + Shows)
 - Movie Web Scraper - HTML/XPath or CSRF API (`moviescraper`)
+- Rotten Tomatoes browse pages and editorial guides (`rottentomatoes`) and Letterboxd watchlists and lists (`letterboxd`) - matched to IMDb by title and year
 - local TOML config file (Shows, Audiobooks, Books, Music)
 - Music Charts scraper - offiziellecharts.de, officialcharts.com, or any HTML chart page (`musiccharts`)
 - Last.fm Top Artists (`lastfmtopartists`)
@@ -89,20 +91,55 @@ Inspirations: Radarr/Sonarr and Flexget and beets
 
 #### Downloaders
 
-- Drone (File Download NZB,Torrent)
-- Nzbget (Nzb)
-- Sabnzb (Nzb)
-- qBittorrent (Torrent/Magnet)
-- rTorrent (Torrent/Magnet untested)
-- Deluge (Torrent/Magnet)
+- Drone (File Download NZB,Torrent) - `drone`
+- Nzbget (Nzb) - `nzbget`
+- Sabnzb (Nzb) - `sabnzbd`
+- NZBVortex (Nzb)* - `nzbvortex`
+- qBittorrent (Torrent/Magnet) - `qbittorrent`
+- rTorrent (Torrent/Magnet untested) - `rtorrent`
+- Deluge (Torrent/Magnet) - `deluge`
+- Transmission (Torrent/Magnet) - `transmission`
+- Vuze with the Web Remote plugin (Torrent/Magnet)* - `vuze`
+- aria2 (Torrent/Magnet) - `aria2`
+- Flood (Torrent/Magnet) - `flood`
+- uTorrent (Torrent/Magnet) - `utorrent`
+- rqbit (Torrent/Magnet) - `rqbit`
+- Tribler (Torrent/Magnet) - `tribler`
+- Synology Download Station (Torrent/Magnet)* - `downloadstation`
+
+\* implemented from the client's API and Sonarr's client code but not yet tested against a real installation (NZBVortex is macOS-only, Download Station needs DSM; Vuze uses the Transmission RPC). aria2, Flood, uTorrent, rqbit and Tribler were tested against their Docker images.
 
 #### Notifications
 
-- Pushover
-- CSV (Write custom csv row)
-- Gotify
-- Apprise
-- Pushbullet
+- CSV (Write custom csv row) - `csv`
+- Pushover - `pushover`
+- Gotify - `gotify`
+- Apprise - `apprise`
+- Pushbullet - `pushbullet`
+- Email via SMTP - `sendmail`
+- Discord (webhook)* - `discord`
+- Slack (incoming webhook)* - `slack`
+- Telegram (bot)* - `telegram`
+- ntfy - `ntfy`
+- Webhook (JSON POST to any URL)* - `webhook`
+- Signal (via signal-cli-rest-api)* - `signal`
+- Join* - `join`
+- Prowl* - `prowl`
+- Pushcut* - `pushcut`
+- Pushsafer* - `pushsafer`
+- Simplepush* - `simplepush`
+- Mailgun (email)* - `mailgun`
+- SendGrid (email)* - `sendgrid`
+- Run a program - `exec` (gets title and message as arguments and as GMD_TITLE / GMD_MESSAGE; started without a shell)
+
+\* implemented from the service's API but not yet tested against the real service. ntfy was tested against its Docker image; for Signal only the connection check and the server's "not registered" answer were tested, without a registered number.
+
+Notification events (per media group):
+- `added_download` - a release was sent to a download client
+- `added_data` - a file was organized into the library
+- `upgraded_data` - an organized file replaced older ones
+- `added_to_list` - an entry was added to one of the group's lists
+- `added_to_db` - a new movie/series/book/audiobook/album was added to the database
 
 #### Media Templates
 
@@ -125,7 +162,6 @@ Inspirations: Radarr/Sonarr and Flexget and beets
 
 ### Under Consideration
 
-- Download State Tracking
 - Downloading of images from Meta Sites (unlikely)
 - Handle multi media releases (ex. -CD1 -CD2) (maybe even joining those) (at the bottom of the list)
 - Maybe also add the ability to download non matched episodes (which could't be found on a meta source site - risky since you might get a lot unwanted stuff) (at the bottom of the list) - using the download API you can Download excluded releases
@@ -133,8 +169,8 @@ Inspirations: Radarr/Sonarr and Flexget and beets
 - Switch to db only configuration if I include a full webinterface
 - Other Feed Sources (currently i don't need more - start a discussion if you want one specific - also you can add stuff using the API)
 - Other Indexer Sources (currently i don't need more - start a discussion if you want one specific)
-- Other Downloaders (currently i don't need more - start a discussion if you want one specific - ex qBittorrent)
-- Other Notifications (currently i don't need more - start a discussion if you want one specific) - added a few generic ones
+- Other Downloaders (start a discussion if you want one specific - not planned: Freebox, Hadouken, Pneumatic)
+- Other Notifications (start a discussion if you want one specific - not planned: Custom Script, Notifiarr, Twitter)
 - Always: Add Additional Logging (currently mostly debugging stuff)
 - Always: API Changes
 
@@ -250,11 +286,39 @@ Books
 - [OpenLibrary](https://openlibrary.org/)
 - [Goodreads](https://www.goodreads.com/)
 
+Downloaders
+- [NZBGet](https://nzbget.com/)
+- [SABnzbd](https://sabnzbd.org/)
+- [NZBVortex](https://www.nzbvortex.com/)
+- [qBittorrent](https://www.qbittorrent.org/)
+- [rTorrent](https://github.com/rakshasa/rtorrent)
+- [Deluge](https://deluge-torrent.org/)
+- [Transmission](https://transmissionbt.com/)
+- [Vuze](https://www.vuze.com/)
+- [aria2](https://aria2.github.io/)
+- [Flood](https://flood.js.org/)
+- [uTorrent](https://www.utorrent.com/)
+- [rqbit](https://github.com/ikatson/rqbit)
+- [Tribler](https://www.tribler.org/)
+- [Synology Download Station](https://www.synology.com/dsm/packages/DownloadStation)
+
 Notifications
 - [Pushover](https://www.pushover.net/)
 - [Pushbullet](https://www.pushbullet.com/)
 - [Gotify](https://gotify.net/)
 - [Apprise](https://github.com/caronc/apprise)
+- [Discord Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+- [Slack Incoming Webhooks](https://api.slack.com/messaging/webhooks)
+- [Telegram Bots](https://core.telegram.org/bots)
+- [ntfy](https://ntfy.sh/)
+- [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api)
+- [Join](https://joaoapps.com/join/)
+- [Prowl](https://www.prowlapp.com/)
+- [Pushcut](https://www.pushcut.io/)
+- [Pushsafer](https://www.pushsafer.com/)
+- [Simplepush](https://simplepush.io/)
+- [Mailgun](https://www.mailgun.com/)
+- [SendGrid](https://sendgrid.com/)
 
 For a list of the used Go Modules please look into the go.mod File in pkg/main and pkg/imdb
 

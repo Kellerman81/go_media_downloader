@@ -1035,10 +1035,7 @@ func renderWizardStepDownloader(csrfToken string) gomponents.Node {
 						map[string]string{"DlType": "Client Type"},
 						"DlType", "select", "",
 						map[string][]string{
-							"options": {
-								"", "drone", "nzbget", "sabnzbd", "qbittorrent",
-								"deluge", "rtorrent", "transmission",
-							},
+							"options": append([]string{""}, providers.DownloadClientTypeNames()...),
 						},
 					),
 					renderFormGroup(

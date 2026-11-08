@@ -39,7 +39,7 @@ func TestRegisterNotificationProvidersFollowsConfig(t *testing.T) {
 	})
 	RegisterNotificationProviders()
 
-	if got, want := names(), []string{"got", "pb", "pushover_po"}; !slices.Equal(got, want) {
+	if got, want := names(), []string{"got", "pb", "po"}; !slices.Equal(got, want) {
 		t.Fatalf("after first load: got %v, want %v", got, want)
 	}
 
@@ -75,15 +75,52 @@ func TestSendNotificationValidation(t *testing.T) {
 		want           error
 	}{
 		{"csv is not sent", config.NotificationConfig{NotificationType: "csv"}, "m", "t", errNotificationNotRegistered},
-		{"pushover without key", config.NotificationConfig{NotificationType: "pushover"}, "m", "t", errNotificationField},
-		{"gotify without url", config.NotificationConfig{NotificationType: "gotify", Apikey: "k"}, "m", "t", errNotificationField},
+		{"pushover without key", config.NotificationConfig{NotificationType: "pushover"}, "m", "t", ErrNotificationField},
+		{"gotify without url", config.NotificationConfig{NotificationType: "gotify", Apikey: "k"}, "m", "t", ErrNotificationField},
 		{"empty message", config.NotificationConfig{NotificationType: "pushbullet", Apikey: "k"}, "", "t", errMessageEmpty},
-		{"pushover message limit", config.NotificationConfig{NotificationType: "pushover", Apikey: "k"}, long, "t", errMessageTooLong},
+		{"pushover without user key", config.NotificationConfig{NotificationType: "pushover", Apikey: "k"}, "m", "t", ErrNotificationField},
+		{"pushover message limit", config.NotificationConfig{NotificationType: "pushover", Apikey: "k", Recipient: "u"}, long, "t", errMessageTooLong},
 		{"pushbullet title limit", config.NotificationConfig{NotificationType: "pushbullet", Apikey: "k"}, "m", long[:141], errTitleTooLong},
 		{"apprise has no length limit", config.NotificationConfig{Name: "a", NotificationType: "apprise", ServerURL: "http://x", AppriseURLs: "u"}, long, long, errNotificationNotRegistered},
 	} {
 		if err := SendNotification(&tt.cfg, tt.message, tt.title); !errors.Is(err, tt.want) {
 			t.Errorf("%s: err = %v, want %v", tt.name, err, tt.want)
+		}
+	}
+}
+
+func TestNewNotificationProviderEveryType(t *testing.T) {
+	full := config.NotificationConfig{
+		Name: "n", Apikey: "k", Recipient: "r", Sender: "+491", Outputto: "/tmp/x.csv", Command: "/bin/true",
+		ServerURL: "https://example.invalid/hook", AppriseURLs: "json://x",
+		SMTPServer: "smtp.invalid", SMTPFromEmail: "a@example.invalid", SMTPToEmail: "b@example.invalid, c@example.invalid",
+	}
+
+	for _, name := range NotificationTypeNames() {
+		cfg := full
+		cfg.NotificationType = name
+
+		p, err := NewNotificationProvider(&cfg)
+		if name == "csv" {
+			if err == nil || IsSentNotification(name) {
+				t.Error("csv must not build a provider")
+			}
+
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+
+		if string(p.GetProviderType()) != name {
+			t.Errorf("%s: built a %s provider", name, p.GetProviderType())
+		}
+
+		empty := config.NotificationConfig{Name: "n", NotificationType: name}
+		if _, err := NewNotificationProvider(&empty); !errors.Is(err, ErrNotificationField) && name != "ntfy" {
+			t.Errorf("%s without settings: %v", name, err)
 		}
 	}
 }

@@ -513,6 +513,10 @@ func JobImportMovies(
 		}
 	}
 
+	if dbmovieadded {
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbmovie.ID)
+	}
+
 	if !addnew {
 		return dbmovie.ID, nil
 	}
@@ -851,6 +855,8 @@ func Checkaddmovieentry(
 				},
 			)
 		}
+
+		NotifyAdded(cfgp, providers.EventAddedToList, cfgplist.Name, *dbid)
 	}
 
 	return nil
@@ -1450,6 +1456,10 @@ func jobImportDBSeries(
 		return logger.ErrNotFoundDbserie
 	}
 
+	if dbserieadded {
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbserie.ID)
+	}
+
 	if addnew {
 		// Add Entry in SeriesTable
 		if listid == -1 {
@@ -1540,6 +1550,8 @@ func jobImportDBSeries(
 					},
 				)
 			}
+
+			NotifyAdded(cfgp, providers.EventAddedToList, cfgp.Lists[listid].Name, dbserie.ID)
 		} else {
 			serieAliases := logger.JoinStringsSep(serieconfig.AlternateName, ",")
 			database.ExecN(

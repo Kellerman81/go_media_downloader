@@ -53,16 +53,62 @@ func MatchAudioFolderAsAlbumForced(
 		return MatchAudioFolderAsAlbum(ctx, folder, cfgp, data, addToDatabase)
 	}
 
-	files, err := parser_v2.CollectFilesOnly(folder, parser_v2.AudioExtensions)
-	if err != nil || len(files) == 0 {
-		return nil, "no_files", nil
+	folder, files, reason := ResolveAlbumFiles(folder)
+	if reason != "" {
+		return nil, reason, nil
 	}
 
 	switch cfgp.IsType {
 	case config.MediaTypeAudiobook:
-		return matchAudiobookFolderForced(ctx, folder, files, cfgp, data, addToDatabase, forcedID)
+		dbMatch := findOrImportAudiobookByASIN(ctx, *forcedID, cfgp, data)
+		if dbMatch == nil {
+			return nil, "no_match", nil
+		}
+
+		return matchAudiobookFolderToEntry(ctx, folder, files, cfgp, data, addToDatabase, dbMatch)
 	case config.MediaTypeMusic:
-		return matchMusicFolderForced(ctx, folder, files, cfgp, data, addToDatabase, forcedID)
+		dbMatch := findOrImportAlbumByMBID(ctx, forcedID, cfgp, data)
+		if dbMatch == nil {
+			return nil, "no_match", nil
+		}
+
+		return matchMusicFolderToEntry(ctx, folder, files, cfgp, data, addToDatabase, dbMatch)
+	default:
+		return nil, "no_match", nil
+	}
+}
+
+// MatchAudioFolderAsAlbumByDBID matches folder against an existing dbalbums
+// (music) or dbaudiobooks (audiobook) row, skipping candidate search and
+// scoring the same way MatchAudioFolderAsAlbumForced does.
+func MatchAudioFolderAsAlbumByDBID(
+	ctx context.Context,
+	folder string,
+	cfgp *config.MediaTypeConfig,
+	data *config.MediaDataConfig,
+	addToDatabase bool,
+	dbID uint,
+) (*parser_v2.AlbumInfo, string, *MatchReport) {
+	folder, files, reason := ResolveAlbumFiles(folder)
+	if reason != "" {
+		return nil, reason, nil
+	}
+
+	switch cfgp.IsType {
+	case config.MediaTypeAudiobook:
+		dbMatch := database.FindAudiobookByID(dbID)
+		if dbMatch == nil {
+			return nil, "no_match", nil
+		}
+
+		return matchAudiobookFolderToEntry(ctx, folder, files, cfgp, data, addToDatabase, dbMatch)
+	case config.MediaTypeMusic:
+		dbMatch := database.FindAlbumByID(dbID)
+		if dbMatch == nil {
+			return nil, "no_match", nil
+		}
+
+		return matchMusicFolderToEntry(ctx, folder, files, cfgp, data, addToDatabase, dbMatch)
 	default:
 		return nil, "no_match", nil
 	}
@@ -75,6 +121,53 @@ func MatchAudioFolderAsAlbum(
 	data *config.MediaDataConfig,
 	addToDatabase bool,
 ) (*parser_v2.AlbumInfo, string, *MatchReport) {
+	folder, files, reason := ResolveAlbumFiles(folder)
+	if reason != "" {
+		return nil, reason, nil
+	}
+
+	// Route to appropriate handler based on media type
+	switch cfgp.IsType {
+	case config.MediaTypeAudiobook:
+		return matchAudiobookFolder(ctx, folder, files, cfgp, data, addToDatabase)
+	case config.MediaTypeMusic:
+		// Only the synthetic album the match settles on may stay; the other
+		// fallback candidates inserted on the way are removed again.
+		ctx, synthetic := withSyntheticAlbums(ctx)
+
+		result, status, report := matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase)
+		if status == "no_match" {
+			// Fingerprint/LastFM fallback: only runs when normal matching found nothing.
+			folderArtist, folderAlbum, _ := parser_v2.ParseAudioFolder(folder)
+			if mbid := resolveAlbumMBID(ctx, folder, files, folderArtist, folderAlbum); mbid != "" {
+				result, status, report = matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase, mbid)
+			}
+		}
+
+		var keep uint
+		if result != nil && status == "" {
+			keep = result.DatabaseID
+		}
+
+		synthetic.dropExcept(keep)
+
+		return result, status, report
+
+	default:
+		logger.Logtype("debug", 0).
+			Str("folder", folder).
+			Uint("mediaType", cfgp.IsType).
+			Msg("DEBUG: Unsupported media type for audio folder processing")
+
+		return nil, "no_match", nil
+	}
+}
+
+// ResolveAlbumFiles returns the album folder and audio files a match of folder
+// works on: a disc subfolder is widened to its whole disc set, and a folder
+// without audio files at its root uses its single audio subfolder or its disc
+// subfolders. reason is non-empty when there is nothing to match.
+func ResolveAlbumFiles(folder string) (string, []string, string) {
 	// Step 1: Collect files only (no tag reading yet)
 	files, err := parser_v2.CollectFilesOnly(folder, parser_v2.AudioExtensions)
 	if err != nil {
@@ -83,7 +176,7 @@ func MatchAudioFolderAsAlbum(
 			Err(err).
 			Msg("CollectFilesOnly returned error")
 
-		return nil, "files_error", nil
+		return folder, nil, "files_error"
 	}
 
 	// If this is a disc subfolder (e.g. "CD3"), redirect to the parent album folder
@@ -129,7 +222,7 @@ func MatchAudioFolderAsAlbum(
 		// and keep the parent folder so the full multi-disc album is matched together.
 		entries, err2 := os.ReadDir(folder)
 		if err2 != nil {
-			return nil, "no_files", nil
+			return folder, nil, "no_files"
 		}
 
 		var (
@@ -164,7 +257,7 @@ func MatchAudioFolderAsAlbum(
 
 		switch subCount {
 		case 0:
-			return nil, "no_files", nil
+			return folder, nil, "no_files"
 		case 1:
 			folder = firstAudioSub
 			files = allFiles
@@ -172,7 +265,7 @@ func MatchAudioFolderAsAlbum(
 		default:
 			// Multiple audio subfolders: only valid when all are disc-type.
 			if !allDisc {
-				return nil, "no_files", nil
+				return folder, nil, "no_files"
 			}
 
 			// Keep folder = parent album folder; combine all disc files.
@@ -180,41 +273,11 @@ func MatchAudioFolderAsAlbum(
 		}
 	}
 
-	// Route to appropriate handler based on media type
-	switch cfgp.IsType {
-	case config.MediaTypeAudiobook:
-		return matchAudiobookFolder(ctx, folder, files, cfgp, data, addToDatabase)
-	case config.MediaTypeMusic:
-		// Only the synthetic album the match settles on may stay; the other
-		// fallback candidates inserted on the way are removed again.
-		ctx, synthetic := withSyntheticAlbums(ctx)
-
-		result, status, report := matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase)
-		if status == "no_match" {
-			// Fingerprint/LastFM fallback: only runs when normal matching found nothing.
-			folderArtist, folderAlbum, _ := parser_v2.ParseAudioFolder(folder)
-			if mbid := resolveAlbumMBID(ctx, folder, files, folderArtist, folderAlbum); mbid != "" {
-				result, status, report = matchMusicFolder(ctx, folder, files, cfgp, data, addToDatabase, mbid)
-			}
-		}
-
-		var keep uint
-		if result != nil && status == "" {
-			keep = result.DatabaseID
-		}
-
-		synthetic.dropExcept(keep)
-
-		return result, status, report
-
-	default:
-		logger.Logtype("debug", 0).
-			Str("folder", folder).
-			Uint("mediaType", cfgp.IsType).
-			Msg("DEBUG: Unsupported media type for audio folder processing")
-
-		return nil, "no_match", nil
+	if len(files) == 0 {
+		return folder, nil, "no_files"
 	}
+
+	return folder, files, ""
 }
 
 // searchPair holds an author+title combination to try against a search API.
@@ -445,31 +508,7 @@ func matchAudiobookFolder(
 		)
 	}
 
-	var artist, albumTitle string
-	if meta.IsDiscFolder {
-		artist = coalesceStr(
-			meta.TagAlbumArtist,
-			meta.TagArtist,
-			meta.GrandparentArtist,
-			meta.ParentArtist,
-		)
-		albumTitle = coalesceStr(meta.TagAlbum, meta.ParentAlbum, meta.FilenameAlbum)
-	} else {
-		artist = coalesceStr(
-			meta.TagAlbumArtist,
-			meta.TagArtist,
-			meta.FolderArtist,
-			meta.FilenameArtist,
-			meta.ParentArtist,
-		)
-		albumTitle = coalesceStr(
-			meta.TagAlbum,
-			meta.TagTitle,
-			meta.FolderAlbum,
-			meta.FilenameAlbum,
-			meta.ParentAlbum,
-		)
-	}
+	artist, albumTitle := meta.audiobookQuery()
 
 	logParsedMetadata(folder, meta, "asin", asin)
 
@@ -754,46 +793,50 @@ func matchAudiobookFolder(
 	return album, "", nil
 }
 
-// matchAudiobookFolderForced matches an audiobook folder against a single,
-// caller-supplied ASIN, bypassing all text-search and scoring logic.
+// findOrImportAudiobookByASIN returns the dbaudiobooks row for asin, importing
+// it into the AddFound list first when it is not in the database yet.
+func findOrImportAudiobookByASIN(
+	ctx context.Context,
+	asin string,
+	cfgp *config.MediaTypeConfig,
+	data *config.MediaDataConfig,
+) *database.AudiobookSearchResult {
+	dbMatch, _ := database.FindAudiobookByASIN(asin)
+	if dbMatch != nil {
+		return dbMatch
+	}
+
+	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	if listid == -1 {
+		return nil
+	}
+
+	if dbID, err := JobImportAudiobooks(ctx, asin, cfgp, listid, true); err != nil || dbID == 0 {
+		return nil
+	}
+
+	dbMatch, _ = database.FindAudiobookByASIN(asin)
+
+	return dbMatch
+}
+
+// matchAudiobookFolderToEntry matches an audiobook folder against one known
+// dbaudiobooks row, bypassing all text-search and scoring logic.
 //
 // Rules for the forced path:
-//   - Look up (or import) the audiobook by ASIN only — no addPair / text search.
 //   - Skip verifyASINChapterCount, selectBestAudiobookMatches, and recommendation() entirely.
 //   - Skip the track-count equality check (AllowMissingTracks is always true).
 //   - For DB tracks that matchTracksByDistance left unmatched, assign the closest
 //     remaining local file by track distance ("next-best" fallback).
-func matchAudiobookFolderForced(
+func matchAudiobookFolderToEntry(
 	ctx context.Context,
 	folder string,
 	files []string,
 	cfgp *config.MediaTypeConfig,
 	data *config.MediaDataConfig,
 	addToDatabase bool,
-	forcedASIN *string,
+	dbMatch *database.AudiobookSearchResult,
 ) (*parser_v2.AlbumInfo, string, *MatchReport) {
-	// Step 1: find audiobook in DB, importing it if necessary.
-	dbMatch, _ := database.FindAudiobookByASIN(*forcedASIN)
-	if dbMatch == nil {
-		listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
-		if listid != -1 {
-			if dbID, err := JobImportAudiobooks(
-				ctx,
-				*forcedASIN,
-				cfgp,
-				listid,
-				true,
-			); err == nil &&
-				dbID != 0 {
-				dbMatch, _ = database.FindAudiobookByASIN(*forcedASIN)
-			}
-		}
-
-		if dbMatch == nil {
-			return nil, "no_match", nil
-		}
-	}
-
 	// Step 2: parse folder metadata and build album struct.
 	tracks := parser_v2.CollectTracksFromFiles(files)
 
@@ -819,7 +862,7 @@ func matchAudiobookFolderForced(
 		Artist:         artist,
 		Year:           year,
 		Genre:          tagGenre,
-		ASIN:           *forcedASIN,
+		ASIN:           dbMatch.ASIN,
 		SourceFolder:   folder,
 		TrackCount:     len(files),
 		DatabaseID:     dbMatch.ID,
@@ -832,7 +875,7 @@ func matchAudiobookFolderForced(
 	// Step 3: get DB tracks and run the standard LAP matcher.
 	isVA := IsVariousArtists(artist)
 
-	dbTracks := resolveChaptersForMatching(ctx, dbMatch.ID, *forcedASIN, cfgp.AudibleRegion)
+	dbTracks := resolveChaptersForMatching(ctx, dbMatch.ID, dbMatch.ASIN, cfgp.AudibleRegion)
 	if len(dbTracks) == 0 {
 		return nil, "no_tracks", nil
 	}
@@ -865,47 +908,51 @@ func matchAudiobookFolderForced(
 	return album, "", nil
 }
 
-// matchMusicFolderForced matches a music folder against a single, caller-supplied
-// MusicBrainz release ID, bypassing all text-search and scoring logic.
+// findOrImportAlbumByMBID returns the dbalbums row for mbid, importing it into
+// the AddFound list first when it is not in the database yet.
+func findOrImportAlbumByMBID(
+	ctx context.Context,
+	mbid *string,
+	cfgp *config.MediaTypeConfig,
+	data *config.MediaDataConfig,
+) *database.AlbumSearchResult {
+	dbMatch, _ := database.FindAlbumByMusicBrainzID(mbid)
+	if dbMatch != nil {
+		return dbMatch
+	}
+
+	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
+	if listid == -1 {
+		return nil
+	}
+
+	if dbID, err := JobImportAlbums(ctx, *mbid, cfgp, listid, true); err != nil || dbID == 0 {
+		return nil
+	}
+
+	dbMatch, _ = database.FindAlbumByMusicBrainzID(mbid)
+
+	return dbMatch
+}
+
+// matchMusicFolderToEntry matches a music folder against one known dbalbums
+// row, bypassing all text-search and scoring logic.
 //
 // Rules for the forced path:
-//   - Look up (or import) the album by MBID only — no addPair / text search.
 //   - Skip selectBestMatches and the recommendation() threshold entirely.
 //   - AllowMissingTracks is always treated as true.
 //   - For DB tracks that matchTracksByDistance left unmatched, assign the closest
 //     remaining local file by track distance so the rename plan is as complete as
 //     possible ("next-best" fallback).
-func matchMusicFolderForced(
+func matchMusicFolderToEntry(
 	ctx context.Context,
 	folder string,
 	files []string,
 	cfgp *config.MediaTypeConfig,
 	data *config.MediaDataConfig,
 	addToDatabase bool,
-	forcedMBID *string,
+	dbMatch *database.AlbumSearchResult,
 ) (*parser_v2.AlbumInfo, string, *MatchReport) {
-	// Step 1: find album in DB, importing it if necessary.
-	dbMatch, _ := database.FindAlbumByMusicBrainzID(forcedMBID)
-	if dbMatch == nil {
-		listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
-		if listid != -1 {
-			if dbID, err := JobImportAlbums(
-				ctx,
-				*forcedMBID,
-				cfgp,
-				listid,
-				true,
-			); err == nil &&
-				dbID != 0 {
-				dbMatch, _ = database.FindAlbumByMusicBrainzID(forcedMBID)
-			}
-		}
-
-		if dbMatch == nil {
-			return nil, "no_match", nil
-		}
-	}
-
 	// Step 2: parse folder metadata and build album struct.
 	tagData := parser_v2.ReadTagsForFirstFile(files)
 
@@ -941,7 +988,9 @@ func matchMusicFolderForced(
 	// Step 3: get DB tracks and run the standard LAP matcher.
 	isVA := DetectVA(artist, tracks)
 
-	dbTracks := resolveTracksForMatching(ctx, dbMatch.ID, *forcedMBID, albumTitle, artist)
+	dbTracks := resolveTracksForMatching(
+		ctx, dbMatch.ID, dbMatch.MusicBrainzReleaseID, albumTitle, artist,
+	)
 	if len(dbTracks) == 0 {
 		return nil, "no_tracks", nil
 	}
@@ -999,32 +1048,7 @@ func matchMusicFolder(
 		musicBrainzID = mbidOverride[0]
 	}
 
-	// Tags take priority because they are authoritative; folder-name parsing is a
-	// fallback for files with no tags.
-	var artist, albumTitle string
-	if meta.IsDiscFolder {
-		artist = coalesceStr(
-			meta.TagAlbumArtist,
-			meta.TagArtist,
-			meta.GrandparentArtist,
-			meta.ParentArtist,
-		)
-		albumTitle = coalesceStr(meta.TagAlbum, meta.ParentAlbum, meta.FilenameAlbum)
-	} else {
-		artist = coalesceStr(
-			meta.TagAlbumArtist,
-			meta.TagArtist,
-			meta.FolderArtist,
-			meta.FilenameArtist,
-			meta.ParentArtist,
-		)
-		albumTitle = coalesceStr(
-			meta.TagAlbum,
-			meta.FolderAlbum,
-			meta.FilenameAlbum,
-			meta.ParentAlbum,
-		)
-	}
+	artist, albumTitle := meta.musicQuery()
 
 	logParsedMetadata(folder, meta, "musicBrainzID", musicBrainzID)
 
@@ -1707,6 +1731,7 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+						NotifyAdded(cfgp, providers.EventAddedToDB, "", existingID)
 						noteSyntheticAlbum(ctx, existingID)
 
 						lfmAltArtistName, lfmAltArtistMBID := releaseArtistName(
@@ -1843,6 +1868,7 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+						NotifyAdded(cfgp, providers.EventAddedToDB, "", existingID)
 						noteSyntheticAlbum(ctx, existingID)
 
 						dgAltArtistName, dgAltArtistMBID := releaseArtistName(
@@ -1943,6 +1969,7 @@ func searchAndImportAlternativeRelease(
 					)
 					if insertErr == nil {
 						existingID = logger.Int64ToUint(result)
+						NotifyAdded(cfgp, providers.EventAddedToDB, "", existingID)
 						noteSyntheticAlbum(ctx, existingID)
 
 						dzAltArtistName, dzAltArtistMBID := releaseArtistName(
@@ -2117,6 +2144,104 @@ func replaceExistingAudiobookRelease(
 	return existingDBID, true
 }
 
+// singleAudiobookFile is the metadata of one multi-episode audiobook file:
+// the filename, its tags and its folder, plus the file as a one-track album.
+type singleAudiobookFile struct {
+	parsed         *parser_v2.TrackInfo
+	tagArtist      string
+	tagAlbumArtist string
+	tagAlbum       string
+	folderArtist   string
+	artist         string
+	albumTitle     string
+	asin           string
+	track          parser_v2.TrackInfo
+	genre          string
+	folder         string
+}
+
+// readSingleAudiobookFile parses filePath's name and tags into the metadata
+// MatchSingleAudiobookFile searches with.
+func readSingleAudiobookFile(filePath string) singleAudiobookFile {
+	var f singleAudiobookFile
+
+	f.parsed = parser_v2.ParseAudioFilename(filePath)
+
+	tagData, _ := parser_v2.ReadAudioTags(filePath)
+
+	var tagASIN string
+	if tagData != nil {
+		f.tagArtist = tagData.Artist
+		f.tagAlbumArtist = tagData.AlbumArtist
+		f.tagAlbum = tagData.Album
+		tagASIN = tagData.ASIN
+		f.genre = tagData.Genre
+		f.track.RuntimeMS = tagData.RuntimeMS
+		f.track.Runtime = tagData.Runtime
+		f.track.Bitrate = tagData.Bitrate
+		f.track.SampleRate = tagData.SampleRate
+		f.track.FileSize = tagData.FileSize
+		f.track.QualityProfile = tagData.QualityProfile
+		// PutTrackInfo's destructor may zero *tagData synchronously (pool.go's
+		// Put runs it whenever the pool has room) - tagData stays non-nil
+		// afterward, so any field read through it below this point would
+		// silently read zero values instead of the real tag data.
+		parser_v2.PutTrackInfo(tagData)
+	}
+
+	f.folder = filepath.Dir(filePath)
+	f.folderArtist, _, _ = parser_v2.ParseAudioFolder(f.folder)
+
+	f.artist = coalesceStr(f.tagAlbumArtist, f.tagArtist, f.parsed.Artist, f.folderArtist)
+	f.albumTitle = coalesceStr(f.tagAlbum, f.parsed.Album, f.parsed.Title)
+	f.asin = coalesceStr(tagASIN, f.parsed.ASIN)
+
+	f.track.Filepath = filePath
+	f.track.Filename = filepath.Base(filePath)
+	f.track.Extension = strings.ToLower(filepath.Ext(filePath))
+	f.track.Format = logger.ExtToFormat(filepath.Ext(filePath))
+	f.track.TrackNumber = 1
+	f.track.DiscNumber = 1
+	f.track.Title = f.albumTitle
+	f.track.Artist = f.artist
+	f.track.Album = f.albumTitle
+
+	return f
+}
+
+// album returns the file as a one-track album matched to dbID.
+func (f *singleAudiobookFile) album(dbID uint) *parser_v2.AlbumInfo {
+	album := &parser_v2.AlbumInfo{
+		Title:        f.albumTitle,
+		Artist:       f.artist,
+		Genre:        f.genre,
+		ASIN:         f.asin,
+		SourceFolder: f.folder,
+		TrackCount:   1,
+		DatabaseID:   dbID,
+		Tracks:       []parser_v2.TrackInfo{f.track},
+		TotalRuntime: f.track.Runtime,
+	}
+
+	if dbID != 0 {
+		album.ExpectedTracks = 1 // Single-file episode
+	}
+
+	return album
+}
+
+// SingleAudiobookFileByDBID returns filePath as a one-track album matched to
+// the dbaudiobooks row dbID, or nil when that row does not exist.
+func SingleAudiobookFileByDBID(filePath string, dbID uint) *parser_v2.AlbumInfo {
+	if database.FindAudiobookByID(dbID) == nil {
+		return nil
+	}
+
+	f := readSingleAudiobookFile(filePath)
+
+	return f.album(dbID)
+}
+
 // MatchSingleAudiobookFile matches a single audio file as an individual audiobook.
 // Used for multi-episode folders where each file is a separate audiobook/episode.
 // Returns the matched AlbumInfo (with 1 track) and a rejection reason (empty on success).
@@ -2127,231 +2252,118 @@ func MatchSingleAudiobookFile(
 	data *config.MediaDataConfig,
 	addToDatabase bool,
 ) (*parser_v2.AlbumInfo, string) {
-	// logger.Logtype("debug", 0).
-	// 	Str("file", filePath).
-	// 	Msg("DEBUG: MatchSingleAudiobookFile called")
-
-	// Parse filename for artist/title/track info
-	parsed := parser_v2.ParseAudioFilename(filePath)
-
-	// Read tags from the file
-	tagData, _ := parser_v2.ReadAudioTags(filePath)
-
-	var tagArtist, tagAlbumArtist, tagAlbum, tagASIN, tagGenre string
-
-	var tagRuntimeMS, tagFileSize int64
-	var tagBitrate, tagSampleRate int
-	var tagRuntime time.Duration
-	var tagQualityProfile string
-
-	if tagData != nil {
-		tagArtist = tagData.Artist
-		tagAlbumArtist = tagData.AlbumArtist
-		tagAlbum = tagData.Album
-		tagASIN = tagData.ASIN
-		tagGenre = tagData.Genre
-		tagRuntimeMS = tagData.RuntimeMS
-		tagRuntime = tagData.Runtime
-		tagBitrate = tagData.Bitrate
-		tagSampleRate = tagData.SampleRate
-		tagFileSize = tagData.FileSize
-		tagQualityProfile = tagData.QualityProfile
-		// PutTrackInfo's destructor may zero *tagData synchronously (pool.go's
-		// Put runs it whenever the pool has room) - tagData stays non-nil
-		// afterward, so any field read through it below this point would
-		// silently read zero values instead of the real tag data.
-		parser_v2.PutTrackInfo(tagData)
-	}
-
-	// Get parent folder for additional context
-	folder := filepath.Dir(filePath)
-	folderArtist, _, _ := parser_v2.ParseAudioFolder(folder)
-
-	// Build best artist/title
-	artist := coalesceStr(tagAlbumArtist, tagArtist, parsed.Artist, folderArtist)
-	albumTitle := coalesceStr(tagAlbum, parsed.Album, parsed.Title)
-	asin := coalesceStr(tagASIN, parsed.ASIN)
+	f := readSingleAudiobookFile(filePath)
 
 	logger.Logtype("debug", 0).
 		Str("file", filePath).
-		Str("artist", artist).
-		Str("title", albumTitle).
-		Str("asin", asin).
+		Str("artist", f.artist).
+		Str("title", f.albumTitle).
+		Str("asin", f.asin).
 		Msg("DEBUG: Parsed single audiobook file metadata")
 
-	// Try to find match in database
-	var dbMatch *database.AudiobookSearchResult
-
-	// Try by ASIN first
-	if asin != "" {
-		dbMatch, _ = database.FindAudiobookByASIN(asin)
-		// if dbMatch != nil {
-		// 	logger.Logtype("debug", 0).
-		// 		Str("file", filePath).
-		// 		Str("asin", asin).
-		// 		Uint("dbID", dbMatch.ID).
-		// 		Msg("DEBUG: Found single audiobook by ASIN")
-		// }
-	}
-
-	// Try by title/author combinations
-	if dbMatch == nil && albumTitle != "" {
-		type searchPair struct {
-			author, title, source string
-		}
-
-		var pairs []searchPair
-
-		seen := make(map[string]bool)
-
-		pairbuf := logger.PlAddBuffer.Get()
-		defer logger.PlAddBuffer.Put(pairbuf)
-
-		addPair := func(a, t, src string) {
-			if a == "" || t == "" {
-				return
-			}
-
-			pairbuf.Reset()
-
-			for i := range len(a) {
-				c := a[i]
-				if c >= 'A' && c <= 'Z' {
-					c += 32
-				}
-
-				pairbuf.WriteByte(c)
-			}
-
-			pairbuf.WriteByte('|')
-
-			for i := range len(t) {
-				c := t[i]
-				if c >= 'A' && c <= 'Z' {
-					c += 32
-				}
-
-				pairbuf.WriteByte(c)
-			}
-
-			key := pairbuf.String()
-			if !seen[key] {
-				seen[key] = true
-
-				pairs = append(pairs, searchPair{a, t, src})
-			}
-		}
-
-		addPair(tagAlbumArtist, tagAlbum, "tag-albumartist")
-		addPair(tagArtist, tagAlbum, "tag-artist")
-		addPair(parsed.Artist, parsed.Album, "filename")
-		addPair(parsed.Artist, parsed.Title, "filename-title")
-		addPair(folderArtist, tagAlbum, "folder+tag")
-		addPair(folderArtist, parsed.Title, "folder+filename")
-		addPair(tagAlbumArtist, parsed.Title, "tag+filename")
-		addPair(tagArtist, parsed.Title, "tag+filename")
-
-		for i := range pairs {
-			matches, err := database.FindAudiobooksByTitleAuthor(
-				&pairs[i].title,
-				&pairs[i].author,
-				5,
-			)
-			if err != nil || len(matches) == 0 {
-				continue
-			}
-
-			// Single-file episodes can't be verified by chapter count, so the
-			// title (and author, when known) must be close to what was searched.
-			best := bestNameMatch(pairs[i].title, len(matches),
-				func(j int) string { return matches[j].Title },
-				func(j int) bool {
-					return matches[j].Author == "" || namesMatch(matches[j].Author, pairs[i].author)
-				})
-			if best == -1 {
-				continue
-			}
-
-			dbMatch = matches[best]
-			// logger.Logtype("debug", 0).
-			// 	Str("file", filePath).
-			// 	Str("source", pair.source).
-			// 	Str("searchTitle", pair.title).
-			// 	Str("searchAuthor", pair.author).
-			// 	Uint("dbID", dbMatch.ID).
-			// 	Msg("DEBUG: Found single audiobook by title/author")
-			break
-		}
-	}
-
-	// Build album info with single track
-	album := &parser_v2.AlbumInfo{
-		Title:        albumTitle,
-		Artist:       artist,
-		Genre:        tagGenre,
-		ASIN:         asin,
-		SourceFolder: folder,
-		TrackCount:   1,
-	}
-
-	if dbMatch != nil {
-		album.DatabaseID = dbMatch.ID
-		album.ExpectedTracks = 1 // Single-file episode
+	var dbID uint
+	if dbMatch := findSingleAudiobookFileMatch(&f); dbMatch != nil {
+		dbID = dbMatch.ID
 	}
 
 	// If no match and addFound is enabled, try to import
 	listid := cfgp.GetMediaListsEntryListID(data.AddFoundList)
-	if album.DatabaseID == 0 && data.AddFound && album.ASIN != "" && listid != -1 {
+	if dbID == 0 && data.AddFound && f.asin != "" && listid != -1 {
 		logger.Logtype("info", 1).
 			Str("file", filePath).
-			Str("asin", album.ASIN).
-			Str("title", album.Title).
+			Str("asin", f.asin).
+			Str("title", f.albumTitle).
 			Msg("Single audiobook not in database - importing via addFound")
 
-		dbID, importErr := JobImportAudiobooks(ctx, album.ASIN, cfgp, listid, true)
-		if importErr == nil && dbID != 0 {
-			album.DatabaseID = dbID
+		if importedID, importErr := JobImportAudiobooks(ctx, f.asin, cfgp, listid, true); importErr == nil {
+			dbID = importedID
 		}
 	}
 
-	if album.DatabaseID == 0 {
+	if dbID == 0 {
 		logger.Logtype("debug", 0).
 			Str("file", filePath).
-			Str("title", album.Title).
-			Str("artist", album.Artist).
+			Str("title", f.albumTitle).
+			Str("artist", f.artist).
 			Msg("Single audiobook not found in database - skipping")
 
 		return nil, "no_match"
 	}
 
-	// Build single track
-	track := parser_v2.TrackInfo{
-		Filepath:    filePath,
-		Filename:    filepath.Base(filePath),
-		Extension:   strings.ToLower(filepath.Ext(filePath)),
-		Format:      logger.ExtToFormat(filepath.Ext(filePath)),
-		TrackNumber: 1,
-		DiscNumber:  1,
-		Title:       albumTitle,
-		Artist:      artist,
-		Album:       albumTitle,
-	}
-	track.RuntimeMS = tagRuntimeMS
-	track.Runtime = tagRuntime
-	track.Bitrate = tagBitrate
-	track.SampleRate = tagSampleRate
-	track.FileSize = tagFileSize
-	track.QualityProfile = tagQualityProfile
-
-	album.Tracks = []parser_v2.TrackInfo{track}
-	album.TotalRuntime = track.Runtime
+	album := f.album(dbID)
 
 	// Add to database if requested
 	if addToDatabase {
-		if !addAudiobookFilesToDatabase(ctx, folder, album, cfgp, addFoundListID(cfgp, data)) {
+		if !addAudiobookFilesToDatabase(ctx, f.folder, album, cfgp, addFoundListID(cfgp, data)) {
 			return album, "no_match"
 		}
 	}
 
 	return album, ""
+}
+
+// singleAudiobookSearchPairs returns the deduplicated author+title pairs a
+// single audiobook file is searched by, most reliable first.
+func singleAudiobookSearchPairs(f *singleAudiobookFile) []searchPair {
+	var pairs []searchPair
+
+	seen := make(map[string]bool)
+
+	addPair := func(a, t, src string) {
+		if a == "" || t == "" {
+			return
+		}
+
+		key := strings.ToLower(a) + "|" + strings.ToLower(t)
+		if !seen[key] {
+			seen[key] = true
+
+			pairs = append(pairs, searchPair{author: a, title: t, source: src})
+		}
+	}
+
+	addPair(f.tagAlbumArtist, f.tagAlbum, "tag-albumartist")
+	addPair(f.tagArtist, f.tagAlbum, "tag-artist")
+	addPair(f.parsed.Artist, f.parsed.Album, "filename")
+	addPair(f.parsed.Artist, f.parsed.Title, "filename-title")
+	addPair(f.folderArtist, f.tagAlbum, "folder+tag")
+	addPair(f.folderArtist, f.parsed.Title, "folder+filename")
+	addPair(f.tagAlbumArtist, f.parsed.Title, "tag+filename")
+	addPair(f.tagArtist, f.parsed.Title, "tag+filename")
+
+	return pairs
+}
+
+// findSingleAudiobookFileMatch looks the file up by ASIN, then by its
+// author+title pairs. Single-file episodes can't be verified by chapter
+// count, so a title search hit must be close to what was searched.
+func findSingleAudiobookFileMatch(f *singleAudiobookFile) *database.AudiobookSearchResult {
+	if f.asin != "" {
+		if dbMatch, _ := database.FindAudiobookByASIN(f.asin); dbMatch != nil {
+			return dbMatch
+		}
+	}
+
+	if f.albumTitle == "" {
+		return nil
+	}
+
+	pairs := singleAudiobookSearchPairs(f)
+	for i := range pairs {
+		matches, err := database.FindAudiobooksByTitleAuthor(&pairs[i].title, &pairs[i].author, 5)
+		if err != nil || len(matches) == 0 {
+			continue
+		}
+
+		best := bestNameMatch(pairs[i].title, len(matches),
+			func(j int) string { return matches[j].Title },
+			func(j int) bool {
+				return matches[j].Author == "" || namesMatch(matches[j].Author, pairs[i].author)
+			})
+		if best != -1 {
+			return matches[best]
+		}
+	}
+
+	return nil
 }

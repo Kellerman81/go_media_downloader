@@ -537,6 +537,10 @@ func parseffprobe(m *database.ParseInfo, quality *config.QualityConfig, result *
 		m.Runtime = int(math.Round(duration))
 	}
 
+	if bitrate, err := strconv.ParseFloat(result.Format.BitRate, 64); err == nil {
+		m.Bitrate = int(math.Round(bitrate / 1000))
+	}
+
 	var redetermineprio bool
 
 	var n int

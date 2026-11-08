@@ -12,6 +12,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 )
 
 func TestMatchReportDuration(t *testing.T) {
@@ -151,8 +152,48 @@ func TestAppendRenameLogKeepsEarlierEntries(t *testing.T) {
 func TestBuildAlbumDataConfigCopiesRecThresholds(t *testing.T) {
 	cfgp := &config.MediaTypeConfig{Data: []config.MediaDataConfig{{StrongRecThresh: 0.07, MediumRecThresh: 0.5}}}
 
-	got := buildAlbumDataConfig(&config.MediaDataImportConfig{MediumRecThresh: 0.4}, cfgp)
+	got := AlbumDataConfig(&config.MediaDataImportConfig{MediumRecThresh: 0.4}, cfgp)
 	if got.MediumRecThresh != 0.4 || got.StrongRecThresh != 0.07 {
 		t.Errorf("thresholds = %v / %v, want 0.07 / 0.4 (import wins, data fills gaps)", got.StrongRecThresh, got.MediumRecThresh)
+	}
+}
+
+func TestAlbumUpgradeCheck(t *testing.T) {
+	dir := t.TempDir()
+	kept := filepath.Join(dir, "lib", "1 - Kapitel 1.mp3")
+	source := filepath.Join(dir, "src", "a.mp3")
+
+	for _, f := range []string{kept, source} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	album := &parser_v2.AlbumInfo{Tracks: []parser_v2.TrackInfo{{Filepath: source, Format: "mp3"}}}
+	old := []database.AudioFilePrio{
+		{Location: kept, Format: "mp3", Bitrate: 128},
+		{Location: filepath.Join(dir, "lib", "gone.mp3"), Format: "mp3"}, // file deleted
+		{Location: source, Format: "mp3"},                                // in-place reorganize
+	}
+
+	// No list / quality profile: the library files are reported but nothing
+	// is compared, so the import goes ahead.
+	check := albumUpgradeCheck(&config.MediaTypeConfig{}, 0, album, old)
+
+	want := []AlbumLibraryFile{{Location: kept, Format: "mp3", Bitrate: 128}}
+	if !slices.Equal(check.Existing, want) {
+		t.Errorf("Existing = %+v, want %+v", check.Existing, want)
+	}
+
+	if !check.Allowed || check.OldPriority != 0 || check.NewPriority != 0 || check.NewFiles != 1 {
+		t.Errorf("check = %+v, want allowed without priorities and 1 new file", check)
+	}
+
+	if check := albumUpgradeCheck(&config.MediaTypeConfig{}, 0, album, old[1:]); len(check.Existing) != 0 || !check.Allowed {
+		t.Errorf("only stale rows: check = %+v, want no existing files and allowed", check)
 	}
 }

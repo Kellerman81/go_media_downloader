@@ -31,6 +31,8 @@ type xmlParam struct {
 }
 
 type xmlValue struct {
+	// Text is an untyped value (<value>abc</value>), which XML-RPC reads as a string.
+	Text   string     `xml:",chardata"`
 	String string     `xml:"string,omitempty"`
 	Int    int        `xml:"int,omitempty"`
 	I4     string     `xml:"i4,omitempty"`
@@ -369,9 +371,16 @@ func encodeXMLRPCRequest(method string, params []any) ([]byte, error) {
 }
 
 func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []any) error {
+	_, err := p.callXMLRPC(ctx, method, params)
+
+	return err
+}
+
+// callXMLRPC makes an XML-RPC call to rTorrent and returns its response.
+func (p *Provider) callXMLRPC(ctx context.Context, method string, params []any) (*xmlRPCResponse, error) {
 	xmlData, err := encodeXMLRPCRequest(method, params)
 	if err != nil {
-		return errors.New(logger.JoinStrings("failed to marshal XML-RPC request: ", err.Error()))
+		return nil, errors.New(logger.JoinStrings("failed to marshal XML-RPC request: ", err.Error()))
 	}
 
 	// Prepare headers with authentication
@@ -386,8 +395,10 @@ func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []a
 		headers["Authorization"] = "Basic " + auth
 	}
 
+	var response xmlRPCResponse
+
 	// Make the request using BaseClient infrastructure
-	return p.MakeRequestWithHeaders(
+	err = p.MakeRequestWithHeaders(
 		ctx,
 		"POST",
 		p.xmlrpcURL,
@@ -413,7 +424,6 @@ func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []a
 				return errors.New(logger.JoinStrings("failed to read response body: ", err.Error()))
 			}
 
-			var response xmlRPCResponse
 			if err := xml.Unmarshal(body, &response); err != nil {
 				return errors.New(
 					logger.JoinStrings("failed to unmarshal XML-RPC response: ", err.Error()),
@@ -431,4 +441,9 @@ func (p *Provider) makeXMLRPCCall(ctx context.Context, method string, params []a
 		},
 		headers,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }

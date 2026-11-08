@@ -13,6 +13,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 )
 
@@ -332,7 +334,7 @@ func findCfgpAndListID(
 }
 
 // mediaEntriesForKind returns the media configs of one kind ("movie",
-// "serie", "book", "audiobook").
+// "serie", "book", "audiobook", "music").
 func mediaEntriesForKind(kind string) []config.MediaTypeConfig {
 	allMedia := config.GetSettingsMediaAll()
 	if allMedia == nil {
@@ -348,9 +350,26 @@ func mediaEntriesForKind(kind string) []config.MediaTypeConfig {
 		return allMedia.Books
 	case "audiobook":
 		return allMedia.AudioBooks
+	case "music":
+		return allMedia.Music
 	}
 
 	return nil
+}
+
+// notifyManualAdd sends the added_to_db (when dbAdded) and added_to_list
+// events of the media config owning listName for a manually added entry.
+func notifyManualAdd(kind, listName string, dbid uint, dbAdded bool) {
+	cfgp, _ := findCfgpAndListID(listName, kind+"_", mediaEntriesForKind(kind))
+	if cfgp == nil {
+		return
+	}
+
+	if dbAdded {
+		importfeed.NotifyAdded(cfgp, providers.EventAddedToDB, "", dbid)
+	}
+
+	importfeed.NotifyAdded(cfgp, providers.EventAddedToList, listName, dbid)
 }
 
 // configuredListName validates a submitted list name against the configured

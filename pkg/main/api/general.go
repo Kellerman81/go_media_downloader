@@ -164,6 +164,15 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/feed-lists", HandleFeedLists)
 	routerapi.GET("/admin/folderstructure", adminPageFolderStructure)
 	routerapi.POST("/admin/folderstructure", HandleFolderStructure)
+	routerapi.GET("/admin/matchtester", adminPageMatchTester)
+	routerapi.GET("/admin/matchtester/sources", HandleMatchTesterSources)
+	routerapi.POST("/admin/matchtester/start", HandleMatchTesterStart)
+	routerapi.GET("/admin/matchtester/page", HandleMatchTesterPage)
+	routerapi.GET("/admin/matchtester/folder", HandleMatchTesterFolder)
+	routerapi.GET("/admin/matchtester/entry", HandleMatchTesterEntry)
+	routerapi.GET("/admin/matchtester/status", HandleMatchTesterStatus)
+	routerapi.POST("/admin/matchtester/select", HandleMatchTesterSelect)
+	routerapi.POST("/admin/matchtester/process", HandleMatchTesterProcess)
 
 	// New Management Tools Routes
 	routerapi.GET("/admin/media-cleanup", adminPageMediaCleanup)
@@ -2091,7 +2100,7 @@ func apiAlbumForceMatch(ctx *gin.Context) {
 		cfg.Folder,
 		cfgp,
 		cfgimport,
-		&cfg.ForcedID,
+		structure.AlbumForce{ID: cfg.ForcedID},
 		cfg.Preview,
 	)
 	if err != nil {

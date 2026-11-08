@@ -20,22 +20,18 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushover"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sendmail"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/movielists"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -91,32 +87,6 @@ func renderConnectionTestControl(
 		),
 		html.Span(),
 	)
-}
-
-// parseServerURL mirrors main.go's parseServerURL (package main, unreachable
-// from here): host, port and SSL flag for the gotify/apprise constructors,
-// with any reverse-proxy sub-path kept on the host ("host/sub").
-func parseServerURL(serverURL string) (host string, port int, useSSL bool) {
-	host, port, useSSL, path := base.SplitHostURL(serverURL, 0, 0)
-
-	return host + path, port, useSSL
-}
-
-// connectionTestClientConfig builds a base.ClientConfig for a one-off
-// connection test - generous limits since it's a single call, matching the
-// shape main.go's initproviders uses for the same provider types in
-// production (see pushoverConfig/gotifyConfig there).
-func connectionTestClientConfig(name string) base.ClientConfig {
-	return base.ClientConfig{
-		Name:                      "test_" + name,
-		Timeout:                   wizardTestTimeout,
-		AuthType:                  base.AuthNone,
-		RateLimitCalls:            300,
-		RateLimitSeconds:          3600,
-		CircuitBreakerThreshold:   3,
-		CircuitBreakerTimeout:     30 * time.Second,
-		CircuitBreakerHalfOpenMax: 1,
-	}
 }
 
 // HandleTestIndexerConnection live-tests an indexer's URL/API key by
@@ -185,167 +155,76 @@ func HandleTestDownloaderConnection(c *gin.Context) {
 	c.String(http.StatusOK, renderAlert("Connection succeeded.", "success"))
 }
 
-// HandleTestNotificationConnection live-tests a notification provider's
-// credentials via each provider's lightweight TestConnection round-trip
-// (validate-credentials/version endpoints, never a real notification), or
-// for CSV, that the output folder is writable.
+// HandleTestNotificationConnection live-tests a notification entry from the
+// posted row values with its provider's TestConnection (a credential or
+// health check; services without one, such as a generic webhook, get a test
+// message), or for CSV, that the output folder is writable.
 func HandleTestNotificationConnection(c *gin.Context) {
 	c.Header("Content-Type", "text/html")
 
-	notifType := c.PostForm("notificationtype")
-	apikey := strings.TrimSpace(c.PostForm("apikey"))
-	serverURL := strings.TrimSpace(c.PostForm("serverurl"))
-	appriseURLs := strings.TrimSpace(c.PostForm("appriseurls"))
+	field := func(key string) string { return strings.TrimSpace(c.PostForm(key)) }
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), wizardTestTimeout)
-	defer cancel()
+	cfg := &config.NotificationConfig{
+		Name:             "connection-test",
+		NotificationType: field("notificationtype"),
+		Apikey:           field("apikey"),
+		Recipient:        field("recipient"),
+		Sender:           field("sender"),
+		Command:          field("command"),
+		Outputto:         field("outputto"),
+		ServerURL:        field("serverurl"),
+		AppriseURLs:      field("appriseurls"),
+		SMTPServer:       field("smtpserver"),
+		SMTPPort:         field("smtpport"),
+		SMTPFromEmail:    field("smtpfromemail"),
+		SMTPToEmail:      field("smtptoemail"),
+		SMTPUsername:     c.PostForm("smtpusername"),
+		SMTPPassword:     c.PostForm("smtppassword"),
+	}
 
-	var err error
-
-	switch notifType {
-	case "pushover":
-		if apikey == "" {
-			c.String(http.StatusOK, renderAlert("Enter an API token first.", "warning"))
-			return
-		}
-
-		p := pushover.NewProviderWithConfig(
-			connectionTestClientConfig("pushover"),
-			apikey,
-			c.PostForm("recipient"),
-		)
-		if p == nil {
-			c.String(http.StatusOK, renderAlert("Invalid Pushover configuration.", "danger"))
-			return
-		}
-
-		err = p.TestConnection(ctx)
-
-	case "gotify":
-		if serverURL == "" || apikey == "" {
-			c.String(http.StatusOK, renderAlert("Enter a server URL and token first.", "warning"))
-			return
-		}
-
-		host, port, useSSL := parseServerURL(serverURL)
-
-		p := gotify.NewProviderWithConfig(
-			connectionTestClientConfig("gotify"),
-			host,
-			port,
-			apikey,
-			useSSL,
-		)
-		if p == nil {
-			c.String(http.StatusOK, renderAlert("Invalid Gotify configuration.", "danger"))
-			return
-		}
-
-		err = p.TestConnection(ctx)
-
-	case "pushbullet":
-		if apikey == "" {
-			c.String(http.StatusOK, renderAlert("Enter an API token first.", "warning"))
-			return
-		}
-
-		p := pushbullet.NewProvider(apikey)
-		if p == nil {
-			c.String(http.StatusOK, renderAlert("Invalid Pushbullet configuration.", "danger"))
-			return
-		}
-
-		err = p.TestConnection(ctx)
-
-	case "apprise":
-		if serverURL == "" || appriseURLs == "" {
-			c.String(
-				http.StatusOK,
-				renderAlert("Enter a server URL and at least one Apprise URL first.", "warning"),
-			)
-
-			return
-		}
-
-		host, port, useSSL := parseServerURL(serverURL)
-
-		p := apprise.NewProvider(host, port, apikey, strings.Split(appriseURLs, ","), useSSL)
-		if p == nil {
-			c.String(http.StatusOK, renderAlert("Invalid Apprise configuration.", "danger"))
-			return
-		}
-
-		err = p.TestConnection(ctx)
-
-	case "sendmail":
-		smtpServer := strings.TrimSpace(c.PostForm("smtpserver"))
-		fromEmail := strings.TrimSpace(c.PostForm("smtpfromemail"))
-		toEmail := strings.TrimSpace(c.PostForm("smtptoemail"))
-
-		if smtpServer == "" || fromEmail == "" || toEmail == "" {
-			c.String(
-				http.StatusOK,
-				renderAlert("Enter an SMTP server, from address, and to address first.", "warning"),
-			)
-
-			return
-		}
-
-		port, _ := strconv.Atoi(strings.TrimSpace(c.PostForm("smtpport")))
-		if port == 0 {
-			port = 587
-		}
-
-		p := sendmail.NewProvider(
-			smtpServer,
-			port,
-			fromEmail,
-			[]string{toEmail},
-			c.PostForm("smtpusername"),
-			c.PostForm("smtppassword"),
-		)
-		if p == nil {
-			c.String(http.StatusOK, renderAlert("Invalid sendmail configuration.", "danger"))
-			return
-		}
-
-		err = p.TestConnection(ctx)
-
-	case "csv":
-		outputto := strings.TrimSpace(c.PostForm("outputto"))
-		if outputto == "" {
-			c.String(http.StatusOK, renderAlert("Enter an output file path first.", "warning"))
-			return
-		}
-
-		dir := filepath.Dir(outputto)
-		if !checkWritable(dir) {
-			c.String(
-				http.StatusOK,
-				renderAlert(
-					"Cannot write to "+dir+" - check the folder exists and is writable.",
-					"danger",
-				),
-			)
-
-			return
-		}
-
-		c.String(http.StatusOK, renderAlert("Output folder is writable.", "success"))
-
-		return
-
-	default:
+	if cfg.NotificationType == "" {
 		c.String(http.StatusOK, renderAlert("Choose a notification type first.", "warning"))
 		return
 	}
 
-	if err != nil {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), wizardTestTimeout)
+	defer cancel()
+
+	err := testNotificationConfig(ctx, cfg)
+
+	switch {
+	case errors.Is(err, providers.ErrNotificationField):
+		c.String(http.StatusOK, renderAlert("Fill in the required setting first ("+err.Error()+").", "warning"))
+	case err != nil:
 		c.String(http.StatusOK, renderAlert("Connection failed: "+err.Error(), "danger"))
-		return
+	case cfg.NotificationType == "csv":
+		c.String(http.StatusOK, renderAlert("Output folder is writable.", "success"))
+	default:
+		c.String(http.StatusOK, renderAlert("Connection succeeded.", "success"))
+	}
+}
+
+// testNotificationConfig runs the connection check of cfg's type: the
+// provider's TestConnection, or for csv that the output folder is writable.
+func testNotificationConfig(ctx context.Context, cfg *config.NotificationConfig) error {
+	if cfg.NotificationType == "csv" {
+		if cfg.Outputto == "" {
+			return fmt.Errorf("output_to: %w", providers.ErrNotificationField)
+		}
+
+		if dir := filepath.Dir(cfg.Outputto); !checkWritable(dir) {
+			return fmt.Errorf("cannot write to %s - check the folder exists and is writable", dir)
+		}
+
+		return nil
 	}
 
-	c.String(http.StatusOK, renderAlert("Connection succeeded.", "success"))
+	p, err := providers.NewNotificationProvider(cfg)
+	if err != nil {
+		return err
+	}
+
+	return p.TestConnection(ctx)
 }
 
 // HandleTestListConnection live-tests a list's credentials/reachability by
@@ -456,6 +335,34 @@ func HandleTestListConnection(c *gin.Context) {
 		}
 
 		c.String(http.StatusOK, renderAlert("File exists and is accessible.", "success"))
+
+	case listType == "rottentomatoes", listType == "letterboxd":
+		listURL := strings.TrimSpace(c.PostForm("url"))
+		if listURL == "" {
+			c.String(http.StatusOK, renderAlert("Enter the list URL first.", "warning"))
+			return
+		}
+
+		client := movielists.NewClient(config.GetSettingsGeneral().UserAgent)
+
+		var (
+			movies []movielists.Movie
+			err    error
+		)
+
+		if listType == "rottentomatoes" {
+			movies, err = client.RottenTomatoes(c.Request.Context(), listURL)
+		} else {
+			movies, err = client.Letterboxd(c.Request.Context(), listURL, 1)
+		}
+
+		if err != nil {
+			c.String(http.StatusOK, renderAlert("Reading the list failed: "+err.Error(), "danger"))
+			return
+		}
+
+		c.String(http.StatusOK, renderAlert(fmt.Sprintf("Found %d movies on the first page, e.g. %s (%d).",
+			len(movies), movies[0].Title, movies[0].Year), "success"))
 
 	default:
 		c.String(

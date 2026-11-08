@@ -11,7 +11,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/series"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/alitto/pond/v2"
@@ -235,9 +234,8 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	return errret
 }
 
-// structureFolderRecursive recursively processes directories for music/audiobook types.
-// If a folder contains audio files or multi-disc subfolders, it's treated as an album folder.
-// Otherwise, its subdirectories are recursed into (handling Artist/Album nesting).
+// structureFolderRecursive organizes every album folder below folderPath
+// (see structure.CollectAlbumFolders) on the parse worker pool.
 func structureFolderRecursive(
 	ctx context.Context,
 	folderPath string,
@@ -246,50 +244,7 @@ func structureFolderRecursive(
 	defaulttemplate string,
 	pl pond.TaskGroup,
 ) {
-	if ctx.Err() != nil {
-		return
-	}
-
-	entries, err := os.ReadDir(folderPath)
-	if err != nil {
-		return
-	}
-
-	hasAudioFiles := false
-	hasMultiDisc := false
-
-	var subDirs []string
-
-	for i := range entries {
-		if entries[i].IsDir() {
-			if isMultiDiscSubfolder(entries[i].Name(), folderPath) {
-				hasMultiDisc = true
-			}
-
-			subDirs = append(
-				subDirs,
-				logger.JoinStringsSep([]string{folderPath, entries[i].Name()}, pathSep),
-			)
-		} else {
-			ext := filepath.Ext(entries[i].Name())
-			if ok, _ := scanner.CheckExtensionsType(
-				cfgp.IsType,
-				false,
-				dataimport.CfgPath,
-				ext,
-			); ok {
-				hasAudioFiles = true
-			}
-		}
-	}
-
-	if !hasMultiDisc && len(subDirs) >= 2 {
-		hasMultiDisc = importfeed.IsDiscSet(baseNames(subDirs))
-	}
-
-	// If this folder has audio files or multi-disc subfolders, treat it as an album
-	if hasAudioFiles || hasMultiDisc {
-		fp := folderPath
+	for _, fp := range structure.CollectAlbumFolders(ctx, folderPath, cfgp, dataimport.CfgPath) {
 		pl.Submit(func() {
 			defer logger.HandlePanic()
 
@@ -304,24 +259,6 @@ func structureFolderRecursive(
 				0,
 			)
 		})
-
-		return
-	}
-
-	// Otherwise recurse into subdirectories
-	for i := range subDirs {
-		if ctx.Err() != nil {
-			return
-		}
-
-		structureFolderRecursive(
-			ctx,
-			subDirs[i],
-			cfgp,
-			dataimport,
-			defaulttemplate,
-			pl,
-		)
 	}
 }
 

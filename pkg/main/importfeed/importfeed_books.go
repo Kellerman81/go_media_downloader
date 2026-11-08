@@ -451,6 +451,7 @@ func addBookToDatabase(
 			Str("book", book.Title).
 			Uint("id", dbbookID).
 			Msg("Added book to database")
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbbookID)
 
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheThreeString(
@@ -1492,6 +1493,7 @@ func addAudiobookDetailToDatabase(
 			Str("audiobook", details.Title).
 			Uint("id", dbaudiobookID).
 			Msg("Added audiobook to database")
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbaudiobookID)
 
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheThreeString(
@@ -1825,6 +1827,7 @@ func addAudiobookFromBookToDatabase(
 			Str("audiobook", book.Title).
 			Uint("id", dbaudiobookID).
 			Msg("Added audiobook to database")
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbaudiobookID)
 
 		if config.GetSettingsGeneral().UseMediaCache {
 			database.AppendCacheThreeString(

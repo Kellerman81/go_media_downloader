@@ -15,6 +15,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/downloadstate"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
@@ -36,8 +37,8 @@ func init() {
 type Organizer struct {
 	// ManualId is a unit containing a manually set ID
 	manualID uint
-	// forcedAlbumID is a MBID (music) or ASIN (audiobook) that bypasses normal candidate search.
-	forcedAlbumID string
+	// forced bypasses normal candidate search (ForceMatchAlbumFolder run mode).
+	forced AlbumForce
 	// Checkruntime is a boolean indicating whether to check runtime during organization
 	checkruntime bool
 	// Deletewronglanguage is a boolean indicating whether to delete wrong language files
@@ -612,6 +613,33 @@ func (s *Organizer) cleanUpFolder(folder string) error {
 	return nil
 }
 
+// cleanUpAlbumFolder is cleanUpFolder for album folders: it keeps a folder
+// that still holds audio files. An album organize only moves the files that
+// matched a track, and the size-based cleanup would delete the rest with the
+// folder (a 10-file folder matched to an 8-track release lost 2 files).
+func (s *Organizer) cleanUpAlbumFolder(folder string) {
+	remaining := false
+
+	filepath.WalkDir(folder, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && parser_v2.HasExtension(path, parser_v2.AudioExtensions) {
+			remaining = true
+			return filepath.SkipAll
+		}
+
+		return nil
+	})
+
+	if remaining {
+		logger.Logtype("warn", 1).
+			Str(logger.StrPath, folder).
+			Msg("audio files left in source folder after album organize - folder kept")
+
+		return
+	}
+
+	s.cleanUpFolder(folder)
+}
+
 // folderHasRecentFiles returns true if any file in the folder was created or modified within the last minute.
 func folderHasRecentFiles(folder string) bool {
 	cutoff := logger.TimeGetNow().Add(-1 * time.Minute)
@@ -697,29 +725,44 @@ func (s *Organizer) validateRuntime(
 	checkruntime bool,
 	o *Organizerdata,
 ) error {
-	if m.Runtime < 1 || !checkruntime || runtime == 0 {
+	wantedruntime, targetruntime, wrong := s.runtimeMismatch(m, runtime, checkruntime)
+	if !wrong {
 		return nil
 	}
 
-	wantedruntime := int(
-		runtime,
-	) * mediatype.GetRuntimeMultiplier(
-		s.Cfgp.IsType,
-		m,
-	)
+	// Without a tolerance the file is rejected but kept.
+	if s.targetpathCfg.MaxRuntimeDifference != 0 && s.targetpathCfg.DeleteWrongRuntime {
+		s.fileCleanup(o.Folder, o.MediaFile, o.Rootpath)
+	}
 
-	targetruntime := m.Runtime / 60
-	if targetruntime == wantedruntime {
-		return nil
+	logger.Logtype("warn", 2).
+		Int(logger.StrWanted, wantedruntime).
+		Int(logger.StrFound, targetruntime).
+		Msg("wrong runtime")
+
+	return errWrongRuntime
+}
+
+// runtimeMismatch compares the probed runtime of m with the wanted runtime
+// in minutes and reports whether validateRuntime rejects the file.
+func (s *Organizer) runtimeMismatch(
+	m *database.ParseInfo,
+	runtime uint,
+	checkruntime bool,
+) (wanted, found int, wrong bool) {
+	if m.Runtime < 1 || !checkruntime || runtime == 0 {
+		return 0, 0, false
+	}
+
+	wanted = int(runtime) * mediatype.GetRuntimeMultiplier(s.Cfgp.IsType, m)
+
+	found = m.Runtime / 60
+	if found == wanted {
+		return wanted, found, false
 	}
 
 	if s.targetpathCfg.MaxRuntimeDifference == 0 {
-		logger.Logtype("warn", 2).
-			Int(logger.StrWanted, wantedruntime).
-			Int(logger.StrFound, targetruntime).
-			Msg("wrong runtime")
-
-		return errWrongRuntime
+		return wanted, found, true
 	}
 
 	maxdifference := s.targetpathCfg.MaxRuntimeDifference
@@ -727,21 +770,7 @@ func (s *Organizer) validateRuntime(
 		maxdifference += handler.GetRuntimeBonus(m)
 	}
 
-	difference := abs(wantedruntime - targetruntime)
-	if difference > maxdifference {
-		if s.targetpathCfg.DeleteWrongRuntime {
-			s.fileCleanup(o.Folder, o.MediaFile, o.Rootpath)
-		}
-
-		logger.Logtype("warn", 2).
-			Int(logger.StrWanted, wantedruntime).
-			Int(logger.StrFound, targetruntime).
-			Msg("wrong runtime")
-
-		return errWrongRuntime
-	}
-
-	return nil
+	return wanted, found, abs(wanted-found) > maxdifference
 }
 
 // abs returns the absolute value of an integer.
@@ -771,16 +800,8 @@ func (s *Organizer) validateLanguage(
 	deletewronglanguage bool,
 	o *Organizerdata,
 ) error {
-	if !deletewronglanguage || s.targetpathCfg.AllowedLanguagesLen == 0 {
+	if !deletewronglanguage || s.languageAllowed(m) {
 		return nil
-	}
-
-	lenlang := len(m.Languages)
-	for i := range s.targetpathCfg.AllowedLanguages {
-		if (lenlang == 0 && s.targetpathCfg.AllowedLanguages[i] == "") ||
-			logger.SlicesContainsI(m.Languages, s.targetpathCfg.AllowedLanguages[i]) {
-			return nil
-		}
 	}
 
 	// Language not allowed - extract lang info once for logging
@@ -810,6 +831,25 @@ func (s *Organizer) validateLanguage(
 		Msg("wrong language")
 
 	return errWrongLanguage
+}
+
+// languageAllowed reports whether the audio languages of m satisfy the
+// target path's allowed_languages; an empty entry allows files without
+// language tags.
+func (s *Organizer) languageAllowed(m *database.ParseInfo) bool {
+	if s.targetpathCfg.AllowedLanguagesLen == 0 {
+		return true
+	}
+
+	lenlang := len(m.Languages)
+	for i := range s.targetpathCfg.AllowedLanguages {
+		if (lenlang == 0 && s.targetpathCfg.AllowedLanguages[i] == "") ||
+			logger.SlicesContainsI(m.Languages, s.targetpathCfg.AllowedLanguages[i]) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // TrimStringInclAfterString truncates the given string s after the first
@@ -1510,6 +1550,12 @@ func (s *Organizer) Organize(
 		}
 	}
 
+	if s.Cfgp.IsType == config.MediaTypeBook {
+		if _, lower := bookLowerQuality(m, s.Cfgp, cfgquality); lower {
+			return errLowerQuality
+		}
+	}
+
 	// Generate naming template
 	s.GenerateNamingTemplate(o, m, namingID)
 
@@ -1622,6 +1668,7 @@ func (s *Organizer) Organize(
 
 	fileext := filepath.Ext(newpath)
 	filebase := filepath.Base(newpath)
+	fileSize, bitrate, languages := m.FileDetails(newpath)
 	insertQuery := mtstrings.GetStringsMap(s.Cfgp.IsType, "InsertFileOrganize")
 	updateQuery := mtstrings.GetStringsMap(s.Cfgp.IsType, "UpdateMissingReached")
 
@@ -1634,6 +1681,7 @@ func (s *Organizer) Organize(
 			&m.Proper, &m.Repack, &m.Extended,
 			&m.MovieID, &m.DbmovieID,
 			&m.Height, &m.Width,
+			&fileSize, &m.Runtime, &bitrate, &languages,
 		)
 		database.ExecN(updateQuery, &reached, &m.MovieID)
 
@@ -1645,6 +1693,7 @@ func (s *Organizer) Organize(
 				&m.Proper, &m.Repack, &m.Extended,
 				&m.SerieID, &m.Episodes[idx].Num1, &m.Episodes[idx].Num2, &m.DbserieID,
 				&m.Height, &m.Width,
+				&fileSize, &m.Runtime, &bitrate, &languages,
 			)
 			database.ExecN(updateQuery, reached, m.Episodes[idx].Num1)
 		}
@@ -1902,60 +1951,24 @@ func (s *Organizer) notify(
 		notify.Tvdb = externalID
 	}
 
-	var err error
-	for idx := range s.Cfgp.Notification {
-		if s.Cfgp.Notification[idx].CfgNotification == nil {
-			continue
-		}
-
-		// Use "upgraded_data" event if files were replaced, otherwise "added_data"
-		expectedEvent := "added_data"
-		if len(notify.Replaced) > 0 {
-			expectedEvent = "upgraded_data"
-		}
-
-		if !strings.EqualFold(s.Cfgp.Notification[idx].Event, expectedEvent) {
-			continue
-		}
-
-		notify.ReplacedPrefix = s.Cfgp.Notification[idx].ReplacedPrefix
-
-		bl, messagetext, _ := logger.ParseStringTemplate(s.Cfgp.Notification[idx].Message, &notify)
-		if bl {
-			continue
-		}
-
-		cfgnot := config.GetSettingsNotification(s.Cfgp.Notification[idx].MapNotification)
-
-		switch cfgnot.NotificationType {
-		case "pushover", "gotify", "pushbullet", "apprise":
-			bl, messageTitle, _ := logger.ParseStringTemplate(
-				s.Cfgp.Notification[idx].Title,
-				&notify,
-			)
-			if bl {
-				continue
-			}
-
-			err = providers.SendNotification(cfgnot, messagetext, messageTitle)
-			if err != nil {
-				logger.Logtype("error", 0).
-					Err(err).
-					Str("type", cfgnot.NotificationType).
-					Msg("Error sending notification")
-			} else {
-				logger.Logtype("info", 0).
-					Str("type", cfgnot.NotificationType).
-					Msg("Notification sent")
-			}
-
-		case "csv":
-			scanner.AppendCsv(
-				cfgnot.Outputto,
-				messagetext,
-			)
-		}
+	event := providers.EventAddedData
+	if len(notify.Replaced) > 0 {
+		event = providers.EventUpgradedData
 	}
+
+	providers.NotifyEvent(s.Cfgp, event, &notify, func(n *config.MediaNotificationConfig) {
+		notify.ReplacedPrefix = n.ReplacedPrefix
+	})
+}
+
+// bookLowerQuality returns the best score of the book's library files and
+// whether it is at least m's on the searcher's format scale. Library files of
+// an unrecognised format never block, like unscorable movie files. Unlike
+// movies, and like albums, the import file is kept.
+func bookLowerQuality(m *database.ParseInfo, cfgp *config.MediaTypeConfig, cfgquality *config.QualityConfig) (int, bool) {
+	old, _ := searcher.GetpriobyfilesAudio(config.MediaTypeBook, &m.BookID, true, -1, cfgquality, false)
+
+	return old, old > parser.BookFormatPriority("") && old >= parser.ComparablePriority(m, cfgp)
 }
 
 // GetSeriesEpisodes checks existing files for a series episode, determines if a new file
@@ -2030,7 +2043,7 @@ func (s *Organizer) GetSeriesEpisodes(
 			clear(m.Episodes)
 
 			m.Episodes = m.Episodes[:0]
-			return logger.ErrNotAllowed
+			return errLowerQuality
 		}
 
 		return nil
@@ -2095,7 +2108,7 @@ func (s *Organizer) GetSeriesEpisodes(
 			}
 		}
 
-		return logger.ErrNotAllowed
+		return errLowerQuality
 	}
 
 	o.Oldfiles = append(o.Oldfiles, oldfiles...)
@@ -2197,7 +2210,7 @@ func OrganizeSingleFolder(
 				s.targetpathCfg.SetChmodFolder,
 				matchReport,
 			)
-			s.cleanUpFolder(folder)
+			s.cleanUpAlbumFolder(folder)
 		}
 
 		if errors.Is(err, errUnprocessed) {
@@ -2205,7 +2218,7 @@ func OrganizeSingleFolder(
 		}
 
 		if err == nil {
-			s.cleanUpFolder(folder)
+			s.cleanUpAlbumFolder(folder)
 		}
 
 		return err
@@ -2232,60 +2245,25 @@ func OrganizeSingleFolder(
 			return nil
 		}
 
-		if filepath.Ext(info.Name()) == "" {
-			return nil
-		}
-
-		// Our own "<archive>_unpack" folders were fully extracted by
-		// unpackArchivesInFolder above (failed extractions are removed), so
-		// their media is organized like any other file. Only folders another
-		// tool is still unpacking into (SABnzbd "_UNPACK_*") are skipped.
-		if isForeignUnpackPath(fpath) {
+		switch mediaFileSkipReason(cfgp, s.sourcepathCfg, fpath) {
+		case "":
+		case skipUnpacking:
 			logger.Logtype("warn", 1).
 				Str(logger.StrFile, fpath).
 				Msg("skipped - unpacking")
 
 			return nil
-		}
-
-		if logger.SlicesContainsPart2I(s.sourcepathCfg.Disallowed, fpath) {
+		case skipDisallowed:
 			logger.Logtype("warn", 1).
 				Str(logger.StrFile, fpath).
 				Msg("skipped - disallowed")
 
 			return nil
-		}
-
-		// CheckUnmatched
-		if config.GetSettingsGeneral().UseFileCache {
-			if database.SlicesCacheContains(cfgp.IsType, logger.CacheUnmatched, fpath) {
-				return nil
-			}
-		} else {
-			if database.Getdatarow[uint](
-				false,
-				mtstrings.GetStringsMap(cfgp.IsType, logger.DBCountUnmatchedPath),
-				fpath,
-			) >= 1 {
-				return nil
-			}
-		}
-
-		ok, _ := scanner.CheckExtensionsType(
-			cfgp.IsType,
-			false,
-			s.sourcepathCfg,
-			filepath.Ext(info.Name()),
-		)
-
-		// Check IgnoredPaths
-
-		if !ok {
+		default:
 			return nil
 		}
 
-		if s.sourcepathCfg.BlockedLen >= 1 &&
-			logger.SlicesContainsPart2I(s.sourcepathCfg.Blocked, fpath) {
+		if isUnmatchedFile(cfgp, fpath) {
 			return nil
 		}
 
@@ -2351,7 +2329,13 @@ func (s *Organizer) walkorganizefolder(
 	// The handler is constant for this media type; fetch it once and reuse.
 	handler := mediatype.Get(s.Cfgp.IsType)
 
-	err := parser.GetDBIDs(m, cfgp, true, addFound)
+	var err error
+	if s.manualID != 0 {
+		_, err = forceMediaIDs(m, cfgp, s.manualID)
+	} else {
+		err = parser.GetDBIDs(m, cfgp, true, addFound)
+	}
+
 	if err != nil || !s.hasValidIDs(m) {
 		logger.Logtype("warn", 1).
 			Str(logger.StrFile, fpath).
@@ -2361,7 +2345,11 @@ func (s *Organizer) walkorganizefolder(
 		m.TempTitle = fpath
 		m.AddUnmatched(cfgp, &logger.StrStructure, err)
 
-		return false, "no_match", nil
+		if err == nil {
+			err = errNoValidIDs
+		}
+
+		return false, "no_match", err
 	}
 
 	if s.sourcepathCfg.MinVideoSize > 0 {
@@ -2457,10 +2445,6 @@ func (s *Organizer) walkorganizefolder(
 		return false, "subfiles_check", nil
 	}
 
-	if s.manualID != 0 && handler != nil {
-		handler.SetMediaID(m, s.manualID)
-	}
-
 	var (
 		dbid     uint
 		listname string
@@ -2495,7 +2479,10 @@ func (s *Organizer) walkorganizefolder(
 		return false, "no_list", nil
 	}
 
-	if m.Checktitle(s.Cfgp, s.Cfgp.Lists[m.ListID].CfgQuality, filepath.Base(fpath)) {
+	// check_title guards automatic matches; a manually chosen entry may carry
+	// a different (e.g. translated) title.
+	if s.manualID == 0 &&
+		m.Checktitle(s.Cfgp, s.Cfgp.Lists[m.ListID].CfgQuality, filepath.Base(fpath)) {
 		logger.Logtype("warn", 1).
 			Str(logger.StrFile, fpath).
 			Msg("skipped - unwanted title")
@@ -2526,6 +2513,9 @@ func (s *Organizer) walkorganizefolder(
 		m.AddUnmatched(cfgp, &logger.StrStructure, err)
 
 		var moveReason string
+
+		defer func() { recordOrganized(cfgp.IsType, mediaEntryIDs(cfgp.IsType, m), folder, fpath, moveReason, err) }()
+
 		switch {
 		case errors.Is(err, errWrongRuntime):
 			moveReason = "wrong_runtime"
@@ -2533,20 +2523,69 @@ func (s *Organizer) walkorganizefolder(
 			moveReason = "wrong_language"
 		case errors.Is(err, errGeneratingFilename):
 			moveReason = "naming_failed"
+		case errors.Is(err, errLowerQuality):
+			moveReason = "lower_quality"
 		default:
 			moveReason = "organize_failed"
 		}
 
-		return false, moveReason, nil
+		return false, moveReason, err
 	}
 
 	if handler != nil {
 		handler.ClearUnmatchedCache(fpath)
 	}
 
+	recordOrganized(cfgp.IsType, mediaEntryIDs(cfgp.IsType, m), folder, fpath, "", nil)
+
 	s.cleanUpFolder(folder)
 
 	return true, "", nil
+}
+
+// mediaEntryIDs returns the list entries an identified file belongs to: the
+// movie, book, audiobook or album entry, or the series episodes. A lower
+// quality refusal clears m.Episodes, so they are looked up again.
+func mediaEntryIDs(isType uint, m *database.ParseInfo) []uint {
+	switch isType {
+	case config.MediaTypeMovie:
+		return []uint{m.MovieID}
+	case config.MediaTypeSeries:
+		if len(m.Episodes) == 0 && m.SerieID != 0 {
+			_ = m.Getepisodestoimport()
+		}
+
+		ids := make([]uint, 0, len(m.Episodes))
+		for i := range m.Episodes {
+			ids = append(ids, m.Episodes[i].Num1)
+		}
+
+		return ids
+	case config.MediaTypeBook:
+		return []uint{m.BookID}
+	case config.MediaTypeAudiobook:
+		return []uint{m.AudiobookID}
+	case config.MediaTypeMusic:
+		return []uint{m.AlbumID}
+	}
+
+	return nil
+}
+
+// recordOrganized hands the structure job's outcome for downloaded files to
+// the download state tracking: organized when err is nil, else rejected for
+// reason (a move_unprocessed reason; organize_failed when empty).
+func recordOrganized(isType uint, ids []uint, folder, file, reason string, err error) {
+	if err == nil {
+		downloadstate.Organized(isType, ids, folder, file, "", "")
+		return
+	}
+
+	if reason == "" {
+		reason = "organize_failed"
+	}
+
+	downloadstate.Organized(isType, ids, folder, file, reason, err.Error())
 }
 
 // isForeignUnpackPath reports whether a path component starts with "_unpack"
@@ -2570,14 +2609,39 @@ func isForeignUnpackPath(fpath string) bool {
 // with the same extension, which indicates it may not be a standalone movie.
 // It returns an error if disallowed files are found or too many matching files exist.
 func (s *Organizer) checksubfiles(folder, videofile, rootpath string) bool {
-	if folder == "" {
-		return false
+	disallowed, tooMany := s.subfileProblem(folder, videofile)
+
+	if disallowed {
+		if s.sourcepathCfg.DeleteDisallowed && videofile != s.sourcepathCfg.Path {
+			s.fileCleanup(folder, videofile, rootpath)
+		}
+
+		logger.Logtype("warn", 1).
+			Str(logger.StrFile, videofile).
+			Msg("skipped - disallowed")
+
+		return true
 	}
 
-	var (
-		disallowed bool
-		count      int8
-	)
+	if tooMany {
+		logger.Logtype("warn", 1).
+			Str(logger.StrFile, videofile).
+			Msg("skipped - too many files")
+		return true
+	}
+
+	return false
+}
+
+// subfileProblem scans folder for what makes checksubfiles skip videofile:
+// a disallowed path, or a second file of its extension for media types that
+// take one file per folder.
+func (s *Organizer) subfileProblem(folder, videofile string) (disallowed, tooMany bool) {
+	if folder == "" {
+		return false, false
+	}
+
+	var count int8
 
 	ext := filepath.Ext(videofile)
 	filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
@@ -2610,26 +2674,12 @@ func (s *Organizer) checksubfiles(folder, videofile, rootpath string) bool {
 	})
 
 	if disallowed {
-		if s.sourcepathCfg.DeleteDisallowed && videofile != s.sourcepathCfg.Path {
-			s.fileCleanup(folder, videofile, rootpath)
-		}
-
-		logger.Logtype("warn", 1).
-			Str(logger.StrFile, videofile).
-			Msg("skipped - disallowed")
-
-		return true
+		return true, false
 	}
 
-	if handler := mediatype.Get(s.Cfgp.IsType); handler != nil && handler.SkipMultipleFiles() &&
-		count >= 2 {
-		logger.Logtype("warn", 1).
-			Str(logger.StrFile, videofile).
-			Msg("skipped - too many files")
-		return true
-	}
+	handler := mediatype.Get(s.Cfgp.IsType)
 
-	return false
+	return false, handler != nil && handler.SkipMultipleFiles() && count >= 2
 }
 
 // hasValidIDs checks if the parser has valid IDs for the media item.
@@ -2891,7 +2941,11 @@ func PreviewOrganizeFile(
 
 	defer m.Close()
 
-	if err := parser.GetDBIDs(m, cfgp, true, false); err != nil {
+	if s.manualID != 0 {
+		if _, err := forceMediaIDs(m, cfgp, s.manualID); err != nil {
+			return nil, err
+		}
+	} else if err := parser.GetDBIDs(m, cfgp, true, false); err != nil {
 		return nil, err
 	}
 
@@ -2908,10 +2962,6 @@ func PreviewOrganizeFile(
 
 	if m.ListID < 0 || m.ListID >= len(cfgp.Lists) {
 		return nil, errNoListIDFound
-	}
-
-	if s.manualID != 0 {
-		handler.SetMediaID(m, s.manualID)
 	}
 
 	var (

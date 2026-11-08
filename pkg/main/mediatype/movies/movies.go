@@ -103,12 +103,12 @@ var (
 		"QueryMediaCountByList":    "select count() from movies where listname = ? COLLATE NOCASE",
 		"UpdateQualityReached":     "update movies set quality_reached = ? where id = ?",
 		"SelectRootpath":           "select rootpath from movies where id = ?",
-		"InsertFile":               "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"InsertFile":               "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width, file_size, runtime_seconds, bitrate, languages) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		"UpdateMissingByID":        "update movies set missing = 0 where id = ?",
 		"UpdateQualityReachedByID": "update movies set quality_reached = ? where id = ?",
 		"DeleteUnmatchedByPath":    "delete from movie_file_unmatcheds where filepath = ?",
 		"SelectRuntime":            "select runtime from dbmovies where id = ?",
-		"InsertFileOrganize":       "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"InsertFileOrganize":       "insert into movie_files (location, filename, extension, quality_profile, resolution_id, quality_id, codec_id, audio_id, proper, repack, extended, movie_id, dbmovie_id, height, width, file_size, runtime_seconds, bitrate, languages) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		"UpdateMissingReached":     "update movies SET missing = 0, quality_reached = ? where id = ?",
 	}
 )
@@ -464,7 +464,7 @@ func (*handler) SearchConfigByName(
 }
 
 // RecordDownloadHistory records a movie download in the movie_histories table.
-func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) (uint, error) {
 	var (
 		movieID, dbmovieID uint
 		qualityProfile     string
@@ -487,7 +487,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 	}
 
 	if movieID == 0 || dbmovieID == 0 {
-		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+		return 0, fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
 	}
 
 	var indexerName string
@@ -495,7 +495,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		indexerName = nzb.NZB.Indexer.Name
 	}
 
-	return database.ExecNErr(
+	id, err := database.ExecNid(
 		"Insert into movie_histories (title, url, target, indexer, downloaded_at, movie_id, dbmovie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
@@ -509,6 +509,11 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		&nzb.Info.AudioID,
 		&qualityProfile,
 	)
+	if err != nil {
+		return 0, err
+	}
+
+	return logger.Int64ToUint(id), nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for a movie download.

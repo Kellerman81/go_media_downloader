@@ -180,7 +180,7 @@ type Handler interface {
 	// RecordDownloadHistory records a download in the appropriate history table.
 	// For movies: inserts into movie_histories
 	// For series: inserts into serie_episode_histories
-	RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error
+	RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) (uint, error)
 
 	// GetDownloadTargetFolder returns the target folder name for a download.
 	// For movies: returns title with IMDB ID (e.g., "Movie Title (tt1234567)")

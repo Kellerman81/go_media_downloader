@@ -653,7 +653,7 @@ func HandleNamingTest(c *gin.Context) {
 		m.SerieID = series.ID
 		m.DbserieID = series.DbserieID
 		// Resolve episodes like PreviewOrganizeFile does: GetSeriesEpisodes would
-		// clear them (ErrNotAllowed) when an existing file has a better quality,
+		// clear them (lower quality) when an existing file has a better quality,
 		// leaving the preview with an unexplained empty name.
 		if err := m.Getepisodestoimport(); err != nil || len(m.Episodes) == 0 {
 			c.String(200, renderAlert("No matching episode found for this file in the selected series", "danger"))

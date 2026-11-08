@@ -301,6 +301,7 @@ func jobImportParseCommon(
 
 	basefile := filepath.Base(pathv)
 	extfile := filepath.Ext(pathv)
+	fileSize, bitrate, languages := m.FileDetails(pathv)
 
 	// Get queries from StringsMap
 	insertQuery := mtstrings.GetStringsMap(cfgp.IsType, "InsertFile")
@@ -331,6 +332,7 @@ func jobImportParseCommon(
 				&m.Proper, &m.Repack, &m.Extended,
 				&mediaID, &dbMediaID,
 				&m.Height, &m.Width,
+				&fileSize, &m.Runtime, &bitrate, &languages,
 			)
 			database.ExecN(updateMissing, &mediaID)
 			database.ExecN(updateReached, &reached, &mediaID)
@@ -355,6 +357,7 @@ func jobImportParseCommon(
 					&m.Proper, &m.Repack, &m.Extended,
 					&m.SerieID, &m.Episodes[idx].Num1, &m.Episodes[idx].Num2, &m.DbserieID,
 					&m.Height, &m.Width,
+					&fileSize, &m.Runtime, &bitrate, &languages,
 				)
 
 				database.ExecN(updateMissing, &m.Episodes[idx].Num1)

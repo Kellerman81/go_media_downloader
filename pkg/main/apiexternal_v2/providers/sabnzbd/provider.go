@@ -545,7 +545,9 @@ func (p *Provider) handleHTTPError(resp *http.Response) error {
 // This is a SABnzbd-specific method not in the DownloadProvider interface,
 // but useful for clients that need direct NZB support
 func (p *Provider) AddNZB(ctx context.Context, nzbURL, category string, priority int) error {
-	return p.AddNZBNamed(ctx, nzbURL, category, "", priority)
+	_, err := p.AddNZBNamed(ctx, nzbURL, category, "", priority)
+
+	return err
 }
 
 // AddNZBNamed is AddNZB with an optional SABnzbd job name (the addurl
@@ -554,7 +556,7 @@ func (p *Provider) AddNZBNamed(
 	ctx context.Context,
 	nzbURL, category, nzbName string,
 	priority int,
-) error {
+) (string, error) {
 	params := url.Values{
 		"mode":   {"addurl"},
 		"name":   {nzbURL},
@@ -580,21 +582,21 @@ func (p *Provider) AddNZBNamed(
 
 	resp, err := p.makeRequest(ctx, params)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return p.handleHTTPError(resp)
+		return "", p.handleHTTPError(resp)
 	}
 
 	var result sabAddResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return errors.New(logger.JoinStrings("failed to decode SABnzbd response: ", err.Error()))
+		return "", errors.New(logger.JoinStrings("failed to decode SABnzbd response: ", err.Error()))
 	}
 
 	if !result.Status {
-		return errors.New(logger.JoinStrings("SABnzbd add failed: ", result.Error))
+		return "", errors.New(logger.JoinStrings("SABnzbd add failed: ", result.Error))
 	}
 
 	logger.Logtype(logger.StatusDebug, 1).
@@ -603,5 +605,9 @@ func (p *Provider) AddNZBNamed(
 		Strs("nzo_ids", result.NzoIDs).
 		Msg("NZB added successfully")
 
-	return nil
+	if len(result.NzoIDs) == 0 {
+		return "", nil
+	}
+
+	return result.NzoIDs[0], nil
 }

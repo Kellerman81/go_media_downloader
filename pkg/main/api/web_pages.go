@@ -1139,6 +1139,64 @@ func addCSS() gomponents.Node {
 						margin: 0;
 					}
 
+					/* Action buttons under a form (Test, Start, Save, Reset, ...) */
+					.submit-group {
+						display: flex;
+						flex-wrap: wrap;
+						align-items: center;
+						gap: 0.75rem;
+						margin-top: 1.5rem;
+						padding-top: 1.25rem;
+						border-top: 1px solid #e9ecef;
+					}
+
+					.submit-group .btn {
+						display: inline-flex;
+						align-items: center;
+						justify-content: center;
+						gap: 0.5rem;
+						min-width: 9rem;
+						margin: 0;
+						padding: 0.6rem 1.4rem;
+						border-radius: 10px;
+						font-weight: 600;
+						transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+					}
+
+					.submit-group .btn-primary {
+						border: none;
+						background: linear-gradient(135deg, #0d6efd 0%, #4f8cff 100%);
+						box-shadow: 0 2px 6px rgba(13, 110, 253, 0.25);
+					}
+
+					.submit-group .btn-primary:hover:not(:disabled) {
+						transform: translateY(-1px);
+						box-shadow: 0 6px 14px rgba(13, 110, 253, 0.35);
+					}
+
+					.submit-group .btn-primary.htmx-request {
+						opacity: 0.75;
+						pointer-events: none;
+					}
+
+					.submit-group .btn-secondary {
+						background: #fff;
+						color: #495057;
+						border: 1px solid #ced4da;
+					}
+
+					.submit-group .btn-secondary:hover {
+						background: #f1f3f5;
+						color: #212529;
+						border-color: #adb5bd;
+					}
+
+					@media (max-width: 576px) {
+						.submit-group .btn {
+							flex: 1 1 auto;
+						}
+					}
+
 					.page-header-enhanced {
 						background: #fff;
 						border-bottom: 1px solid #dee2e6;

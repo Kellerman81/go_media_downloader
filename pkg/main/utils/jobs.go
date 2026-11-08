@@ -17,6 +17,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/downloadstate"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
@@ -2709,6 +2710,11 @@ func LoadGlobalSchedulerConfig() {
 			}
 
 			return err
+		},
+		"CheckDownloads": func(key uint32, ctx context.Context) error {
+			defer worker.RemoveQueueEntry(key)
+
+			return downloadstate.Check(ctx)
 		},
 		"RefreshCache": func(key uint32, _ context.Context) error {
 			logger.Logtype("info", 0).Msg("Starting scheduled cache refresh")

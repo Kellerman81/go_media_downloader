@@ -464,6 +464,12 @@ func getFieldMapping(dbField string) FieldMapping {
 		return FieldMapping{"RatingsCount", "Ratings Count"}
 	case "file_size":
 		return FieldMapping{"FileSize", "File Size"}
+	case "size_gb":
+		return FieldMapping{"SizeGB", "Size (GB)"}
+	case "runtime_min":
+		return FieldMapping{"RuntimeMin", "Runtime (min)"}
+	case "bitrate_kbps":
+		return FieldMapping{"BitrateKbps", "Bitrate (kbit/s)"}
 	case "sample_rate":
 		return FieldMapping{"SampleRate", "Sample Rate"}
 	case "bit_depth":

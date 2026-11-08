@@ -2,6 +2,7 @@ package structure
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -749,6 +750,94 @@ func TestOrganizeBookReplacesOldFile(t *testing.T) {
 	}
 }
 
+func TestBookLowerQuality(t *testing.T) {
+	cfgp := &config.MediaTypeConfig{IsType: config.MediaTypeBook}
+	qual := &config.QualityConfig{Name: "ebook"}
+
+	for _, tc := range []struct {
+		name, oldExt, newFormat string
+		lower                   bool
+	}{
+		{"no library file", "", "pdf", false},
+		{"epub over pdf", ".pdf", "epub", false},
+		{"pdf over epub", ".epub", "pdf", true},
+		{"same format", ".epub", "epub", true},
+		{"unknown library format", ".xyz", "pdf", false},
+	} {
+		useTestDB(t)
+
+		for _, q := range []string{
+			"insert into dbbooks (id, title, slug) values (1, 'Dune', 'dune')",
+			"insert into books (id, dbbook_id, listname, missing) values (1, 1, 'Books', 0)",
+		} {
+			if err := database.ExecNErr(q); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if tc.oldExt != "" {
+			if err := database.ExecNErr("insert into book_files (location, extension, book_id, dbbook_id) values ('/lib/Dune/Dune'||?, ?, 1, 1)",
+				tc.oldExt, tc.oldExt); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		m := &database.ParseInfo{BookID: 1, DbbookID: 1, Quality: tc.newFormat}
+		if _, lower := bookLowerQuality(m, cfgp, qual); lower != tc.lower {
+			t.Errorf("%s: lower quality %t, want %t", tc.name, lower, tc.lower)
+		}
+	}
+}
+
+func TestOrganizeBookKeepsLowerQualityFile(t *testing.T) {
+	useTestDB(t)
+
+	base := t.TempDir()
+	dl, lib := filepath.Join(base, "dl", "Dune-PDF-GRP"), filepath.Join(base, "lib")
+	newBook := filepath.Join(dl, "dune.pdf")
+	oldBook := filepath.Join(lib, "Dune", "Dune.epub")
+	writeFiles(t, newBook, oldBook)
+
+	for _, q := range []string{
+		"insert into dbbooks (id, title, slug) values (1, 'Dune', 'dune')",
+		"insert into books (id, dbbook_id, listname, missing) values (1, 1, 'Books', 0)",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := database.ExecNErr("insert into book_files (location, extension, book_id, dbbook_id) values (?, '.epub', 1, 1)", oldBook); err != nil {
+		t.Fatal(err)
+	}
+
+	target := &config.PathsConfig{Name: "lib", Path: lib, Replacelower: true}
+	s := &Organizer{
+		Cfgp: &config.MediaTypeConfig{
+			IsType: config.MediaTypeBook, Naming: "{{.Dbbook.Title}}/{{.Dbbook.Title}}",
+			Lists:   []config.MediaListsConfig{{Name: "Books"}},
+			DataMap: map[int]*config.MediaDataConfig{0: {CfgPath: target}},
+		},
+		sourcepathCfg: &config.PathsConfig{
+			Name: "dl", CleanupsizeMB: 10,
+			AllowedBookExtensions: []string{".epub", ".pdf"}, AllowedBookExtensionsLen: 2,
+		},
+		targetpathCfg: target,
+	}
+
+	o := &Organizerdata{Folder: dl, MediaFile: newBook, Rootpath: filepath.Join(lib, "Dune"), Listid: 0}
+	m := &database.ParseInfo{DbbookID: 1, BookID: 1, Quality: "pdf"}
+
+	err := s.Organize(context.Background(), o, m, &config.QualityConfig{Name: "ebook"}, false, false)
+	if !errors.Is(err, errLowerQuality) {
+		t.Fatalf("organize error %v, want lower quality", err)
+	}
+
+	if !exists(newBook) || !exists(oldBook) || rows(t, "select count() from book_files") != 1 {
+		t.Error("a lower-quality book must leave the import file and the library untouched")
+	}
+}
+
 func TestComputeRootpathBoundaryAndLongestPath(t *testing.T) {
 	cfgp := &config.MediaTypeConfig{DataMap: map[int]*config.MediaDataConfig{
 		0: {CfgPath: &config.PathsConfig{Path: "/data"}},
@@ -814,6 +903,40 @@ func TestCleanUpFolderKeepsFolderAtThreshold(t *testing.T) {
 
 	if _, err := os.Stat(dir); err != nil {
 		t.Errorf("folder holding exactly the threshold was removed: %v", err)
+	}
+}
+
+// TestCleanUpAlbumFolderKeepsAudio: cleanupsize 0 removes any folder, so an
+// album organize that left unmatched tracks behind must keep the folder.
+func TestCleanUpAlbumFolderKeepsAudio(t *testing.T) {
+	s := &Organizer{sourcepathCfg: &config.PathsConfig{}}
+
+	withAudio := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(withAudio, "CD2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range []string{"cover.jpg", filepath.Join("CD2", "09 - Extra.FLAC")} {
+		if err := os.WriteFile(filepath.Join(withAudio, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s.cleanUpAlbumFolder(withAudio)
+
+	if _, err := os.Stat(withAudio); err != nil {
+		t.Errorf("folder with a leftover track was removed: %v", err)
+	}
+
+	leftovers := t.TempDir()
+	if err := os.WriteFile(filepath.Join(leftovers, "album.nfo"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s.cleanUpAlbumFolder(leftovers)
+
+	if _, err := os.Stat(leftovers); !os.IsNotExist(err) {
+		t.Errorf("folder without audio was not cleaned up (err=%v)", err)
 	}
 }
 
@@ -1216,5 +1339,31 @@ func TestFileCleanupKeepsLibraryCompanions(t *testing.T) {
 
 	if exists(filepath.Join(dl, "heat.mkv")) || exists(filepath.Join(dl, "heat.srt")) {
 		t.Error("rejected download's video or subtitle left behind")
+	}
+}
+
+func TestRuntimeMismatch(t *testing.T) {
+	s := &Organizer{
+		Cfgp:          &config.MediaTypeConfig{IsType: config.MediaTypeMovie},
+		targetpathCfg: &config.PathsConfig{MaxRuntimeDifference: 15},
+	}
+
+	m := &database.ParseInfo{Runtime: 208 * 60}
+
+	if wanted, found, wrong := s.runtimeMismatch(m, 149, true); !wrong || wanted != 149 || found != 208 {
+		t.Errorf("208 vs 149 min: wanted %d found %d wrong %v", wanted, found, wrong)
+	}
+
+	if _, _, wrong := s.runtimeMismatch(m, 200, true); wrong {
+		t.Error("8 min off with a 15 min tolerance was rejected")
+	}
+
+	if _, _, wrong := s.runtimeMismatch(m, 149, false); wrong {
+		t.Error("rejected with check_runtime off")
+	}
+
+	s.targetpathCfg.MaxRuntimeDifference = 0
+	if _, _, wrong := s.runtimeMismatch(m, 207, true); !wrong {
+		t.Error("without a tolerance any difference must be rejected")
 	}
 }

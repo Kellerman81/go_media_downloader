@@ -2,29 +2,24 @@ package providers
 
 import (
 	"maps"
+	"reflect"
 	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/acoustid"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deezer"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/discogs"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/goodreads"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/itunes"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lastfm"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/omdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/theaudiodb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tmdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/trakt"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tvdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tvmaze"
 )
@@ -78,12 +73,7 @@ var (
 
 	// Download providers - map by name
 	// Stored as concrete types for full type safety.
-	qbittorrentProviders  = make(map[string]*qbittorrent.Provider)
-	delugeProviders       = make(map[string]*deluge.Provider)
-	transmissionProviders = make(map[string]*transmission.Provider)
-	rtorrentProviders     = make(map[string]*rtorrent.Provider)
-	sabnzbdProviders      = make(map[string]*sabnzbd.Provider)
-	nzbgetProviders       = make(map[string]*nzbget.Provider)
+	downloadProviders = make(map[string]any)
 )
 
 //
@@ -222,133 +212,34 @@ func GetAllIndexers() map[string]*newznab.Provider {
 }
 
 //
-// Download Providers - Type-specific registration
+// Download Providers
 //
 
-// SetQBittorrent registers a qBittorrent provider by name.
-func SetQBittorrent(name string, provider *qbittorrent.Provider) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	setOrDelete(qbittorrentProviders, name, provider)
-}
-
-// GetQBittorrent returns a qBittorrent provider by name.
-func GetQBittorrent(name string) *qbittorrent.Provider {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-	return qbittorrentProviders[name]
-}
-
-// SetDeluge registers a Deluge provider by name.
-func SetDeluge(name string, provider *deluge.Provider) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	setOrDelete(delugeProviders, name, provider)
-}
-
-// GetDeluge returns a Deluge provider by name.
-func GetDeluge(name string) *deluge.Provider {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-	return delugeProviders[name]
-}
-
-// SetTransmission registers a Transmission provider by name.
-func SetTransmission(name string, provider *transmission.Provider) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	setOrDelete(transmissionProviders, name, provider)
-}
-
-// GetTransmission returns a Transmission provider by name.
-func GetTransmission(name string) *transmission.Provider {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-	return transmissionProviders[name]
-}
-
-// SetRTorrent registers an rTorrent provider by name.
-func SetRTorrent(name string, provider *rtorrent.Provider) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	setOrDelete(rtorrentProviders, name, provider)
-}
-
-// GetRTorrent returns an rTorrent provider by name.
-func GetRTorrent(name string) *rtorrent.Provider {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-	return rtorrentProviders[name]
-}
-
-// SetSABnzbd registers a SABnzbd provider by name.
-func SetSABnzbd(name string, provider *sabnzbd.Provider) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	setOrDelete(sabnzbdProviders, name, provider)
-}
-
-// GetSABnzbd returns a SABnzbd provider by name.
-func GetSABnzbd(name string) *sabnzbd.Provider {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-	return sabnzbdProviders[name]
-}
-
-// SetNZBGet registers an NZBGet provider by name.
-func SetNZBGet(name string, provider *nzbget.Provider) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	setOrDelete(nzbgetProviders, name, provider)
-}
-
-// GetNZBGet returns an NZBGet provider by name.
-func GetNZBGet(name string) *nzbget.Provider {
-	registryMutex.RLock()
-	defer registryMutex.RUnlock()
-	return nzbgetProviders[name]
-}
-
-// DownloadProviders is a complete set of download clients keyed by config
-// name, as passed to ReplaceDownloadProviders. Nil maps mean none.
-type DownloadProviders struct {
-	QBittorrent  map[string]*qbittorrent.Provider
-	Deluge       map[string]*deluge.Provider
-	Transmission map[string]*transmission.Provider
-	RTorrent     map[string]*rtorrent.Provider
-	SABnzbd      map[string]*sabnzbd.Provider
-	NZBGet       map[string]*nzbget.Provider
-}
-
-// ReplaceDownloadProviders swaps the whole set of registered download clients
-// in one step, so a concurrent lookup never sees a half-registered set.
-// Callers still holding a replaced provider keep a working instance.
-func ReplaceDownloadProviders(set DownloadProviders) {
-	registryMutex.Lock()
-	defer registryMutex.Unlock()
-
-	qbittorrentProviders = nonNilCopy(set.QBittorrent)
-	delugeProviders = nonNilCopy(set.Deluge)
-	transmissionProviders = nonNilCopy(set.Transmission)
-	rtorrentProviders = nonNilCopy(set.RTorrent)
-	sabnzbdProviders = nonNilCopy(set.SABnzbd)
-	nzbgetProviders = nonNilCopy(set.NZBGet)
-}
-
-// nonNilCopy copies m without nil entries.
-func nonNilCopy[T any](m map[string]*T) map[string]*T {
-	out := make(map[string]*T, len(m))
-	for name, p := range m {
-		setOrDelete(out, name, p)
+// ReplaceDownloadProviders swaps the whole set of registered download
+// clients, keyed by downloader config name, in one step, so a concurrent
+// lookup never sees a half-registered set. Nil entries are dropped. Callers
+// still holding a replaced client keep a working instance.
+func ReplaceDownloadProviders(set map[string]any) {
+	clients := make(map[string]any, len(set))
+	for name, p := range set {
+		if p != nil && !reflect.ValueOf(p).IsNil() {
+			clients[name] = p
+		}
 	}
 
-	return out
+	registryMutex.Lock()
+	defer registryMutex.Unlock()
+
+	downloadProviders = clients
+}
+
+// GetDownloadClient returns the client of the downloader config name, or nil
+// (also for drone, which has none).
+func GetDownloadClient(name string) any {
+	registryMutex.RLock()
+	defer registryMutex.RUnlock()
+
+	return downloadProviders[name]
 }
 
 //
@@ -440,12 +331,11 @@ func GetAllDownloadProviders() map[string]any {
 	defer registryMutex.RUnlock()
 
 	providers := make(map[string]any)
-	addTyped(providers, "qbittorrent_", qbittorrentProviders)
-	addTyped(providers, "deluge_", delugeProviders)
-	addTyped(providers, "transmission_", transmissionProviders)
-	addTyped(providers, "rtorrent_", rtorrentProviders)
-	addTyped(providers, "sabnzbd_", sabnzbdProviders)
-	addTyped(providers, "nzbget_", nzbgetProviders)
+	for name, provider := range downloadProviders {
+		if n, ok := provider.(interface{ GetProviderName() string }); ok {
+			providers[n.GetProviderName()+"_"+name] = provider
+		}
+	}
 
 	// Add indexer download clients (track NZB downloads separately from searches)
 	for name, provider := range indexerProviders {
@@ -455,15 +345,6 @@ func GetAllDownloadProviders() map[string]any {
 	}
 
 	return providers
-}
-
-// addTyped copies the non-nil providers of m into out under prefix+name.
-func addTyped[T any](out map[string]any, prefix string, m map[string]*T) {
-	for name, provider := range m {
-		if provider != nil {
-			out[prefix+name] = provider
-		}
-	}
 }
 
 //

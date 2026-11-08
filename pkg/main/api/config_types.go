@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"maragu.dev/gomponents"
 )
 
@@ -44,15 +45,7 @@ var downloaderValidator = &ConfigValidator[config.DownloaderConfig]{
 		requireNonEmptyString("name", func(c config.DownloaderConfig) string { return c.Name }),
 		validateInStringList(
 			"type",
-			[]string{
-				"drone",
-				"nzbget",
-				"sabnzbd",
-				"transmission",
-				"rtorrent",
-				"qbittorrent",
-				"deluge",
-			},
+			providers.DownloadClientTypeNames(),
 			func(c config.DownloaderConfig) string { return c.DlType },
 		),
 		validatePortRange("port", func(c config.DownloaderConfig) int { return c.Port }),
@@ -116,6 +109,8 @@ var listsValidator = &ConfigValidator[config.ListsConfig]{
 				"plexwatchlist",
 				"jellyfinwatchlist",
 				"moviescraper",
+				"rottentomatoes",
+				"letterboxd",
 				"audiobookconfig",
 				"bookconfig",
 				"musicconfig",
@@ -150,7 +145,7 @@ var notificationValidator = &ConfigValidator[config.NotificationConfig]{
 	GetName:    func(c config.NotificationConfig) string { return c.Name },
 	Validators: []func(config.NotificationConfig) error{
 		requireNonEmptyString("name", func(c config.NotificationConfig) string { return c.Name }),
-		validateInStringList("type", []string{"csv", "pushover", "gotify", "pushbullet", "apprise", "sendmail"},
+		validateInStringList("type", providers.NotificationTypeNames(),
 			func(c config.NotificationConfig) string { return c.NotificationType }),
 	},
 }

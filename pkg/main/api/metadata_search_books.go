@@ -1150,6 +1150,8 @@ func AddBookToDatabase(c *gin.Context) {
 		return
 	}
 
+	notifyManualAdd("book", listName, uint(dbBookID), len(bookExists) == 0) //nolint:gosec // row ids are positive
+
 	c.JSON(http.StatusOK, gin.H{"success": "Book added successfully to " + listName})
 }
 
@@ -1283,6 +1285,8 @@ func AddAudiobookToDatabase(c *gin.Context) {
 		return
 	}
 
+	notifyManualAdd("audiobook", listName, uint(dbAudiobookID), len(audiobookExists) == 0) //nolint:gosec // row ids are positive
+
 	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added successfully to " + listName})
 }
 
@@ -1405,6 +1409,8 @@ func AddBookManual(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book: " + err.Error()})
 		return
 	}
+
+	notifyManualAdd("book", listName, uint(dbBookID), len(existing) == 0) //nolint:gosec // row ids are positive
 
 	c.JSON(http.StatusOK, gin.H{"success": "Book added manually to " + listName})
 }
@@ -1540,6 +1546,8 @@ func AddAudiobookManual(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
 		return
 	}
+
+	notifyManualAdd("audiobook", listName, dbaudiobookID, len(existing) == 0)
 
 	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added manually to " + listName})
 }

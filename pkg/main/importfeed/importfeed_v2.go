@@ -287,6 +287,8 @@ func checkaddMediaEntry(
 				},
 			)
 		}
+
+		NotifyAdded(cfgp, providers.EventAddedToList, cfgplist.Name, *dbid)
 	}
 
 	return nil
@@ -467,6 +469,10 @@ func JobImportBooks(
 			metadata.BookGetMetadata(ctx, &dbbook, true)
 			updateDbbook(&dbbook)
 		}
+	}
+
+	if dbbookadded {
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbbook.ID)
 	}
 
 	if !addnew {
@@ -743,6 +749,10 @@ func JobImportAudiobooks(
 		}
 	}
 
+	if dbaudiobookadded {
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbaudiobook.ID)
+	}
+
 	if !addnew {
 		return dbaudiobook.ID, nil
 	}
@@ -986,6 +996,10 @@ func JobImportAlbums(
 			metadata.AlbumGetMetadata(ctx, &dbalbum, true)
 			updateDbalbum(&dbalbum)
 		}
+	}
+
+	if dbalbumadded {
+		NotifyAdded(cfgp, providers.EventAddedToDB, "", dbalbum.ID)
 	}
 
 	if !addnew {

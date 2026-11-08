@@ -3,17 +3,19 @@ package downloader
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/downloadstate"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 )
 
 var (
@@ -146,27 +148,17 @@ func (d *downloadertype) downloadNzb() error {
 		Str("by", d.DownloaderCfg.DlType).
 		Msg("Downloading")
 
-	var err error
-	switch d.DownloaderCfg.DlType {
-	case "drone":
+	before := d.snapshotDownloads()
+
+	var (
+		downloadID string
+		err        error
+	)
+
+	if d.DownloaderCfg.DlType == "drone" {
 		err = d.downloadByDrone()
-	case "nzbget":
-		err = d.downloadByNzbget()
-	case "sabnzbd":
-		err = d.downloadBySabnzbd()
-	case "transmission":
-		err = d.downloadByTransmission()
-	case "rtorrent":
-		err = d.downloadByRTorrent()
-	case "qbittorrent":
-		err = d.downloadByQBittorrent()
-	case "deluge":
-		err = d.downloadByDeluge()
-	default:
-		logger.Logtype("error", 0).
-			Err(errUnknownDownloader).
-			Msg("Download")
-		return errUnknownDownloader
+	} else {
+		downloadID, err = d.downloadByClient()
 	}
 
 	if err != nil {
@@ -183,34 +175,123 @@ func (d *downloadertype) downloadNzb() error {
 		database.AppendCacheMap(d.Cfgp.IsType, logger.CacheHistoryURL, d.Nzb.NZB.DownloadURL)
 	}
 
+	if downloadID == "" && before != nil {
+		downloadID = d.findNewDownload(before)
+	}
+
 	d.notify()
 
-	d.downloadNzbType(d.Cfgp.IsType, d.savePath())
+	d.downloadNzbType(d.Cfgp.IsType, d.savePath(), downloadID)
 
 	return nil
+}
+
+// newDownloadWait bounds how long findNewDownload waits for a client to list
+// a torrent added by URL (it fetches the .torrent in the background).
+const newDownloadWait = 20 * time.Second
+
+// stateLister returns the downloader's client when it can report download
+// states, else nil.
+func (d *downloadertype) stateLister() apiexternal_v2.DownloadStateLister {
+	l, _ := providers.GetDownloadClient(d.DownloaderCfg.Name).(apiexternal_v2.DownloadStateLister)
+	return l
+}
+
+// snapshotDownloads lists the torrent client's downloads before an add whose
+// id cannot be known otherwise: a torrent URL (unlike a magnet) carries no
+// info hash, and some clients' add calls return none.
+func (d *downloadertype) snapshotDownloads() map[string]apiexternal_v2.DownloadState {
+	if !providers.IsTorrentClient(d.DownloaderCfg.DlType) || base.InfoHashFromURL(d.Nzb.NZB.DownloadURL) != "" {
+		return nil
+	}
+
+	l := d.stateLister()
+	if l == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	states, err := l.DownloadStates(ctx)
+	if err != nil {
+		return nil
+	}
+
+	return states
+}
+
+// findNewDownload returns the id of the download that appeared since before;
+// of several new ones the one named like the release.
+func (d *downloadertype) findNewDownload(before map[string]apiexternal_v2.DownloadState) string {
+	l := d.stateLister()
+	if l == nil {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), newDownloadWait+10*time.Second)
+	defer cancel()
+
+	for deadline := time.Now().Add(newDownloadWait); time.Now().Before(deadline); {
+		now, err := l.DownloadStates(ctx)
+		if err != nil {
+			return ""
+		}
+
+		var added []string
+		for id, st := range now {
+			if _, ok := before[id]; !ok {
+				if strings.EqualFold(st.Name, d.Nzb.NZB.Title) {
+					return id
+				}
+
+				added = append(added, id)
+			}
+		}
+
+		if len(added) == 1 {
+			return added[0]
+		}
+
+		if len(added) > 1 {
+			return ""
+		}
+
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-time.After(time.Second):
+		}
+	}
+
+	return ""
 }
 
 // savePath returns where the client actually saves the download: torrent
 // clients use DelugeDlTo (when set) rather than the path template.
 func (d *downloadertype) savePath() string {
-	switch d.DownloaderCfg.DlType {
-	case "transmission", "rtorrent", "qbittorrent", "deluge":
-		if d.DownloaderCfg.DelugeDlTo != "" {
-			return d.DownloaderCfg.DelugeDlTo
-		}
+	if d.DownloaderCfg.DelugeDlTo != "" && providers.IsTorrentClient(d.DownloaderCfg.DlType) {
+		return d.DownloaderCfg.DelugeDlTo
 	}
 
 	return d.TargetCfg.Path
 }
 
-func (d *downloadertype) downloadNzbType(isType uint, savePath string) {
+// downloadNzbType records the download in the history, with the client
+// and its download id for the download state tracking.
+func (d *downloadertype) downloadNzbType(isType uint, savePath, downloadID string) {
 	if handler := mediatype.Get(isType); handler != nil {
-		if err := handler.RecordDownloadHistory(d.Nzb, savePath); err != nil {
+		historyID, err := handler.RecordDownloadHistory(d.Nzb, savePath)
+		if err != nil {
 			logger.Logtype("error", 0).
 				Err(err).
 				Str("nzb", d.Nzb.NZB.Title).
 				Msg("Error recording download history")
+
+			return
 		}
+
+		downloadstate.Started(isType, historyID, d.DownloaderCfg.Name, downloadID)
 	}
 }
 
@@ -272,52 +353,12 @@ func (d *downloadertype) getdownloadtargetfolder() string {
 	return d.Nzb.NZB.Title
 }
 
-// notify sends notifications about the added download based on the
-// configured notifications in the downloader. It supports pushover
-// and CSV append notifications. It parses notification titles and
-// messages as templates using the downloader data.
+// notify sends the media config's added_download notifications, rendered
+// with the downloader data.
 func (d *downloadertype) notify() {
 	d.Time = logger.TimeGetNow().Format(logger.GetTimeFormat())
 
-	var err error
-	for idx := range d.Cfgp.Notification {
-		if !strings.EqualFold(d.Cfgp.Notification[idx].Event, "added_download") {
-			continue
-		}
-
-		if d.Cfgp.Notification[idx].CfgNotification == nil {
-			continue
-		}
-
-		bl, messagetext, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Message, d)
-		if bl {
-			continue
-		}
-
-		cfgnot := d.Cfgp.Notification[idx].CfgNotification
-
-		switch cfgnot.NotificationType {
-		case "csv":
-			scanner.AppendCsv(cfgnot.Outputto, messagetext)
-		case "pushover", "gotify", "pushbullet", "apprise":
-			bl, messageTitle, _ := logger.ParseStringTemplate(d.Cfgp.Notification[idx].Title, d)
-			if bl {
-				continue
-			}
-
-			err = providers.SendNotification(cfgnot, messagetext, messageTitle)
-			if err != nil {
-				logger.Logtype("error", 0).
-					Err(err).
-					Str("type", cfgnot.NotificationType).
-					Msg("Error sending notification")
-			} else {
-				logger.Logtype("info", 0).
-					Str("type", cfgnot.NotificationType).
-					Msg("Notification sent")
-			}
-		}
-	}
+	providers.NotifyEvent(d.Cfgp, providers.EventAddedDownload, d, nil)
 }
 
 // downloadByDrone downloads the NZB or torrent file using the Drone downloader.
@@ -334,72 +375,61 @@ func (d *downloadertype) downloadByDrone() error {
 	return providers.EnsureIndexer(d.IndexerCfg).Download(context.Background(), urlv, d.TargetCfg.Path, filename)
 }
 
-// downloadByNzbget downloads the NZB file using the NZBGet downloader.
-// It uses the new provider infrastructure from apiexternal_v2 for proper
-// stats tracking, rate limiting, and error handling.
-func (d *downloadertype) downloadByNzbget() error {
-	// Get the NZBGet provider from the registry
-	provider := providers.GetNZBGet(d.DownloaderCfg.Name)
-	if provider == nil {
-		return logger.ErrNotAllowed
-	}
-
-	// Use the new provider's AddNZBExtended method which handles:
-	// - Downloading the NZB file from the URL
-	// - Extracting the filename from headers or URL
-	// - Encoding the content to base64
-	// - Sending to NZBGet via JSON-RPC
-	// All with proper stats tracking, rate limiting, and retry logic
-	_, err := provider.AddNZBExtended(
-		context.Background(),
-		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
-		d.Category,
-		d.Targetfile,
-		d.DownloaderCfg.Priority,
-		d.DownloaderCfg.AddPaused,
-	)
-
-	return err
+// nzbURLAdder is the add call of the Usenet clients; it returns the job id.
+type nzbURLAdder interface {
+	AddNZBURL(ctx context.Context, nzbURL, category, name string, priority int, paused bool) (string, error)
 }
 
-// downloadBySabnzbd sends the NZB URL to SABnzbd.
-func (d *downloadertype) downloadBySabnzbd() error {
-	provider := providers.GetSABnzbd(d.DownloaderCfg.Name)
-	if provider == nil {
-		return errNoDownloadClient
+// downloadByClient sends the release to the downloader's client and returns
+// the client's id for it. Every torrent client gets the same settings and
+// uses those it supports; the category doubles as label/tag.
+func (d *downloadertype) downloadByClient() (string, error) {
+	client := providers.GetDownloadClient(d.DownloaderCfg.Name)
+	if client == nil {
+		if !slices.Contains(providers.DownloadClientTypeNames(), d.DownloaderCfg.DlType) {
+			return "", errUnknownDownloader
+		}
+
+		return "", errNoDownloadClient
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	return provider.AddNZBNamed(
-		ctx,
-		logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL),
-		d.Category,
-		d.Targetfile,
-		d.DownloaderCfg.Priority,
-	)
+	switch c := client.(type) {
+	case torrentAdder:
+		url := logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL)
+
+		resp, err := c.AddTorrent(ctx, apiexternal_v2.TorrentAddRequest{
+			URL:      url,
+			SavePath: d.DownloaderCfg.DelugeDlTo,
+			Category: d.Category,
+			Label:    d.Category,
+			Paused:   d.DownloaderCfg.AddPaused,
+			Priority: d.DownloaderCfg.Priority,
+			Options:  d.delugeOptions(),
+		})
+		if err != nil {
+			return "", err
+		}
+
+		return addedID(resp, url), nil
+	case nzbURLAdder:
+		return c.AddNZBURL(ctx, logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL), d.Category, d.Targetfile,
+			d.DownloaderCfg.Priority, d.DownloaderCfg.AddPaused)
+	}
+
+	return "", errUnknownDownloader
 }
 
-// downloadByRTorrent sends the torrent URL to rTorrent.
-func (d *downloadertype) downloadByRTorrent() error {
-	return addTorrent(d, providers.GetRTorrent(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
-		SavePath: d.DownloaderCfg.DelugeDlTo,
-	})
-}
+// delugeOptions are Deluge's move-after-completion settings; other clients
+// read Options differently (qBittorrent passes them on), so only Deluge
+// gets them.
+func (d *downloadertype) delugeOptions() map[string]string {
+	if d.DownloaderCfg.DlType != "deluge" {
+		return nil
+	}
 
-// downloadByTransmission sends the torrent URL to Transmission.
-func (d *downloadertype) downloadByTransmission() error {
-	return addTorrent(d, providers.GetTransmission(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
-		SavePath: d.DownloaderCfg.DelugeDlTo,
-		Paused:   d.DownloaderCfg.AddPaused,
-		Priority: d.DownloaderCfg.Priority,
-	})
-}
-
-// downloadByDeluge sends the torrent URL to Deluge. A non-empty category is
-// applied as label when Deluge's Label plugin is enabled.
-func (d *downloadertype) downloadByDeluge() error {
 	options := map[string]string{"move_completed": strconv.FormatBool(d.DownloaderCfg.DelugeMoveAfter)}
 	// Like download_location, an empty move_completed_path would replace
 	// Deluge's own default with "".
@@ -407,44 +437,29 @@ func (d *downloadertype) downloadByDeluge() error {
 		options["move_completed_path"] = d.DownloaderCfg.DelugeMoveTo
 	}
 
-	return addTorrent(d, providers.GetDeluge(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
-		SavePath: d.DownloaderCfg.DelugeDlTo,
-		Paused:   d.DownloaderCfg.AddPaused,
-		Options:  options,
-		Label:    d.Category,
-	})
+	return options
 }
 
-// downloadByQBittorrent sends the torrent URL to qBittorrent.
-func (d *downloadertype) downloadByQBittorrent() error {
-	return addTorrent(d, providers.GetQBittorrent(d.DownloaderCfg.Name), apiexternal_v2.TorrentAddRequest{
-		SavePath: d.DownloaderCfg.DelugeDlTo,
-		Category: d.Category,
-		Paused:   d.DownloaderCfg.AddPaused,
-	})
+// addedID is the id of an added torrent: the hash the client returned, else
+// the info hash of a magnet link. aria2's own job id ("gid ...") wins, as
+// its calls take only that.
+func addedID(resp *apiexternal_v2.TorrentAddResponse, rawURL string) string {
+	if resp != nil {
+		if gid, ok := strings.CutPrefix(resp.Message, "gid "); ok {
+			return gid
+		}
+
+		if resp.Hash != "" {
+			return resp.Hash
+		}
+	}
+
+	return base.InfoHashFromURL(rawURL)
 }
 
 // torrentAdder is the add call the torrent download clients share.
 type torrentAdder interface {
 	AddTorrent(ctx context.Context, req apiexternal_v2.TorrentAddRequest) (*apiexternal_v2.TorrentAddResponse, error)
-}
-
-// addTorrent sends the release's torrent URL with req's settings to client.
-func addTorrent[T any, P interface {
-	*T
-	torrentAdder
-}](d *downloadertype, client P, req apiexternal_v2.TorrentAddRequest) error {
-	if client == nil {
-		return errNoDownloadClient
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	req.URL = logger.Checkhtmlentities(d.Nzb.NZB.DownloadURL)
-	_, err := client.AddTorrent(ctx, req)
-
-	return err
 }
 
 // newDownloader initializes a new downloadertype struct.

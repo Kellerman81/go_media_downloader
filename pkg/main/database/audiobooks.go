@@ -441,6 +441,17 @@ func fillAudiobookResult(result *AudiobookSearchResult) *AudiobookSearchResult {
 	return result
 }
 
+// FindAudiobookByID returns the dbaudiobooks row id as a search result, or nil
+// when it does not exist.
+func FindAudiobookByID(id uint) *AudiobookSearchResult {
+	if id == 0 ||
+		Getdatarow[uint](false, "SELECT count() FROM dbaudiobooks WHERE id = ?", &id) == 0 {
+		return nil
+	}
+
+	return fillAudiobookResult(&AudiobookSearchResult{ID: id})
+}
+
 // FindAudiobookByASIN searches for an audiobook by ASIN.
 func FindAudiobookByASIN(asin string) (*AudiobookSearchResult, error) {
 	if asin == "" {

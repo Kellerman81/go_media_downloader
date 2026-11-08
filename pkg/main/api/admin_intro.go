@@ -351,15 +351,38 @@ func statCard(icon, color, title string, count int, sub, href string, warn bool)
 
 // recentDownload is one row of the recent downloads panel.
 type recentDownload struct {
-	Kind    string `db:"kind"`
-	Title   string `db:"title"`
-	Indexer string `db:"indexer"`
-	At      string `db:"at"`
+	Kind    string  `db:"kind"`
+	Title   string  `db:"title"`
+	Indexer string  `db:"indexer"`
+	At      string  `db:"at"`
+	State   string  `db:"download_state"`
+	Percent float64 `db:"download_progress"`
+	Message string  `db:"download_message"`
+}
+
+// downloadStateBadge shows a tracked download's state; downloads from before
+// the tracking have none.
+func downloadStateBadge(r *recentDownload) gomponents.Node {
+	if r.State == "" {
+		return nil
+	}
+
+	class := map[string]string{
+		"added": "bg-secondary", "downloading": "bg-info text-dark", "completed": "bg-primary",
+		"processed": "bg-success", "failed": "bg-danger", "rejected": "bg-warning text-dark", "removed": "bg-dark",
+	}[r.State]
+
+	text := r.State
+	if r.State == "downloading" {
+		text = fmt.Sprintf("%s %.0f%%", r.State, r.Percent)
+	}
+
+	return html.Span(html.Class("badge ms-2 "+class), gomponents.If(r.Message != "", html.Title(r.Message)), gomponents.Text(text))
 }
 
 // dashboardRecentDownloads lists the latest grabs over all media types.
 func dashboardRecentDownloads() gomponents.Node {
-	const perType = "SELECT * FROM (SELECT '%s' AS kind, title, indexer, strftime('%%Y-%%m-%%d %%H:%%M', downloaded_at) AS at FROM %s ORDER BY downloaded_at DESC LIMIT 8)"
+	const perType = "SELECT * FROM (SELECT '%s' AS kind, title, indexer, strftime('%%Y-%%m-%%d %%H:%%M', downloaded_at) AS at, download_state, download_progress, download_message FROM %s ORDER BY downloaded_at DESC LIMIT 8)"
 
 	parts := []string{
 		fmt.Sprintf(perType, "Movie", "movie_histories"),
@@ -378,13 +401,15 @@ func dashboardRecentDownloads() gomponents.Node {
 			gomponents.Text("Nothing downloaded yet. Once searches find releases, they show up here."))
 	} else {
 		items := make([]gomponents.Node, 0, len(rows))
-		for _, r := range rows {
+		for i := range rows {
+			r := &rows[i]
 			items = append(items, html.Li(
 				html.Class("d-flex justify-content-between gap-3"),
 				html.Div(
 					html.Class("text-truncate"),
 					html.Span(html.Class("badge bg-light text-dark me-2"), gomponents.Text(r.Kind)),
 					html.Span(html.Title(r.Title), gomponents.Text(r.Title)),
+					downloadStateBadge(r),
 				),
 				html.Small(html.Class("text-muted text-nowrap"), gomponents.Text(r.At+" · "+r.Indexer)),
 			))

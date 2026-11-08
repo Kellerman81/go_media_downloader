@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +19,8 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
@@ -34,24 +38,13 @@ import (
 
 // renderJobManagementPage renders a page for starting jobs.
 func renderJobManagementPage(csrfToken string) gomponents.Node {
-	// Get available media configurations
-	media := config.GetSettingsMediaAll()
+	mediaConfigs := jobMediaConfigs()
 
-	mediaConfigs := make([]string, 0, len(media.Movies)+len(media.Series))
-	for i := range media.Movies {
-		mediaConfigs = append(mediaConfigs, media.Movies[i].NamePrefix)
-	}
-
-	for i := range media.Series {
-		mediaConfigs = append(mediaConfigs, media.Series[i].NamePrefix)
-	}
-
-	jobTypes := []string{
-		"data", "datafull", "feeds", "rss", "rssseasons", "rssseasonsall",
-		"checkmissing", "checkmissingflag", "checkupgradeflag", "checkreachedflag",
-		"clearhistory", "searchmissinginc", "searchmissingfull", "searchmissinginctitle",
-		"searchmissingfulltitle", "searchupgradeinc", "searchupgradefull",
-		"searchupgradeinctitle", "searchupgradefulltitle",
+	// The job type dropdown is refilled for the chosen configuration by
+	// jobListScript; the first configuration's types are the initial ones.
+	var jobTypes []string
+	if len(mediaConfigs) > 0 {
+		jobTypes = jobTypesFor(config.GetSettingsMedia(mediaConfigs[0]))
 	}
 
 	return html.Div(
@@ -111,10 +104,13 @@ func renderJobManagementPage(csrfToken string) gomponents.Node {
 					html.H5(html.Class("form-section-title"), gomponents.Text("Job Options")),
 
 					renderFormGroup("job", map[string]string{
-						"ListName": "Optional: Specific list name to process",
+						"ListName": "Optional: limit the job to one list of the media configuration. " +
+							"Only used by " + strings.Join(jobTypesWithList, ", ") + ".",
 					}, map[string]string{
 						"ListName": "List Name",
-					}, "ListName", "text", "", nil),
+					}, "ListName", "select", "", map[string][]string{
+						"options": {""},
+					}),
 
 					renderFormGroup("job", map[string]string{
 						"Force": "Force execution even if scheduler is disabled",
@@ -197,6 +193,8 @@ func renderJobManagementPage(csrfToken string) gomponents.Node {
 			html.Class("mt-4"),
 			html.Style("min-height: 50px;"),
 		),
+
+		jobListScript(mediaConfigs),
 
 		// Instructions
 		html.Div(
@@ -290,6 +288,145 @@ func renderJobManagementPage(csrfToken string) gomponents.Node {
 	)
 }
 
+// jobTypesWithList are the job types that can be limited to one list
+// (utils.SingleJobs); the others always run for the whole media config.
+var jobTypesWithList = []string{
+	"feeds", "checkmissing", "checkmissingflag", "checkupgradeflag", "checkreachedflag", "clearhistory",
+}
+
+// jobMediaConfigs returns the config key (e.g. "movie_EN") of every media
+// configuration, all media types.
+func jobMediaConfigs() []string {
+	media := config.GetSettingsMediaAll()
+	if media == nil {
+		return nil
+	}
+
+	var out []string
+
+	for _, group := range [][]config.MediaTypeConfig{
+		media.Movies, media.Series, media.Music, media.Books, media.AudioBooks,
+	} {
+		for i := range group {
+			out = append(out, group[i].NamePrefix)
+		}
+	}
+
+	return out
+}
+
+// jobTypesFor returns the job types utils.SingleJobs runs for cfgp's media
+// type: the media type's scheduler jobs plus data and the generic flag and
+// history jobs.
+func jobTypesFor(cfgp *config.MediaTypeConfig) []string {
+	if cfgp == nil {
+		return nil
+	}
+
+	types := []string{logger.StrData}
+
+	if h := mediatype.Get(cfgp.IsType); h != nil {
+		for _, pair := range h.GetSchedulerJobNames() {
+			if !slices.Contains(types, pair[1]) {
+				types = append(types, pair[1])
+			}
+		}
+	}
+
+	for _, generic := range []string{logger.StrReachedFlag, logger.StrClearHistory} {
+		if !slices.Contains(types, generic) {
+			types = append(types, generic)
+		}
+	}
+
+	return types
+}
+
+// jobListOption is one entry of the List Name dropdown.
+type jobListOption struct {
+	Name     string `json:"name"`
+	Disabled bool   `json:"disabled"`
+}
+
+// jobListScript fills the List Name dropdown with the lists of the chosen
+// media configuration and disables it for job types that take no list.
+func jobListScript(mediaConfigs []string) gomponents.Node {
+	lists := make(map[string][]jobListOption, len(mediaConfigs))
+	jobs := make(map[string][]string, len(mediaConfigs))
+
+	for _, name := range mediaConfigs {
+		cfgp := config.GetSettingsMedia(name)
+		if cfgp == nil {
+			continue
+		}
+
+		jobs[name] = jobTypesFor(cfgp)
+
+		for _, l := range cfgp.Lists {
+			if l.Name != "" {
+				lists[name] = append(lists[name], jobListOption{Name: l.Name, Disabled: !l.Enabled})
+			}
+		}
+	}
+
+	data, _ := json.Marshal(map[string]any{"lists": lists, "jobs": jobs, "withList": jobTypesWithList})
+
+	return html.Script(gomponents.Raw(`
+		(function() {
+			var cfg = ` + string(data) + `;
+			var form = document.getElementById('jobForm');
+			if (!form) return;
+			var media = form.querySelector('[name="job_MediaConfig"]');
+			var job = form.querySelector('[name="job_JobType"]');
+			var list = form.querySelector('[name="job_ListName"]');
+			if (!media || !job || !list) return;
+
+			function fill() {
+				var keep = list.value;
+				list.innerHTML = '';
+				var all = document.createElement('option');
+				all.value = '';
+				all.textContent = 'All lists';
+				list.appendChild(all);
+				(cfg.lists[media.value] || []).forEach(function(l) {
+					var o = document.createElement('option');
+					o.value = l.name;
+					o.textContent = l.disabled ? l.name + ' (disabled)' : l.name;
+					list.appendChild(o);
+				});
+				list.value = keep;
+				if (list.value !== keep) list.value = '';
+				toggle();
+			}
+
+			function fillJobs() {
+				var keep = job.value;
+				job.innerHTML = '';
+				(cfg.jobs[media.value] || []).forEach(function(j) {
+					var o = document.createElement('option');
+					o.value = j;
+					o.textContent = j;
+					job.appendChild(o);
+				});
+				job.value = keep;
+				if (job.value !== keep && job.options && job.options.length) job.value = job.options[0].value;
+			}
+
+			function toggle() {
+				var used = cfg.withList.indexOf(job.value) >= 0;
+				list.disabled = !used;
+				if (!used) list.value = '';
+			}
+
+			media.addEventListener('change', function() { fillJobs(); fill(); });
+			job.addEventListener('change', toggle);
+			form.addEventListener('reset', function() { setTimeout(function() { fillJobs(); fill(); }, 0); });
+			fillJobs();
+			fill();
+		})();
+	`))
+}
+
 // HandleJobManagement handles job start requests.
 func HandleJobManagement(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
@@ -310,6 +447,25 @@ func HandleJobManagement(c *gin.Context) {
 	if mediaConfig == "" {
 		c.String(http.StatusOK, renderAlert("Please select a media configuration", "warning"))
 		return
+	}
+
+	cfgp := config.GetSettingsMedia(mediaConfig)
+	if cfgp == nil {
+		c.String(http.StatusOK, renderAlert("Unknown media configuration "+mediaConfig, "warning"))
+		return
+	}
+
+	if !slices.Contains(jobTypesFor(cfgp), jobType) {
+		c.String(http.StatusOK, renderAlert("Job "+jobType+" does not exist for "+mediaConfig, "warning"))
+		return
+	}
+
+	// SingleJobs silently does nothing for a list the config doesn't have.
+	if listName != "" {
+		if _, ok := cfgp.ListsMapIdx[listName]; !ok {
+			c.String(http.StatusOK, renderAlert("Media configuration "+mediaConfig+" has no list "+listName, "warning"))
+			return
+		}
 	}
 
 	// Start the job using worker.Dispatch
@@ -1828,11 +1984,14 @@ func HandlePushoverTest(c *gin.Context) {
 	var err error
 
 	switch strings.ToLower(notifCfg.NotificationType) {
-	case "pushover", "gotify", "pushbullet", "apprise":
-		err = providers.SendNotification(notifCfg, messageText, messageTitle)
 	case "csv":
 		scanner.AppendCsv(notifCfg.Outputto, messageText)
 	default:
+		if providers.IsSentNotification(notifCfg.NotificationType) {
+			err = providers.SendNotification(notifCfg, messageText, messageTitle)
+			break
+		}
+
 		c.String(
 			http.StatusOK,
 			renderAlert("Unsupported notification type: "+notifCfg.NotificationType, "warning"),

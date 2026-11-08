@@ -177,6 +177,16 @@ var downloaderTemplates = []providerTemplate{
 	// SABnzbd auths via API key - entered in the Password field.
 	downloaderPreset("SABnzbd", "sabnzbd", "8080", "Password"),
 	downloaderPreset("NZBGet", "nzbget", "6789", "Username", "Password"),
+	// NZBVortex and Tribler auth via API key - entered in the Password field.
+	downloaderPreset("NZBVortex", "nzbvortex", "4321", "Password"),
+	downloaderPreset("Vuze (Web Remote)", "vuze", "9091", "Username", "Password"),
+	// aria2's --rpc-secret goes in the Password field.
+	downloaderPreset("aria2", "aria2", "6800"),
+	downloaderPreset("Flood", "flood", "3000", "Username", "Password"),
+	downloaderPreset("uTorrent", "utorrent", "8080", "Username", "Password"),
+	downloaderPreset("rqbit", "rqbit", "3030"),
+	downloaderPreset("Tribler", "tribler", "20100", "Password"),
+	downloaderPreset("Synology Download Station", "downloadstation", "5000", "Username", "Password"),
 	{
 		Label:  "Drone (file only, no client)",
 		Fields: map[string]string{"DlType": "drone"},
@@ -309,28 +319,58 @@ var notificationTemplates = []providerTemplate{
 		Required: []string{"Apikey"},
 	},
 	{
-		Label: "Discord (via Apprise)",
-		Fields: map[string]string{
-			"NotificationType": "apprise",
-			"AppriseURLs":      "discord://{webhook_id}/{webhook_token}",
-		},
-		Required: []string{"AppriseURLs"},
+		Label:    "Discord (webhook)",
+		Fields:   map[string]string{"NotificationType": "discord", "ServerURL": "https://discord.com/api/webhooks/{id}/{token}"},
+		Required: []string{"ServerURL"},
 	},
 	{
-		Label: "Slack (via Apprise)",
-		Fields: map[string]string{
-			"NotificationType": "apprise",
-			"AppriseURLs":      "slack://{TokenA}/{TokenB}/{TokenC}/{Channel}",
-		},
-		Required: []string{"AppriseURLs"},
+		Label:    "Slack (incoming webhook)",
+		Fields:   map[string]string{"NotificationType": "slack", "ServerURL": "https://hooks.slack.com/services/{T}/{B}/{token}"},
+		Required: []string{"ServerURL"},
 	},
 	{
-		Label: "Telegram (via Apprise)",
-		Fields: map[string]string{
-			"NotificationType": "apprise",
-			"AppriseURLs":      "tgram://{bot_token}/{chat_id}",
-		},
-		Required: []string{"AppriseURLs"},
+		Label:    "Telegram (bot)",
+		Fields:   map[string]string{"NotificationType": "telegram"},
+		Required: []string{"Apikey", "Recipient"},
+	},
+	{
+		Label:    "ntfy",
+		Fields:   map[string]string{"NotificationType": "ntfy", "ServerURL": "https://ntfy.sh"},
+		Required: []string{"Recipient"},
+	},
+	{
+		Label:    "Webhook (JSON POST)",
+		Fields:   map[string]string{"NotificationType": "webhook"},
+		Required: []string{"ServerURL"},
+	},
+	{
+		Label:    "Signal (signal-cli-rest-api)",
+		Fields:   map[string]string{"NotificationType": "signal", "ServerURL": "http://localhost:8080"},
+		Required: []string{"ServerURL", "Sender", "Recipient"},
+	},
+	{Label: "Join", Fields: map[string]string{"NotificationType": "join"}, Required: []string{"Apikey"}},
+	{Label: "Prowl", Fields: map[string]string{"NotificationType": "prowl"}, Required: []string{"Apikey"}},
+	{
+		Label:    "Pushcut",
+		Fields:   map[string]string{"NotificationType": "pushcut"},
+		Required: []string{"Apikey", "Recipient"},
+	},
+	{Label: "Pushsafer", Fields: map[string]string{"NotificationType": "pushsafer"}, Required: []string{"Apikey"}},
+	{Label: "Simplepush", Fields: map[string]string{"NotificationType": "simplepush"}, Required: []string{"Apikey"}},
+	{
+		Label:    "Mailgun",
+		Fields:   map[string]string{"NotificationType": "mailgun"},
+		Required: []string{"Apikey", "SMTPFromEmail", "SMTPToEmail"},
+	},
+	{
+		Label:    "Run a program (exec)",
+		Fields:   map[string]string{"NotificationType": "exec"},
+		Required: []string{"Command"},
+	},
+	{
+		Label:    "SendGrid",
+		Fields:   map[string]string{"NotificationType": "sendgrid"},
+		Required: []string{"Apikey", "SMTPFromEmail", "SMTPToEmail"},
 	},
 	{
 		Label: "Email (via Apprise)",
@@ -373,6 +413,23 @@ var listTemplates = []providerTemplate{
 	},
 	{Label: "Plex Watchlist", Fields: map[string]string{"ListType": "plexwatchlist"}},
 	{Label: "Jellyfin Watchlist", Fields: map[string]string{"ListType": "jellyfinwatchlist"}},
+	{
+		Label: "Rotten Tomatoes - Movies in Theaters",
+		Fields: map[string]string{
+			"ListType": "rottentomatoes", "URL": "https://www.rottentomatoes.com/browse/movies_in_theaters/",
+		},
+	},
+	{
+		Label: "Rotten Tomatoes - Best Movies of All Time",
+		Fields: map[string]string{
+			"ListType": "rottentomatoes", "URL": "https://editorial.rottentomatoes.com/guide/best-movies-of-all-time/",
+		},
+	},
+	{
+		Label:    "Letterboxd Watchlist",
+		Fields:   map[string]string{"ListType": "letterboxd", "URL": "https://letterboxd.com/{username}/watchlist/"},
+		Required: []string{"URL"},
+	},
 	{
 		Label:    "IMDB CSV Export",
 		Fields:   map[string]string{"ListType": "imdbcsv"},

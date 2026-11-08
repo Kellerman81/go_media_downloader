@@ -25,38 +25,30 @@ import (
 )
 
 func TestDownloadProviderRegistry(t *testing.T) {
-	ReplaceDownloadProviders(DownloadProviders{})
-	t.Cleanup(func() { ReplaceDownloadProviders(DownloadProviders{}) })
+	ReplaceDownloadProviders(nil)
+	t.Cleanup(func() { ReplaceDownloadProviders(nil) })
 
-	SetDeluge("main", deluge.NewProvider("http://h:8112", "", ""))
-	SetTransmission("main", transmission.NewProvider("http://h:9091", "", ""))
-
-	all := GetAllDownloadProviders()
-	if _, ok := all["deluge_main"]; !ok {
-		t.Errorf("deluge_main missing: %v", all)
-	}
-
-	if _, ok := all["transmission_main"]; !ok {
-		t.Errorf("same-named transmission_main missing: %v", all)
-	}
-
-	SetDeluge("main", nil)
-
-	if GetDeluge("main") != nil {
-		t.Error("SetDeluge(nil) kept the entry")
-	}
-
-	if _, ok := GetAllDownloadProviders()["deluge_main"]; ok {
-		t.Error("nil provider listed by GetAllDownloadProviders")
-	}
+	var nilDeluge *deluge.Provider
 
 	kept := transmission.NewProvider("http://h2:9091", "", "")
-	ReplaceDownloadProviders(DownloadProviders{
-		Transmission: map[string]*transmission.Provider{"other": kept, "nil": nil},
+	ReplaceDownloadProviders(map[string]any{
+		"main":  deluge.NewProvider("http://h:8112", "", ""),
+		"other": kept,
+		"nil":   nilDeluge,
 	})
 
-	all = GetAllDownloadProviders()
-	if len(all) != 1 || GetTransmission("other") != kept {
+	all := GetAllDownloadProviders()
+	if _, ok := all["deluge_main"]; !ok || len(all) != 2 {
+		t.Errorf("listed %v, want deluge_main and transmission_other", all)
+	}
+
+	if GetDownloadClient("other") != kept || GetDownloadClient("nil") != nil {
+		t.Error("lookup by downloader name wrong")
+	}
+
+	ReplaceDownloadProviders(map[string]any{"other": kept})
+
+	if all = GetAllDownloadProviders(); len(all) != 1 || all["transmission_other"] != kept {
 		t.Errorf("ReplaceDownloadProviders left %v, want only transmission_other", all)
 	}
 }

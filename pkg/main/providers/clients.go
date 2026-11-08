@@ -3,17 +3,25 @@ package providers
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/aria2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/deluge"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/downloadstation"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/flood"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/newznab"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbvortex"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rqbit"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/rtorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/transmission"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tribler"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/utorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
@@ -40,6 +48,59 @@ func ReloadClientProviders() {
 	SyncIndexerProviders()
 }
 
+// DownloadClientType describes one downloader type.
+type DownloadClientType struct {
+	Name        string // the config's DlType
+	Label       string
+	DefaultPort int
+	// Torrent clients get DelugeDlTo as their save path.
+	Torrent bool
+}
+
+// downloadClientTypes lists every supported downloader type, in the order
+// the config screens offer them.
+var downloadClientTypes = []DownloadClientType{
+	{Name: "drone", Label: "Drone (file only, no client)"},
+	{Name: "nzbget", Label: "NZBGet", DefaultPort: 6789},
+	{Name: "sabnzbd", Label: "SABnzbd", DefaultPort: 8080},
+	{Name: "nzbvortex", Label: "NZBVortex", DefaultPort: 4321},
+	{Name: "qbittorrent", Label: "qBittorrent", DefaultPort: 8080, Torrent: true},
+	{Name: "deluge", Label: "Deluge", DefaultPort: 8112, Torrent: true},
+	{Name: "transmission", Label: "Transmission", DefaultPort: 9091, Torrent: true},
+	{Name: "vuze", Label: "Vuze (Transmission RPC)", DefaultPort: 9091, Torrent: true},
+	{Name: "rtorrent", Label: "rTorrent", DefaultPort: 5000, Torrent: true},
+	{Name: "aria2", Label: "aria2", DefaultPort: 6800, Torrent: true},
+	{Name: "flood", Label: "Flood", DefaultPort: 3000, Torrent: true},
+	{Name: "utorrent", Label: "uTorrent", DefaultPort: 8080, Torrent: true},
+	{Name: "rqbit", Label: "rqbit", DefaultPort: 3030, Torrent: true},
+	{Name: "tribler", Label: "Tribler", DefaultPort: 20100, Torrent: true},
+	{Name: "downloadstation", Label: "Synology Download Station", DefaultPort: 5000, Torrent: true},
+}
+
+// DownloadClientTypes returns every supported downloader type.
+func DownloadClientTypes() []DownloadClientType {
+	return slices.Clone(downloadClientTypes)
+}
+
+// DownloadClientTypeNames returns the DlType of every supported downloader.
+func DownloadClientTypeNames() []string {
+	names := make([]string, len(downloadClientTypes))
+	for i, t := range downloadClientTypes {
+		names[i] = t.Name
+	}
+
+	return names
+}
+
+// IsTorrentClient reports whether dlType is a torrent client.
+func IsTorrentClient(dlType string) bool {
+	i := slices.IndexFunc(downloadClientTypes, func(t DownloadClientType) bool { return t.Name == dlType })
+
+	return i >= 0 && downloadClientTypes[i].Torrent
+}
+
+var errNoAPIKey = errors.New("no API key configured (Password field)")
+
 // NewDownloadClient builds the provider for one downloader config. The
 // hostname may be bare or a full URL; a URL sub-path is kept as the client's
 // reverse-proxy base path. The result is one of the *Provider types of the
@@ -61,7 +122,7 @@ func NewDownloadClient(dlCfg *config.DownloaderConfig) (any, error) {
 			dlCfg.Password,
 		), nil
 
-	case "transmission":
+	case "transmission", "vuze":
 		return transmission.NewProvider(
 			buildBaseURL(dlCfg.Hostname, dlCfg.Port, 9091),
 			dlCfg.Username,
@@ -80,6 +141,43 @@ func NewDownloadClient(dlCfg *config.DownloaderConfig) (any, error) {
 	case "nzbget":
 		host, port, useSSL, urlBase := base.SplitHostURL(dlCfg.Hostname, dlCfg.Port, 6789)
 		return nzbget.NewProvider(host, port, dlCfg.Username, dlCfg.Password, useSSL, urlBase)
+
+	case "nzbvortex":
+		if dlCfg.Password == "" {
+			return nil, fmt.Errorf("downloader %q: %w", dlCfg.Name, errNoAPIKey)
+		}
+
+		host, port, _, urlBase := base.SplitHostURL(dlCfg.Hostname, dlCfg.Port, 4321)
+
+		return nzbvortex.NewProvider(host, port, dlCfg.Password, urlBase), nil
+
+	case "aria2":
+		// The Password field holds the --rpc-secret.
+		host, port, useSSL, rpcPath := base.SplitHostURL(dlCfg.Hostname, dlCfg.Port, 6800)
+		return aria2.NewProvider(host, port, dlCfg.Password, useSSL, rpcPath), nil
+
+	case "flood":
+		return flood.NewProvider(buildBaseURL(dlCfg.Hostname, dlCfg.Port, 3000), dlCfg.Username, dlCfg.Password)
+
+	case "utorrent":
+		return utorrent.NewProvider(buildBaseURL(dlCfg.Hostname, dlCfg.Port, 8080), dlCfg.Username, dlCfg.Password)
+
+	case "rqbit":
+		return rqbit.NewProvider(buildBaseURL(dlCfg.Hostname, dlCfg.Port, 3030), dlCfg.Username, dlCfg.Password), nil
+
+	case "tribler":
+		if dlCfg.Password == "" {
+			return nil, fmt.Errorf("downloader %q: %w", dlCfg.Name, errNoAPIKey)
+		}
+
+		return tribler.NewProvider(buildBaseURL(dlCfg.Hostname, dlCfg.Port, 20100), dlCfg.Password), nil
+
+	case "downloadstation":
+		return downloadstation.NewProvider(
+			buildBaseURL(dlCfg.Hostname, dlCfg.Port, 5000),
+			dlCfg.Username,
+			dlCfg.Password,
+		), nil
 	}
 
 	// e.g. "drone" (blackhole folder) has no API client.
@@ -108,14 +206,7 @@ func RegisterDownloadClients() {
 	downloadRegMu.Lock()
 	defer downloadRegMu.Unlock()
 
-	set := DownloadProviders{
-		QBittorrent:  make(map[string]*qbittorrent.Provider),
-		Deluge:       make(map[string]*deluge.Provider),
-		Transmission: make(map[string]*transmission.Provider),
-		RTorrent:     make(map[string]*rtorrent.Provider),
-		SABnzbd:      make(map[string]*sabnzbd.Provider),
-		NZBGet:       make(map[string]*nzbget.Provider),
-	}
+	set := make(map[string]any)
 
 	config.RangeSettingsDownloader(func(name string, dlCfg *config.DownloaderConfig) {
 		if !dlCfg.Enabled || dlCfg.Hostname == "" {
@@ -140,20 +231,7 @@ func RegisterDownloadClients() {
 			return
 		}
 
-		switch p := client.(type) {
-		case *qbittorrent.Provider:
-			set.QBittorrent[name] = p
-		case *deluge.Provider:
-			set.Deluge[name] = p
-		case *transmission.Provider:
-			set.Transmission[name] = p
-		case *rtorrent.Provider:
-			set.RTorrent[name] = p
-		case *sabnzbd.Provider:
-			set.SABnzbd[name] = p
-		case *nzbget.Provider:
-			set.NZBGet[name] = p
-		}
+		set[name] = client
 
 		logger.Logtype(logger.StatusDebug, 0).
 			Str("downloader", name).

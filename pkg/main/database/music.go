@@ -899,6 +899,16 @@ func GetAlbumListEntryID(dbalbumID *uint, listname *string) uint {
 		dbalbumID, listname)
 }
 
+// FindAlbumByID returns the dbalbums row id as a search result, or nil when
+// it does not exist.
+func FindAlbumByID(id uint) *AlbumSearchResult {
+	if id == 0 || Getdatarow[uint](false, "SELECT count() FROM dbalbums WHERE id = ?", &id) == 0 {
+		return nil
+	}
+
+	return fillAlbumResult(&AlbumSearchResult{ID: id}, "")
+}
+
 // FindAlbumByMusicBrainzID searches for an album by its MusicBrainz release ID.
 // Returns the best matching album or an error if not found.
 func FindAlbumByMusicBrainzID(musicBrainzID *string) (*AlbumSearchResult, error) {

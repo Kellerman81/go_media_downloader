@@ -30,6 +30,73 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 )
 
+// CollectAlbumFolders returns the album folders below folderPath, in walk
+// order: a folder holding audio files or a disc set (CD1, CD2, …) is one
+// album; any other folder is searched further (Artist/Album nesting).
+func CollectAlbumFolders(
+	ctx context.Context,
+	folderPath string,
+	cfgp *config.MediaTypeConfig,
+	pathCfg *config.PathsConfig,
+) []string {
+	var out []string
+
+	var walk func(string)
+
+	walk = func(dir string) {
+		if ctx.Err() != nil {
+			return
+		}
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+
+		var (
+			hasAudioFiles, hasMultiDisc bool
+			subDirs                     []string
+			subNames                    []string
+		)
+
+		for i := range entries {
+			if entries[i].IsDir() {
+				if importfeed.IsDiscSubfolder(entries[i].Name(), filepath.Base(dir)) {
+					hasMultiDisc = true
+				}
+
+				subDirs = append(subDirs, filepath.Join(dir, entries[i].Name()))
+				subNames = append(subNames, entries[i].Name())
+
+				continue
+			}
+
+			if ok, _ := scanner.CheckExtensionsType(
+				cfgp.IsType, false, pathCfg, filepath.Ext(entries[i].Name()),
+			); ok {
+				hasAudioFiles = true
+			}
+		}
+
+		if !hasMultiDisc && len(subDirs) >= 2 {
+			hasMultiDisc = importfeed.IsDiscSet(subNames)
+		}
+
+		if hasAudioFiles || hasMultiDisc {
+			out = append(out, dir)
+			return
+		}
+
+		for i := range subDirs {
+			walk(subDirs[i])
+		}
+	}
+
+	walk(folderPath)
+
+	return out
+}
+
 // moveUnprocessedFolder moves a folder to the MoveUnprocessed target path under a reason subfolder.
 // The resulting path is: moveUnprocessedPath/reason/basename(folder)/
 // If moveUnprocessedPath is empty, this is a no-op.
@@ -321,13 +388,13 @@ func matchReportDuration(ms int64) string {
 	return fmt.Sprintf("%d:%02d", m, sec)
 }
 
-// buildAlbumDataConfig converts a MediaDataImportConfig into the MediaDataConfig
+// AlbumDataConfig converts a MediaDataImportConfig into the MediaDataConfig
 // expected by importfeed, then merges any unset matching parameters from the media
 // type's data configs (cfgp.Data). Settings from data_import take precedence; the
 // per-data merge fills gaps for track weights, tolerances, release types, and the
 // add_found / alternative-release behaviour. Centralising this prevents the match
 // configuration from drifting between the normal organize path and force-match.
-func buildAlbumDataConfig(
+func AlbumDataConfig(
 	data *config.MediaDataImportConfig,
 	cfgp *config.MediaTypeConfig,
 ) *config.MediaDataConfig {
@@ -461,12 +528,13 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	folder string,
 	cfgp *config.MediaTypeConfig,
 	data *config.MediaDataImportConfig,
-) (string, *importfeed.MatchReport, error) {
+) (reason string, report *importfeed.MatchReport, err error) {
 	// Convert MediaDataImportConfig to MediaDataConfig for importfeed.
-	dataCfg := buildAlbumDataConfig(data, cfgp)
+	dataCfg := AlbumDataConfig(data, cfgp)
 
-	// Check for multi-episode audiobook folder (each file is a separate episode)
-	if cfgp.IsType == config.MediaTypeAudiobook {
+	// Check for multi-episode audiobook folder (each file is a separate episode).
+	// A forced match names the one release the whole folder belongs to.
+	if cfgp.IsType == config.MediaTypeAudiobook && !s.forced.set() {
 		files, filesErr := parser_v2.CollectFilesOnly(folder, parser_v2.AudioExtensions)
 		if filesErr == nil && len(files) > 1 &&
 			parser_v2.IsMultiEpisodeAudiobookFolder(folder, files) {
@@ -476,15 +544,8 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	}
 
 	// Step 1: Match album via API (without adding to database yet).
-	// Use the forced ID when set (supplied by ForceMatchAlbumFolder run mode).
-	album, matchReason, matchReport := importfeed.MatchAudioFolderAsAlbumForced(
-		ctx,
-		folder,
-		cfgp,
-		dataCfg,
-		false,
-		&s.forcedAlbumID,
-	)
+	// Use the forced release when set (supplied by ForceMatchAlbumFolder run mode).
+	album, matchReason, matchReport := s.forced.match(ctx, folder, cfgp, dataCfg)
 	// A zero DatabaseID is a failed match however the matcher labelled it:
 	// everything below this point looks up or writes rows keyed by that id, so
 	// accepting one burns the old-file queries, the
@@ -560,6 +621,10 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	listid := cfgp.GetMediaListsEntryListID(listname)
 	listEntryID := albumListEntryID(cfgp, listid, &album.DatabaseID)
 
+	defer func() {
+		recordOrganized(cfgp.IsType, []uint{listEntryID}, folder, "", reason, err)
+	}()
+
 	if listEntryID == 0 {
 		listid, listEntryID = unlistedEntry(cfgp, dataCfg, &album.DatabaseID)
 	}
@@ -597,7 +662,7 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	// are an upgrade. Nothing is touched yet - tagging comes later, and old
 	// files are only retired after the new ones are in place.
 	oldFiles := oldAlbumFiles(cfgp.IsType, album.DatabaseID)
-	if !albumUpgradeAllowed(cfgp, listid, album, oldFiles) {
+	if !albumUpgradeCheck(cfgp, listid, album, oldFiles).Allowed {
 		logger.Logtype("info", 1).
 			Str("folder", folder).
 			Uint("album_id", album.DatabaseID).
@@ -687,7 +752,7 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	// Step 8: Add new files to database and mark the list entry found
 	s.recordImportedAlbum(ctx, targetPath, album, cfgp, listid, listEntryID)
 
-	s.cleanUpFolder(folder)
+	s.cleanUpAlbumFolder(folder)
 
 	return "", nil, nil
 }
@@ -754,118 +819,10 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 			continue
 		}
 
-		// Create ParseInfo for template generation
-		m := database.ParseInfo{}
-
-		m.Title = album.Title
-		m.Year = uint16(album.Year) //nolint:gosec // safe: value within target type range
-
-		// Get list ID and rootpath for this audiobook
-		var listname, rootpath string
-		database.GetdatarowArgs(
-			"SELECT listname, rootpath FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
-			album.DatabaseID,
-			&listname, &rootpath)
-
-		listid := cfgp.GetMediaListsEntryListID(listname)
-		listEntryID := albumListEntryID(cfgp, listid, &album.DatabaseID)
-
-		if listEntryID == 0 {
-			listid, listEntryID = unlistedEntry(cfgp, dataCfg, &album.DatabaseID)
-		}
-
-		m.DbaudiobookID = album.DatabaseID
-		m.AudiobookID = listEntryID
-
-		// Create Organizerdata for this single file
-		o := &Organizerdata{
-			Folder:     folder,
-			MediaFiles: []string{album.Tracks[0].Filepath},
-			MediaFile:  album.Tracks[0].Filepath,
-			Listid:     listid,
-			Rootpath:   rootpath,
-		}
-
-		// Only replace existing library files with an upgrade.
-		oldFiles := oldAlbumFiles(cfgp.IsType, album.DatabaseID)
-		if !albumUpgradeAllowed(cfgp, listid, album, oldFiles) {
-			logger.Logtype("info", 1).
-				Str("file", files[i]).
-				Uint("dbID", album.DatabaseID).
-				Msg("Multi-episode: existing files are of equal or better quality - skipping")
-
+		if s.organizeEpisodeFile(ctx, folder, files[i], album, cfgp, dataCfg) != nil {
 			unmatchedCount++
-
 			continue
 		}
-
-		// Generate naming template
-		s.GenerateNamingTemplate(o, &m, &album.DatabaseID)
-
-		if o.Foldername == "" && (o.Rootpath == "" || o.Rootpath == s.targetpathCfg.Path) {
-			logger.Logtype("error", 1).
-				Str("file", files[i]).
-				Msg("Multi-episode: failed to generate folder name")
-
-			unmatchedCount++
-
-			continue
-		}
-
-		if o.Filename == "" {
-			logger.Logtype("error", 1).
-				Str("file", files[i]).
-				Msg("Multi-episode: failed to generate file name")
-
-			unmatchedCount++
-
-			continue
-		}
-
-		// Generate filename for the single track
-		o.Filenames = s.generateTrackFilenames(o, &m, album, cfgp)
-
-		// Tag the file
-		if err := s.tagAlbumFiles(ctx, album); err != nil {
-			logger.Logtype("error", 1).
-				Str("file", files[i]).
-				Err(err).
-				Msg("Multi-episode: failed to tag file")
-		}
-
-		s.applyPresort(o)
-		s.setTargetPath(o)
-
-		// Move the file, then retire this audiobook's old files. Episodes can
-		// share a target folder, so no sweep of other audio files there.
-		newpath, err := s.moveAlbumIntoPlace(ctx, folder, o, oldFiles, false)
-		if err != nil {
-			logger.Logtype("error", 1).
-				Str("file", files[i]).
-				Err(err).
-				Msg("Multi-episode: failed to move file")
-
-			unmatchedCount++
-
-			continue
-		}
-
-		// Update track paths after move
-		targetPath := s.updateAlbumTrackPaths(o, album)
-
-		logger.Logtype("info", 1).
-			Str("file", files[i]).
-			Str("newpath", newpath).
-			Str("title", album.Title).
-			Msg("Multi-episode: organized audiobook")
-
-		// Write rename log if configured
-		if dataCfg.WriteRenameLog {
-			s.writeRenameLog(ctx, targetPath, folder, album, o, cfgp)
-		}
-
-		// Add file to database, clear missing and score what was just imported.
-		s.recordImportedAlbum(ctx, targetPath, album, cfgp, listid, listEntryID)
 
 		matchedCount++
 	}
@@ -888,6 +845,123 @@ func (s *Organizer) organizeMultiEpisodeFolder(
 	}
 
 	return "", nil
+}
+
+// organizeEpisodeFile names, tags and moves one matched file of a
+// multi-episode audiobook folder and records it as album's only file.
+func (s *Organizer) organizeEpisodeFile(
+	ctx context.Context,
+	folder, file string,
+	album *parser_v2.AlbumInfo,
+	cfgp *config.MediaTypeConfig,
+	dataCfg *config.MediaDataConfig,
+) error {
+	// Create ParseInfo for template generation
+	m := database.ParseInfo{}
+
+	m.Title = album.Title
+	m.Year = uint16(album.Year) //nolint:gosec // safe: value within target type range
+
+	// Get list ID and rootpath for this audiobook
+	var listname, rootpath string
+	database.GetdatarowArgs(
+		"SELECT listname, rootpath FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
+		album.DatabaseID,
+		&listname, &rootpath)
+
+	listid := cfgp.GetMediaListsEntryListID(listname)
+	listEntryID := albumListEntryID(cfgp, listid, &album.DatabaseID)
+
+	if listEntryID == 0 {
+		listid, listEntryID = unlistedEntry(cfgp, dataCfg, &album.DatabaseID)
+	}
+
+	m.DbaudiobookID = album.DatabaseID
+	m.AudiobookID = listEntryID
+
+	// Create Organizerdata for this single file
+	o := &Organizerdata{
+		Folder:     folder,
+		MediaFiles: []string{album.Tracks[0].Filepath},
+		MediaFile:  album.Tracks[0].Filepath,
+		Listid:     listid,
+		Rootpath:   rootpath,
+	}
+
+	// Only replace existing library files with an upgrade.
+	oldFiles := oldAlbumFiles(cfgp.IsType, album.DatabaseID)
+	if !albumUpgradeCheck(cfgp, listid, album, oldFiles).Allowed {
+		logger.Logtype("info", 1).
+			Str("file", file).
+			Uint("dbID", album.DatabaseID).
+			Msg("Multi-episode: existing files are of equal or better quality - skipping")
+
+		return errLowerQuality
+	}
+
+	// Generate naming template
+	s.GenerateNamingTemplate(o, &m, &album.DatabaseID)
+
+	if o.Foldername == "" && (o.Rootpath == "" || o.Rootpath == s.targetpathCfg.Path) {
+		logger.Logtype("error", 1).
+			Str("file", file).
+			Msg("Multi-episode: failed to generate folder name")
+
+		return errGeneratingFilename
+	}
+
+	if o.Filename == "" {
+		logger.Logtype("error", 1).
+			Str("file", file).
+			Msg("Multi-episode: failed to generate file name")
+
+		return errGeneratingFilename
+	}
+
+	// Generate filename for the single track
+	o.Filenames = s.generateTrackFilenames(o, &m, album, cfgp)
+
+	// Tag the file
+	if err := s.tagAlbumFiles(ctx, album); err != nil {
+		logger.Logtype("error", 1).
+			Str("file", file).
+			Err(err).
+			Msg("Multi-episode: failed to tag file")
+	}
+
+	s.applyPresort(o)
+	s.setTargetPath(o)
+
+	// Move the file, then retire this audiobook's old files. Episodes can
+	// share a target folder, so no sweep of other audio files there.
+	newpath, err := s.moveAlbumIntoPlace(ctx, folder, o, oldFiles, false)
+	if err != nil {
+		logger.Logtype("error", 1).
+			Str("file", file).
+			Err(err).
+			Msg("Multi-episode: failed to move file")
+
+		return err
+	}
+
+	// Update track paths after move
+	targetPath := s.updateAlbumTrackPaths(o, album)
+
+	logger.Logtype("info", 1).
+		Str("file", file).
+		Str("newpath", newpath).
+		Str("title", album.Title).
+		Msg("Multi-episode: organized audiobook")
+
+	// Write rename log if configured
+	if dataCfg.WriteRenameLog {
+		s.writeRenameLog(ctx, targetPath, folder, album, o, cfgp)
+	}
+
+	// Add file to database, clear missing and score what was just imported.
+	s.recordImportedAlbum(ctx, targetPath, album, cfgp, listid, listEntryID)
+
+	return nil
 }
 
 // writeRenameLog writes a small text file into the target folder documenting
@@ -1220,19 +1294,36 @@ func oldAlbumFiles(mediaType, dbid uint) []database.AudioFilePrio {
 	return nil
 }
 
-// albumUpgradeAllowed reports whether the incoming album may replace the files
+// AlbumLibraryFile is a library file the upgrade check compared against.
+type AlbumLibraryFile struct {
+	Location string `json:"location"`
+	Format   string `json:"format"`
+	Bitrate  int    `json:"bitrate"`
+}
+
+// AlbumUpgradeCheck is the outcome of albumUpgradeCheck. Priorities are 0
+// when nothing was compared (no existing files or no quality profile).
+type AlbumUpgradeCheck struct {
+	Existing    []AlbumLibraryFile `json:"existing"`
+	OldPriority int                `json:"old_priority"`
+	NewPriority int                `json:"new_priority"`
+	NewFiles    int                `json:"new_files"`
+	Allowed     bool               `json:"allowed"`
+}
+
+// albumUpgradeCheck reports whether the incoming album may replace the files
 // already in the library, mirroring the movie/series errLowerQuality rule: the
 // new files must score higher than the existing ones. Equal quality is still
 // accepted when it brings more tracks (completing an incomplete album). Old
 // rows that are the very files being imported (in-place reorganize) or whose
 // files are gone are not "existing" files. Without a quality config there is nothing to compare, so
 // the import proceeds as before.
-func albumUpgradeAllowed(
+func albumUpgradeCheck(
 	cfgp *config.MediaTypeConfig,
 	listid int,
 	album *parser_v2.AlbumInfo,
 	old []database.AudioFilePrio,
-) bool {
+) AlbumUpgradeCheck {
 	sources := make(map[string]struct{}, len(album.Tracks))
 	for idx := range album.Tracks {
 		sources[album.Tracks[idx].Filepath] = struct{}{}
@@ -1252,9 +1343,22 @@ func albumUpgradeAllowed(
 		existing = append(existing, old[idx])
 	}
 
+	check := AlbumUpgradeCheck{
+		Existing: make([]AlbumLibraryFile, len(existing)),
+		NewFiles: len(album.Tracks),
+		Allowed:  true,
+	}
+	for idx := range existing {
+		check.Existing[idx] = AlbumLibraryFile{
+			Location: existing[idx].Location,
+			Format:   existing[idx].Format,
+			Bitrate:  existing[idx].Bitrate,
+		}
+	}
+
 	if len(existing) == 0 || listid < 0 || listid >= len(cfgp.Lists) ||
 		cfgp.Lists[listid].CfgQuality == nil {
-		return true
+		return check
 	}
 
 	qual := cfgp.Lists[listid].CfgQuality
@@ -1284,11 +1388,12 @@ func albumUpgradeAllowed(
 		Int("new_files", len(incoming)).
 		Msg("album upgrade check")
 
-	if oldPrio == 0 || newPrio > oldPrio {
-		return true
-	}
+	check.OldPriority = oldPrio
+	check.NewPriority = newPrio
+	check.Allowed = oldPrio == 0 || newPrio > oldPrio ||
+		(newPrio == oldPrio && len(incoming) > len(existing))
 
-	return newPrio == oldPrio && len(incoming) > len(existing)
+	return check
 }
 
 // audioFilesAtTarget lists the audio files currently under o.TargetPath (never
@@ -2190,6 +2295,46 @@ func TagAlbumFiles(
 // ForceMatchAlbumFolder — force-match a folder against a known MBID / ASIN
 // ---------------------------------------------------------------------------
 
+// AlbumForce names the release ForceMatchAlbumFolder matches a folder to.
+type AlbumForce struct {
+	// ID is a MusicBrainz release ID (music) or ASIN (audiobook), imported
+	// through AddFound when it is not in the database yet.
+	ID string
+	// DBID is a dbalbums (music) or dbaudiobooks (audiobook) row; it takes
+	// precedence over ID.
+	DBID uint
+	// File restricts the match to one file of a multi-episode audiobook
+	// folder, organized as its own audiobook. Requires DBID.
+	File string
+}
+
+func (f *AlbumForce) set() bool {
+	return f.ID != "" || f.DBID != 0
+}
+
+// match matches folder to the forced release, or runs the normal matcher
+// when nothing is forced.
+func (f *AlbumForce) match(
+	ctx context.Context,
+	folder string,
+	cfgp *config.MediaTypeConfig,
+	dataCfg *config.MediaDataConfig,
+) (*parser_v2.AlbumInfo, string, *importfeed.MatchReport) {
+	switch {
+	case f.File != "":
+		album := importfeed.SingleAudiobookFileByDBID(f.File, f.DBID)
+		if album == nil {
+			return nil, "no_match", nil
+		}
+
+		return album, "", nil
+	case f.DBID != 0:
+		return importfeed.MatchAudioFolderAsAlbumByDBID(ctx, folder, cfgp, dataCfg, false, f.DBID)
+	default:
+		return importfeed.MatchAudioFolderAsAlbumForced(ctx, folder, cfgp, dataCfg, false, &f.ID)
+	}
+}
+
 // AlbumForceMatchTrack holds the per-track rename plan returned in preview mode.
 type AlbumForceMatchTrack struct {
 	Source      string `json:"source"` // current file path (basename)
@@ -2207,11 +2352,13 @@ type AlbumForceMatchPreview struct {
 	Artist       string                 `json:"artist"`
 	Year         int                    `json:"year"`
 	Tracks       []AlbumForceMatchTrack `json:"tracks"`
+	// Upgrade is the check that decides whether the run replaces what the
+	// library already holds or stops with lower_quality.
+	Upgrade AlbumUpgradeCheck `json:"upgrade"`
 }
 
-// ForceMatchAlbumFolder matches folder against forcedID (MBID for music, ASIN for
-// audiobooks) and either previews the rename plan or executes the full organize
-// workflow.
+// ForceMatchAlbumFolder matches folder against the forced release and either
+// previews the rename plan or executes the full organize workflow.
 //
 // When preview is true the function returns a filled *AlbumForceMatchPreview and a
 // nil error without touching any files.  When preview is false it runs the full
@@ -2221,17 +2368,19 @@ func (s *Organizer) ForceMatchAlbumFolder(
 	folder string,
 	cfgp *config.MediaTypeConfig,
 	data *config.MediaDataImportConfig,
-	forcedID *string,
+	force AlbumForce,
 	preview bool,
 ) (*AlbumForceMatchPreview, error) {
+	if !force.set() || (force.File != "" && force.DBID == 0) {
+		return nil, errors.New("no release to match against")
+	}
+
 	// Build the MediaDataConfig the same way organizeAlbumFolderViaAPI does so that
 	// force-match uses identical weights, tolerances, and release-type filters.
-	dataCfg := buildAlbumDataConfig(data, cfgp)
+	dataCfg := AlbumDataConfig(data, cfgp)
 
 	// Match — always skip adding to DB at this stage so preview can inspect first.
-	album, reason, _ := importfeed.MatchAudioFolderAsAlbumForced(
-		ctx, folder, cfgp, dataCfg, false, forcedID,
-	)
+	album, reason, _ := force.match(ctx, folder, cfgp, dataCfg)
 	if reason != "" || album == nil {
 		return nil, fmt.Errorf("match failed: %s", reason)
 	}
@@ -2305,12 +2454,24 @@ func (s *Organizer) ForceMatchAlbumFolder(
 	targetFolder := o.TargetPath
 
 	if preview {
+		// Without a list entry the run creates one in the add_found list
+		// (unlistedEntry); preview must not write it, so only pick that list.
+		checkList := listid
+		if listEntryID == 0 {
+			checkList = -1
+			if dataCfg != nil && dataCfg.AddFound {
+				checkList = cfgp.GetMediaListsEntryListID(dataCfg.AddFoundList)
+			}
+		}
+
 		result := &AlbumForceMatchPreview{
 			FolderTarget: targetFolder,
 			Title:        album.Title,
 			Artist:       album.Artist,
 			Year:         album.Year,
 			Tracks:       make([]AlbumForceMatchTrack, 0, len(album.Tracks)),
+			Upgrade: albumUpgradeCheck(cfgp, checkList, album,
+				oldAlbumFiles(cfgp.IsType, album.DatabaseID)),
 		}
 		for idx, track := range album.Tracks {
 			targetName := ""
@@ -2331,17 +2492,40 @@ func (s *Organizer) ForceMatchAlbumFolder(
 		return result, nil
 	}
 
+	if force.File != "" {
+		if err := s.organizeEpisodeFile(ctx, filepath.Dir(force.File), force.File, album, cfgp, dataCfg); err != nil {
+			if errors.Is(err, errLowerQuality) {
+				return nil, fmt.Errorf("not organized: %s", skipReasonText["lower_quality"])
+			}
+
+			return nil, fmt.Errorf("organize failed: %w", err)
+		}
+
+		return nil, nil
+	}
+
 	// Run mode — hand off to the normal organize pipeline via organizeAlbumFolderViaAPI.
-	// Store the forced ID on the Organizer so organizeAlbumFolderViaAPI uses it.
-	s.forcedAlbumID = *forcedID
+	// Store the forced release on the Organizer so organizeAlbumFolderViaAPI uses it.
+	s.forced = force
 
 	matchReason, _, err := s.organizeAlbumFolderViaAPI(ctx, folder, cfgp, data)
 
-	s.forcedAlbumID = "" // reset after use
+	s.forced = AlbumForce{} // reset after use
 
 	if err != nil {
+		if text, ok := skipReasonText[matchReason]; ok {
+			return nil, fmt.Errorf("not organized: %s", text)
+		}
+
 		return nil, fmt.Errorf("organize failed: %s: %w", matchReason, err)
 	}
 
 	return nil, nil
+}
+
+// skipReasonText explains the move_unprocessed reasons a forced organize can
+// stop with.
+var skipReasonText = map[string]string{
+	"lower_quality": "the library already has files of equal or better quality",
+	"no_match":      "the files did not match the chosen release",
 }

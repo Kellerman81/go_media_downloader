@@ -59,6 +59,8 @@ var feedParsingTypes = []SelectOption{
 		Label: "Jellyfin Watchlist - Import from a Jellyfin Watchlist",
 	},
 	{Value: "moviescraper", Label: "Movie Scraper - Scrape Movies from an API or Website"},
+	{Value: "rottentomatoes", Label: "Rotten Tomatoes - Browse page or editorial guide (URL), matched by title and year"},
+	{Value: "letterboxd", Label: "Letterboxd - Watchlist or list (URL), matched by title and year"},
 	{
 		Value: "audiobookconfig",
 		Label: "Audiobook Config File - Import from audiobook configuration",

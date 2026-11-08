@@ -27,7 +27,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 //log file rotation
 	maragu.dev/gomponents v1.4.0 //html component library
 	maragu.dev/gomponents-htmx v0.6.1 //htmx integration for gomponents
-	modernc.org/sqlite v1.61.1 //sqlite db driver
+	modernc.org/sqlite v1.62.0 //sqlite db driver
 )
 
 require (
@@ -63,7 +63,7 @@ require (
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )

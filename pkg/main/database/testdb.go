@@ -14,6 +14,16 @@ import (
 // restores the previous database. It lets tests in other packages run code
 // that queries through this package. Not for production use.
 func UseMigratedTestDB(schemaDir string) (func(), error) {
+	return useMigratedTestDB(schemaDir, &dbData)
+}
+
+// UseMigratedTestIMDB is UseMigratedTestDB for the IMDb database
+// (schema/imdbdb). Not for production use.
+func UseMigratedTestIMDB(schemaDir string) (func(), error) {
+	return useMigratedTestDB(schemaDir, &dbImdb)
+}
+
+func useMigratedTestDB(schemaDir string, target **sqlx.DB) (func(), error) {
 	files, err := filepath.Glob(filepath.Join(schemaDir, "*.up.sql"))
 	if err != nil {
 		return nil, err
@@ -49,13 +59,13 @@ func UseMigratedTestDB(schemaDir string) (func(), error) {
 	// Statements are cached by SQL text: drop any bound to the previous db.
 	cache.ristrettoStmt.Clear()
 
-	prev := dbData
-	dbData = db
+	prev := *target
+	*target = db
 
 	return func() {
 		// Statements are cached by SQL text; drop the ones bound to this db.
 		cache.ristrettoStmt.Clear()
-		dbData = prev
+		*target = prev
 		db.Close()
 	}, nil
 }

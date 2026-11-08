@@ -2,6 +2,7 @@ package database
 
 import (
 	"iter"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -237,8 +238,10 @@ type ParseInfo struct {
 	Episode int `json:"episode,omitempty"`
 	// AbsoluteEpisode is the absolute episode number (for anime and shows with continuous numbering)
 	AbsoluteEpisode int `json:"absolute_episode,omitempty"`
-	// Runtime is the runtime in minutes
+	// Runtime is the runtime in seconds once the file is probed
 	Runtime int `json:"runtime,omitempty"`
+	// Bitrate is the probed overall bitrate in kbit/s, 0 when unknown
+	Bitrate int `json:"bitrate,omitempty"`
 	// ListID is the ID of the list this came from
 	ListID       int
 	FirstIDX     int
@@ -604,10 +607,7 @@ func (m *ParseInfo) Getepisodestoimport() error {
 		m.SeasonStr, m.EpisodeStr, m.Identifier = origSeason, origEpisode, origIdentifier
 	}()
 
-	season := logger.TrimLeft(origSeason, '0')
-	if season == "" && origSeason != "" {
-		season = "0"
-	}
+	season := unpadSeason(origSeason)
 
 	m.Episodes = m.Episodes[:0]
 	for _, ep := range episodes {
@@ -637,6 +637,33 @@ func (m *ParseInfo) Getepisodestoimport() error {
 	}
 
 	return nil
+}
+
+// unpadSeason strips the leading zeros of a parsed season ("01" → "1") to
+// match the dbserie_episodes.season column; season zero ("00") becomes "0".
+// (logger.TrimLeft returns an all-zero string unchanged, which left
+// specials as "00".)
+func unpadSeason(season string) string {
+	s := strings.TrimLeft(season, "0")
+	if s == "" && season != "" {
+		return "0"
+	}
+
+	return s
+}
+
+// EpisodeNumbers returns the unpadded season and the episode numbers of the
+// parsed identifier ("S01E01E02" → "1", [1 2]), the way Getepisodestoimport
+// looks a file's episodes up. Without a parsed season (date identifiers like
+// "2024-01-31", whose "01-31" would read as a range) it returns nothing.
+func (m *ParseInfo) EpisodeNumbers() (string, []int) {
+	if m.SeasonStr == "" {
+		return "", nil
+	}
+
+	str1, _ := RegexGetMatchesStr1Str2(true, strRegexSeriesIdentifier, m.Identifier)
+
+	return unpadSeason(m.SeasonStr), parseEpisodeList(str1)
 }
 
 // maxEpisodeRange caps how far a dash range is expanded, so a malformed
@@ -3799,4 +3826,20 @@ func hasVolumeMarker(words []string) bool {
 	}
 
 	return false
+}
+
+// FileDetails returns the size of the file at path, the overall bitrate in
+// kbit/s (probed, else size / runtime) and the audio languages, for the
+// *_files rows.
+func (m *ParseInfo) FileDetails(path string) (size int64, bitrate int, languages string) {
+	if fi, err := os.Stat(path); err == nil {
+		size = fi.Size()
+	}
+
+	bitrate = m.Bitrate
+	if bitrate == 0 && size > 0 && m.Runtime > 0 {
+		bitrate = int(size * 8 / int64(m.Runtime) / 1000)
+	}
+
+	return size, bitrate, strings.Join(m.Languages, ",")
 }

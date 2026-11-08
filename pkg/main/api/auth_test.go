@@ -48,7 +48,7 @@ func TestGetSessionExpiredConcurrent(t *testing.T) {
 func TestProtectAdminRoutesCSRF(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	sess := sessionStore.createSession("admin")
+	sess := sessionStore.createSession("admin", "")
 	defer sessionStore.deleteSession(sess.ID)
 
 	calls := 0

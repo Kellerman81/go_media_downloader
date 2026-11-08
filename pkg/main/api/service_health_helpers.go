@@ -2,21 +2,13 @@ package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/apprise"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/gotify"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushbullet"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/pushover"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sendmail"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
@@ -457,122 +449,14 @@ func checkIndexerServices(timeout time.Duration, _ int, _ bool) []ServiceInfo {
 	return services
 }
 
-// testNotificationConnectivity runs the same real per-provider connectivity
-// check used by the Settings page's "Test Connection" button
-// (connection_check.go's HandleTestNotificationConnection), so the Service
-// Health dashboard reports genuine reachability instead of an assumed status.
+// testNotificationConnectivity runs the same check as the Settings page's
+// "Test Connection" button (testNotificationConfig), so the Service Health
+// dashboard reports genuine reachability instead of an assumed status.
 func testNotificationConnectivity(notification config.NotificationConfig, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	switch notification.NotificationType {
-	case "pushover":
-		if notification.Apikey == "" {
-			return errors.New("no API token configured")
-		}
-
-		p := pushover.NewProviderWithConfig(
-			connectionTestClientConfig("pushover"),
-			notification.Apikey,
-			notification.Recipient,
-		)
-		if p == nil {
-			return errors.New("invalid Pushover configuration")
-		}
-
-		return p.TestConnection(ctx)
-
-	case "gotify":
-		if notification.ServerURL == "" || notification.Apikey == "" {
-			return errors.New("missing server URL or token")
-		}
-
-		host, port, useSSL := parseServerURL(notification.ServerURL)
-
-		p := gotify.NewProviderWithConfig(
-			connectionTestClientConfig("gotify"),
-			host,
-			port,
-			notification.Apikey,
-			useSSL,
-		)
-		if p == nil {
-			return errors.New("invalid Gotify configuration")
-		}
-
-		return p.TestConnection(ctx)
-
-	case "pushbullet":
-		if notification.Apikey == "" {
-			return errors.New("no API token configured")
-		}
-
-		p := pushbullet.NewProvider(notification.Apikey)
-		if p == nil {
-			return errors.New("invalid Pushbullet configuration")
-		}
-
-		return p.TestConnection(ctx)
-
-	case "apprise":
-		if notification.ServerURL == "" || notification.AppriseURLs == "" {
-			return errors.New("missing server URL or Apprise URLs")
-		}
-
-		host, port, useSSL := parseServerURL(notification.ServerURL)
-
-		p := apprise.NewProvider(
-			host,
-			port,
-			notification.Apikey,
-			strings.Split(notification.AppriseURLs, ","),
-			useSSL,
-		)
-		if p == nil {
-			return errors.New("invalid Apprise configuration")
-		}
-
-		return p.TestConnection(ctx)
-
-	case "sendmail":
-		if notification.SMTPServer == "" || notification.SMTPFromEmail == "" ||
-			notification.SMTPToEmail == "" {
-			return errors.New("missing SMTP server, from address, or to address")
-		}
-
-		port, _ := strconv.Atoi(notification.SMTPPort)
-		if port == 0 {
-			port = 587
-		}
-
-		p := sendmail.NewProvider(
-			notification.SMTPServer,
-			port,
-			notification.SMTPFromEmail,
-			[]string{notification.SMTPToEmail},
-			notification.SMTPUsername,
-			notification.SMTPPassword,
-		)
-		if p == nil {
-			return errors.New("invalid sendmail configuration")
-		}
-
-		return p.TestConnection(ctx)
-
-	case "csv":
-		if notification.Outputto == "" {
-			return errors.New("no output file path configured")
-		}
-
-		if !checkWritable(filepath.Dir(notification.Outputto)) {
-			return errors.New("output folder is not writable")
-		}
-
-		return nil
-
-	default:
-		return fmt.Errorf("unknown notification type %q", notification.NotificationType)
-	}
+	return testNotificationConfig(ctx, &notification)
 }
 
 // checkNotificationServices checks configured notification services.

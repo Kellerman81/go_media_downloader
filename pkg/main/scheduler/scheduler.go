@@ -216,6 +216,7 @@ func collectSchedules() []scheduleSpec {
 		{def.IntervalDatabaseCheck, def.CronDatabaseCheck, "Check Database", worker.QueueData, "CheckDatabase"},
 		{def.IntervalImdb, def.CronImdb, "Refresh IMDB", worker.QueueFeeds, "RefreshImdb"},
 		{def.IntervalCacheRefresh, def.CronCacheRefresh, "Refresh Cache", worker.QueueData, "RefreshCache"},
+		{downloadCheckInterval(def), def.CronDownloadCheck, "Check Downloads", worker.QueueRSS, "CheckDownloads"},
 	} {
 		if g.interval == "" && g.cron == "" {
 			continue
@@ -232,6 +233,16 @@ func collectSchedules() []scheduleSpec {
 	}
 
 	return specs
+}
+
+// downloadCheckInterval is the Default scheduler's download check interval;
+// the check runs every 2 minutes unless an interval or cron is set.
+func downloadCheckInterval(def *config.SchedulerConfig) string {
+	if def.IntervalDownloadCheck == "" && def.CronDownloadCheck == "" {
+		return "2m"
+	}
+
+	return def.IntervalDownloadCheck
 }
 
 func mediaQueue(str string) string {

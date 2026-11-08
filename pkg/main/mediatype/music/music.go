@@ -486,7 +486,7 @@ func loadMusicConfig(file string) ([]config.ManualConfig, error) {
 }
 
 // RecordDownloadHistory records an album download in the album_histories table.
-func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) error {
+func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPath string) (uint, error) {
 	var (
 		albumID, dbalbumID uint
 		qualityProfile     string
@@ -509,7 +509,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 	}
 
 	if albumID == 0 || dbalbumID == 0 {
-		return fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
+		return 0, fmt.Errorf("record download history %q: %w", nzb.NZB.Title, logger.ErrNoID)
 	}
 
 	var indexerName string
@@ -517,7 +517,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		indexerName = nzb.NZB.Indexer.Name
 	}
 
-	return database.ExecNErr(
+	id, err := database.ExecNid(
 		"Insert into album_histories (title, url, target, indexer, downloaded_at, album_id, dbalbum_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
@@ -527,6 +527,11 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		&dbalbumID,
 		&qualityProfile,
 	)
+	if err != nil {
+		return 0, err
+	}
+
+	return logger.Int64ToUint(id), nil
 }
 
 // GetDownloadTargetFolder returns the target folder name for an album download.

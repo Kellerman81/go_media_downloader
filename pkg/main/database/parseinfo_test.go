@@ -879,3 +879,49 @@ func TestPreferOriginalDbserie(t *testing.T) {
 		}
 	}
 }
+
+func TestEpisodeNumbers(t *testing.T) {
+	useMigratedMainDB(t)
+	SetStaticRegexp(strRegexSeriesIdentifier)
+
+	for _, tt := range []struct {
+		identifier, season string
+		wantSeason         string
+		wantEpisodes       []int
+	}{
+		{"S01E01E02", "01", "1", []int{1, 2}},
+		{"S03E17", "03", "3", []int{17}},
+		{"S00E05", "00", "0", []int{5}},
+		{"2024-01-31", "", "", nil},
+	} {
+		m := &ParseInfo{Identifier: tt.identifier, SeasonStr: tt.season}
+
+		season, episodes := m.EpisodeNumbers()
+		if season != tt.wantSeason || !slices.Equal(episodes, tt.wantEpisodes) {
+			t.Errorf("%s: season %q episodes %v, want %q %v", tt.identifier, season, episodes, tt.wantSeason, tt.wantEpisodes)
+		}
+	}
+}
+
+func TestFileDetails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "movie.mkv")
+	if err := os.WriteFile(path, make([]byte, 1_000_000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &ParseInfo{Runtime: 8, Languages: []string{"ger", "eng"}}
+
+	size, bitrate, langs := m.FileDetails(path)
+	if size != 1_000_000 || bitrate != 1000 || langs != "ger,eng" {
+		t.Errorf("computed: %d bytes, %d kbit/s, %q", size, bitrate, langs)
+	}
+
+	m.Bitrate = 4321
+	if _, bitrate, _ := m.FileDetails(path); bitrate != 4321 {
+		t.Errorf("probed bitrate not kept: %d", bitrate)
+	}
+
+	if size, bitrate, langs := (&ParseInfo{}).FileDetails(filepath.Join(t.TempDir(), "gone")); size != 0 || bitrate != 0 || langs != "" {
+		t.Errorf("missing file: %d %d %q", size, bitrate, langs)
+	}
+}

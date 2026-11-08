@@ -669,3 +669,21 @@ func TestNativeProbeEndToEnd(t *testing.T) {
 		t.Errorf("expected resolved DB ids, got codecID=%d resolutionID=%d", m.CodecID, m.ResolutionID)
 	}
 }
+
+func TestParseffprobeBitrate(t *testing.T) {
+	var result ffProbeJSON
+
+	result.Format.Duration = "5400.4"
+	result.Format.BitRate = "8123456"
+	result.Streams = []ffProbeStream{
+		{CodecType: "video", CodecName: "h264", Height: 1080, Width: 1920},
+		{CodecType: "audio", CodecName: "aac", Tags: map[string]string{"language": "ger"}},
+	}
+
+	m := &database.ParseInfo{}
+	_ = parseffprobe(m, &config.QualityConfig{}, &result)
+
+	if m.Runtime != 5400 || m.Bitrate != 8123 {
+		t.Errorf("runtime %d s, bitrate %d kbit/s, want 5400 and 8123", m.Runtime, m.Bitrate)
+	}
+}

@@ -337,7 +337,26 @@ const (
 	NotificationApprise    NotificationProviderType = "apprise"
 	NotificationPushbullet NotificationProviderType = "pushbullet"
 	NotificationSendmail   NotificationProviderType = "sendmail"
+	NotificationDiscord    NotificationProviderType = "discord"
+	NotificationSlack      NotificationProviderType = "slack"
+	NotificationTelegram   NotificationProviderType = "telegram"
+	NotificationNtfy       NotificationProviderType = "ntfy"
+	NotificationWebhook    NotificationProviderType = "webhook"
+	NotificationJoin       NotificationProviderType = "join"
+	NotificationProwl      NotificationProviderType = "prowl"
+	NotificationPushcut    NotificationProviderType = "pushcut"
+	NotificationPushsafer  NotificationProviderType = "pushsafer"
+	NotificationSimplepush NotificationProviderType = "simplepush"
+	NotificationSignal     NotificationProviderType = "signal"
+	NotificationMailgun    NotificationProviderType = "mailgun"
+	NotificationSendGrid   NotificationProviderType = "sendgrid"
+	NotificationExec       NotificationProviderType = "exec"
 )
+
+// SentNotification is the response for a notification the service accepted.
+func SentNotification(provider NotificationProviderType) *NotificationResponse {
+	return &NotificationResponse{Success: true, Timestamp: time.Now(), Provider: string(provider)}
+}
 
 //
 // Download Client Types
@@ -353,6 +372,13 @@ const (
 	DownloadProviderRTorrent     DownloadProviderType = "rtorrent"
 	DownloadProviderSABnzbd      DownloadProviderType = "sabnzbd"
 	DownloadProviderNZBGet       DownloadProviderType = "nzbget"
+	DownloadProviderAria2        DownloadProviderType = "aria2"
+	DownloadProviderFlood        DownloadProviderType = "flood"
+	DownloadProviderUTorrent     DownloadProviderType = "utorrent"
+	DownloadProviderRQBit        DownloadProviderType = "rqbit"
+	DownloadProviderTribler      DownloadProviderType = "tribler"
+	DownloadProviderStation      DownloadProviderType = "downloadstation"
+	DownloadProviderNzbVortex    DownloadProviderType = "nzbvortex"
 )
 
 // TorrentAddRequest represents a request to add a torrent.

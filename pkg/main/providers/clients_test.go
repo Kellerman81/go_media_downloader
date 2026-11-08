@@ -1,11 +1,14 @@
 package providers
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/nzbget"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/qbittorrent"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/sabnzbd"
@@ -58,6 +61,12 @@ func downloadClients() map[string]any {
 	return all
 }
 
+// clientOf returns downloader name's client if it is a T.
+func clientOf[T any](name string) T {
+	c, _ := GetDownloadClient(name).(T)
+	return c
+}
+
 func TestReloadClientProvidersFollowsConfig(t *testing.T) {
 	oldFile := config.Configfile
 	config.Configfile = filepath.Join(t.TempDir(), "config.toml")
@@ -65,7 +74,7 @@ func TestReloadClientProvidersFollowsConfig(t *testing.T) {
 	t.Cleanup(func() {
 		config.Configfile = oldFile
 
-		ReplaceDownloadProviders(DownloadProviders{})
+		ReplaceDownloadProviders(nil)
 
 		for name := range GetAllIndexers() {
 			RemoveIndexer(name)
@@ -90,11 +99,11 @@ func TestReloadClientProvidersFollowsConfig(t *testing.T) {
 	ReloadClientProviders()
 
 	all := downloadClients()
-	if len(all) != 2 || GetQBittorrent("qb") == nil || GetSABnzbd("sab") == nil {
+	if len(all) != 2 || clientOf[*qbittorrent.Provider]("qb") == nil || clientOf[*sabnzbd.Provider]("sab") == nil {
 		t.Fatalf("after first load: %v, want qbittorrent_qb and sabnzbd_sab", all)
 	}
 
-	oldQB := GetQBittorrent("qb")
+	oldQB := clientOf[*qbittorrent.Provider]("qb")
 	keptIdx := GetIndexer("idxA")
 
 	if keptIdx == nil || GetIndexer("idxB") == nil {
@@ -116,11 +125,11 @@ func TestReloadClientProvidersFollowsConfig(t *testing.T) {
 	ReloadClientProviders()
 
 	all = downloadClients()
-	if len(all) != 2 || GetNZBGet("qb") == nil || GetNZBGet("off") == nil {
+	if len(all) != 2 || clientOf[*nzbget.Provider]("qb") == nil || clientOf[*nzbget.Provider]("off") == nil {
 		t.Fatalf("after reload: %v, want nzbget_qb and nzbget_off", all)
 	}
 
-	if GetQBittorrent("qb") != nil || GetSABnzbd("sab") != nil {
+	if clientOf[*qbittorrent.Provider]("qb") != nil || clientOf[*sabnzbd.Provider]("sab") != nil {
 		t.Fatalf("removed downloaders still registered: %v", all)
 	}
 
@@ -200,5 +209,41 @@ func TestBuildBaseURL(t *testing.T) {
 		if got := buildBaseURL(tt.host, tt.port, tt.def); got != tt.want {
 			t.Errorf("buildBaseURL(%q, %d, %d) = %q, want %q", tt.host, tt.port, tt.def, got, tt.want)
 		}
+	}
+}
+
+func TestNewDownloadClientEveryType(t *testing.T) {
+	for _, typ := range DownloadClientTypes() {
+		client, err := NewDownloadClient(&config.DownloaderConfig{
+			Name: "d", DlType: typ.Name, Hostname: "localhost", Username: "u", Password: "p",
+		})
+
+		if typ.Name == "drone" {
+			if !errors.Is(err, errNoClient) {
+				t.Errorf("drone: %v", err)
+			}
+
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("%s: %v", typ.Name, err)
+			continue
+		}
+
+		if _, ok := client.(interface{ TestConnection(context.Context) error }); !ok {
+			t.Errorf("%s: no connection test", typ.Name)
+		}
+
+		_, torrent := client.(interface {
+			AddTorrent(context.Context, apiexternal_v2.TorrentAddRequest) (*apiexternal_v2.TorrentAddResponse, error)
+		})
+		if torrent != typ.Torrent || IsTorrentClient(typ.Name) != typ.Torrent {
+			t.Errorf("%s: torrent client %t, listed as %t", typ.Name, torrent, typ.Torrent)
+		}
+	}
+
+	if _, err := NewDownloadClient(&config.DownloaderConfig{Name: "d", DlType: "tribler", Hostname: "h"}); !errors.Is(err, errNoAPIKey) {
+		t.Errorf("tribler without API key: %v", err)
 	}
 }

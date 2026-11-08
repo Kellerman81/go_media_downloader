@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
@@ -57,13 +56,16 @@ func generateSecureToken(length int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// createSession creates a new session for the user.
-func (ss *SessionStore) createSession(userID string) *Session {
+// createSession creates a new session for the user. An empty csrfToken gets
+// a random one.
+func (ss *SessionStore) createSession(userID, csrfToken string) *Session {
 	ss.mutex.Lock()
 	defer ss.mutex.Unlock()
 
 	sessionID := generateSessionID()
-	csrfToken := generateCSRFToken()
+	if csrfToken == "" {
+		csrfToken = generateCSRFToken()
+	}
 
 	session := &Session{
 		ID:        sessionID,
@@ -187,13 +189,7 @@ func renderGenerateAPIKeyControl(fieldName string) gomponents.Node {
 
 // authenticateUser checks if the provided credentials are valid.
 func authenticateUser(username, password string) bool {
-	settings := config.GetSettingsGeneral()
-
-	// Use API key as password, fallback to default
-	expectedPassword := settings.WebAPIKey
-	if expectedPassword == "" {
-		expectedPassword = DefaultPassword
-	}
+	expectedPassword := webPassword()
 
 	usernameMatch := subtle.ConstantTimeCompare([]byte(username), []byte(DefaultUsername)) == 1
 	passwordMatch := subtle.ConstantTimeCompare([]byte(password), []byte(expectedPassword)) == 1
@@ -206,13 +202,19 @@ func authenticateUser(username, password string) bool {
 // handler chain must only run after protectAdminRoutes has also passed the
 // CSRF check.
 func requireAuth(c *gin.Context) {
-	sessionCookie, err := c.Cookie("session_id")
-	if err != nil {
-		redirectToLogin(c)
-		return
+	var (
+		session *Session
+		exists  bool
+	)
+
+	if sessionCookie, err := c.Cookie("session_id"); err == nil {
+		session, exists = sessionStore.getSession(sessionCookie)
 	}
 
-	session, exists := sessionStore.getSession(sessionCookie)
+	if !exists {
+		session, exists = restoreRememberedSession(c)
+	}
+
 	if !exists {
 		redirectToLogin(c)
 		return
@@ -272,9 +274,10 @@ func setCSRFCookie(c *gin.Context, token string, maxAge int) {
 
 // redirectToLogin redirects user to login page.
 func redirectToLogin(c *gin.Context) {
-	// Clear any existing session cookie
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_id", "", -1, "/", "", requestIsHTTPS(c), true)
+	// Only reached when no session could be restored, so a remember-me
+	// cookie still present is invalid or expired.
+	setSessionCookie(c, "", -1)
+	setRememberCookie(c, "", -1)
 	setCSRFCookie(c, "", -1)
 
 	// Check if this is a web page request that should redirect to login
@@ -301,6 +304,11 @@ func loginPage(c *gin.Context) {
 			c.Redirect(http.StatusFound, "/api/admin")
 			return
 		}
+	}
+
+	if _, ok := restoreRememberedSession(c); ok {
+		c.Redirect(http.StatusFound, "/api/admin")
+		return
 	}
 
 	errorMsg := c.Query("error")
@@ -564,7 +572,7 @@ func loginPage(c *gin.Context) {
 																	"form-check-label text-small",
 																),
 																html.For("rememberMe"),
-																gomponents.Text("Remember me"),
+																gomponents.Text("Remember me for 30 days"),
 															),
 														),
 													),
@@ -683,10 +691,19 @@ func handleLogin(c *gin.Context) {
 
 	loginLimiter.reset(ip)
 
-	session := sessionStore.createSession(username)
+	var session *Session
 
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_id", session.ID, int(SessionDuration.Seconds()), "/", "", requestIsHTTPS(c), true)
+	if c.PostForm("remember-me") != "" {
+		key := currentRememberKey()
+		token := newRememberToken(key, username, time.Now().Add(RememberDuration))
+		session = sessionStore.createSession(username, rememberCSRFToken(key, token))
+		setRememberCookie(c, token, int(RememberDuration.Seconds()))
+	} else {
+		session = sessionStore.createSession(username, "")
+		setRememberCookie(c, "", -1)
+	}
+
+	setSessionCookie(c, session.ID, int(SessionDuration.Seconds()))
 	setCSRFCookie(c, session.CSRFToken, int(SessionDuration.Seconds()))
 
 	c.Redirect(http.StatusFound, "/api/admin")
@@ -790,8 +807,8 @@ func handleLogout(c *gin.Context) {
 		sessionStore.deleteSession(sessionCookie)
 	}
 
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("session_id", "", -1, "/", "", requestIsHTTPS(c), true)
+	setSessionCookie(c, "", -1)
+	setRememberCookie(c, "", -1)
 	setCSRFCookie(c, "", -1)
 	c.Redirect(http.StatusFound, "/api/login")
 }

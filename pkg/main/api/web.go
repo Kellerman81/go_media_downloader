@@ -468,6 +468,24 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								),
 							),
 						),
+						gomponents.Group(func() []gomponents.Node {
+							links := make([]gomponents.Node, 0, len(mtKinds))
+							for _, k := range mtKinds {
+								links = append(links, html.Li(html.Class("sidebar-item"),
+									html.A(
+										html.Class("sidebar-link"),
+										html.Href("/api/admin/matchtester?kind="+k.Key),
+										html.I(html.Class("align-middle fa-solid "+k.Icon)),
+										html.Span(
+											html.Class("align-middle"),
+											gomponents.Text(k.Title),
+										),
+									),
+								))
+							}
+
+							return links
+						}()),
 						// html.Li(html.Class("sidebar-item"),
 						// 	html.A(html.Class("sidebar-link"), html.Href("/api/admin/folderstructure"),
 						// 		html.Span(html.Class("align-middle"), gomponents.Text("Folder Organizer")),

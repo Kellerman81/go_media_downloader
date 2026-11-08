@@ -149,6 +149,40 @@ type folderMetadata struct {
 	FilenameASIN      string // populated for audiobooks only (from first filename)
 }
 
+// musicQuery returns the artist and album a music folder is matched as. Tags
+// take priority because they are authoritative; folder-name parsing is a
+// fallback for files with no tags.
+func (meta *folderMetadata) musicQuery() (artist, album string) {
+	if meta.IsDiscFolder {
+		artist = coalesceStr(meta.TagAlbumArtist, meta.TagArtist, meta.GrandparentArtist, meta.ParentArtist)
+		album = coalesceStr(meta.TagAlbum, meta.ParentAlbum, meta.FilenameAlbum)
+
+		return artist, album
+	}
+
+	artist = coalesceStr(
+		meta.TagAlbumArtist, meta.TagArtist, meta.FolderArtist, meta.FilenameArtist, meta.ParentArtist,
+	)
+	album = coalesceStr(meta.TagAlbum, meta.FolderAlbum, meta.FilenameAlbum, meta.ParentAlbum)
+
+	return artist, album
+}
+
+// audiobookQuery returns the author and title an audiobook folder is matched
+// as; unlike music, a single file's title tag counts as the book title.
+func (meta *folderMetadata) audiobookQuery() (author, title string) {
+	if meta.IsDiscFolder {
+		return meta.musicQuery()
+	}
+
+	author, _ = meta.musicQuery()
+	title = coalesceStr(
+		meta.TagAlbum, meta.TagTitle, meta.FolderAlbum, meta.FilenameAlbum, meta.ParentAlbum,
+	)
+
+	return author, title
+}
+
 // musicSearchPair is a unique artist+album combination tried against the DB.
 type musicSearchPair struct {
 	artist string

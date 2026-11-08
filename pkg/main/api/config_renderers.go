@@ -12,6 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
@@ -1222,7 +1223,7 @@ func renderMediaNotificationForm(
 			Type:  "select",
 			Value: configv.Event,
 			Options: convertMapToSelectOptions(
-				map[string][]string{"options": {"added_download", "added_data", "upgraded_data"}},
+				map[string][]string{"options": providers.NotificationEvents},
 			),
 		},
 		{Name: "Title", Type: "text", Value: configv.Title, Options: nil},
@@ -1727,15 +1728,7 @@ func renderDownloaderConfigSections(
 					Type:  "select",
 					Value: configv.DlType,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {
-							"drone",
-							"nzbget",
-							"sabnzbd",
-							"transmission",
-							"rtorrent",
-							"qbittorrent",
-							"deluge",
-						},
+						"options": providers.DownloadClientTypeNames(),
 					}),
 				},
 				{
@@ -1778,6 +1771,7 @@ func renderDownloaderConfigSections(
 			false,
 			[]FormFieldDefinition{
 				{Name: "AddPaused", Type: "checkbox", Value: configv.AddPaused, Options: nil},
+				{Name: "RemoveFailed", Type: "checkbox", Value: configv.RemoveFailed, Options: nil},
 				{Name: "Priority", Type: "number", Value: configv.Priority, Options: nil},
 			},
 			group,
@@ -1956,6 +1950,8 @@ func renderListsConfigSections(
 							"plexwatchlist",
 							"jellyfinwatchlist",
 							"moviescraper",
+							"rottentomatoes",
+							"letterboxd",
 							"audiobookconfig",
 							"bookconfig",
 							"musicconfig",
@@ -2984,6 +2980,8 @@ var notificationTestFields = []connTestField{
 	{Key: "notificationtype", Suffix: "NotificationType"},
 	{Key: "apikey", Suffix: "Apikey"},
 	{Key: "recipient", Suffix: "Recipient"},
+	{Key: "sender", Suffix: "Sender"},
+	{Key: "command", Suffix: "Command"},
 	{Key: "serverurl", Suffix: "ServerURL"},
 	{Key: "appriseurls", Suffix: "AppriseURLs"},
 	{Key: "outputto", Suffix: "Outputto"},
@@ -3027,7 +3025,7 @@ func renderNotificationConfigSections(
 					Type:  "select",
 					Value: configv.NotificationType,
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"csv", "pushover", "gotify", "pushbullet", "apprise", "sendmail"},
+						"options": providers.NotificationTypeNames(),
 					}),
 				},
 				{
@@ -3049,6 +3047,8 @@ func renderNotificationConfigSections(
 			[]FormFieldDefinition{
 				{Name: "Apikey", Type: "password", Value: configv.Apikey, Options: nil},
 				{Name: "Recipient", Type: "text", Value: configv.Recipient, Options: nil},
+				{Name: "Sender", Type: "text", Value: configv.Sender, Options: nil},
+				{Name: "Command", Type: "text", Value: configv.Command, Options: nil},
 				{Name: "Outputto", Type: "text", Value: configv.Outputto, Options: nil},
 				{Name: "ServerURL", Type: "text", Value: configv.ServerURL, Options: nil},
 				{Name: "AppriseURLs", Type: "text", Value: configv.AppriseURLs, Options: nil},
@@ -4025,6 +4025,8 @@ func renderSchedulerConfigSections(
 				{Name: "CronDatabaseCheck", Type: "text", Value: configv.CronDatabaseCheck},
 				{Name: "IntervalCacheRefresh", Type: "text", Value: configv.IntervalCacheRefresh},
 				{Name: "CronCacheRefresh", Type: "text", Value: configv.CronCacheRefresh},
+				{Name: "IntervalDownloadCheck", Type: "text", Value: configv.IntervalDownloadCheck},
+				{Name: "CronDownloadCheck", Type: "text", Value: configv.CronDownloadCheck},
 			},
 			group,
 			comments,
