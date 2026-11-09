@@ -1,3 +1,8 @@
+# Where the binaries come from: "builder" compiles them here, "prebuilt"
+# takes go_media_downloader-linux-<arch> / init_imdb-linux-<arch> from the
+# build context (CI passes the binaries its build job already made).
+ARG BINARIES=builder
+
 # Build stage
 FROM golang:1.26.10-bookworm AS builder
 
@@ -49,6 +54,13 @@ RUN cd ./pkg/imdb/ && \
     -ldflags="-s -w -X 'main.version=${VERSION}' -X 'main.githash=${GITHASH}' -X 'main.buildstamp=${BUILD_DATE}'" \
     -o ../../init_imdb imdb.go
 
+FROM scratch AS prebuilt
+ARG TARGETARCH
+COPY go_media_downloader-linux-${TARGETARCH} /build/go_media_downloader
+COPY init_imdb-linux-${TARGETARCH} /build/init_imdb
+
+FROM ${BINARIES} AS binaries
+
 # Runtime stage
 FROM debian:bookworm-slim
 
@@ -86,7 +98,7 @@ RUN mkdir -p /app/{config,databases,logs,backup,temp,docs,schema,static} && \
 WORKDIR /app
 
 # Copy built binaries from builder stage
-COPY --from=builder /build/go_media_downloader /build/init_imdb /app/
+COPY --from=binaries /build/go_media_downloader /build/init_imdb /app/
 
 # Copy application files
 COPY --chown=appuser:appuser ./config/ /app/config/

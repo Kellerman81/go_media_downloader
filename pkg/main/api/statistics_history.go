@@ -346,14 +346,23 @@ func renderDownloadActivity(a downloadActivity) gomponents.Node {
 
 	period := strings.ToLower(a.Range.label)
 
+	// htmx settles a swapped-in element that shares an id with the one it
+	// replaces by giving it the old attributes first and restoring its own
+	// afterwards - which, after Chart.js has sized the canvas, resets it to
+	// the default 300x150. A fresh id per render keeps htmx out of it.
+	canvasID := fmt.Sprintf("stat-downloads-chart-%d", time.Now().UnixNano())
+
 	return html.Div(html.ID("stat-activity"), statSection("bg-primary text-white", "fa-solid fa-download", "Download Activity",
 		activityRangeButtons(a.Range.key, "/api/admin/statistics/activity", "stat-activity"),
 		html.H6(html.Class("text-muted"), gomponents.Text(a.Range.chartTitle)),
-		html.Div(html.Style("height: 280px;"), html.Canvas(html.ID("stat-downloads-chart"))),
+		html.Div(html.Style("height: 280px;"), html.Canvas(html.ID(canvasID))),
 		html.Script(gomponents.Raw(`
 (function() {
-	var el = document.getElementById('stat-downloads-chart');
+	var el = document.getElementById('`+canvasID+`');
 	if (!el || !window.Chart) { return; }
+	Chart.helpers.each(Chart.instances, function(c) {
+		if (!document.body.contains(c.canvas)) { c.destroy(); }
+	});
 	new Chart(el, {
 		type: 'bar',
 		data: {labels: `+string(labelsJSON)+`, datasets: `+string(dataJSON)+`},
