@@ -13,6 +13,10 @@ LDFLAGS += -X 'main.version=${VERSION}'
 LDFLAGS += -X 'main.githash=${GITHASH}'
 LDFLAGS += -X 'main.buildstamp=${BUILD_DATE}'
 
+# swaggo/swag (go install github.com/swaggo/swag/cmd/swag@v1.16.4). Taken from
+# GOPATH/bin so a different "swag" earlier in PATH can't shadow it.
+SWAG ?= $(shell go env GOPATH)/bin/swag
+
 # Go build settings
 export CGO_ENABLED := 1
 
@@ -25,13 +29,14 @@ WINDOWS_AMD64_CC = x86_64-w64-mingw32-gcc
 GOARM = "7"
 
 # Targets
-.PHONY: help clean buildmain buildimdb build-all
+.PHONY: help clean buildmain buildimdb build-all swagger
 
 help:
 	@echo "Available targets:"
 	@echo "  buildmain    - Build main application for all platforms"
 	@echo "  buildimdb    - Build IMDB utility for all platforms"
 	@echo "  build-all    - Build both applications for all platforms"
+	@echo "  swagger      - Regenerate docs/swagger.json and swagger.yaml from the code annotations"
 	@echo "  clean        - Clean build artifacts"
 
 clean:
@@ -89,3 +94,8 @@ buildimdb:
 		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-amd64.exe imdb.go
 
 build-all: buildmain buildimdb
+
+swagger:
+	cd pkg/main && $(SWAG) init -g main.go -o ../../docs --outputTypes json,yaml --parseDependency --propertyStrategy pascalcase
+	# swagger.js lets docs/index.html work when opened as a file (browsers block fetch on file://)
+	{ printf 'window.SWAGGER_SPEC = '; cat docs/swagger.json; printf ';\n'; } > docs/swagger.js
