@@ -1,6 +1,11 @@
 package api
 
-import "github.com/Kellerman81/go_media_downloader/pkg/main/config"
+import (
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/trakt"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
+)
 
 // Response shapes referenced only by the swag annotations (@Success/@Failure)
 // on the REST handlers. Handlers build these bodies via sendJSONResponse /
@@ -153,6 +158,34 @@ type Jsonconflict struct {
 // Jsonservererror is a 500 body.
 type Jsonservererror struct {
 	Error string `json:"error" example:"Job not started: queue closed"`
+}
+
+// The types below carry data from other packages. swag resolves a package
+// name in an annotation through the imports of the file the annotation is in;
+// when that file does not import the package, it falls back to a lookup whose
+// result depends on parse order and fails on some runs. Referencing them here,
+// with explicit imports, keeps "make swagger" deterministic.
+
+// Jsonqueue is the data of /api/queue.
+type Jsonqueue struct {
+	Data map[string]syncops.Job `json:"data"`
+}
+
+// Jsonschedules is the data of /api/scheduler/list.
+type Jsonschedules struct {
+	Data map[string]syncops.JobSchedule `json:"data"`
+}
+
+// Jsontraktauthtoken is the body of /api/trakt/token/{code}; data is null when Trakt
+// is not set up.
+type Jsontraktauthtoken struct {
+	Data *apiexternal_v2.OAuthToken `json:"data"`
+}
+
+// Jsontraktlistitems is the body of /api/trakt/user/{user}/{list}.
+type Jsontraktlistitems struct {
+	Data  []trakt.TraktUserListItem `json:"data"`
+	Error string                    `json:"error" example:""`
 }
 
 // Jsoncachelist is the data of /api/cache/list.

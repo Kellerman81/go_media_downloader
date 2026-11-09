@@ -624,7 +624,7 @@ type Statsresults struct {
 // @Description  Returns the jobs that are waiting in the queues or currently running (not the finished ones), keyed by queue ID.
 // @Tags         queue
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
-// @Success      200  {object}  Jsondata{data=map[string]syncops.Job}  "Queued and running jobs keyed by queue ID"
+// @Success      200  {object}  Jsonqueue  "Queued and running jobs keyed by queue ID"
 // @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/queue [get].
 func apiQueueList(ctx *gin.Context) {
@@ -674,7 +674,7 @@ func apiTraktGetAuthURL(ctx *gin.Context) {
 // @Tags         trakt
 // @Param        code  path      string  true  "Code shown by Trakt after authorizing"
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
-// @Success      200  {object}  Jsondata{data=apiexternal_v2.OAuthToken}  "The stored token; data is null when Trakt is not set up"
+// @Success      200  {object}  Jsontraktauthtoken  "The stored token; data is null when Trakt is not set up"
 // @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/trakt/token/{code} [get].
 func apiTraktGetStoreToken(ctx *gin.Context) {
@@ -694,7 +694,7 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 // @Param        user  path      string  true  "Trakt username (slug) that owns the list"
 // @Param        list  path      string  true  "Slug of the user's Trakt list"
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
-// @Success      200  {object}  Jsondataerror{data=[]trakt.TraktUserListItem}  "List items, and the error text if Trakt failed"
+// @Success      200  {object}  Jsontraktlistitems  "List items, and the error text if Trakt failed"
 // @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/trakt/user/{user}/{list} [get].
 func apiTraktGetUserList(ctx *gin.Context) {
@@ -916,7 +916,7 @@ func setSchedulePaused(ctx *gin.Context, paused bool) {
 // @Description  Returns all schedules keyed by ID: job name, media group, interval or cron expression, queue, last and next run, and whether it is running or paused.
 // @Tags         scheduler
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
-// @Success      200  {object}  Jsondata{data=map[string]syncops.JobSchedule}  "Schedules keyed by ID"
+// @Success      200  {object}  Jsonschedules  "Schedules keyed by ID"
 // @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/scheduler/list [get].
 func apiSchedulerList(ctx *gin.Context) {
