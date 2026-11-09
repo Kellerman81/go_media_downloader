@@ -45,12 +45,73 @@ import (
 // @title                       Go Media Downloader API
 // @version                     1.0
 // @Schemes                     http https
-// @host                        localhost:9090
+// @Accept                      json
+// @Produce                     json
+// @tag.name                    all
+// @tag.description             Jobs for every media group at once: list imports, library scans and searches.
+// @tag.name                    movies · data
+// @tag.description             Movie metadata (dbmovies) and list entries (movies): list, add or update, delete, unmatched files, metadata lookup.
+// @tag.name                    movies · search
+// @tag.description             Search the indexers for one movie or a whole group, preview results, download a release, clear search history.
+// @tag.name                    movies · jobs
+// @tag.description             Start jobs for one or all movie groups and refresh movie metadata.
+// @tag.name                    series · data
+// @tag.description             Series metadata (dbseries) and list entries (series): list, add or update, delete, unmatched files, metadata lookup.
+// @tag.name                    series · episodes
+// @tag.description             Episodes: metadata (dbserie_episodes) and list entries (serie_episodes) - list, add or update, delete.
+// @tag.name                    series · search
+// @tag.description             Search the indexers for a series, season or episode (normal or RSS), preview results, download a release, clear search history.
+// @tag.name                    series · jobs
+// @tag.description             Start jobs for one or all series groups and refresh series metadata.
+// @tag.name                    music · data
+// @tag.description             Album metadata (dbalbums) and list entries (albums): list and delete.
+// @tag.name                    music · artists
+// @tag.description             Artists: list them, import an artist into a list, discover series albums.
+// @tag.name                    music · search
+// @tag.description             Search the indexers for one album, a group or its artists, preview results, clear search history.
+// @tag.name                    music · jobs
+// @tag.description             Start jobs for one or all music groups, feeds date import, refresh album metadata.
+// @tag.name                    music · tags
+// @tag.description             Rewrite the audio tags of one album, an artist or all albums.
+// @tag.name                    books · data
+// @tag.description             Book metadata (dbbooks) and list entries (books): list and delete.
+// @tag.name                    books · search
+// @tag.description             Search the indexers for one book, a group or its authors, preview results, clear search history.
+// @tag.name                    books · jobs
+// @tag.description             Start jobs for one or all book groups, feeds date import, refresh book metadata.
+// @tag.name                    audiobooks · data
+// @tag.description             Audiobook metadata (dbaudiobooks) and list entries (audiobooks): list, delete, import an author.
+// @tag.name                    audiobooks · search
+// @tag.description             Search the indexers for one audiobook, a group or its authors, preview results, clear search history.
+// @tag.name                    audiobooks · jobs
+// @tag.description             Start jobs for one or all audiobook groups and refresh audiobook metadata.
+// @tag.name                    audiobooks · tags
+// @tag.description             Rewrite the audio tags of one audiobook, an author or all audiobooks.
+// @tag.name                    queue
+// @tag.description             Jobs waiting in or running from the job queue, the job history, and cancelling a queued job.
+// @tag.name                    scheduler
+// @tag.description             Scheduled jobs: list them, pause or resume all or one, or run one now.
+// @tag.name                    config
+// @tag.description             Read, change, reload and delete configuration entries.
+// @tag.name                    quality
+// @tag.description             Quality rows (resolution, source, codec, audio) and the priorities of each quality profile.
+// @tag.name                    cache
+// @tag.description             In-memory caches: list, rebuild, clear, add and remove entries.
+// @tag.name                    database
+// @tag.description             Database maintenance: backup, integrity check, vacuum, cleanup, row deletes, slugs and the IMDB database.
+// @tag.name                    organize
+// @tag.description             Organizer tools: test the naming template, organize a folder, and match an album folder to a release.
+// @tag.name                    parse
+// @tag.description             Parse a release name or file the way the searcher and organizer do.
+// @tag.name                    trakt
+// @tag.description             Trakt authorization and reading a Trakt user list.
+// @tag.name                    statistics
+// @tag.description             Library, download and worker statistics, and Go runtime statistics.
+// @tag.name                    web-only
+// @tag.description             Used by the web interface: these need a login session (and for POST the CSRF token) instead of the apikey, so they cannot be called from Swagger, curl or scripts.
 // @securitydefinitions.apikey  ApiKeyAuth
 // @in                          query
 // @name                        apikey
-// @Accept                      json
-// @Produce                     json.
 var (
 	version    string
 	buildstamp string
@@ -496,7 +557,7 @@ func main() {
 	// 404 handler for unmatched routes
 	router.NoRoute(api.NotFoundPage)
 
-	// Less RAM Usage for static file - don't forget to recreate html file
+	// Swagger UI: docs/index.html loads docs/swagger.json, generated by "make swagger".
 	router.Static("/swagger", "./docs")
 	// router.StaticFile("/swagger/index.html", "./docs/api.html")
 	// if !general.DisableSwagger {

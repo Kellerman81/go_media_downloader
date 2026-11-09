@@ -93,7 +93,7 @@ func idSearchActions(apiPath, what, idName string) []rowAction {
 func listSearchAction(apiGroup, what string) rowAction {
 	return rowAction{
 		Label: "Search Missing in List", Icon: "fa-search-plus", Color: colorSearch2, Kind: actionJob,
-		URL:     "/api/" + apiGroup + "/search/list/{listname}",
+		URL:     "/api/" + apiGroup + "/search/missing/{listname}",
 		Confirm: "Start search for missing " + what + " in list \"{listname}\"?",
 		Done:    "Search started for list {listname}",
 		Help:    "Search+: Search missing " + what + " in this row's list",

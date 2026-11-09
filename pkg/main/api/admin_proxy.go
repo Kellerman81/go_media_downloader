@@ -46,7 +46,7 @@ var adminProxyRoutes = []adminProxyRoute{
 	{regexp.MustCompile(`^/api/queue/cancel/[^/?]+$`), http.MethodDelete},
 	{regexp.MustCompile(`^/api/scheduler/(?:stop|start|queue)/\d+$`), http.MethodPost},
 	{
-		regexp.MustCompile(`^/api/(?:movies|series|books|audiobooks|music)/search/list/[^/?]+$`),
+		regexp.MustCompile(`^/api/(?:books|audiobooks|music)/search/missing/[^/?]+$`),
 		http.MethodGet,
 	},
 	{

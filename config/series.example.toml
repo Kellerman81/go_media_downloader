@@ -1,15 +1,17 @@
-[global] # global not yet used so use series config below
-identifiedby = "ep" #or date
-upgrade = "yes"
-search = "yes"
-[[series]]
-name = "Battlestar Galactica 2003" #primary name for series
-alternatename = ["Battlestar Galactica (2003)"] #Alternate Names for series - will also be imported by tvdb api
-tvdb_id = 73545 # currently required - except if source is none
-source = "tvdb" #chose 'none' if you want to manange the episodes manually - possible values: tvdb, none
-target = "/series/BG2k3" #Path where to put your series - optional
-identifiedby = "ep" #or date ep is default! (only for initial import - then you change it in the database)
-dont_upgrade = "yes" # (only for initial import - then you change it in the database)
-dont_search = "yes" # (only for initial import - then you change it in the database)
-search_specials = "yes" #should we search for Season 0 - Specials? (only for initial import - then you change it in the database)
-ignore_runtime = "no" #By Default the runtime of episodes will be checked on import - here you can disable this (only for initial import - then you change it in the database)
+# Series manual configuration - referenced by a [[lists]] entry with
+# type = "seriesconfig" and manual_config_file = "./config/series.toml".
+# Every series is one [[config]] table.
+
+[[config]]
+name = "Battlestar Galactica 2003"              # primary name of the series
+alternatename = ["Battlestar Galactica (2003)"] # alternate names; TVDB/Trakt alternates are added on import
+disallowedname = []                             # names that must not match this series
+tvdb_id = 73545                                 # required unless source = "none"
+source = "tvdb"                                 # tvdb, scraper or none (manage episodes yourself)
+target = ""                                     # optional own library path (must be a configured path)
+# The following settings apply to the initial import only - change them in the database afterwards.
+identifiedby = "ep"                             # ep (S01E01) or date (daily shows)
+dont_upgrade = false                            # true: no upgrade searches
+dont_search = false                             # true: no searches at all
+search_specials = false                         # true: also search season 0
+ignore_runtime = false                          # true: skip the episode runtime check on import

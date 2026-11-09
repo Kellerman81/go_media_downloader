@@ -696,15 +696,13 @@ func apiAdminDropdownData(ctx *gin.Context) {
 	sendSelect2Response(ctx, options, hasMore)
 }
 
-// @Summary      Insert Table Record
-// @Description  Inserts a new record into the specified table
-// @Tags         admin
-// @Param        name   path     string                 true "Table name"
-// @Param        data   body     map[string]any true "Record data"
-// @Param        apikey query    string                 true "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
+// @Summary      [Web only] Insert a table row (web interface)
+// @Description  Inserts a row into a database table from the web interface's table editor (form or JSON). Web interface only: needs a login session cookie from /api/login plus the session's CSRF token (X-CSRF-Token header), and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.
+// @Tags         web-only
+// @Param        name   path     string                 true "Database table, e.g. qualities or movies"
+// @Param        data   body     map[string]any true "Column values of the row as JSON object, or form fields named field-<column>"
+// @Success      200  {object}  Jsonoperation  "Result of the insert"
+// @Failure      400  {object}  Jsonoperation  "{'success':false,'error':'...'}"
 // @Router       /api/admin/table/{name}/insert [post].
 func apiAdminTableInsert(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
@@ -745,16 +743,14 @@ func apiAdminTableInsert(ctx *gin.Context) {
 	sendOperationResult(ctx, err)
 }
 
-// @Summary      Update Table Record
-// @Description  Updates a record in the specified table
-// @Tags         admin
-// @Param        name   path     string                 true "Table name"
-// @Param        index  path     int                    true "Record index"
-// @Param        data   body     map[string]any true "Record data"
-// @Param        apikey query    string                 true "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
+// @Summary      [Web only] Update a table row (web interface)
+// @Description  Updates a row of a database table from the web interface's table editor. Web interface only: needs a login session cookie from /api/login plus the session's CSRF token (X-CSRF-Token header), and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.
+// @Tags         web-only
+// @Param        name   path     string                 true "Database table, e.g. qualities or movies"
+// @Param        index  path     int                    true "Value of the id column of the row"
+// @Param        data   body     map[string]any true "Column values of the row as JSON object, or form fields named field-<column>"
+// @Success      200  {object}  Jsonoperation  "Result of the update"
+// @Failure      400  {object}  Jsonoperation  "{'success':false,'error':'...'}"
 // @Router       /api/admin/table/{name}/update/{index} [post].
 func apiAdminTableUpdate(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
@@ -819,15 +815,13 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 	sendOperationResult(ctx, err)
 }
 
-// @Summary      Delete Table Record
-// @Description  Deletes a record from the specified table
-// @Tags         admin
-// @Param        name   path     string true "Table name"
-// @Param        index  path     int    true "Record index"
-// @Param        apikey query    string true "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
+// @Summary      [Web only] Delete a table row (web interface)
+// @Description  Deletes a row of a database table from the web interface's table editor. Web interface only: needs a login session cookie from /api/login plus the session's CSRF token (X-CSRF-Token header), and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.
+// @Tags         web-only
+// @Param        name   path     string true "Database table, e.g. qualities or movies"
+// @Param        index  path     int    true "Value of the id column of the row"
+// @Success      200  {object}  Jsonoperation  "Result of the delete"
+// @Failure      400  {object}  Jsonoperation  "{'success':false,'error':'invalid index'}"
 // @Router       /api/admin/table/{name}/delete/{index} [post].
 func apiAdminTableDelete(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
@@ -850,10 +844,9 @@ func apiAdminTableDelete(ctx *gin.Context) {
 	sendOperationResult(ctx, err)
 }
 
-// @Summary      Admin Web Interface
-// @Description  Serves the admin web interface
-// @Tags         admin
-// @Param        apikey query     string    true  "apikey"
+// @Summary      [Web only] Web interface (HTML)
+// @Description  Returns the dashboard of the web interface as HTML; opens the setup wizard while the configuration still has its initial placeholders. Web interface only: needs a login session cookie from /api/login and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.
+// @Tags         web-only
 // @Success      200    {string}  string  "HTML content"
 // @Failure      401    {object}  Jsonerror
 // @Router       /api/admin [get].

@@ -55,15 +55,15 @@ func AddMoviesRoutes(routermovies *gin.RouterGroup) {
 	}
 }
 
-// @Summary      List Movies
-// @Description  List Movies
-// @Tags         movie
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.Dbmovie}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List movies (metadata)
+// @Description  Returns the movies of the dbmovies table - one row per movie with its metadata, independent of lists - paginated, with the total count.
+// @Tags         movies · data
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.Dbmovie}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/movies [get].
 func apiMovieList(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -80,15 +80,15 @@ func apiMovieList(ctx *gin.Context) {
 	)
 }
 
-// @Summary      List Unmatched Movies
-// @Description  List Unmatched Movies
-// @Tags         movie
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.MovieFileUnmatched}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List unmatched movie files
+// @Description  Returns the movie files the organizer could not match to a movie (movie_file_unmatcheds), paginated, with the total count.
+// @Tags         movies · data
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.MovieFileUnmatched}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/movies/unmatched [get].
 func apiMovieListUnmatched(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -105,13 +105,14 @@ func apiMovieListUnmatched(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Delete Movies
-// @Description  Deletes Movies from all lists
-// @Tags         movie
-// @Param        id   path      int  true  "Movie ID: ex. 1"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Delete a movie everywhere
+// @Description  Deletes a movie's metadata row (dbmovies) and its entries in all lists. Files on disk are not touched.
+// @Tags         movies · data
+// @Param        id   path      int  true  "ID of the movie in the dbmovies table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/movies/{id} [delete].
 func apiMovieDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -126,16 +127,16 @@ func apiMovieDelete(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      List Movies (List)
-// @Description  Lists Movies from a list
-// @Tags         movie
+// @Summary      List the movies of a list
+// @Description  Returns the entries of one list (movies table joined with dbmovies): missing flag, quality profile, reached quality, blacklisted and the movie metadata, paginated, with the total count.
+// @Tags         movies · data
 // @Param        name   path      string  true   "List Name: ex. EN"
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.ResultMovies}
-// @Failure      401    {object}  Jsonerror
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.ResultMovies}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/movies/list/{name} [get].
 func apiMovieListGet(ctx *gin.Context) {
 	listName, ok := getParamID(ctx, StrName)
@@ -163,14 +164,14 @@ func apiMovieListGet(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Get Movie Metadata
-// @Description  Gets metadata of a movie (for testing)
-// @Tags         movie
+// @Summary      Look up movie metadata
+// @Description  Fetches the metadata of a movie by IMDB ID from all configured sources, or only from the given provider, and returns it. update=1 also saves it to dbmovies.
+// @Tags         movies · data
 // @Param        imdb   path      string  true   "imdb id: ex. tt123456"
-// @Param        provider  query     string  false  "Provider: imdb,tmdb,omdb,trakt"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondata{data=database.Dbmovie}
-// @Failure      401    {object}  Jsonerror
+// @Param        provider  query     string  false  "Use only this provider: imdb, tmdb, omdb or trakt; without it all configured providers are combined"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=database.Dbmovie}  "Movie metadata from the configured providers (not saved)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/movies/metadata/{imdb} [get].
 func apiMovieMetadataGet(ctx *gin.Context) {
 	var imdb, omdb, tmdb, trakt bool
@@ -250,13 +251,14 @@ func apiMovieMetadataGet(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"data": dbmovie})
 }
 
-// @Summary      Delete a Movie (List)
-// @Description  Deletes a Movie from a list
-// @Tags         movie
-// @Param        id   path      int  true  "Movie ID: ex. 1"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Remove a movie from a list
+// @Description  Deletes one list entry (movies table). The movie's metadata and its entries in other lists stay. Files on disk are not touched.
+// @Tags         movies · data
+// @Param        id   path      int  true  "movies (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/movies/list/{id} [delete].
 func movieDeleteList(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -270,14 +272,17 @@ func movieDeleteList(ctx *gin.Context) {
 
 const allowedjobsmoviesstr = "rss,data,datafull,checkmissing,checkmissingflag,checkreachedflag,structure,searchmissingfull,searchmissinginc,searchupgradefull,searchupgradeinc,searchmissingfulltitle,searchmissinginctitle,searchupgradefulltitle,searchupgradeinctitle,clearhistory,feeds,refresh,refreshinc"
 
-// @Summary      Start Jobs (All Lists)
-// @Description  Starts a Job
-// @Tags         movie
-// @Param        job  path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns job name started"
-// @Failure      204  {object}  string "error message"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Start a job for all movie groups
+// @Description  Queues the given job for every movie media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.
+// @Tags         movies · jobs
+// @Param        job  path      string  true  "Job to start, one of: rss, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonjobstarted  "'Job <job> started', or 'Nothing Done'"
+// @Failure      400  {object}  Jsonbadrequest  "Job is not allowed for this media type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/job/{job} [get].
 func apimoviesAllJobs(c *gin.Context) {
 	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
@@ -287,15 +292,18 @@ func apimoviesAllJobs(c *gin.Context) {
 	})
 }
 
-// @Summary      Start Jobs
-// @Description  Starts a Job
-// @Tags         movie
-// @Param        job   path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        name  path      string  true  "List Name: ex. list"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns job name started"
-// @Failure      204  {object}  string "error message"
-// @Failure      401   {object}  Jsonerror
+// @Summary      Start a job for one movie group
+// @Description  Queues the given job for one movie media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.
+// @Tags         movies · jobs
+// @Param        job   path      string  true  "Job to start, one of: rss, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        name  path      string  true  "Media group name without type prefix, e.g. EN"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonjobstarted  "'Job <job> started', or 'Nothing Done'"
+// @Failure      400  {object}  Jsonbadrequest  "Job is not allowed for this media type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/job/{job}/{name} [get].
 func apimoviesJobs(c *gin.Context) {
 	dispatchMediaJob(c, mediaJobDispatchConfig{
@@ -305,15 +313,14 @@ func apimoviesJobs(c *gin.Context) {
 	})
 }
 
-// @Summary      Update Movie (Global)
-// @Description  Updates or creates a movie
-// @Tags         movie
-// @Param        movie  body      database.Dbmovie  true  "Movie"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}  int64
-// @Failure      403    {object}  error
-// @Failure      400    {object}  Jsonerror
-// @Failure      401    {object}  Jsonerror
+// @Summary      Add or update movie metadata
+// @Description  Inserts the dbmovies row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.
+// @Tags         movies · data
+// @Param        movie  body      database.Dbmovie  true  "Movie metadata row (dbmovies); an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "ID of the new row, or the number of updated rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/movies [post].
 func updateDBMovie(c *gin.Context) {
 	var dbmovie database.Dbmovie
@@ -467,15 +474,14 @@ func updateDBMovie(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, err, counter == 0)
 }
 
-// @Summary      Update Movie (List)
-// @Description  Updates or creates a movie in a list
-// @Tags         movie
-// @Param        movie  body      database.Movie  true  "Movie"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}  int64
-// @Failure      403    {object}  error
-// @Failure      400    {object}  Jsonerror
-// @Failure      401    {object}  Jsonerror
+// @Summary      Add or update a movie list entry
+// @Description  Inserts the movies (list entry) row when its id is 0 or unknown, otherwise updates it (missing, list, quality profile, blacklisted, ...). Returns the number of affected rows.
+// @Tags         movies · data
+// @Param        movie  body      database.Movie  true  "Movie list entry (movies table); an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "ID of the new row, or the number of updated rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/movies/list [post].
 func updateMovie(c *gin.Context) {
 	var movie database.Movie
@@ -549,20 +555,27 @@ func updateMovie(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, err, counter == 0)
 }
 
-// @Summary      Search a movie
-// @Description  Searches for upgrades and missing
-// @Tags         movie
-// @Param        id   path      int  true  "Movie ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      204  {object}  string "nothing done"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search a movie and download
+// @Description  Queues a search of the indexers for one list entry (missing or upgrade, by ID and title) and downloads the best accepted release. Returns immediately; the work runs in the job queue.
+// @Tags         movies · search
+// @Param        id   path      int  true  "movies (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Movie not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/search/id/{id} [get].
 func apimoviesSearch(c *gin.Context) {
 	movie, _ := database.GetMovies(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if movie == nil {
+		sendNotFound(c, "Movie not found")
+		return
+	}
 	// defer logger.ClearVar(&movie)
 	found := false
 
@@ -621,84 +634,32 @@ func apimoviesSearch(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a movie (List ok, nok)
-// @Description  Searches for upgrades and missing
-// @Tags         movie
-// @Param        id             path      int     true   "Movie ID"
-// @Param        searchByTitle  query     string  false  "searchByTitle"
-// @Param        download       query     bool    false  "download"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200            {object}  Jsonresults
-// @Failure      401            {object}  string
+// @Summary      Search a movie and show the results
+// @Description  Searches the indexers for one list entry and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.
+// @Tags         movies · search
+// @Param        id             path      int     true   "movies (list entry) ID"
+// @Param        searchByTitle  query     string  false  "true: also search by title, not only by IMDB ID"
+// @Param        download       query     bool    false  "true: download the best accepted release"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid id"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  string  "failed with <search error> (plain JSON string)"
 // @Router       /api/movies/search/list/{id} [get].
 func apimoviesSearchList(c *gin.Context) {
-	movie, _ := database.GetMovies(
-		database.Querywithargs{Where: logger.FilterByID},
-		c.Param(logger.StrID),
-	)
-	// defer logger.ClearVar(&movie)
-
-	titlesearch := false
-	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
-		if queryParam == "true" || queryParam == "yes" || queryParam == "on" {
-			titlesearch = true
-		}
-	}
-
-	var err error
-
-	found := false
-
-	config.RangeSettingsMedia(func(_ string, media *config.MediaTypeConfig) error {
-		if found || !strings.HasPrefix(media.NamePrefix, logger.StrMovie) {
-			return nil
-		}
-
-		for idxlist := range media.Lists {
-			if strings.EqualFold(media.Lists[idxlist].Name, movie.Listname) {
-				found = true
-
-				ctx := context.Background()
-				searchresults := searcher.NewSearcher(media, nil, "", nil)
-
-				err = searchresults.MediaSearch(ctx, media, movie.ID, titlesearch, false, false)
-				if err != nil {
-					str := "failed with " + err.Error()
-					c.JSON(http.StatusNotFound, str)
-					searchresults.Close()
-					return err
-				}
-
-				if val, ok := c.GetQuery("download"); ok && strings.EqualFold(val, "true") {
-					searchresults.Download()
-				}
-
-				c.JSON(
-					http.StatusOK,
-					gin.H{"accepted": searchresults.Accepted, "denied": searchresults.Denied},
-				)
-				// searchnow.Close()
-				searchresults.Close()
-
-				return nil
-			}
-		}
-
-		return nil
-	})
-
-	if !found {
-		sendJSONError(c, http.StatusNoContent, StrNothingDone)
-	}
+	searchListEntry(c, logger.StrMovie, "movies")
 }
 
-// @Summary      Movie RSS (list ok, nok)
-// @Description  Movie RSS
-// @Tags         movie
-// @Param        group  path      string  true  "Group Name"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}  Jsonresults
-// @Failure      401    {object}  Jsonerror
+// @Summary      Preview the RSS search of a movie group
+// @Description  Reads the indexers' RSS feeds for one movie media group and returns the accepted and denied releases. Nothing is downloaded.
+// @Tags         movies · search
+// @Param        group  path      string  true  "Media group name without type prefix, e.g. EN"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  string  "failed with <search error> (plain JSON string)"
 // @Router       /api/movies/rss/search/list/{group} [get].
 func apiMoviesRssSearchList(c *gin.Context) {
 	found := false
@@ -739,17 +700,19 @@ func apiMoviesRssSearchList(c *gin.Context) {
 	}
 }
 
-// @Summary      Download a movie (manual)
-// @Description  Downloads a release after select
-// @Tags         movie
+// @Summary      Download a chosen release for a movie
+// @Description  Sends the given release (e.g. one from /search/list) for the list entry to the download client of the indexer's quality profile entry.
+// @Tags         movies · search
 // @Param        nzb  body      apiexternal_v2.Nzbwithprio  true  "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo"
-// @Param        id   path      int                     true  "Movie ID"
+// @Param        id   path      int                     true  "ID of the list entry in the movies table"
 // @Param        indexer query  string                  true  "Indexer config name the release came from"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      204  {object}  string "nothing done"
-// @Failure      400  {object}  Jsonerror
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid id or body, or IDs do not match"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Movie not found"
+// @Failure      500  {object}  Jsonerror  "Download failed"
 // @Router       /api/movies/search/download/{id} [post].
 func apimoviesSearchDownload(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param(logger.StrID), 10, 64)
@@ -810,24 +773,30 @@ func apimoviesSearchDownload(c *gin.Context) {
 	}
 }
 
-// @Summary      Refresh Movies
-// @Description  Refreshes Movie Metadata
-// @Tags         movie
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh the metadata of all movies
+// @Description  Queues a metadata refresh of every movie in the lists of all movie media groups. Returns immediately; the work runs in the job queue.
+// @Tags         movies · jobs
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job; 'Nothing Done' when no configuration started it"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/all/refreshall [get].
 func apirefreshMovies(c *gin.Context) {
 	dispatchJobAllConfigs(c, logger.StrMovie, logger.StrMovie, "refresh", StrStarted)
 }
 
-// @Summary      Refresh a Movie
-// @Description  Refreshes specific Movie Metadata
-// @Tags         movie
-// @Param        id   path      int  true  "Movie ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh the metadata of one movie
+// @Description  Queues a metadata refresh of one movie from the configured sources. Returns immediately; the work runs in the job queue.
+// @Tags         movies · jobs
+// @Param        id   path      int  true  "ID of the movie in the dbmovies table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No media group has this entry"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/refresh/{id} [get].
 func apirefreshMovie(c *gin.Context) {
 	id := c.Param(logger.StrID)
@@ -878,37 +847,43 @@ func apirefreshMovie(c *gin.Context) {
 	sendSuccess(c, StrStarted)
 }
 
-// @Summary      Refresh Movies (Incremental)
-// @Description  Refreshes Movie Metadata
-// @Tags         movie
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh movie metadata (incremental)
+// @Description  Queues a metadata refresh of the 100 least recently updated movies of each movie media group. Returns immediately; the work runs in the job queue.
+// @Tags         movies · jobs
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job; 'Nothing Done' when no configuration started it"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/all/refresh [get].
 func apirefreshMoviesInc(c *gin.Context) {
 	dispatchJobAllConfigs(c, logger.StrMovie, logger.StrMovie, "refreshinc", StrStarted)
 }
 
-// @Summary      Clear History (Full List)
-// @Description  Clear Movies Download History
-// @Tags         movie
-// @Param        name  path      string  true  "List Name"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  string "returns started"
-// @Failure      401   {object}  Jsonerror
+// @Summary      Clear the download history of a group or list
+// @Description  Queues deleting the download history of a movie media group (or of one of its lists), so its releases can be downloaded again. Returns immediately; the work runs in the job queue.
+// @Tags         movies · search
+// @Param        name  path      string  true  "Media group name, or the name of one of its lists (the whole group is processed)"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group or list not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/search/history/clear/{name} [get].
 func apimoviesClearHistoryName(c *gin.Context) {
 	dispatchClearHistory(c, logger.StrMovie, logger.StrMovie, c.Param(StrName))
 }
 
-// @Summary      Clear History (Single Item)
-// @Description  Clear Episode Download History
-// @Tags         movie
-// @Param        id   path      string  true  "Movie ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  int64
-// @Failure      403  {object}  error
-// @Failure      401  {object}  Jsonerror
+// @Summary      Clear the download history of a movie
+// @Description  Deletes all download history rows of one list entry, so its releases can be downloaded again. Returns the number of deleted rows.
+// @Tags         movies · search
+// @Param        id   path      string  true  "movies (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "Number of deleted history rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/movies/search/history/clearid/{id} [get].
 func apiMoviesClearHistoryID(c *gin.Context) {
 	id, ok := getParamID(c, StrID)

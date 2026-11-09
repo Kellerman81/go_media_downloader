@@ -7,6 +7,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
 
@@ -197,5 +198,51 @@ func TestAcceptedMediaID(t *testing.T) {
 
 	if got := acceptedMediaID(config.MediaTypeBook, &e); got != 0 {
 		t.Fatalf("book id = %d", got)
+	}
+}
+
+// TestWithPending covers the cases that need no priority tables: nothing
+// pending keeps the file priority, and a pending download of unknown quality
+// (audio types, or ids the profile does not know) blocks the entry.
+func TestWithPending(t *testing.T) {
+	useTestDB(t)
+
+	qual := &config.QualityConfig{Name: "HD"}
+	id := uint(1)
+
+	exec := func(q string) {
+		t.Helper()
+
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if prio, ok := withPending(config.MediaTypeMovie, &id, 500, qual); prio != 500 || !ok {
+		t.Errorf("nothing pending: %d, %t", prio, ok)
+	}
+
+	exec("insert into dbmovies (id, title, imdb_id) values (1, 'Heat', 'tt0113277')")
+	exec("insert into movies (id, dbmovie_id, listname) values (1, 1, 'L')")
+	exec("insert into movie_histories (title, url, downloaded_at, movie_id, dbmovie_id, resolution_id, download_state) " +
+		"values ('Heat.1995.720p', 'u', datetime('now','localtime'), 1, 1, 999, 'added')")
+
+	if _, ok := withPending(config.MediaTypeMovie, &id, 0, qual); ok {
+		t.Error("pending download of unknown quality not blocking")
+	}
+
+	exec("update movie_histories set download_state = 'processed'")
+
+	if prio, ok := withPending(config.MediaTypeMovie, &id, 0, qual); prio != 0 || !ok {
+		t.Errorf("processed download still pending: %d, %t", prio, ok)
+	}
+
+	exec("insert into dbaudiobooks (id, title) values (1, 'Book')")
+	exec("insert into audiobooks (id, dbaudiobook_id, listname) values (1, 1, 'L')")
+	exec("insert into audiobook_histories (title, url, downloaded_at, audiobook_id, dbaudiobook_id, download_state) " +
+		"values ('Book', 'u', datetime('now','localtime'), 1, 1, 'downloading')")
+
+	if _, ok := withPending(config.MediaTypeAudiobook, &id, 0, qual); ok {
+		t.Error("pending audiobook download not blocking")
 	}
 }

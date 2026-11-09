@@ -551,7 +551,7 @@ func (s *Organizer) planVideoChecks(
 			"runtime %d min, wanted %d min (max_runtime_difference %d)", found, wanted, s.targetpathCfg.MaxRuntimeDifference)
 	}
 
-	if s.deletewronglanguage && !s.languageAllowed(m) {
+	if s.deletewronglanguage && !s.languageOK(ctx, m, fpath) {
 		plan.issue(true, true, "audio language %v is not in allowed_languages", m.Languages)
 	}
 }

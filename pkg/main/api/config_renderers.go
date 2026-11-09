@@ -644,6 +644,7 @@ func renderGeneralConfigSections(
 				{Name: "UseMediaFallback", Type: "checkbox", Value: configv.UseMediaFallback},
 				{Name: "UnrarPath", Type: "text", Value: configv.UnrarPath},
 				{Name: "SevenZipPath", Type: "text", Value: configv.SevenZipPath},
+				{Name: "WhisperURL", Type: "text", Value: configv.WhisperURL},
 				{Name: "UnzipPath", Type: "text", Value: configv.UnzipPath},
 				{Name: "TarPath", Type: "text", Value: configv.TarPath},
 			}, group, comments, displayNames),
@@ -2902,6 +2903,12 @@ func renderPathsConfigSections(
 					Name:    "DeleteWrongLanguage",
 					Type:    "checkbox",
 					Value:   configv.DeleteWrongLanguage,
+					Options: nil,
+				},
+				{
+					Name:    "DetectAudioLanguage",
+					Type:    "checkbox",
+					Value:   configv.DetectAudioLanguage,
 					Options: nil,
 				},
 				{

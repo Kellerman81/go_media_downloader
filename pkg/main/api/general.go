@@ -581,12 +581,12 @@ type apiparse struct {
 	Year    bool
 }
 
-// @Summary      Debug information
-// @Description  Shows some stats
-// @Tags         general
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object} Statsresults
-// @Failure      401  {object}  Jsonerror
+// @Summary      Runtime and worker statistics
+// @Description  Returns Go runtime information (garbage collector and memory statistics as JSON strings, OS, CPU count, goroutines) and the worker pool statistics. Also returns freed memory to the operating system.
+// @Tags         statistics
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Statsresults  "Runtime and worker statistics"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/debugstats [get].
 func apiDebugStats(ctx *gin.Context) {
 	var gc debug.GCStats
@@ -620,26 +620,26 @@ type Statsresults struct {
 	WorkerStats  worker.Stats `json:"WorkerStats"`
 }
 
-// @Summary      Queue
-// @Description  Lists Queued and Started Jobs (but not finished)
-// @Tags         general
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=map[string]syncops.Job}
-// @Failure      401  {object}  Jsonerror
+// @Summary      List queued and running jobs
+// @Description  Returns the jobs that are waiting in the queues or currently running (not the finished ones), keyed by queue ID.
+// @Tags         queue
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=map[string]syncops.Job}  "Queued and running jobs keyed by queue ID"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/queue [get].
 func apiQueueList(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, worker.GetQueues())
 }
 
-// @Summary      Queue History
-// @Description  Lists Started Jobs and finished but not queued jobs
-// @Tags         general
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondata{data=[]database.JobHistory}
-// @Failure      401    {object}  Jsonerror
+// @Summary      Job history
+// @Description  Returns the job history from the job_histories table (job, media group, list, start and end time), newest first, 100 rows by default.
+// @Tags         queue
+// @Param        limit  query     int     false  "Number of rows (default 100)"
+// @Param        page   query     int     false  "Page number, starting at 1"
+// @Param        order  query     string  false  "SQL order, default 'ID desc'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]database.JobHistory}  "Job history rows, newest first"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/queue/history [get].
 func apiQueueListStarted(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -658,24 +658,24 @@ func apiQueueListStarted(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, jobs)
 }
 
-// @Summary      Trakt Authorize
-// @Description  Get trakt auth url
-// @Tags         general
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string
-// @Failure      401  {object}  Jsonerror
+// @Summary      Get the Trakt authorization URL
+// @Description  Returns the URL to open in a browser to authorize this application at Trakt. After approving, pass the shown code to /api/trakt/token/{code}.
+// @Tags         trakt
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsontraktauthurl  "Trakt authorization URL to open in a browser; empty when Trakt is not set up"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/trakt/authorize [get].
 func apiTraktGetAuthURL(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, traktAuthURL())
 }
 
-// @Summary      Trakt Save Token
-// @Description  Saves Trakt token after Authorization
-// @Tags         general
-// @Param        code  path      string  true  "code"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  Jsondata{data=any}
-// @Failure      401   {object}  Jsonerror
+// @Summary      Store the Trakt authorization code
+// @Description  Exchanges the code from the Trakt authorization page for an access token, saves it (config/trakt_token.json) and returns the stored token.
+// @Tags         trakt
+// @Param        code  path      string  true  "Code shown by Trakt after authorizing"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=apiexternal_v2.OAuthToken}  "The stored token; data is null when Trakt is not set up"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/trakt/token/{code} [get].
 func apiTraktGetStoreToken(ctx *gin.Context) {
 	code, ok := getParamID(ctx, "code")
@@ -688,14 +688,14 @@ func apiTraktGetStoreToken(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, traktToken())
 }
 
-// @Summary      Trakt Get List (Auth Test)
-// @Description  Get User List
-// @Tags         general
-// @Param        user  path      string  true  "Trakt Username"
-// @Param        list  path      string  true  "List Name"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  Jsondataerror{data=[]trakt.TraktUserListItem}
-// @Failure      401   {object}  Jsonerror
+// @Summary      Read a Trakt user list (auth test)
+// @Description  Reads a Trakt user list with the stored token and returns the first 10 entries (movies and shows) plus any error - a quick test of the Trakt authorization.
+// @Tags         trakt
+// @Param        user  path      string  true  "Trakt username (slug) that owns the list"
+// @Param        list  path      string  true  "Slug of the user's Trakt list"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondataerror{data=[]trakt.TraktUserListItem}  "List items, and the error text if Trakt failed"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/trakt/user/{user}/{list} [get].
 func apiTraktGetUserList(ctx *gin.Context) {
 	user, ok := getParamID(ctx, "user")
@@ -716,13 +716,13 @@ func apiTraktGetUserList(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"data": list, "error": err})
 }
 
-// @Summary      Refresh Slugs
-// @Description  Regenerates slugs for all tables. By default only populates empty slugs. Use force=true to regenerate all slugs.
-// @Tags         general
-// @Param        apikey query     string    true  "apikey"
+// @Summary      Regenerate URL slugs
+// @Description  Fills the slug columns of all tables that have one. By default only empty slugs are filled; force=true regenerates all of them.
+// @Tags         database
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
 // @Param        force  query     string    false "Set to 'true' to regenerate all slugs, not just empty ones"
-// @Success      200   {object}  string "returns ok"
-// @Failure      401   {object}  Jsonerror
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/slug [get].
 func apiDBRefreshSlugs(ctx *gin.Context) {
 	// Check for force parameter - if true, update all slugs; otherwise only empty ones
@@ -734,14 +734,13 @@ func apiDBRefreshSlugs(ctx *gin.Context) {
 	sendSuccess(ctx, StrOK)
 }
 
-// @Summary      Parse a string
-// @Description  Parses a string for testing
+// @Summary      Parse a release name
+// @Description  Parses a release or file name like the importer does (title, year, IDs, resolution, quality, codec, audio, ...), computes the quality priority for the given quality profile and looks up the matching database IDs. Returns the parse result and an error, if any. Movies and series only.
 // @Tags         parse
-// @Param        toparse  body      apiparse  true  "To Parse"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}  Jsondataerror{data=database.ParseInfo}
-// @Failure      400      {object}  Jsonerror
-// @Failure      401      {object}  Jsonerror
+// @Param        toparse  body      apiparse  true  "Release name or file path to parse, and the media group whose settings are used"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondataerror{data=database.ParseInfo}  "Parsed release information"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/parse/string [post].
 func apiParseString(ctx *gin.Context) {
 	var getcfg apiparse
@@ -766,14 +765,13 @@ func apiParseString(ctx *gin.Context) {
 	parse.Close()
 }
 
-// @Summary      Parse a file
-// @Description  Parses a file for testing
+// @Summary      Parse a file including media info
+// @Description  Like /api/parse/string, but also reads the file with ffprobe/mediainfo (resolution, codecs, runtime, languages) before computing the quality priority and looking up the database IDs. The path must exist on the server. Returns the parse result.
 // @Tags         parse
-// @Param        toparse  body      apiparse  true  "To Parse"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}  Jsondata{data=database.ParseInfo}
-// @Failure      400      {object}  Jsonerror
-// @Failure      401      {object}  Jsonerror
+// @Param        toparse  body      apiparse  true  "Release name or file path to parse, and the media group whose settings are used"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=database.ParseInfo}  "Parsed release information"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/parse/file [post].
 func apiParseFile(ctx *gin.Context) {
 	var getcfg apiparse
@@ -800,24 +798,24 @@ func apiParseFile(ctx *gin.Context) {
 	parse.Close()
 }
 
-// @Summary      Generate IMDB Cache
-// @Description  Downloads IMDB Dataset and creates a new database from it
-// @Tags         general
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Rebuild the local IMDB database
+// @Description  Runs init_imdb: downloads the IMDB datasets and rebuilds the local IMDB database (imdb.db). The request waits until it is finished, which can take several minutes.
+// @Tags         database
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Import started in the background"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/fillimdb [get].
 func apiFillImdb(ctx *gin.Context) {
 	config.GetSettingsGeneral().Jobs["RefreshImdb"](0, ctx)
 	sendSuccess(ctx, StrOK)
 }
 
-// @Summary      Stop Scheduler
-// @Description  Stops all Schedulers
+// @Summary      Stop the scheduler
+// @Description  Stops the scheduler: no scheduled jobs are queued until it is started again. Jobs that are already queued or running continue.
 // @Tags         scheduler
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/scheduler/stop [get].
 func apiSchedulerStop(c *gin.Context) {
 	// The old scheduler.QueueData/Feeds/Search stop calls this replaced were
@@ -829,56 +827,56 @@ func apiSchedulerStop(c *gin.Context) {
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Start Scheduler
-// @Description  Start all Schedulers
+// @Summary      Start the scheduler
+// @Description  Starts the scheduler again after /api/scheduler/stop.
 // @Tags         scheduler
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/scheduler/start [get].
 func apiSchedulerStart(c *gin.Context) {
 	worker.StartCronWorker()
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Stop Schedule
-// @Description  Stops one schedule: it queues no jobs until started again (in memory only - a restart or scheduler config reload starts it again)
+// @Summary      Pause one schedule
+// @Description  Pauses one schedule: it queues no jobs until it is started again. In memory only - a restart or scheduler reload starts it again. Schedule IDs come from /api/scheduler/list.
 // @Tags         scheduler
-// @Param        id     path     string    true  "Schedule ID"
-// @Param        apikey query    string    true  "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
-// @Failure      404    {object} Jsonerror
+// @Param        id     path     string    true  "ID of the schedule, as returned by /api/scheduler/list"
+// @Param        apikey query    string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid schedule ID format"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Schedule not found"
 // @Router       /api/scheduler/stop/{id} [post].
 func apiScheduleStop(ctx *gin.Context) {
 	setSchedulePaused(ctx, true)
 }
 
-// @Summary      Start Schedule
-// @Description  Starts a schedule stopped via /api/scheduler/stop/{id} again
+// @Summary      Resume one schedule
+// @Description  Resumes a schedule paused with /api/scheduler/stop/{id}.
 // @Tags         scheduler
-// @Param        id     path     string    true  "Schedule ID"
-// @Param        apikey query    string    true  "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
-// @Failure      404    {object} Jsonerror
+// @Param        id     path     string    true  "ID of the schedule, as returned by /api/scheduler/list"
+// @Param        apikey query    string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid schedule ID format"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Schedule not found"
 // @Router       /api/scheduler/start/{id} [post].
 func apiScheduleStart(ctx *gin.Context) {
 	setSchedulePaused(ctx, false)
 }
 
-// @Summary      Queue Schedule
-// @Description  Queues one run of a schedule's job now - also for a stopped schedule
+// @Summary      Run one schedule now
+// @Description  Queues one run of the schedule's job now, also for a paused schedule. Returns 409 when the job is already queued or running.
 // @Tags         scheduler
-// @Param        id     path     string    true  "Schedule ID"
-// @Param        apikey query    string    true  "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
-// @Failure      404    {object} Jsonerror
-// @Failure      409    {object} Jsonerror
+// @Param        id     path     string    true  "ID of the schedule, as returned by /api/scheduler/list"
+// @Param        apikey query    string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid schedule ID format"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Schedule not found"
+// @Failure      409  {object}  Jsonconflict  "Job is already queued or running"
 // @Router       /api/scheduler/queue/{id} [post].
 func apiScheduleQueue(ctx *gin.Context) {
 	id, err := strconv.ParseUint(ctx.Param("id"), 10, 32)
@@ -914,23 +912,24 @@ func setSchedulePaused(ctx *gin.Context, paused bool) {
 	sendSuccess(ctx, StrOK)
 }
 
-// @Summary      Scheduler Jobs
-// @Description  Lists Planned Jobs
+// @Summary      List schedules
+// @Description  Returns all schedules keyed by ID: job name, media group, interval or cron expression, queue, last and next run, and whether it is running or paused.
 // @Tags         scheduler
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=map[string]syncops.JobSchedule}
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=map[string]syncops.JobSchedule}  "Schedules keyed by ID"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/scheduler/list [get].
 func apiSchedulerList(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, worker.GetSchedules())
 }
 
-// @Summary      Backup DB
-// @Description  Saves DB
+// @Summary      Back up the database
+// @Description  Writes a backup of data.db to ./backup/data.db.<migration>.<date>_<time> and removes backups beyond max_database_backups. With database_backup_stop_tasks the scheduler and workers are paused during the backup. The request waits until it is done.
 // @Tags         database
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/db/backup [get].
 func apiDBBackup(ctx *gin.Context) {
 	if config.GetSettingsGeneral().DatabaseBackupStopTasks {
@@ -961,23 +960,24 @@ func apiDBBackup(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      Integrity DB
-// @Description  Integrity Check DB
+// @Summary      Check database integrity
+// @Description  Runs SQLite's integrity check on data.db and returns its result lines ('ok' when the database is healthy).
 // @Tags         database
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Result of PRAGMA integrity_check, 'ok' when the database is fine"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/db/integrity [get].
 func apiDBIntegrity(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, database.DBIntegrityCheck())
 }
 
-// @Summary      Cleanup Orphaned Rows
-// @Description  Deletes child rows whose parent rows no longer exist, per the schema's foreign-key relationships. Returns deleted row counts per table.
+// @Summary      Delete orphaned rows
+// @Description  Deletes child rows whose parent rows no longer exist, following the schema's foreign keys (e.g. files of deleted list entries). Returns the number of deleted rows per table.
 // @Tags         database
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  map[string]int64
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=map[string]int64}  "Deleted rows per table"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      500  {object}  Jsonerror  "Cleanup stopped early"
 // @Router       /api/db/cleanuporphans [get].
 func apiDBCleanupOrphans(ctx *gin.Context) {
 	deleted, err := database.CleanupOrphans(false)
@@ -989,13 +989,15 @@ func apiDBCleanupOrphans(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, deleted)
 }
 
-// @Summary      Clear DB Table
-// @Description  Clears a DB Table
+// @Summary      Delete all rows of a table
+// @Description  Deletes every row of the given table and vacuums the database. Cannot be undone - make a backup first.
 // @Tags         database
-// @Param        name  path      string  true  "Table Name"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  string "returns ok"
-// @Failure      401   {object}  Jsonerror
+// @Param        name  path      string  true  "Table name, e.g. job_histories"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      400  {object}  Jsonbadrequest  "Unknown table"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/db/clear/{name} [delete].
 func apiDBClear(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
@@ -1022,14 +1024,16 @@ func apiDBClear(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      Delete Row from DB Table
-// @Description  Deletes a Row from a DB Table
+// @Summary      Delete one row of a table
+// @Description  Deletes the row with the given id from the given table. Related rows in other tables are not deleted (see /api/db/cleanuporphans).
 // @Tags         database
-// @Param        name  path      string  true  "Table Name"
-// @Param        id    path      string  true  "Row ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  string "returns ok"
-// @Failure      401   {object}  Jsonerror
+// @Param        name  path      string  true  "Database table to delete from, e.g. movies, dbmovies, series"
+// @Param        id    path      string  true  "Value of the id column of the row to delete"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      400  {object}  Jsonbadrequest  "Unknown table"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/db/delete/{name}/{id} [delete].
 func apiDBDelete(ctx *gin.Context) {
 	tableName, ok := getParamID(ctx, StrName)
@@ -1053,37 +1057,39 @@ func apiDBDelete(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      Clear Caches
-// @Description  Clears Caches
-// @Tags         database
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  string "returns ok"
-// @Failure      401   {object}  Jsonerror
+// @Summary      Clear the in-memory caches
+// @Description  Clears all in-memory caches (titles, IDs, files, histories). They are rebuilt on the next use or cache refresh.
+// @Tags         cache
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/db/clearcache [delete].
 func apiDBClearCache(ctx *gin.Context) {
 	database.ClearCaches()
 	sendSuccess(ctx, StrOK)
 }
 
-// @Summary      Vacuum DB
-// @Description  Vacuum database
+// @Summary      Vacuum the database
+// @Description  Runs SQLite VACUUM on data.db to reclaim free space. Blocks database writes while it runs.
 // @Tags         database
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/db/vacuum [get].
 func apiDBVacuum(ctx *gin.Context) {
 	err := database.ExecNErr("VACUUM")
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      Clean Old Jobs
-// @Description  Removes Jobs started over x days ago from db
+// @Summary      Delete old job history
+// @Description  Deletes job_histories rows created more than the given number of days ago. days=0 deletes nothing.
 // @Tags         database
-// @Param        days  query     int  true  "Days ago"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  string "returns ok"
-// @Failure      401   {object}  Jsonerror
+// @Param        days  query     int  true  "Keep the jobs of this many days"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "days missing or empty, or a database error"
 // @Router       /api/db/oldjobs [delete].
 func apiDBRemoveOldJobs(ctx *gin.Context) {
 	queryParam, ok := ctx.GetQuery("days")
@@ -1108,12 +1114,12 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      List Qualities
-// @Description  List Qualities with regex filters
+// @Summary      List quality patterns
+// @Description  Returns all rows of the qualities table: the resolution, quality, codec and audio patterns (strings or regex) the parser uses, with their priorities.
 // @Tags         quality
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}   Jsondata{data=[]database.Qualities}
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]database.Qualities}  "All quality rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/quality [get].
 func apiGetQualities(ctx *gin.Context) {
 	data := database.StructscanT[database.Qualities](
@@ -1124,13 +1130,14 @@ func apiGetQualities(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, data)
 }
 
-// @Summary      Delete Quality
-// @Description  Deletes a quality
+// @Summary      Delete a quality pattern
+// @Description  Deletes one row of the qualities table, reloads the patterns and returns the remaining qualities.
 // @Tags         quality
-// @Param        id   path      string  true  "Id of Quality to delete"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}   Jsondata{data=[]database.Qualities}
-// @Failure      401  {object}  Jsonerror
+// @Param        id   path      string  true  "ID of the qualities row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]database.Qualities}  "The remaining quality rows"
+// @Failure      400  {object}  Jsonbadrequest  "Delete failed"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/quality/{id} [delete].
 func apiQualityDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -1153,14 +1160,14 @@ func apiQualityDelete(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, data)
 }
 
-// @Summary      Update Quality
-// @Description  Updates or adds a quality
+// @Summary      Add or update a quality pattern
+// @Description  Inserts the quality pattern when its id is 0 or unknown, otherwise updates it; then reloads the patterns. Returns the updated qualities list.
 // @Tags         quality
-// @Param        quality  body      database.Qualities  true  "Quality"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}   Jsondata{data=[]database.Qualities}
-// @Failure      400      {object}  Jsonerror
-// @Failure      401      {object}  Jsonerror
+// @Param        quality  body      database.Qualities  true  "Quality row to save; an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]database.Qualities}  "All quality rows after the change"
+// @Failure      400  {object}  Jsonbadrequest  "Save failed"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/quality [post].
 func apiQualityUpdate(ctx *gin.Context) {
 	var quality database.Qualities
@@ -1217,14 +1224,14 @@ func apiQualityUpdate(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, data)
 }
 
-// @Summary      List Quality Priorities
-// @Description  List allowed qualities and their priorities
+// @Summary      Wanted quality priorities of a profile
+// @Description  Returns the computed priorities of all wanted resolution/quality/codec/audio combinations of one quality profile - the order releases are preferred in.
 // @Tags         quality
-// @Param        name    path      string  true  "Quality Name: ex. SD"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}   Jsondata{data=[]parser.Prioarr}
-// @Failure      401  {object}  Jsonerror
-// @Failure      404     {object}  string
+// @Param        name    path      string  true  "Quality profile name, e.g. SD"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]parser.Prioarr}  "Priorities of the quality profile"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Quality profile not found"
 // @Router       /api/quality/get/{name} [get].
 func apiListQualityPriorities(ctx *gin.Context) {
 	name, ok := getParamID(ctx, StrName)
@@ -1247,36 +1254,34 @@ func apiListQualityPriorities(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, returnprios)
 }
 
-// @Summary      List Quality Priorities
-// @Description  List allowed qualities and their priorities
+// @Summary      Wanted quality priorities of all profiles
+// @Description  Returns the computed priorities of the wanted combinations of every quality profile.
 // @Tags         quality
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}   Jsondata{data=[]parser.Prioarr}
-// @Failure      401  {object}  Jsonerror
-// @Failure      404     {object}  string
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]parser.Prioarr}  "Priorities of all quality profiles"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/quality/all [get].
 func apiListAllQualityPriorities(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, parser.Getallprios())
 }
 
-// @Summary      List Quality Priorities
-// @Description  List all qualities and their priorities
+// @Summary      All quality priorities of all profiles
+// @Description  Returns the computed priorities of every resolution/quality/codec/audio combination of every quality profile, including the unwanted ones.
 // @Tags         quality
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}   Jsondata{data=[]parser.Prioarr}
-// @Failure      401  {object}  Jsonerror
-// @Failure      404     {object}  string
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=[]parser.Prioarr}  "Every combination with its priority"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/quality/complete [get].
 func apiListCompleteAllQualityPriorities(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, parser.Getcompleteallprios())
 }
 
-// @Summary      Get Complete Config
-// @Description  Get All Config Parameters
+// @Summary      Get the whole configuration
+// @Description  Returns every configuration section, keyed by name (general, imdb, quality_SD, downloader_sab, ...). Passwords and API keys are redacted.
 // @Tags         config
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {array}  Jsondata{data=map[string]any}
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=Jsonconfigall}  "All configuration entries (keys shown are examples)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/all [get].
 func apiConfigAll(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
@@ -1410,12 +1415,12 @@ func mergeRedacted(cur, old any) bool {
 	return changed
 }
 
-// @Summary      Clear Config
-// @Description  Clears the configuration and sets some examples -> Use with caution
+// @Summary      Reset the configuration
+// @Description  Replaces the whole configuration with example entries and writes config.toml. Everything you configured is lost - make a copy of config.toml first. Returns the new configuration.
 // @Tags         config
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {array}  Jsondata{data=map[string]any}
-// @Failure      401   {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=Jsonconfigall}  "The remaining configuration"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/clear [delete].
 func apiConfigClear(ctx *gin.Context) {
 	config.ClearCfg()
@@ -1423,13 +1428,13 @@ func apiConfigClear(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
 }
 
-// @Summary      Get Config
-// @Description  Gets a configuration
+// @Summary      Get one configuration section
+// @Description  Returns one configuration section by its name, e.g. quality_SD or downloader_sab. Passwords and API keys are redacted.
 // @Tags         config
 // @Param        name  path      string  true  "Type Name: ex. quality_SD"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  Jsondata{data=any}
-// @Failure      401   {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=config.MediaTypeConfig}  "The entry; its type depends on the section (media group shown)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/get/{name} [get].
 func apiConfigGet(ctx *gin.Context) {
 	name, ok := getParamID(ctx, StrName)
@@ -1440,13 +1445,13 @@ func apiConfigGet(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()[name]))
 }
 
-// @Summary      Delete Config
-// @Description  Deletes a configuration -> Use with caution -> also resets your comments
+// @Summary      Delete one configuration section
+// @Description  Removes one configuration section, reloads the affected parts and writes config.toml (comments in the file are lost). Returns the remaining configuration.
 // @Tags         config
 // @Param        name  path      string  true  "Type Name: ex. quality_SD"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {array}  Jsondata{data=map[string]any}
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=Jsonconfigall}  "The remaining configuration"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/delete/{name} [delete].
 func apiConfigDelete(ctx *gin.Context) {
 	name, ok := getParamID(ctx, StrName)
@@ -1462,12 +1467,12 @@ func apiConfigDelete(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
 }
 
-// @Summary      Reload ConfigFile
-// @Description  Refreshes the config from the file
+// @Summary      Reload config.toml
+// @Description  Reloads config.toml from disk after manual edits: quality priorities, schedules, download clients, indexers and notifications are rebuilt.
 // @Tags         config
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {array}  Jsondata{data=map[string]any}
-// @Failure      401   {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonconfigreloaded  "Configuration reloaded from the file"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/refresh [get].
 func apiConfigRefreshFile(ctx *gin.Context) {
 	config.LoadCfgDB(true)
@@ -1515,16 +1520,15 @@ func affectsScheduler(name string) bool {
 	return false
 }
 
-// @Summary      Update Config
-// @Description  Updates a configuration -> Use with caution -> also resets your comments
+// @Summary      Add or replace one configuration section
+// @Description  Saves the JSON body as the named configuration section (general, imdb, media, downloader, indexer, list, path, notification, regex, quality, scheduler), reloads the affected parts and writes config.toml (comments in the file are lost). Redacted secrets keep their stored value.
 // @Tags         config
-// @Param        config  body      any  true  "Config"
+// @Param        config  body      any  true  "The new configuration entry as JSON; its shape depends on the section in name (see /api/config/get/{name})"
 // @Param        name    path      string       true  "Type Name: ex. quality_SD"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {array}  Jsondata{data=map[string]any}
-// @Failure      401     {object}  Jsonerror
-// @Failure      400  {object}  Jsonerror
-// @Failure      401     {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=Jsonconfigall}  "The whole configuration after the change"
+// @Failure      400  {object}  Jsonbadrequest  "Unknown section or invalid entry"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/update/{name} [post].
 func apiConfigUpdate(ctx *gin.Context) {
 	name, ok := getParamID(ctx, StrName)
@@ -1665,13 +1669,13 @@ func apiConfigUpdate(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, redactConfigSecrets(config.GetCfgAll()))
 }
 
-// @Summary      List Config Type
-// @Description  List configurations of type
+// @Summary      List configuration sections of a type
+// @Description  Returns all configuration sections of one type, e.g. every quality profile or every downloader.
 // @Tags         config
 // @Param        type  path      string  true  "Type Name: ex. quality"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  Jsondata{data=map[string]any}
-// @Failure      401     {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=Jsonconfigall}  "Entries of the section, keyed like /api/config/all"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/config/type/{type} [get].
 func apiListConfigType(ctx *gin.Context) {
 	list := make(map[string]any)
@@ -1777,14 +1781,14 @@ type apiNameInput struct {
 	SerieID   int    `json:"serieid"`
 }
 
-// @Summary      Name Generation Test
-// @Description  Test your Naming Convention
-// @Tags         general
-// @Param        config  body      apiNameInput  true  "Config"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  JSONNaming
-// @Failure      400     {object}  Jsonerror
-// @Failure      401     {object}  Jsonerror
+// @Summary      Test the naming template
+// @Description  Renders the folder and file name the organizer would use for a movie or series episode of the database, with the media group's naming template and a sample file path. Nothing is moved.
+// @Tags         organize
+// @Param        config  body      apiNameInput  true  "Media group, file path and movie or series ID to build the folder and file name for"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  JSONNaming  "Parsed file and the generated folder and file name"
+// @Failure      400  {object}  Jsonbadrequest  "Media, group or organizer not found, or the file could not be parsed"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/naming [post].
 func apiNamingGenerate(ctx *gin.Context) {
 	var cfg apiNameInput
@@ -1935,14 +1939,14 @@ type apiCacheAddJSON struct {
 	Value     string `binding:"required" json:"value"`
 }
 
-// @Summary      Structure Single Item
-// @Description  Structure a single folder
-// @Tags         general
-// @Param        config  body      apiStructureJSON  true  "Config"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  string
-// @Failure      400     {object}  Jsonerror
-// @Failure      401     {object}  Jsonerror
+// @Summary      Organize one folder
+// @Description  Runs the organizer on one folder: parses and matches the files, then moves and renames them into the library of the given media group and path template (movies and series). Optionally forces a database ID and turns off the runtime check, the disallowed-name check or deleting wrong-language files.
+// @Tags         organize
+// @Param        config  body      apiStructureJSON  true  "Folder to organize, the media group, and the source and target path entries"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  object  "Empty object {} - the organize run finished"
+// @Failure      400  {object}  Jsonbadrequest  "Media group, path or folder not found"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/structure [post].
 func apiStructure(ctx *gin.Context) {
 	var cfg apiStructureJSON
@@ -2027,14 +2031,14 @@ type apiAlbumForceMatchJSON struct {
 	Preview            bool   `                   json:"preview"`
 }
 
-// @Summary      Force-match album folder
-// @Description  Match a folder against a specific MBID or ASIN and either preview the rename plan or execute the full organize workflow
-// @Tags         general
-// @Param        config  body      apiAlbumForceMatchJSON  true  "Config"
-// @Param        apikey  query     string                  true  "apikey"
-// @Success      200     {object}  structure.AlbumForceMatchPreview
-// @Failure      400     {object}  Jsonerror
-// @Failure      401     {object}  Jsonerror
+// @Summary      Organize an album folder with a given release
+// @Description  Matches a music or audiobook folder against the given MusicBrainz release ID or Audible ASIN instead of searching. With preview it returns the rename plan; otherwise it organizes the folder.
+// @Tags         organize
+// @Param        config  body      apiAlbumForceMatchJSON  true  "Album folder, media group, paths and the release ID to match it to (forced_id); preview=true only shows the result"
+// @Param        apikey  query     string                  true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  structure.AlbumForceMatchPreview  "Preview, or the result when apply=true"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid group type, config or folder, or the match failed"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/album/force-match [post].
 func apiAlbumForceMatch(ctx *gin.Context) {
 	var cfg apiAlbumForceMatchJSON
@@ -2115,15 +2119,15 @@ func apiAlbumForceMatch(ctx *gin.Context) {
 	}
 }
 
-// @Summary      Cancel Queue Job
-// @Description  Cancel a running or pending job in the queue
+// @Summary      Cancel a queued or running job
+// @Description  Cancels one job of the queue (IDs from /api/queue) and removes it; a running job is told to stop.
 // @Tags         queue
 // @Param        id     path     string    true  "Queue job ID"
-// @Param        apikey query    string    true  "apikey"
-// @Success      200    {object} gin.H
-// @Failure      400    {object} Jsonerror
-// @Failure      401    {object} Jsonerror
-// @Failure      404    {object} Jsonerror
+// @Param        apikey query    string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonsuccessmessage  "Canceled"
+// @Failure      400  {object}  Jsonbadrequest  "Missing or invalid queue ID"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonoperation  "{'success':false,'error':'Queue job not found'}"
 // @Router       /api/queue/cancel/{id} [delete].
 func apiQueueCancel(ctx *gin.Context) {
 	idStr := ctx.Param("id")
@@ -2163,24 +2167,24 @@ func apiQueueCancel(ctx *gin.Context) {
 	})
 }
 
-// @Summary      Refresh Cache
-// @Description  Manually trigger a full cache refresh for database tables
+// @Summary      Rebuild the caches
+// @Description  Rebuilds all database caches (titles, IDs, files, histories) from the database. The request waits until done.
 // @Tags         cache
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=string} "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/cache/refresh [get].
 func apiCacheRefresh(ctx *gin.Context) {
 	config.GetSettingsGeneral().Jobs["RefreshCache"](0, ctx)
 	sendSuccess(ctx, StrOK)
 }
 
-// @Summary      List Cache Types
-// @Description  List all available cache types and their current status
+// @Summary      List cache types
+// @Description  Returns the available cache types with a description of each.
 // @Tags         cache
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=map[string]any} "cache types and status"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=Jsoncachelist}  "Cache types with a description"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/cache/list [get].
 func apiCacheList(ctx *gin.Context) {
 	cacheInfo := map[string]any{
@@ -2220,14 +2224,14 @@ func apiCacheList(ctx *gin.Context) {
 	sendJSONResponse(ctx, http.StatusOK, cacheInfo)
 }
 
-// @Summary      Add Cache Entry
-// @Description  Manually add an entry to a specific cache
+// @Summary      Add a cache entry
+// @Description  Adds an entry to one cache type (see /api/cache/list) - for debugging cache problems.
 // @Tags         cache
 // @Param        cache  body      apiCacheAddJSON  true  "Cache entry data"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=string} "returns ok"
-// @Failure      400  {object}  Jsonerror
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncacheadded  "Entry added"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid cache type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/cache/add [post].
 func apiCacheAdd(ctx *gin.Context) {
 	var req apiCacheAddJSON
@@ -2263,13 +2267,14 @@ func apiCacheAdd(ctx *gin.Context) {
 	sendSuccess(ctx, "Cache entry added successfully")
 }
 
-// @Summary      Remove Cache Entry
-// @Description  Remove a specific cache entry by key
+// @Summary      Remove a cache entry
+// @Description  Removes one entry, by its key, from the caches.
 // @Tags         cache
 // @Param        key    path     string    true  "Cache key to remove"
-// @Param        apikey query    string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=string} "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query    string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncacheremoved  "Entry removed"
+// @Failure      400  {object}  Jsonbadrequest  "Missing cache key"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/cache/remove/{key} [delete].
 func apiCacheRemove(ctx *gin.Context) {
 	key := ctx.Param("key")
@@ -2286,14 +2291,14 @@ func apiCacheRemove(ctx *gin.Context) {
 	sendSuccess(ctx, "Cache entry removed successfully")
 }
 
-// @Summary      Clear Cache Type
-// @Description  Clear all entries from a specific cache type
+// @Summary      Clear one cache type
+// @Description  Removes all entries of one cache type (see /api/cache/list).
 // @Tags         cache
 // @Param        type   path     string    true  "Cache type to clear"
-// @Param        apikey query    string    true  "apikey"
-// @Success      200  {object}  Jsondata{data=string} "returns ok"
-// @Failure      400  {object}  Jsonerror
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query    string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncachecleared  "'Cache type <type> cleared successfully'"
+// @Failure      400  {object}  Jsonbadrequest  "Missing or invalid cache type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/cache/clear/{type} [delete].
 func apiCacheClear(ctx *gin.Context) {
 	cacheType := ctx.Param("type")

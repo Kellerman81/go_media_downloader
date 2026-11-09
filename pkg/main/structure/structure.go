@@ -701,7 +701,7 @@ func (s *Organizer) ParseFileAdditional(
 		}
 
 		// Language validation (only for video)
-		return s.validateLanguage(m, deletewronglanguage, o)
+		return s.validateLanguage(ctx, m, deletewronglanguage, o)
 	}
 
 	return nil
@@ -796,11 +796,12 @@ func abs(x int) int {
 //
 // Returns error if language validation fails or file cleanup encounters issues.
 func (s *Organizer) validateLanguage(
+	ctx context.Context,
 	m *database.ParseInfo,
 	deletewronglanguage bool,
 	o *Organizerdata,
 ) error {
-	if !deletewronglanguage || s.languageAllowed(m) {
+	if !deletewronglanguage || s.languageOK(ctx, m, o.MediaFile) {
 		return nil
 	}
 
@@ -831,6 +832,41 @@ func (s *Organizer) validateLanguage(
 		Msg("wrong language")
 
 	return errWrongLanguage
+}
+
+// languageOK reports whether the audio languages of file (parsed into m)
+// satisfy the target path's allowed_languages. With detect_audio_language,
+// tracks without a language tag are identified by listening first and
+// m.Languages is updated with the result, so a file passes only through an
+// empty or "und" allowed_languages entry when its language really is unknown.
+// A failing detection is logged and leaves the tags as they are.
+func (s *Organizer) languageOK(ctx context.Context, m *database.ParseInfo, file string) bool {
+	if s.targetpathCfg.AllowedLanguagesLen == 0 {
+		return true
+	}
+
+	var names []string
+
+	if s.targetpathCfg.DetectAudioLanguage {
+		languages, detected, err := parser.DetectAudioLanguages(ctx, file)
+		if err != nil {
+			logger.Logtype("warn", 1).Err(err).Str(logger.StrFile, file).Msg("audio language detection failed")
+		} else if detected != nil {
+			m.Languages, names = languages, detected
+		}
+	}
+
+	if s.languageAllowed(m) {
+		return true
+	}
+
+	for _, allowed := range s.targetpathCfg.AllowedLanguages {
+		if allowed != "" && logger.SlicesContainsI(names, allowed) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // languageAllowed reports whether the audio languages of m satisfy the

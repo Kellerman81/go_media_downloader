@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,20 +39,60 @@ const (
 	trackDays = 30
 )
 
+// pendingHours is how long a download that its client does not report as
+// downloading still counts as pending. Clients without state reporting (drone)
+// leave rows "added" forever, and a completed download the structure job never
+// picks up stays "completed", so without a bound they would block searches
+// for the item for the whole trackDays window.
+const pendingHours = 24
+
 // kind describes the history table of one media type.
 type kind struct {
 	isType     uint
 	history    string // e.g. movie_histories
 	mediaCol   string // its list-entry column, e.g. movie_id
 	mediaTable string // the list table holding lastscan, e.g. movies
+	hasQuality bool   // the history rows carry resolution/quality/codec/audio ids
 }
 
 var kinds = []kind{
-	{config.MediaTypeMovie, "movie_histories", "movie_id", "movies"},
-	{config.MediaTypeSeries, "serie_episode_histories", "serie_episode_id", "serie_episodes"},
-	{config.MediaTypeBook, "book_histories", "book_id", "books"},
-	{config.MediaTypeAudiobook, "audiobook_histories", "audiobook_id", "audiobooks"},
-	{config.MediaTypeMusic, "album_histories", "album_id", "albums"},
+	{config.MediaTypeMovie, "movie_histories", "movie_id", "movies", true},
+	{config.MediaTypeSeries, "serie_episode_histories", "serie_episode_id", "serie_episodes", true},
+	{config.MediaTypeBook, "book_histories", "book_id", "books", false},
+	{config.MediaTypeAudiobook, "audiobook_histories", "audiobook_id", "audiobooks", false},
+	{config.MediaTypeMusic, "album_histories", "album_id", "albums", false},
+}
+
+// Pending is a download of a list entry that was sent to a client and has
+// not been organized or rejected yet. The ids are 0 for media types whose
+// history has no quality columns.
+type Pending struct {
+	ResolutionID uint `db:"resolution_id"`
+	QualityID    uint `db:"quality_id"`
+	CodecID      uint `db:"codec_id"`
+	AudioID      uint `db:"audio_id"`
+}
+
+// PendingFor returns the pending downloads of the list entry mediaID (movie,
+// episode, book, audiobook or album id): rows the client reports as
+// downloading, and added or completed rows from the last pendingHours.
+func PendingFor(isType uint, mediaID uint) []Pending {
+	k := kindOf(isType)
+	if k == nil || mediaID == 0 {
+		return nil
+	}
+
+	cols := "0 as resolution_id, 0 as quality_id, 0 as codec_id, 0 as audio_id"
+	if k.hasQuality {
+		cols = "resolution_id, quality_id, codec_id, audio_id"
+	}
+
+	return database.StructscanT[Pending](false, 0,
+		"select "+cols+" from "+k.history+
+			" where download_state in (?, ?, ?) and "+k.mediaCol+" = ?"+
+			" and downloaded_at > datetime('now','localtime','-"+fmt.Sprint(trackDays)+" days')"+
+			" and (download_state = ? or downloaded_at > datetime('now','localtime','-"+fmt.Sprint(pendingHours)+" hours'))",
+		Added, Downloading, Completed, mediaID, Downloading)
 }
 
 func kindOf(isType uint) *kind {
@@ -275,6 +316,18 @@ func matchByName(states map[string]apiexternal_v2.DownloadState, title string) s
 	return found
 }
 
+// importNames returns the normalized forms a release name can have in the
+// import folder: as is, and without the " (<external id>)" the downloader
+// appends to the folder (and so to the file) name, e.g. " (tt46075510)".
+func importNames(name string) []string {
+	n := normName(name)
+	if i := strings.LastIndex(n, " ("); i > 0 && strings.HasSuffix(n, ")") {
+		return []string{n, strings.TrimSpace(n[:i])}
+	}
+
+	return []string{n}
+}
+
 // Organized records what the structure job did with the downloaded files of
 // the list entries mediaIDs (movie, episode, book, audiobook or album ids):
 // reason "" means organized, anything else is the move_unprocessed reason it
@@ -288,9 +341,9 @@ func Organized(isType uint, mediaIDs []uint, folder, file, reason, detail string
 		return
 	}
 
-	names := []string{normName(filepath.Base(folder))}
+	names := importNames(filepath.Base(folder))
 	if file != "" {
-		names = append(names, normName(strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))))
+		names = append(names, importNames(strings.TrimSuffix(filepath.Base(file), filepath.Ext(file)))...)
 	}
 
 	for _, id := range mediaIDs {
@@ -306,8 +359,7 @@ func Organized(isType uint, mediaIDs []uint, folder, file, reason, detail string
 		r := &rows[0]
 
 		for i := range rows {
-			n := normName(rows[i].Title)
-			if n != "" && (n == names[0] || (len(names) > 1 && n == names[1])) {
+			if n := normName(rows[i].Title); n != "" && slices.Contains(names, n) {
 				r = &rows[i]
 				break
 			}

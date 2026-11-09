@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/utils"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
@@ -447,4 +449,64 @@ func dispatchMediaJob(c *gin.Context, mt mediaJobDispatchConfig) {
 
 	started, err := dispatchMediaJobsForConfig(jobParam, mt.TypeName, media)
 	sendDispatchResult(c, "Job "+jobParam+" started", started, err)
+}
+
+// searchListEntry searches the indexers for the list entry in the id path
+// parameter - a row of table (albums, books, audiobooks) - and answers with
+// the accepted and denied releases; download=true also downloads the best
+// accepted one. 204 means no media group of prefix has the entry's list.
+func searchListEntry(c *gin.Context, prefix, table string) {
+	id, ok := parseUintParam(c, logger.StrID)
+	if !ok {
+		return
+	}
+
+	listname := database.Getdatarow[string](false, "select listname from "+table+" where id = ?", &id)
+
+	media, _ := findMediaConfigByList(prefix, listname)
+	if media == nil {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+		return
+	}
+
+	titlesearch := false
+	switch c.Query("searchByTitle") {
+	case "true", "yes", "on":
+		titlesearch = true
+	}
+
+	results := searcher.NewSearcher(media, nil, "", nil)
+	defer results.Close()
+
+	if err := results.MediaSearch(context.Background(), media, id, titlesearch, false, false); err != nil {
+		c.JSON(http.StatusNotFound, "failed with "+err.Error())
+		return
+	}
+
+	if strings.EqualFold(c.Query("download"), "true") {
+		results.Download()
+	}
+
+	c.JSON(http.StatusOK, gin.H{"accepted": results.Accepted, "denied": results.Denied})
+}
+
+// rssPreviewGroup reads the indexers' RSS feeds for the media group of
+// prefix named in the group path parameter and answers with the accepted and
+// denied releases, without downloading.
+func rssPreviewGroup(c *gin.Context, prefix string) {
+	media := findMediaConfigByName(prefix, c.Param("group"))
+	if media == nil {
+		sendJSONError(c, http.StatusNoContent, StrNothingDone)
+		return
+	}
+
+	results := searcher.NewSearcher(media, media.CfgQuality, logger.StrRss, nil)
+	defer results.Close()
+
+	if err := results.SearchRSS(context.Background(), media, media.CfgQuality, false, false); err != nil {
+		c.JSON(http.StatusNotFound, "failed with "+err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"accepted": results.Accepted, "denied": results.Denied})
 }

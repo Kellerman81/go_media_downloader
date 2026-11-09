@@ -697,3 +697,47 @@ func TestExtractQualityInfoFromDB(t *testing.T) {
 		t.Errorf("in-word match: %q", r.Audio)
 	}
 }
+
+func TestStripMiniResolution(t *testing.T) {
+	tests := map[string]string{
+		"Herbie Fully Loaded 2005 m1080p BluRay x264-GeneMige": "Herbie Fully Loaded 2005 1080p BluRay x264-GeneMige",
+		"Jumanji.1995.m720p.BluRay.DD.5.1.x264-GeneMige":       "Jumanji.1995.720p.BluRay.DD.5.1.x264-GeneMige",
+		"m2160p.Movie":           "2160p.Movie",
+		"Movie.2020.1080p.WEB":   "Movie.2020.1080p.WEB",
+		"Platinum1080p.Movie":    "Platinum1080p.Movie",
+		"Movie.Team1080p.BluRay": "Movie.Team1080p.BluRay",
+	}
+	for in, want := range tests {
+		if got := stripMiniResolution(in); got != want {
+			t.Errorf("stripMiniResolution(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Mini encodes must be ranked at their real resolution: parsed as "no
+// resolution" they fell back to default_resolution, were grabbed as SD
+// upgrades and then rejected by the organizer after ffprobe - every search.
+func TestMiniResolutionDetected(t *testing.T) {
+	const name = "Herbie Fully Loaded 2005 m1080p BluRay x264-GeneMige"
+
+	var r VideoParseResult
+	NewVideoParser().extractQualityInfoBuiltin(name, &r)
+
+	if r.Resolution != "1080p" {
+		t.Errorf("builtin resolution = %q, want 1080p", r.Resolution)
+	}
+
+	r = VideoParseResult{}
+	NewVideoParserWithPatternStore(testPatternStore()).extractQualityInfoFromDB(name, &r)
+
+	if r.Resolution != "1080p" || r.ResolutionID != 1 {
+		t.Errorf("db resolution = %q (%d), want 1080p (1)", r.Resolution, r.ResolutionID)
+	}
+
+	var m database.ParseInfo
+	extractQualityToParseInfo(NewVideoParserWithPatternStore(testPatternStore()), name, &m, false)
+
+	if m.Resolution != "1080p" || m.ResolutionID != 1 {
+		t.Errorf("ParseInfo resolution = %q (%d), want 1080p (1)", m.Resolution, m.ResolutionID)
+	}
+}

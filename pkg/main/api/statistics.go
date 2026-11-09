@@ -920,13 +920,14 @@ func gatherAllStatistics(ctx context.Context) (OverallStatistics, error) {
 
 // API Handlers
 
-// @Summary      Get Statistics
-// @Description  Retrieves comprehensive system statistics including movies, series, storage, HTTP, and system performance
+// @Summary      All statistics
+// @Description  Returns all statistics in one response: movies, series, music, books, audiobooks, storage, HTTP requests, workers and system. Gathered with a 30 second limit.
 // @Tags         statistics
 // @Produce      json
-// @Param        apikey query string true "API Key"
-// @Success      200 {object} OverallStatistics
-// @Failure      500 {object} Jsonerror
+// @Param        apikey query string true "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  OverallStatistics  "Statistics"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      500  {object}  Jsonerror  "Query failed"
 // @Router       /api/statistics [get].
 func apiStatistics(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -957,13 +958,14 @@ func webStatisticsData(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, stats)
 }
 
-// @Summary      Get Movie Statistics
-// @Description  Retrieves movie-specific statistics
+// @Summary      Movie statistics
+// @Description  Returns the movie library statistics: total, available and missing movies, quality reached, upgrades available, counts per quality and per list, and total size.
 // @Tags         statistics
 // @Produce      json
-// @Param        apikey query string true "API Key"
-// @Success      200 {object} MovieStatistics
-// @Failure      500 {object} Jsonerror
+// @Param        apikey query string true "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  MovieStatistics  "Statistics"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      500  {object}  Jsonerror  "Query failed"
 // @Router       /api/statistics/movies [get].
 func apiMovieStatistics(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -979,13 +981,14 @@ func apiMovieStatistics(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, stats)
 }
 
-// @Summary      Get Series Statistics
-// @Description  Retrieves series-specific statistics
+// @Summary      Series statistics
+// @Description  Returns the series library statistics: series, seasons and episodes (total, available, missing), quality reached, upgrades available, counts per quality and per list, and total size.
 // @Tags         statistics
 // @Produce      json
-// @Param        apikey query string true "API Key"
-// @Success      200 {object} SeriesStatistics
-// @Failure      500 {object} Jsonerror
+// @Param        apikey query string true "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  SeriesStatistics  "Statistics"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      500  {object}  Jsonerror  "Query failed"
 // @Router       /api/statistics/series [get].
 func apiSeriesStatistics(ctx *gin.Context) {
 	requestCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -1001,13 +1004,13 @@ func apiSeriesStatistics(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, stats)
 }
 
-// @Summary      Get Worker Statistics
-// @Description  Retrieves worker pool statistics
+// @Summary      Worker statistics
+// @Description  Returns the statistics of the worker pools (queued, running and finished jobs per pool).
 // @Tags         statistics
 // @Produce      json
-// @Param        apikey query string true "API Key"
-// @Success      200 {object} worker.Stats
-// @Failure      500 {object} Jsonerror
+// @Param        apikey query string true "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  worker.Stats  "Worker pool statistics"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/statistics/workers [get].
 func apiWorkerStatistics(ctx *gin.Context) {
 	stats := worker.GetStats()

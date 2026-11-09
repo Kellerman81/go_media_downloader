@@ -37,6 +37,7 @@ func AddBooksRoutes(routerbooks *gin.RouterGroup) {
 		routerbookssearch := routerbooks.Group("/search")
 		{
 			routerbookssearch.GET("/list/:id", apiBooksSearchList)
+			routerbookssearch.GET("/missing/:name", apiBooksSearchMissing)
 			routerbookssearch.GET("/history/clear/:name", apiBooksClearHistoryName)
 			routerbookssearch.GET("/history/clearid/:id", apiBooksClearHistoryID)
 			routerbookssearch.GET("/authors/missing/:name", apiBooksSearchAuthorsMissing)
@@ -45,15 +46,15 @@ func AddBooksRoutes(routerbooks *gin.RouterGroup) {
 	}
 }
 
-// @Summary      List Books (Database)
-// @Description  List all books from the database
-// @Tags         book
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  Jsondatarows
-// @Failure      401    {object}  Jsonerror
+// @Summary      List books (metadata)
+// @Description  Returns the books of the dbbooks table (metadata independent of lists), paginated, with the total count.
+// @Tags         books · data
+// @Param        limit  query     int     false  "Rows per page (default 100, max 1000)"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.Dbbook}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/books [get].
 func apiBooksDBList(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -84,16 +85,16 @@ func apiBooksDBList(ctx *gin.Context) {
 	)
 }
 
-// @Summary      List Books by List Name
-// @Description  List books filtered by list name
-// @Tags         book
-// @Param        name   path      string  true   "List Name"
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  Jsondatarows
-// @Failure      401    {object}  Jsonerror
+// @Summary      List the books of a list
+// @Description  Returns the book entries of one list, paginated, with the total count.
+// @Tags         books · data
+// @Param        name   path      string  true   "Name of the list (case-insensitive), as configured in the media group"
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.Book}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/books/list/{name} [get].
 func apiBooksListGet(ctx *gin.Context) {
 	name, ok := getParamID(ctx, StrName)
@@ -128,13 +129,14 @@ func apiBooksListGet(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Delete Book
-// @Description  Deletes a book from the database
-// @Tags         book
-// @Param        id     path      int     true   "Book ID"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  gin.H
-// @Failure      401    {object}  Jsonerror
+// @Summary      Remove a book from a list
+// @Description  Deletes one book list entry and its file rows. Files on disk are not touched.
+// @Tags         books · data
+// @Param        id     path      int     true   "books (list entry) ID"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonsuccess  "Deleted"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      500  {object}  Jsonerror  "Deleting the files or the row failed"
 // @Router       /api/books/{id} [delete].
 func apiBookDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -161,13 +163,16 @@ func itoa(i int) string {
 	return strconv.Itoa(i)
 }
 
-// @Summary      Refresh a single Book
-// @Description  Refreshes specific Book Metadata
-// @Tags         book
-// @Param        id   path      int  true  "Book ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh the metadata of one book
+// @Description  Queues a metadata refresh of one book (OpenLibrary, Goodreads). Returns immediately; the work runs in the job queue.
+// @Tags         books · jobs
+// @Param        id   path      int  true  "ID of the book in the dbbooks table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No media group has this entry"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/refresh/{id} [get].
 func apirefreshBook(c *gin.Context) {
 	id := c.Param(logger.StrID)
@@ -187,14 +192,17 @@ func apirefreshBook(c *gin.Context) {
 	)
 }
 
-// @Summary      Start All Book Jobs
-// @Description  Starts a Job for all book configurations
-// @Tags         book
-// @Param        job    path      string  true   "Job Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string  "returns job name started"
-// @Failure      204    {object}  string  "error message"
-// @Failure      401    {object}  Jsonerror
+// @Summary      Start a job for all book groups
+// @Description  Queues the given job for every book media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.
+// @Tags         books · jobs
+// @Param        job    path      string  true   "Job to start, one of: rss, rssauthors, rssauthorsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonjobstarted  "'Job <job> started', or 'Nothing Done'"
+// @Failure      400  {object}  Jsonbadrequest  "Job is not allowed for this media type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/job/{job} [get].
 func apiBooksAllJobs(c *gin.Context) {
 	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
@@ -204,15 +212,18 @@ func apiBooksAllJobs(c *gin.Context) {
 	})
 }
 
-// @Summary      Start Book Jobs
-// @Description  Starts a Job for a specific book configuration
-// @Tags         book
-// @Param        job    path      string  true   "Job Name"
-// @Param        name   path      string  true   "List Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string  "returns job name started"
-// @Failure      204    {object}  string  "error message"
-// @Failure      401    {object}  Jsonerror
+// @Summary      Start a job for one book group
+// @Description  Queues the given job for one book media group and returns how many were started. Returns immediately; the work runs in the job queue.
+// @Tags         books · jobs
+// @Param        job    path      string  true   "Job to start, one of: rss, rssauthors, rssauthorsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        name   path      string  true   "Media group name without type prefix, e.g. EN"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonjobstarted  "'Job <job> started', or 'Nothing Done'"
+// @Failure      400  {object}  Jsonbadrequest  "Job is not allowed for this media type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/job/{job}/{name} [get].
 func apiBooksJobs(c *gin.Context) {
 	dispatchMediaJob(c, mediaJobDispatchConfig{
@@ -222,51 +233,76 @@ func apiBooksJobs(c *gin.Context) {
 	})
 }
 
-// @Summary      RSS Search Books List
-// @Description  Trigger RSS search for book list
-// @Tags         book
-// @Param        group  path      string  true   "Group Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string
-// @Failure      401    {object}  Jsonerror
+// @Summary      Preview the RSS search of a book group
+// @Description  Reads the indexers' RSS feeds for one book group and returns the accepted and denied releases. Nothing is downloaded.
+// @Tags         books · search
+// @Param        group  path      string  true   "Media group name without type prefix, e.g. EN"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  string  "failed with <search error> (plain JSON string)"
 // @Router       /api/books/rss/search/list/{group} [get].
 func apiBooksRssSearchList(c *gin.Context) {
-	group := c.Param("group")
-	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, group, logger.StrRss, logger.StrRss+"_", "RSS", "RSS search started for book_"+group)
+	rssPreviewGroup(c, logger.StrBook)
 }
 
-// @Summary      Search Books by List
-// @Description  Search for all books in a list
-// @Tags         book
-// @Param        id     path      string  true   "List Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string
-// @Failure      401    {object}  Jsonerror
+// @Summary      Search a book and show the results
+// @Description  Searches the indexers for one book list entry and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.
+// @Tags         books · search
+// @Param        id             path      int     true   "books (list entry) ID"
+// @Param        searchByTitle  query     string  false  "true: also search by title"
+// @Param        download       query     bool    false  "true: download the best accepted release"
+// @Param        apikey         query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid id"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  string  "failed with <search error> (plain JSON string)"
 // @Router       /api/books/search/list/{id} [get].
 func apiBooksSearchList(c *gin.Context) {
-	listName := c.Param(StrID)
+	searchListEntry(c, logger.StrBook, "books")
+}
+
+// @Summary      Search missing books of a group
+// @Description  Queues an incremental search for the missing books of a book group; accepted releases are downloaded. Returns immediately; the work runs in the job queue.
+// @Tags         books · search
+// @Param        name   path      string  true   "Media group name, or the name of one of its lists (the whole group is processed)"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonsearchstarted  "Search queued; the text names the list"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group or list not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
+// @Router       /api/books/search/missing/{name} [get].
+func apiBooksSearchMissing(c *gin.Context) {
+	listName := c.Param(StrName)
 	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, listName, logger.StrSearchMissingInc, logger.StrSearchMissingInc+"_", "Search", "Search started for book list "+listName)
 }
 
-// @Summary      Clear Book History by Name
-// @Description  Clear search history for book list
-// @Tags         book
-// @Param        name   path      string  true   "List Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string
-// @Failure      401    {object}  Jsonerror
+// @Summary      Clear the download history of a group or list
+// @Description  Queues deleting the book download history of a book media group (or of one of its lists). Returns immediately; the work runs in the job queue.
+// @Tags         books · search
+// @Param        name   path      string  true   "Media group name, or the name of one of its lists (the whole group is processed)"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group or list not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/search/history/clear/{name} [get].
 func apiBooksClearHistoryName(c *gin.Context) {
 	dispatchClearHistory(c, logger.StrBook, logger.StrBook, c.Param(StrName))
 }
 
-// @Summary      Clear Book History by ID
-// @Description  Clear search history entry by ID
-// @Tags         book
-// @Param        id     path      int     true   "History ID"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string
-// @Failure      401    {object}  Jsonerror
+// @Summary      Clear the download history of a book
+// @Description  Deletes all download history rows of one book list entry, so its releases can be downloaded again. Returns the number of deleted rows.
+// @Tags         books · search
+// @Param        id     path      int     true   "books (list entry) ID"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "Number of deleted history rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/books/search/history/clearid/{id} [get].
 func apiBooksClearHistoryID(c *gin.Context) {
 	id, ok := getParamID(c, StrID)
@@ -274,49 +310,54 @@ func apiBooksClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	err := database.ExecNErr("DELETE FROM book_histories WHERE id = ?", &id)
-	handleDBError(c, err, "History entry cleared")
+	inres, inerr := database.DeleteRow("book_histories", "book_id = ?", id)
+	handleDBInsertOrUpdate(c, inres, inerr, false)
 }
 
-// @Summary      Search Missing Books by Author
-// @Description  Search for missing books by author name (up to 20 random authors)
-// @Tags         book
-// @Param        name   path      string  true   "List Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string
-// @Failure      401    {object}  Jsonerror
+// @Summary      Search missing books by author
+// @Description  Queues indexer searches by author name (up to 20 random authors with missing books) for a book media group; one search can find several books. Accepted releases are downloaded. Returns immediately; the work runs in the job queue.
+// @Tags         books · search
+// @Param        name   path      string  true   "Media group name, or the name of one of its lists (the whole group is processed)"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonauthorsearchmissing  "Search queued; the text names the list"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group or list not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/search/authors/missing/{name} [get].
 func apiBooksSearchAuthorsMissing(c *gin.Context) {
 	listName := c.Param(StrName)
 	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, listName, logger.StrRssAuthors, logger.StrRssAuthors+"_", "Search", "Author search (missing) started for book list "+listName)
 }
 
-// @Summary      Search Upgrade Books by Author
-// @Description  Search for books needing quality upgrade by author name (up to 20 random authors)
-// @Tags         book
-// @Param        name   path      string  true   "List Name"
-// @Param        apikey query     string  true   "apikey"
-// @Success      200    {object}  string
-// @Failure      401    {object}  Jsonerror
+// @Summary      Search book upgrades by author
+// @Description  Queues indexer searches by author name (up to 20 random authors with books below their quality cutoff) for a book media group. Accepted upgrades are downloaded. Returns immediately; the work runs in the job queue.
+// @Tags         books · search
+// @Param        name   path      string  true   "Media group name, or the name of one of its lists (the whole group is processed)"
+// @Param        apikey query     string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonauthorsearchupgrade  "Search queued; the text names the list"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group or list not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/search/authors/upgrade/{name} [get].
 func apiBooksSearchAuthorsUpgrade(c *gin.Context) {
 	listName := c.Param(StrName)
 	dispatchNamedConfigJob(c, logger.StrBook, logger.StrBook, listName, logger.StrRssAuthorsUpgrade, logger.StrRssAuthorsUpgrade+"_", "Search", "Author search (upgrade) started for book list "+listName)
 }
 
-// @Summary      Import Book Bestseller List for a Specific Date
-// @Description  Runs the feeds import for a single book bestseller list using a date-specific URL
-//
-//	built from the list's chart_date_url_pattern and chart_date_format settings.
-//
-// @Tags         book
+// @Summary      Import a bestseller list of a given date
+// @Description  Queues the feeds import of one book bestseller list for the given date: the URL is built from the list's chart_date_url_pattern and chart_date_format settings. Returns immediately; the import runs in the job queue.
+// @Tags         books · jobs
 // @Param        name      path   string  true  "Media config name (e.g. mybooks)"
 // @Param        listname  path   string  true  "List name (e.g. spiegel-hardcover)"
 // @Param        date      query  string  true  "Date in YYYY-MM-DD format"
-// @Param        apikey    query  string  true  "apikey"
-// @Success      200  {object}  string  "returns started"
-// @Failure      400  {object}  string  "error message"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey    query  string  true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonfeedsdate  "'Feeds date import started for <list> (<date>)'"
+// @Failure      400  {object}  Jsonbadrequest  "date missing or invalid, or list not found/disabled"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/books/feeds/date/{name}/{listname} [get].
 func apiBooksFeedsDate(c *gin.Context) {
 	mediaName := c.Param(StrName)

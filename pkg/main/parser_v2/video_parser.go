@@ -106,6 +106,12 @@ const (
 	// "Wisdom") and numbers, truncating the title at that point.
 	reVideoEpisodeOnly = `(?i)(?:^|[\s._\-\[\(])(?:e|ep|episode\s?)(\d{1,3})(?:$|[^0-9])`
 	reVideoResolution  = `(?i)(?:^|[\s._\-\[\(])(\d{3,4}[pi]|8k|4k|uhd|hd|sd)(?:$|[\s._\-\]\)])`
+	// "m1080p"/"m720p" are "mini" encodes: smaller files at the full
+	// resolution. The "m" glued to the digits defeats every token-boundary
+	// match, so without this they fell back to default_resolution and were
+	// ranked (and grabbed) as SD, then rejected by the organizer once ffprobe
+	// saw the real resolution.
+	reVideoMiniResolution = `(?i)(^|[\s._\-\[\(])m(\d{3,4}p)`
 	// Tokens must be whole words (delimited by a separator or string boundary) so
 	// short source tags like "nf"/"ts"/"cam" can't match inside a title word
 	// (for example "nf" inside the word "Unforgettable").
@@ -824,15 +830,16 @@ func extractQualityToParseInfo(
 
 	// Resolution
 	if !onlyIfEmpty || m.Resolution == "" {
+		resName := stripMiniResolution(name)
 		if useDB {
-			if n, id := matchDBField(vp.patternStore, name, PatternTypeResolution); n != "" {
+			if n, id := matchDBField(vp.patternStore, resName, PatternTypeResolution); n != "" {
 				m.Resolution, m.ResolutionID = n, id
 			}
 		}
 
 		if m.Resolution == "" {
-			if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 2 {
-				m.Resolution = normalizeResolution(name[loc[2]:loc[3]])
+			if loc := vp.patterns.resolution.FindStringSubmatchIndex(resName); len(loc) > 2 {
+				m.Resolution = normalizeResolution(resName[loc[2]:loc[3]])
 			}
 		}
 	}
@@ -1017,8 +1024,9 @@ func (vp *VideoParser) extractQualityInfo(name string, result *VideoParseResult)
 // extractQualityInfoBuiltin uses the hardcoded regex patterns.
 func (vp *VideoParser) extractQualityInfoBuiltin(name string, result *VideoParseResult) {
 	// Extract resolution
-	if loc := vp.patterns.resolution.FindStringSubmatchIndex(name); len(loc) > 2 {
-		result.Resolution = normalizeResolution(name[loc[2]:loc[3]])
+	resName := stripMiniResolution(name)
+	if loc := vp.patterns.resolution.FindStringSubmatchIndex(resName); len(loc) > 2 {
+		result.Resolution = normalizeResolution(resName[loc[2]:loc[3]])
 	}
 
 	// Extract quality source
@@ -1046,8 +1054,10 @@ func (vp *VideoParser) extractQualityInfoBuiltin(name string, result *VideoParse
 func (vp *VideoParser) extractQualityInfoFromDB(name string, result *VideoParseResult) {
 	ps := vp.patternStore
 
+	resInput := stripMiniResolution(name)
+
 	// Try string matching first (fast path)
-	if resName, _, _ := ps.MatchString(name, PatternTypeResolution); resName != "" {
+	if resName, _, _ := ps.MatchString(resInput, PatternTypeResolution); resName != "" {
 		result.Resolution = resName
 		result.ResolutionID = ps.GetPatternID(resName, PatternTypeResolution)
 	}
@@ -1069,7 +1079,7 @@ func (vp *VideoParser) extractQualityInfoFromDB(name string, result *VideoParseR
 
 	// Try regex matching for any empty fields
 	if result.Resolution == "" {
-		if resName, _, _, _ := ps.MatchRegex(name, PatternTypeResolution); resName != "" {
+		if resName, _, _, _ := ps.MatchRegex(resInput, PatternTypeResolution); resName != "" {
 			result.Resolution = resName
 			result.ResolutionID = ps.GetPatternID(resName, PatternTypeResolution)
 		}
@@ -1290,6 +1300,18 @@ func normalizeIMDB(imdb string) string {
 	}
 
 	return strings.ToLower(strings.TrimSpace(imdb))
+}
+
+// stripMiniResolution rewrites mini-encode tags ("m1080p") to the plain
+// resolution ("1080p") so resolution matching sees them. The name is returned
+// unchanged when it has no such tag.
+func stripMiniResolution(name string) string {
+	re := database.GetCachedRegexp(reVideoMiniResolution)
+	if !re.MatchString(name) {
+		return name
+	}
+
+	return re.ReplaceAllString(name, "${1}${2}")
 }
 
 // normalizeResolution normalizes resolution strings.

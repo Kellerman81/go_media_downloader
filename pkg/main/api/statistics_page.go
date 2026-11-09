@@ -63,13 +63,13 @@ func statSectionCard(spinnerClass, url, loadingText string) gomponents.Node {
 	)
 }
 
-// @Summary      Statistics Dashboard Page
-// @Description  Renders the main statistics dashboard with system performance and media library analytics
-// @Tags         web
+// @Summary      [Web only] Statistics page (HTML)
+// @Description  Returns the statistics dashboard of the web interface as HTML. Web interface only: needs a login session cookie from /api/login and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.
+// @Tags         web-only
 // @Produce      html
 // @Success      200 {string} string "Statistics dashboard HTML"
 // @Failure      500 {string} string "Internal server error"
-// @Router       /web/admin/statistics [get].
+// @Router       /api/admin/statistics [get].
 func webStatisticsPage(ctx *gin.Context) {
 	hasMusic := mediaTypeConfigured("music")
 	hasBooks := mediaTypeConfigured("book")

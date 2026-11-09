@@ -1,0 +1,14282 @@
+window.SWAGGER_SPEC = {
+    "consumes": [
+        "application/json"
+    ],
+    "produces": [
+        "application/json"
+    ],
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "title": "Go Media Downloader API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "paths": {
+        "/api/admin": {
+            "get": {
+                "description": "Returns the dashboard of the web interface as HTML; opens the setup wizard while the configuration still has its initial placeholders. Web interface only: needs a login session cookie from /api/login and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.",
+                "tags": [
+                    "web-only"
+                ],
+                "summary": "[Web only] Web interface (HTML)",
+                "responses": {
+                    "200": {
+                        "description": "HTML content",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/statistics": {
+            "get": {
+                "description": "Returns the statistics dashboard of the web interface as HTML. Web interface only: needs a login session cookie from /api/login and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.",
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "web-only"
+                ],
+                "summary": "[Web only] Statistics page (HTML)",
+                "responses": {
+                    "200": {
+                        "description": "Statistics dashboard HTML",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/table/{name}/delete/{index}": {
+            "post": {
+                "description": "Deletes a row of a database table from the web interface's table editor. Web interface only: needs a login session cookie from /api/login plus the session's CSRF token (X-CSRF-Token header), and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.",
+                "tags": [
+                    "web-only"
+                ],
+                "summary": "[Web only] Delete a table row (web interface)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Database table, e.g. qualities or movies",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Value of the id column of the row",
+                        "name": "index",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of the delete",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    },
+                    "400": {
+                        "description": "{'success':false,'error':'invalid index'}",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/table/{name}/insert": {
+            "post": {
+                "description": "Inserts a row into a database table from the web interface's table editor (form or JSON). Web interface only: needs a login session cookie from /api/login plus the session's CSRF token (X-CSRF-Token header), and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.",
+                "tags": [
+                    "web-only"
+                ],
+                "summary": "[Web only] Insert a table row (web interface)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Database table, e.g. qualities or movies",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Column values of the row as JSON object, or form fields named field-\u003ccolumn\u003e",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of the insert",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    },
+                    "400": {
+                        "description": "{'success':false,'error':'...'}",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/table/{name}/update/{index}": {
+            "post": {
+                "description": "Updates a row of a database table from the web interface's table editor. Web interface only: needs a login session cookie from /api/login plus the session's CSRF token (X-CSRF-Token header), and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.",
+                "tags": [
+                    "web-only"
+                ],
+                "summary": "[Web only] Update a table row (web interface)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Database table, e.g. qualities or movies",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Value of the id column of the row",
+                        "name": "index",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Column values of the row as JSON object, or form fields named field-\u003ccolumn\u003e",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of the update",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    },
+                    "400": {
+                        "description": "{'success':false,'error':'...'}",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/album/force-match": {
+            "post": {
+                "description": "Matches a music or audiobook folder against the given MusicBrainz release ID or Audible ASIN instead of searching. With preview it returns the rename plan; otherwise it organizes the folder.",
+                "tags": [
+                    "organize"
+                ],
+                "summary": "Organize an album folder with a given release",
+                "parameters": [
+                    {
+                        "description": "Album folder, media group, paths and the release ID to match it to (forced_id); preview=true only shows the result",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.apiAlbumForceMatchJSON"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Preview, or the result when apply=true",
+                        "schema": {
+                            "$ref": "#/definitions/structure.AlbumForceMatchPreview"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid group type, config or folder, or the match failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/data": {
+            "get": {
+                "description": "Runs the data scan for every media group: scans the library paths for new, changed and removed files and updates the file tables. The request waits until all scans are finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "Scan all library folders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/feeds": {
+            "get": {
+                "description": "Runs the feeds job for every list of every configured media group: new entries from IMDB, Trakt, TMDB, RSS and the other list types are added to the database. The request waits until all imports are finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "Import all lists of every media group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/search/missing/full": {
+            "get": {
+                "description": "Searches the indexers for every missing item of every media group and downloads accepted releases. Can take a long time and use many indexer calls. The request waits until finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "Search all missing items (full)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/search/missing/inc": {
+            "get": {
+                "description": "Searches the indexers for the missing items of every media group that were not searched recently (incremental batch) and downloads accepted releases. The request waits until finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "Search missing items (incremental)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/search/rss": {
+            "get": {
+                "description": "Reads the RSS feeds of the indexers of every media group and downloads accepted releases for missing items and upgrades. The request waits until all searches are finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "RSS search for every media group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/search/upgrade/full": {
+            "get": {
+                "description": "Searches the indexers for better releases of every item below its quality cutoff, in every media group, and downloads accepted upgrades. Can take a long time. The request waits until finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "Search all upgrades (full)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/all/search/upgrade/inc": {
+            "get": {
+                "description": "Searches the indexers for better releases of items below their quality cutoff that were not searched recently (incremental batch), in every media group. The request waits until finished and then returns ok.",
+                "tags": [
+                    "all"
+                ],
+                "summary": "Search upgrades (incremental)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Jobs queued for every media group",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks": {
+            "get": {
+                "description": "Returns the audiobooks of the dbaudiobooks table (metadata independent of lists), paginated, with the total count.",
+                "tags": [
+                    "audiobooks · data"
+                ],
+                "summary": "List audiobooks (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page (default 100, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Dbaudiobook"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/all/refresh": {
+            "get": {
+                "description": "Queues a metadata refresh of the 100 least recently updated audiobooks of each audiobook media group. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · jobs"
+                ],
+                "summary": "Refresh audiobook metadata (incremental)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/all/refreshall": {
+            "get": {
+                "description": "Queues a metadata refresh (Audnex, Audible) of every audiobook in the lists of all audiobook media groups. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · jobs"
+                ],
+                "summary": "Refresh the metadata of all audiobooks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/author/add/{name}/{listname}": {
+            "get": {
+                "description": "Adds an Audnex author (by Audible ASIN) to the given list and imports all their audiobooks in the background.",
+                "tags": [
+                    "audiobooks · data"
+                ],
+                "summary": "Add an author and import their audiobooks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media config name (without 'audiobook_' prefix)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "List name within the media config",
+                        "name": "listname",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Audnex/Audible author ASIN",
+                        "name": "author_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Author \u003cid\u003e queued for import into \u003cgroup\u003e/\u003clist\u003e'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonauthorqueued"
+                        }
+                    },
+                    "400": {
+                        "description": "author_id missing, or media group/list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/job/{job}": {
+            "get": {
+                "description": "Queues the given job for every audiobook media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · jobs"
+                ],
+                "summary": "Start a job for all audiobook groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssauthors, rssauthorsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/job/{job}/{name}": {
+            "get": {
+                "description": "Queues the given job for one audiobook media group and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · jobs"
+                ],
+                "summary": "Start a job for one audiobook group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssauthors, rssauthorsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/list/{name}": {
+            "get": {
+                "description": "Returns the audiobook entries of one list, paginated, with the total count.",
+                "tags": [
+                    "audiobooks · data"
+                ],
+                "summary": "List the audiobooks of a list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the list (case-insensitive), as configured in the media group",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Audiobook"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/refresh/{id}": {
+            "get": {
+                "description": "Queues a metadata refresh of one audiobook. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · jobs"
+                ],
+                "summary": "Refresh the metadata of one audiobook",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the audiobook in the dbaudiobooks table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/rss/search/list/{group}": {
+            "get": {
+                "description": "Reads the indexers' RSS feeds for one audiobook group and returns the accepted and denied releases. Nothing is downloaded.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Preview the RSS search of an audiobook group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/search/authors/missing/{name}": {
+            "get": {
+                "description": "Queues indexer searches by author name (up to 20 random authors with missing audiobooks) for an audiobook media group. Accepted releases are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Search missing audiobooks by author",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonauthorsearchmissing"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/search/authors/upgrade/{name}": {
+            "get": {
+                "description": "Queues indexer searches by author name (up to 20 random authors with audiobooks below their quality cutoff) for an audiobook media group. Accepted upgrades are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Search audiobook upgrades by author",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonauthorsearchupgrade"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/search/history/clear/{name}": {
+            "get": {
+                "description": "Queues deleting the audiobook download history of an audiobook media group (or of one of its lists). Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Clear the download history of a group or list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/search/history/clearid/{id}": {
+            "get": {
+                "description": "Deletes all download history rows of one audiobook list entry, so its releases can be downloaded again. Returns the number of deleted rows.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Clear the download history of an audiobook",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "audiobooks (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Number of deleted history rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/search/list/{id}": {
+            "get": {
+                "description": "Searches the indexers for one audiobook list entry and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Search an audiobook and show the results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "audiobooks (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true: also search by title",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: download the best accepted release",
+                        "name": "download",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/search/missing/{name}": {
+            "get": {
+                "description": "Queues an incremental search for the missing audiobooks of a audiobook group; accepted releases are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · search"
+                ],
+                "summary": "Search missing audiobooks of a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsearchstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/tag/all": {
+            "get": {
+                "description": "Queues rewriting the audio tags of every audiobook of every audiobook media group from the stored metadata. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · tags"
+                ],
+                "summary": "Rewrite the audio tags of all audiobooks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/tag/author/{id}": {
+            "get": {
+                "description": "Queues rewriting the audio tags of all audiobooks of one author from the stored metadata. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · tags"
+                ],
+                "summary": "Rewrite the audio tags of an author's audiobooks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID of the author in the dbauthors table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/tag/{id}": {
+            "get": {
+                "description": "Queues rewriting the audio tags of the audiobook's files from the stored metadata (no new matching). Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "audiobooks · tags"
+                ],
+                "summary": "Rewrite the audio tags of one audiobook",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the audiobook in the dbaudiobooks table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/audiobooks/{id}": {
+            "delete": {
+                "description": "Deletes one audiobook list entry and its file rows. Files on disk are not touched.",
+                "tags": [
+                    "audiobooks · data"
+                ],
+                "summary": "Remove an audiobook from a list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "audiobooks (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsuccess"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Deleting the files or the row failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books": {
+            "get": {
+                "description": "Returns the books of the dbbooks table (metadata independent of lists), paginated, with the total count.",
+                "tags": [
+                    "books · data"
+                ],
+                "summary": "List books (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page (default 100, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Dbbook"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/feeds/date/{name}/{listname}": {
+            "get": {
+                "description": "Queues the feeds import of one book bestseller list for the given date: the URL is built from the list's chart_date_url_pattern and chart_date_format settings. Returns immediately; the import runs in the job queue.",
+                "tags": [
+                    "books · jobs"
+                ],
+                "summary": "Import a bestseller list of a given date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media config name (e.g. mybooks)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "List name (e.g. spiegel-hardcover)",
+                        "name": "listname",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Date in YYYY-MM-DD format",
+                        "name": "date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Feeds date import started for \u003clist\u003e (\u003cdate\u003e)'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonfeedsdate"
+                        }
+                    },
+                    "400": {
+                        "description": "date missing or invalid, or list not found/disabled",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/job/{job}": {
+            "get": {
+                "description": "Queues the given job for every book media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · jobs"
+                ],
+                "summary": "Start a job for all book groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssauthors, rssauthorsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/job/{job}/{name}": {
+            "get": {
+                "description": "Queues the given job for one book media group and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · jobs"
+                ],
+                "summary": "Start a job for one book group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssauthors, rssauthorsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/list/{name}": {
+            "get": {
+                "description": "Returns the book entries of one list, paginated, with the total count.",
+                "tags": [
+                    "books · data"
+                ],
+                "summary": "List the books of a list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the list (case-insensitive), as configured in the media group",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Book"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/refresh/{id}": {
+            "get": {
+                "description": "Queues a metadata refresh of one book (OpenLibrary, Goodreads). Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · jobs"
+                ],
+                "summary": "Refresh the metadata of one book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the book in the dbbooks table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/rss/search/list/{group}": {
+            "get": {
+                "description": "Reads the indexers' RSS feeds for one book group and returns the accepted and denied releases. Nothing is downloaded.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Preview the RSS search of a book group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/search/authors/missing/{name}": {
+            "get": {
+                "description": "Queues indexer searches by author name (up to 20 random authors with missing books) for a book media group; one search can find several books. Accepted releases are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Search missing books by author",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonauthorsearchmissing"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/search/authors/upgrade/{name}": {
+            "get": {
+                "description": "Queues indexer searches by author name (up to 20 random authors with books below their quality cutoff) for a book media group. Accepted upgrades are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Search book upgrades by author",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonauthorsearchupgrade"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/search/history/clear/{name}": {
+            "get": {
+                "description": "Queues deleting the book download history of a book media group (or of one of its lists). Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Clear the download history of a group or list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/search/history/clearid/{id}": {
+            "get": {
+                "description": "Deletes all download history rows of one book list entry, so its releases can be downloaded again. Returns the number of deleted rows.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Clear the download history of a book",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "books (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Number of deleted history rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/search/list/{id}": {
+            "get": {
+                "description": "Searches the indexers for one book list entry and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Search a book and show the results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "books (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true: also search by title",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: download the best accepted release",
+                        "name": "download",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/search/missing/{name}": {
+            "get": {
+                "description": "Queues an incremental search for the missing books of a book group; accepted releases are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "books · search"
+                ],
+                "summary": "Search missing books of a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsearchstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/books/{id}": {
+            "delete": {
+                "description": "Deletes one book list entry and its file rows. Files on disk are not touched.",
+                "tags": [
+                    "books · data"
+                ],
+                "summary": "Remove a book from a list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "books (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsuccess"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Deleting the files or the row failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/cache/add": {
+            "post": {
+                "description": "Adds an entry to one cache type (see /api/cache/list) - for debugging cache problems.",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "Add a cache entry",
+                "parameters": [
+                    {
+                        "description": "Cache entry data",
+                        "name": "cache",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.apiCacheAddJSON"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Entry added",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncacheadded"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid cache type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/cache/clear/{type}": {
+            "delete": {
+                "description": "Removes all entries of one cache type (see /api/cache/list).",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "Clear one cache type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cache type to clear",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Cache type \u003ctype\u003e cleared successfully'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncachecleared"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or invalid cache type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/cache/list": {
+            "get": {
+                "description": "Returns the available cache types with a description of each.",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "List cache types",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cache types with a description",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.Jsoncachelist"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/cache/refresh": {
+            "get": {
+                "description": "Rebuilds all database caches (titles, IDs, files, histories) from the database. The request waits until done.",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "Rebuild the caches",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/cache/remove/{key}": {
+            "delete": {
+                "description": "Removes one entry, by its key, from the caches.",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "Remove a cache entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cache key to remove",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Entry removed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncacheremoved"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing cache key",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/all": {
+            "get": {
+                "description": "Returns every configuration section, keyed by name (general, imdb, quality_SD, downloader_sab, ...). Passwords and API keys are redacted.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "Get the whole configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All configuration entries (keys shown are examples)",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.Jsonconfigall"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/clear": {
+            "delete": {
+                "description": "Replaces the whole configuration with example entries and writes config.toml. Everything you configured is lost - make a copy of config.toml first. Returns the new configuration.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "Reset the configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The remaining configuration",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.Jsonconfigall"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/delete/{name}": {
+            "delete": {
+                "description": "Removes one configuration section, reloads the affected parts and writes config.toml (comments in the file are lost). Returns the remaining configuration.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "Delete one configuration section",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Type Name: ex. quality_SD",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The remaining configuration",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.Jsonconfigall"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/get/{name}": {
+            "get": {
+                "description": "Returns one configuration section by its name, e.g. quality_SD or downloader_sab. Passwords and API keys are redacted.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "Get one configuration section",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Type Name: ex. quality_SD",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The entry; its type depends on the section (media group shown)",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/config.MediaTypeConfig"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/refresh": {
+            "get": {
+                "description": "Reloads config.toml from disk after manual edits: quality priorities, schedules, download clients, indexers and notifications are rebuilt.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "Reload config.toml",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Configuration reloaded from the file",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconfigreloaded"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/type/{type}": {
+            "get": {
+                "description": "Returns all configuration sections of one type, e.g. every quality profile or every downloader.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "List configuration sections of a type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Type Name: ex. quality",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Entries of the section, keyed like /api/config/all",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.Jsonconfigall"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config/update/{name}": {
+            "post": {
+                "description": "Saves the JSON body as the named configuration section (general, imdb, media, downloader, indexer, list, path, notification, regex, quality, scheduler), reloads the affected parts and writes config.toml (comments in the file are lost). Redacted secrets keep their stored value.",
+                "tags": [
+                    "config"
+                ],
+                "summary": "Add or replace one configuration section",
+                "parameters": [
+                    {
+                        "description": "The new configuration entry as JSON; its shape depends on the section in name (see /api/config/get/{name})",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {}
+                    },
+                    {
+                        "type": "string",
+                        "description": "Type Name: ex. quality_SD",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The whole configuration after the change",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/api.Jsonconfigall"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Unknown section or invalid entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/backup": {
+            "get": {
+                "description": "Writes a backup of data.db to ./backup/data.db.\u003cmigration\u003e.\u003cdate\u003e_\u003ctime\u003e and removes backups beyond max_database_backups. With database_backup_stop_tasks the scheduler and workers are paused during the backup. The request waits until it is done.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Back up the database",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/cleanuporphans": {
+            "get": {
+                "description": "Deletes child rows whose parent rows no longer exist, following the schema's foreign keys (e.g. files of deleted list entries). Returns the number of deleted rows per table.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Delete orphaned rows",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted rows per table",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "integer",
+                                                "format": "int64"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Cleanup stopped early",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/clear/{name}": {
+            "delete": {
+                "description": "Deletes every row of the given table and vacuums the database. Cannot be undone - make a backup first.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Delete all rows of a table",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Table name, e.g. job_histories",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "400": {
+                        "description": "Unknown table",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/clearcache": {
+            "delete": {
+                "description": "Clears all in-memory caches (titles, IDs, files, histories). They are rebuilt on the next use or cache refresh.",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "Clear the in-memory caches",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/delete/{name}/{id}": {
+            "delete": {
+                "description": "Deletes the row with the given id from the given table. Related rows in other tables are not deleted (see /api/db/cleanuporphans).",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Delete one row of a table",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Database table to delete from, e.g. movies, dbmovies, series",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Value of the id column of the row to delete",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "400": {
+                        "description": "Unknown table",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/integrity": {
+            "get": {
+                "description": "Runs SQLite's integrity check on data.db and returns its result lines ('ok' when the database is healthy).",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Check database integrity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Result of PRAGMA integrity_check, 'ok' when the database is fine",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/oldjobs": {
+            "delete": {
+                "description": "Deletes job_histories rows created more than the given number of days ago. days=0 deletes nothing.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Delete old job history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Keep the jobs of this many days",
+                        "name": "days",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "days missing or empty, or a database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/db/vacuum": {
+            "get": {
+                "description": "Runs SQLite VACUUM on data.db to reclaim free space. Blocks database writes while it runs.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Vacuum the database",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/debugstats": {
+            "get": {
+                "description": "Returns Go runtime information (garbage collector and memory statistics as JSON strings, OS, CPU count, goroutines) and the worker pool statistics. Also returns freed memory to the operating system.",
+                "tags": [
+                    "statistics"
+                ],
+                "summary": "Runtime and worker statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Runtime and worker statistics",
+                        "schema": {
+                            "$ref": "#/definitions/api.Statsresults"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/fillimdb": {
+            "get": {
+                "description": "Runs init_imdb: downloads the IMDB datasets and rebuilds the local IMDB database (imdb.db). The request waits until it is finished, which can take several minutes.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Rebuild the local IMDB database",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Import started in the background",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies": {
+            "get": {
+                "description": "Returns the movies of the dbmovies table - one row per movie with its metadata, independent of lists - paginated, with the total count.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "List movies (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Dbmovie"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Inserts the dbmovies row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "Add or update movie metadata",
+                "parameters": [
+                    {
+                        "description": "Movie metadata row (dbmovies); an ID that does not exist yet creates a new row",
+                        "name": "movie",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.Dbmovie"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ID of the new row, or the number of updated rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/all/refresh": {
+            "get": {
+                "description": "Queues a metadata refresh of the 100 least recently updated movies of each movie media group. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · jobs"
+                ],
+                "summary": "Refresh movie metadata (incremental)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/all/refreshall": {
+            "get": {
+                "description": "Queues a metadata refresh of every movie in the lists of all movie media groups. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · jobs"
+                ],
+                "summary": "Refresh the metadata of all movies",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/job/{job}": {
+            "get": {
+                "description": "Queues the given job for every movie media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · jobs"
+                ],
+                "summary": "Start a job for all movie groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/job/{job}/{name}": {
+            "get": {
+                "description": "Queues the given job for one movie media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · jobs"
+                ],
+                "summary": "Start a job for one movie group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/list": {
+            "post": {
+                "description": "Inserts the movies (list entry) row when its id is 0 or unknown, otherwise updates it (missing, list, quality profile, blacklisted, ...). Returns the number of affected rows.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "Add or update a movie list entry",
+                "parameters": [
+                    {
+                        "description": "Movie list entry (movies table); an ID that does not exist yet creates a new row",
+                        "name": "movie",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.Movie"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ID of the new row, or the number of updated rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/list/{id}": {
+            "delete": {
+                "description": "Deletes one list entry (movies table). The movie's metadata and its entries in other lists stay. Files on disk are not touched.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "Remove a movie from a list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "movies (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/list/{name}": {
+            "get": {
+                "description": "Returns the entries of one list (movies table joined with dbmovies): missing flag, quality profile, reached quality, blacklisted and the movie metadata, paginated, with the total count.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "List the movies of a list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "List Name: ex. EN",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.ResultMovies"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/metadata/{imdb}": {
+            "get": {
+                "description": "Fetches the metadata of a movie by IMDB ID from all configured sources, or only from the given provider, and returns it. update=1 also saves it to dbmovies.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "Look up movie metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "imdb id: ex. tt123456",
+                        "name": "imdb",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Use only this provider: imdb, tmdb, omdb or trakt; without it all configured providers are combined",
+                        "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Movie metadata from the configured providers (not saved)",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/database.Dbmovie"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/refresh/{id}": {
+            "get": {
+                "description": "Queues a metadata refresh of one movie from the configured sources. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · jobs"
+                ],
+                "summary": "Refresh the metadata of one movie",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the movie in the dbmovies table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/rss/search/list/{group}": {
+            "get": {
+                "description": "Reads the indexers' RSS feeds for one movie media group and returns the accepted and denied releases. Nothing is downloaded.",
+                "tags": [
+                    "movies · search"
+                ],
+                "summary": "Preview the RSS search of a movie group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/search/download/{id}": {
+            "post": {
+                "description": "Sends the given release (e.g. one from /search/list) for the list entry to the download client of the indexer's quality profile entry.",
+                "tags": [
+                    "movies · search"
+                ],
+                "summary": "Download a chosen release for a movie",
+                "parameters": [
+                    {
+                        "description": "Nzb: Req. Title, Indexer, imdbid, downloadurl, parseinfo",
+                        "name": "nzb",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apiexternal_v2.Nzbwithprio"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID of the list entry in the movies table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Indexer config name the release came from",
+                        "name": "indexer",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "400": {
+                        "description": "Invalid id or body, or IDs do not match",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Movie not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "500": {
+                        "description": "Download failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/search/history/clear/{name}": {
+            "get": {
+                "description": "Queues deleting the download history of a movie media group (or of one of its lists), so its releases can be downloaded again. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · search"
+                ],
+                "summary": "Clear the download history of a group or list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/search/history/clearid/{id}": {
+            "get": {
+                "description": "Deletes all download history rows of one list entry, so its releases can be downloaded again. Returns the number of deleted rows.",
+                "tags": [
+                    "movies · search"
+                ],
+                "summary": "Clear the download history of a movie",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "movies (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Number of deleted history rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/search/id/{id}": {
+            "get": {
+                "description": "Queues a search of the indexers for one list entry (missing or upgrade, by ID and title) and downloads the best accepted release. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "movies · search"
+                ],
+                "summary": "Search a movie and download",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "movies (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Movie not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/search/list/{id}": {
+            "get": {
+                "description": "Searches the indexers for one list entry and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.",
+                "tags": [
+                    "movies · search"
+                ],
+                "summary": "Search a movie and show the results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "movies (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true: also search by title, not only by IMDB ID",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: download the best accepted release",
+                        "name": "download",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/unmatched": {
+            "get": {
+                "description": "Returns the movie files the organizer could not match to a movie (movie_file_unmatcheds), paginated, with the total count.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "List unmatched movie files",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.MovieFileUnmatched"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/movies/{id}": {
+            "delete": {
+                "description": "Deletes a movie's metadata row (dbmovies) and its entries in all lists. Files on disk are not touched.",
+                "tags": [
+                    "movies · data"
+                ],
+                "summary": "Delete a movie everywhere",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the movie in the dbmovies table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music": {
+            "get": {
+                "description": "Returns the albums of the dbalbums table (metadata independent of lists), paginated, with the total count.",
+                "tags": [
+                    "music · data"
+                ],
+                "summary": "List albums (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page (default 100, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Dbalbum"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/all/refresh": {
+            "get": {
+                "description": "Queues a metadata refresh of the 100 least recently updated albums of each music media group. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · jobs"
+                ],
+                "summary": "Refresh album metadata (incremental)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/all/refreshall": {
+            "get": {
+                "description": "Queues a metadata refresh (MusicBrainz and the other music providers) of every album in the lists of all music media groups. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · jobs"
+                ],
+                "summary": "Refresh the metadata of all albums",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/artist/add/{name}/{listname}": {
+            "get": {
+                "description": "Adds a MusicBrainz artist to dbartists and the given list (track_mode=albums), then imports all their albums in the background.",
+                "tags": [
+                    "music · artists"
+                ],
+                "summary": "Add an artist and import their albums",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media config name (without 'music_' prefix)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "List name within the media config",
+                        "name": "listname",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "MusicBrainz artist ID",
+                        "name": "artist_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Artist \u003cid\u003e queued for import into \u003cgroup\u003e/\u003clist\u003e'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonartistqueued"
+                        }
+                    },
+                    "400": {
+                        "description": "artist_id missing, or media group/list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/artists": {
+            "get": {
+                "description": "Returns the artists of the dbartists table (names and MusicBrainz/Discogs/Spotify IDs), paginated, with the total count.",
+                "tags": [
+                    "music · artists"
+                ],
+                "summary": "List artists",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page (default 100, max 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Dbartist"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/discover/series/artist/{id}": {
+            "get": {
+                "description": "For every album of the tracked artist that belongs to a series (e.g. a compilation series), queues finding and adding the other albums of that series. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · artists"
+                ],
+                "summary": "Import the series albums of an artist",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "artists (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Discover series albums queued for artist #\u003cid\u003e (\u003cn\u003e series found)', or 'No series albums found for artist #\u003cid\u003e'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsondiscoverseries"
+                        }
+                    },
+                    "400": {
+                        "description": "Artist or media group not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/feeds/date/{name}/{listname}": {
+            "get": {
+                "description": "Queues the feeds import of one music chart list for the given date: the URL is built from the list's chart_date_url_pattern and chart_date_format settings. Returns immediately; the import runs in the job queue.",
+                "tags": [
+                    "music · jobs"
+                ],
+                "summary": "Import a music chart of a given date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media config name (e.g. mycharts)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "List name (e.g. offiziellecharts-compilations)",
+                        "name": "listname",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Date in YYYY-MM-DD format",
+                        "name": "date",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Feeds date import started for \u003clist\u003e (\u003cdate\u003e)'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonfeedsdate"
+                        }
+                    },
+                    "400": {
+                        "description": "date missing or invalid, or list not found/disabled",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/job/{job}": {
+            "get": {
+                "description": "Queues the given job for every music media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · jobs"
+                ],
+                "summary": "Start a job for all music groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssartists, rssartistsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/job/{job}/{name}": {
+            "get": {
+                "description": "Queues the given job for one music media group and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · jobs"
+                ],
+                "summary": "Start a job for one music group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssartists, rssartistsupgrade, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/list/{name}": {
+            "get": {
+                "description": "Returns the album entries of one list (missing, quality profile, reached quality, root path, ...), paginated, with the total count.",
+                "tags": [
+                    "music · data"
+                ],
+                "summary": "List the albums of a list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the list (case-insensitive), as configured in the media group",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Album"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/refresh/{id}": {
+            "get": {
+                "description": "Queues a metadata refresh of one album. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · jobs"
+                ],
+                "summary": "Refresh the metadata of one album",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the album in the dbalbums table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/rss/search/list/{group}": {
+            "get": {
+                "description": "Reads the indexers' RSS feeds for one music group and returns the accepted and denied releases. Nothing is downloaded.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Preview the RSS search of a music group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/search/artists/missing/{name}": {
+            "get": {
+                "description": "Queues indexer searches by artist name (up to 20 random artists with missing albums) for a music media group; one search can find several albums. Accepted releases are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Search missing albums by artist",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonartistsearchmissing"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/search/artists/upgrade/{name}": {
+            "get": {
+                "description": "Queues indexer searches by artist name (up to 20 random artists with albums below their quality cutoff) for a music media group. Accepted upgrades are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Search album upgrades by artist",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonartistsearchupgrade"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/search/history/clear/{name}": {
+            "get": {
+                "description": "Queues deleting the album download history of a music media group (or of one of its lists). Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Clear the download history of a group or list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/search/history/clearid/{id}": {
+            "get": {
+                "description": "Deletes all download history rows of one album list entry, so its releases can be downloaded again. Returns the number of deleted rows.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Clear the download history of an album",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "albums (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Number of deleted history rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/search/list/{id}": {
+            "get": {
+                "description": "Searches the indexers for one album list entry and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Search an album and show the results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "albums (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true: also search by title",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: download the best accepted release",
+                        "name": "download",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/search/missing/{name}": {
+            "get": {
+                "description": "Queues an incremental search for the missing albums of a music group; accepted releases are downloaded. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · search"
+                ],
+                "summary": "Search missing albums of a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search queued; the text names the list",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsearchstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/tag/all": {
+            "get": {
+                "description": "Queues rewriting the audio tags of every album of every music media group from the stored metadata. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · tags"
+                ],
+                "summary": "Rewrite the audio tags of all albums",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/tag/artist/{id}": {
+            "get": {
+                "description": "Queues rewriting the audio tags of all albums of one artist from the stored metadata. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · tags"
+                ],
+                "summary": "Rewrite the audio tags of an artist's albums",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID of the artist in the dbartists table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/tag/{id}": {
+            "get": {
+                "description": "Queues rewriting the audio tags of the album's files from the stored metadata (no new matching). Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "music · tags"
+                ],
+                "summary": "Rewrite the audio tags of one album",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the album in the dbalbums table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/music/{id}": {
+            "delete": {
+                "description": "Deletes one album list entry and its file rows. Files on disk are not touched.",
+                "tags": [
+                    "music · data"
+                ],
+                "summary": "Remove an album from a list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "albums (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsuccess"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Deleting the files or the row failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/naming": {
+            "post": {
+                "description": "Renders the folder and file name the organizer would use for a movie or series episode of the database, with the media group's naming template and a sample file path. Nothing is moved.",
+                "tags": [
+                    "organize"
+                ],
+                "summary": "Test the naming template",
+                "parameters": [
+                    {
+                        "description": "Media group, file path and movie or series ID to build the folder and file name for",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.apiNameInput"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Parsed file and the generated folder and file name",
+                        "schema": {
+                            "$ref": "#/definitions/api.JSONNaming"
+                        }
+                    },
+                    "400": {
+                        "description": "Media, group or organizer not found, or the file could not be parsed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/parse/file": {
+            "post": {
+                "description": "Like /api/parse/string, but also reads the file with ffprobe/mediainfo (resolution, codecs, runtime, languages) before computing the quality priority and looking up the database IDs. The path must exist on the server. Returns the parse result.",
+                "tags": [
+                    "parse"
+                ],
+                "summary": "Parse a file including media info",
+                "parameters": [
+                    {
+                        "description": "Release name or file path to parse, and the media group whose settings are used",
+                        "name": "toparse",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.apiparse"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Parsed release information",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/database.ParseInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/parse/string": {
+            "post": {
+                "description": "Parses a release or file name like the importer does (title, year, IDs, resolution, quality, codec, audio, ...), computes the quality priority for the given quality profile and looks up the matching database IDs. Returns the parse result and an error, if any. Movies and series only.",
+                "tags": [
+                    "parse"
+                ],
+                "summary": "Parse a release name",
+                "parameters": [
+                    {
+                        "description": "Release name or file path to parse, and the media group whose settings are used",
+                        "name": "toparse",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.apiparse"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Parsed release information",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondataerror"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/database.ParseInfo"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/quality": {
+            "get": {
+                "description": "Returns all rows of the qualities table: the resolution, quality, codec and audio patterns (strings or regex) the parser uses, with their priorities.",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "List quality patterns",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All quality rows",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Qualities"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Inserts the quality pattern when its id is 0 or unknown, otherwise updates it; then reloads the patterns. Returns the updated qualities list.",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "Add or update a quality pattern",
+                "parameters": [
+                    {
+                        "description": "Quality row to save; an ID that does not exist yet creates a new row",
+                        "name": "quality",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.Qualities"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All quality rows after the change",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Qualities"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Save failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/quality/all": {
+            "get": {
+                "description": "Returns the computed priorities of the wanted combinations of every quality profile.",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "Wanted quality priorities of all profiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Priorities of all quality profiles",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/parser.Prioarr"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/quality/complete": {
+            "get": {
+                "description": "Returns the computed priorities of every resolution/quality/codec/audio combination of every quality profile, including the unwanted ones.",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "All quality priorities of all profiles",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Every combination with its priority",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/parser.Prioarr"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/quality/get/{name}": {
+            "get": {
+                "description": "Returns the computed priorities of all wanted resolution/quality/codec/audio combinations of one quality profile - the order releases are preferred in.",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "Wanted quality priorities of a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Quality profile name, e.g. SD",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Priorities of the quality profile",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/parser.Prioarr"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Quality profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/quality/{id}": {
+            "delete": {
+                "description": "Deletes one row of the qualities table, reloads the patterns and returns the remaining qualities.",
+                "tags": [
+                    "quality"
+                ],
+                "summary": "Delete a quality pattern",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID of the qualities row",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The remaining quality rows",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Qualities"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Delete failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/queue": {
+            "get": {
+                "description": "Returns the jobs that are waiting in the queues or currently running (not the finished ones), keyed by queue ID.",
+                "tags": [
+                    "queue"
+                ],
+                "summary": "List queued and running jobs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued and running jobs keyed by queue ID",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "$ref": "#/definitions/syncops.Job"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/queue/cancel/{id}": {
+            "delete": {
+                "description": "Cancels one job of the queue (IDs from /api/queue) and removes it; a running job is told to stop.",
+                "tags": [
+                    "queue"
+                ],
+                "summary": "Cancel a queued or running job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Canceled",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonsuccessmessage"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing or invalid queue ID",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "{'success':false,'error':'Queue job not found'}",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonoperation"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/queue/history": {
+            "get": {
+                "description": "Returns the job history from the job_histories table (job, media group, list, start and end time), newest first, 100 rows by default.",
+                "tags": [
+                    "queue"
+                ],
+                "summary": "Job history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of rows (default 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "SQL order, default 'ID desc'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Job history rows, newest first",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.JobHistory"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/list": {
+            "get": {
+                "description": "Returns all schedules keyed by ID: job name, media group, interval or cron expression, queue, last and next run, and whether it is running or paused.",
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "List schedules",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Schedules keyed by ID",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "$ref": "#/definitions/syncops.JobSchedule"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/queue/{id}": {
+            "post": {
+                "description": "Queues one run of the schedule's job now, also for a paused schedule. Returns 409 when the job is already queued or running.",
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "Run one schedule now",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID of the schedule, as returned by /api/scheduler/list",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid schedule ID format",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Schedule not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "Job is already queued or running",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/start": {
+            "get": {
+                "description": "Starts the scheduler again after /api/scheduler/stop.",
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "Start the scheduler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/start/{id}": {
+            "post": {
+                "description": "Resumes a schedule paused with /api/scheduler/stop/{id}.",
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "Resume one schedule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID of the schedule, as returned by /api/scheduler/list",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid schedule ID format",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Schedule not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/stop": {
+            "get": {
+                "description": "Stops the scheduler: no scheduled jobs are queued until it is started again. Jobs that are already queued or running continue.",
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "Stop the scheduler",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/scheduler/stop/{id}": {
+            "post": {
+                "description": "Pauses one schedule: it queues no jobs until it is started again. In memory only - a restart or scheduler reload starts it again. Schedule IDs come from /api/scheduler/list.",
+                "tags": [
+                    "scheduler"
+                ],
+                "summary": "Pause one schedule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID of the schedule, as returned by /api/scheduler/list",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid schedule ID format",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Schedule not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series": {
+            "get": {
+                "description": "Returns the series of the dbseries table - one row per series with its metadata, independent of lists - paginated, with the total count.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "List series (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.Dbserie"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Inserts the dbseries row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "Add or update series metadata",
+                "parameters": [
+                    {
+                        "description": "Series metadata row (dbseries); an ID that does not exist yet creates a new row",
+                        "name": "series",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.Dbserie"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ID of the new row, or the number of updated rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/all/refresh": {
+            "get": {
+                "description": "Queues a metadata refresh of the 20 least recently updated continuing series of each series media group. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · jobs"
+                ],
+                "summary": "Refresh series metadata (incremental)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/all/refreshall": {
+            "get": {
+                "description": "Queues a metadata refresh of every series in the lists of all series media groups. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · jobs"
+                ],
+                "summary": "Refresh the metadata of all series",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job; 'Nothing Done' when no configuration started it",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes": {
+            "get": {
+                "description": "Returns the episodes of the dbserie_episodes table (metadata of all series), paginated, with the total count.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "List episodes (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.DbserieEpisode"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Inserts the dbserie_episodes row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "Add or update episode metadata",
+                "parameters": [
+                    {
+                        "description": "Episode metadata row (dbserie_episodes); an ID that does not exist yet creates a new row",
+                        "name": "episode",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.DbserieEpisode"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ID of the new row, or the number of updated rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/list": {
+            "post": {
+                "description": "Inserts the serie_episodes row when its id is 0 or unknown, otherwise updates it (missing, quality profile, blacklisted, ...). Returns the number of affected rows.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "Add or update an episode list entry",
+                "parameters": [
+                    {
+                        "description": "Episode list entry (serie_episodes); an ID that does not exist yet creates a new row",
+                        "name": "episode",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.SerieEpisode"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ID of the new row, or the number of updated rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/list/{id}": {
+            "get": {
+                "description": "Returns the serie_episodes rows (missing, quality, ...) of one series list entry joined with their metadata, paginated, with the total count.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "List the episodes of a series list entry",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.ResultSerieEpisodes"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes one serie_episodes row with its history and file rows. The episode metadata stays. Files on disk are not touched.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "Remove an episode from a list entry",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the list entry in the serie_episodes table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/search/download/{id}": {
+            "post": {
+                "description": "Sends the given release (e.g. one from /episodes/search/list) for the episode to the download client of the indexer's quality profile entry.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Download a chosen release for an episode",
+                "parameters": [
+                    {
+                        "description": "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo",
+                        "name": "nzb",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apiexternal_v2.Nzbwithprio"
+                        }
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID of the list entry in the serie_episodes table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Indexer config name the release came from",
+                        "name": "indexer",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "400": {
+                        "description": "Invalid id or body, or IDs do not match",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Episode or series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "500": {
+                        "description": "Download failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/search/id/{id}": {
+            "get": {
+                "description": "Queues a search of the indexers for one episode (missing or upgrade) and downloads the best accepted release. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search an episode and download",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "serie_episodes (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Episode or series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/search/list/{id}": {
+            "get": {
+                "description": "Searches the indexers for one episode and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search an episode and show the results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "serie_episodes (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true: also search by title, not only by TVDB ID",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: download the best accepted release",
+                        "name": "download",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/episodes/{id}": {
+            "get": {
+                "description": "Returns the dbserie_episodes rows of one series, paginated, with the total count.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "List the episodes of a series (metadata)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the series in the dbseries table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.DbserieEpisode"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes an episode's metadata (dbserie_episodes) and its entries, history and file rows in all lists. Files on disk are not touched.",
+                "tags": [
+                    "series · episodes"
+                ],
+                "summary": "Delete an episode everywhere",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the episode in the dbserie_episodes table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/job/{job}": {
+            "get": {
+                "description": "Queues the given job for every series media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · jobs"
+                ],
+                "summary": "Start a job for all series groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssseasons, rssseasonsall, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No configuration of this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/job/{job}/{name}": {
+            "get": {
+                "description": "Queues the given job for one series media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · jobs"
+                ],
+                "summary": "Start a job for one series group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job to start, one of: rss, rssseasons, rssseasonsall, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc",
+                        "name": "job",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "'Job \u003cjob\u003e started', or 'Nothing Done'",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonjobstarted"
+                        }
+                    },
+                    "400": {
+                        "description": "Job is not allowed for this media type",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/list": {
+            "post": {
+                "description": "Inserts the series (list entry) row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "Add or update a series list entry",
+                "parameters": [
+                    {
+                        "description": "Series list entry (series table); an ID that does not exist yet creates a new row",
+                        "name": "series",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/database.Serie"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "ID of the new row, or the number of updated rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/list/{id}": {
+            "delete": {
+                "description": "Deletes one list entry (series table) with its episode, history and file rows. The series metadata and other lists stay. Files on disk are not touched.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "Remove a series from a list",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Series list entry ID (series.id)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/list/{name}": {
+            "get": {
+                "description": "Returns the entries of one list (series table joined with dbseries), paginated, with the total count.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "List the series of a list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the list (case-insensitive), as configured in the media group",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.ResultSeries"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/metadata/{tvdb}": {
+            "get": {
+                "description": "Fetches the metadata of a series by TVDB ID from TVDB, or from the given provider, and returns it. update=1 also saves it to dbseries.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "Look up series metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "TheTVDB ID of the series",
+                        "name": "tvdb",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider: tvdb (default), tmdb, trakt",
+                        "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Save to DB: 1",
+                        "name": "update",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Series metadata from the configured providers (not saved)",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/database.Dbserie"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "invalid tvdb id",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/refresh/{id}": {
+            "get": {
+                "description": "Queues a metadata refresh of one series and its episodes from the configured sources. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · jobs"
+                ],
+                "summary": "Refresh the metadata of one series",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the series in the dbseries table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "No media group has this entry",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/rss/search/list/{group}": {
+            "get": {
+                "description": "Reads the indexers' RSS feeds for one series media group and returns the accepted and denied releases. Nothing is downloaded.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Preview the RSS search of a series group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name without type prefix, e.g. EN",
+                        "name": "group",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "failed with \u003csearch error\u003e (plain JSON string)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/history/clear/{name}": {
+            "get": {
+                "description": "Queues deleting the episode download history of a series media group (or of one of its lists), so releases can be downloaded again. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Clear the download history of a group or list",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Media group name, or the name of one of its lists (the whole group is processed)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Media group or list not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/history/clearid/{id}": {
+            "get": {
+                "description": "Deletes all download history rows of one episode list entry, so its releases can be downloaded again. Returns the number of deleted rows.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Clear the download history of an episode",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "serie_episodes (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Number of deleted history rows",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsoncount"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/id/{id}": {
+            "get": {
+                "description": "Queues a search of the indexers for every episode of one series list entry and downloads the best accepted release per episode. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search all episodes of a series and download",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/search/id/{id}/{season}": {
+            "get": {
+                "description": "Queues a search of the indexers for every episode of one season of a series list entry and downloads accepted releases. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search the episodes of one season and download",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Season number as stored for the series, e.g. 1 (0 for specials)",
+                        "name": "season",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/searchrss/id/{id}": {
+            "get": {
+                "description": "Queues one indexer search by TVDB ID for the whole series (no season) and downloads accepted releases for its missing episodes and upgrades. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search a series with one indexer call",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/searchrss/id/{id}/{season}": {
+            "get": {
+                "description": "Queues one indexer search by TVDB ID and season for a series list entry and downloads accepted releases, e.g. a season pack. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search one season with one indexer call",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Season number as stored for the series, e.g. 1 (0 for specials)",
+                        "name": "season",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/searchrss/list/id/{id}": {
+            "get": {
+                "description": "Searches the indexers once by TVDB ID for the whole series, downloads accepted releases, and returns the accepted and denied releases.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search a series with one call and show the results",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Releases the indexers returned, split into accepted and denied with the reason",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonresults"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/searchrss/seasons/id/{id}": {
+            "get": {
+                "description": "Queues one indexer search per season (by TVDB ID and season) for a series list entry and downloads accepted releases, e.g. season packs. Returns immediately; the work runs in the job queue.",
+                "tags": [
+                    "series · search"
+                ],
+                "summary": "Search every season of a series",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "series (list entry) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Queued as a background job",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonstarted"
+                        }
+                    },
+                    "204": {
+                        "description": "Nothing Done - no media group or nothing to search (no body)"
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "404": {
+                        "description": "Series not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonnotfound"
+                        }
+                    },
+                    "409": {
+                        "description": "The job is already queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonconflict"
+                        }
+                    },
+                    "500": {
+                        "description": "The job could not be queued",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonservererror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/unmatched": {
+            "get": {
+                "description": "Returns the episode files the organizer could not match (serie_file_unmatcheds), paginated, with the total count.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "List unmatched episode files",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Rows per page; without it all rows are returned",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, starting at 1; only used together with limit",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "One page of rows and the total row count",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondatarows"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/database.SerieFileUnmatched"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/series/{id}": {
+            "delete": {
+                "description": "Deletes a series' metadata (dbseries), its episodes, its entries in all lists and their history and file rows. Files on disk are not touched.",
+                "tags": [
+                    "series · data"
+                ],
+                "summary": "Delete a series everywhere",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID of the series in the dbseries table",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "403": {
+                        "description": "Database error",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonforbidden"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/slug": {
+            "get": {
+                "description": "Fills the slug columns of all tables that have one. By default only empty slugs are filled; force=true regenerates all of them.",
+                "tags": [
+                    "database"
+                ],
+                "summary": "Regenerate URL slugs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Set to 'true' to regenerate all slugs, not just empty ones",
+                        "name": "force",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Finished",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonok"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/statistics": {
+            "get": {
+                "description": "Returns all statistics in one response: movies, series, music, books, audiobooks, storage, HTTP requests, workers and system. Gathered with a 30 second limit.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "statistics"
+                ],
+                "summary": "All statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Statistics",
+                        "schema": {
+                            "$ref": "#/definitions/api.OverallStatistics"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/statistics/movies": {
+            "get": {
+                "description": "Returns the movie library statistics: total, available and missing movies, quality reached, upgrades available, counts per quality and per list, and total size.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "statistics"
+                ],
+                "summary": "Movie statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Statistics",
+                        "schema": {
+                            "$ref": "#/definitions/api.MovieStatistics"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/statistics/series": {
+            "get": {
+                "description": "Returns the series library statistics: series, seasons and episodes (total, available, missing), quality reached, upgrades available, counts per quality and per list, and total size.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "statistics"
+                ],
+                "summary": "Series statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Statistics",
+                        "schema": {
+                            "$ref": "#/definitions/api.SeriesStatistics"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "Query failed",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/statistics/workers": {
+            "get": {
+                "description": "Returns the statistics of the worker pools (queued, running and finished jobs per pool).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "statistics"
+                ],
+                "summary": "Worker statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Worker pool statistics",
+                        "schema": {
+                            "$ref": "#/definitions/worker.Stats"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/structure": {
+            "post": {
+                "description": "Runs the organizer on one folder: parses and matches the files, then moves and renames them into the library of the given media group and path template (movies and series). Optionally forces a database ID and turns off the runtime check, the disallowed-name check or deleting wrong-language files.",
+                "tags": [
+                    "organize"
+                ],
+                "summary": "Organize one folder",
+                "parameters": [
+                    {
+                        "description": "Folder to organize, the media group, and the source and target path entries",
+                        "name": "config",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.apiStructureJSON"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Empty object {} - the organize run finished",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Media group, path or folder not found",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonbadrequest"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/trakt/authorize": {
+            "get": {
+                "description": "Returns the URL to open in a browser to authorize this application at Trakt. After approving, pass the shown code to /api/trakt/token/{code}.",
+                "tags": [
+                    "trakt"
+                ],
+                "summary": "Get the Trakt authorization URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Trakt authorization URL to open in a browser; empty when Trakt is not set up",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsontraktauthurl"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/trakt/token/{code}": {
+            "get": {
+                "description": "Exchanges the code from the Trakt authorization page for an access token, saves it (config/trakt_token.json) and returns the stored token.",
+                "tags": [
+                    "trakt"
+                ],
+                "summary": "Store the Trakt authorization code",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Code shown by Trakt after authorizing",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The stored token; data is null when Trakt is not set up",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondata"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/apiexternal_v2.OAuthToken"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/trakt/user/{user}/{list}": {
+            "get": {
+                "description": "Reads a Trakt user list with the stored token and returns the first 10 entries (movies and shows) plus any error - a quick test of the Trakt authorization.",
+                "tags": [
+                    "trakt"
+                ],
+                "summary": "Read a Trakt user list (auth test)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Trakt username (slug) that owns the list",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Slug of the user's Trakt list",
+                        "name": "list",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List items, and the error text if Trakt failed",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/api.Jsondataerror"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/trakt.TraktUserListItem"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.ClientStats": {
+            "type": "object",
+            "properties": {
+                "avg_response_time_ms": {
+                    "type": "number"
+                },
+                "circuit_breaker_state": {
+                    "type": "string"
+                },
+                "failure_count": {
+                    "type": "integer"
+                },
+                "last_error_at": {
+                    "type": "string"
+                },
+                "last_error_message": {
+                    "type": "string"
+                },
+                "last_request_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "next_available_at": {
+                    "type": "string"
+                },
+                "requests_1h": {
+                    "type": "integer"
+                },
+                "requests_24h": {
+                    "type": "integer"
+                },
+                "requests_total": {
+                    "type": "integer"
+                },
+                "success_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.HTTPStatistics": {
+            "type": "object",
+            "properties": {
+                "client_stats": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.ClientStats"
+                    }
+                },
+                "success_rate": {
+                    "type": "number"
+                },
+                "total_clients": {
+                    "type": "integer"
+                },
+                "total_requests": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.JSONNaming": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string"
+                },
+                "foldername": {
+                    "type": "string"
+                },
+                "m": {
+                    "$ref": "#/definitions/database.ParseInfo"
+                }
+            }
+        },
+        "api.Jsonartistqueued": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Artist 0383dadf-2a4e-4d10-a46a-e9e041da8eb3 queued for import into music_Music/Music"
+                }
+            }
+        },
+        "api.Jsonartistsearchmissing": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Artist search (missing) started for music list Music"
+                }
+            }
+        },
+        "api.Jsonartistsearchupgrade": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Artist search (upgrade) started for music list Music"
+                }
+            }
+        },
+        "api.Jsonauthorqueued": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Author B000APZOQA queued for import into audiobook_Audiobooks/Audiobooks"
+                }
+            }
+        },
+        "api.Jsonauthorsearchmissing": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Author search (missing) started for audiobook list Audiobooks"
+                }
+            }
+        },
+        "api.Jsonauthorsearchupgrade": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Author search (upgrade) started for audiobook list Audiobooks"
+                }
+            }
+        },
+        "api.Jsonbadrequest": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Invalid id"
+                }
+            }
+        },
+        "api.Jsoncacheadded": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Cache entry added successfully"
+                }
+            }
+        },
+        "api.Jsoncachecleared": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Cache type CacheMovie cleared successfully"
+                }
+            }
+        },
+        "api.Jsoncachelist": {
+            "type": "object",
+            "properties": {
+                "available_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "CacheMovie",
+                        "CacheSeries",
+                        "CacheDBMovie"
+                    ]
+                },
+                "description": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.Jsoncacheremoved": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Cache entry removed successfully"
+                }
+            }
+        },
+        "api.Jsonconfigall": {
+            "type": "object",
+            "properties": {
+                "downloader_sabnzbd": {
+                    "$ref": "#/definitions/config.DownloaderConfig"
+                },
+                "general": {
+                    "$ref": "#/definitions/config.GeneralConfig"
+                },
+                "imdb": {
+                    "$ref": "#/definitions/config.ImdbConfig"
+                },
+                "indexer_nzbgeek": {
+                    "$ref": "#/definitions/config.IndexersConfig"
+                },
+                "list_imdb_top250": {
+                    "$ref": "#/definitions/config.ListsConfig"
+                },
+                "movie_EN": {
+                    "$ref": "#/definitions/config.MediaTypeConfig"
+                },
+                "notification_pushover": {
+                    "$ref": "#/definitions/config.NotificationConfig"
+                },
+                "path_movies": {
+                    "$ref": "#/definitions/config.PathsConfig"
+                },
+                "quality_SD": {
+                    "$ref": "#/definitions/config.QualityConfig"
+                },
+                "regex_standard": {
+                    "$ref": "#/definitions/config.RegexConfig"
+                },
+                "scheduler_default": {
+                    "$ref": "#/definitions/config.SchedulerConfig"
+                }
+            }
+        },
+        "api.Jsonconfigreloaded": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "config reloaded"
+                }
+            }
+        },
+        "api.Jsonconflict": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Job already queued: not queued"
+                }
+            }
+        },
+        "api.Jsoncount": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
+        "api.Jsondata": {
+            "type": "object",
+            "properties": {
+                "data": {}
+            }
+        },
+        "api.Jsondataerror": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "api.Jsondatarows": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "total": {
+                    "type": "integer",
+                    "example": 1250
+                }
+            }
+        },
+        "api.Jsondiscoverseries": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Discover series albums queued for artist #42 (3 series found)"
+                }
+            }
+        },
+        "api.Jsonerror": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "error message"
+                }
+            }
+        },
+        "api.Jsonfeedsdate": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Feeds date import started for NewReleases (2026-11-01)"
+                }
+            }
+        },
+        "api.Jsonforbidden": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "database is locked"
+                }
+            }
+        },
+        "api.Jsonjobstarted": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Job searchmissinginc started"
+                }
+            }
+        },
+        "api.Jsonnotfound": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "movie configuration EN not found"
+                }
+            }
+        },
+        "api.Jsonok": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "api.Jsonoperation": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": ""
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.Jsonresults": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apiexternal_v2.Nzbwithprio"
+                    }
+                },
+                "denied": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apiexternal_v2.Nzbwithprio"
+                    }
+                }
+            }
+        },
+        "api.Jsonsearchstarted": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "Search started for book list Books"
+                }
+            }
+        },
+        "api.Jsonservererror": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Job not started: queue closed"
+                }
+            }
+        },
+        "api.Jsonstarted": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "started"
+                }
+            }
+        },
+        "api.Jsonsuccess": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.Jsonsuccessmessage": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Queue job canceled successfully"
+                },
+                "success": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.Jsontraktauthurl": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "example": "https://trakt.tv/oauth/authorize?client_id=abc123\u0026redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob\u0026response_type=code\u0026state=state"
+                }
+            }
+        },
+        "api.Jsonunauthorized": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "unauthorized - wrong apikey in query"
+                }
+            }
+        },
+        "api.MediaLibraryStats": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "integer"
+                },
+                "by_list": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_quality": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "missing": {
+                    "type": "integer"
+                },
+                "quality_reached": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "upgrade_available": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.MovieStatistics": {
+            "type": "object",
+            "properties": {
+                "available_movies": {
+                    "type": "integer"
+                },
+                "by_list": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_quality": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "missing_movies": {
+                    "type": "integer"
+                },
+                "quality_reached": {
+                    "type": "integer"
+                },
+                "total_movies": {
+                    "type": "integer"
+                },
+                "total_size_bytes": {
+                    "type": "integer"
+                },
+                "upgrade_available": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.OverallStatistics": {
+            "type": "object",
+            "properties": {
+                "audiobooks": {
+                    "$ref": "#/definitions/api.MediaLibraryStats"
+                },
+                "books": {
+                    "$ref": "#/definitions/api.MediaLibraryStats"
+                },
+                "http": {
+                    "$ref": "#/definitions/api.HTTPStatistics"
+                },
+                "movies": {
+                    "$ref": "#/definitions/api.MovieStatistics"
+                },
+                "music": {
+                    "$ref": "#/definitions/api.MediaLibraryStats"
+                },
+                "series": {
+                    "$ref": "#/definitions/api.SeriesStatistics"
+                },
+                "storage": {
+                    "$ref": "#/definitions/api.StorageStatistics"
+                },
+                "system": {
+                    "$ref": "#/definitions/api.SystemStatistics"
+                },
+                "workers": {
+                    "$ref": "#/definitions/worker.Stats"
+                }
+            }
+        },
+        "api.PathStatistic": {
+            "type": "object",
+            "properties": {
+                "file_count": {
+                    "type": "integer"
+                },
+                "folder_count": {
+                    "type": "integer"
+                },
+                "partial": {
+                    "type": "boolean"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "total_size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.SeriesStatistics": {
+            "type": "object",
+            "properties": {
+                "available_episodes": {
+                    "type": "integer"
+                },
+                "available_series": {
+                    "type": "integer"
+                },
+                "by_list": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_quality": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "missing_episodes": {
+                    "type": "integer"
+                },
+                "missing_series": {
+                    "type": "integer"
+                },
+                "quality_reached": {
+                    "type": "integer"
+                },
+                "total_episodes": {
+                    "type": "integer"
+                },
+                "total_seasons": {
+                    "type": "integer"
+                },
+                "total_series": {
+                    "type": "integer"
+                },
+                "total_size_bytes": {
+                    "type": "integer"
+                },
+                "upgrade_available": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.Statsresults": {
+            "type": "object",
+            "properties": {
+                "GC Stats": {
+                    "type": "string"
+                },
+                "GOARCH": {
+                    "type": "string"
+                },
+                "GOOS": {
+                    "type": "string"
+                },
+                "Mem Stats": {
+                    "type": "string"
+                },
+                "NumCPU": {
+                    "type": "integer"
+                },
+                "NumGoroutine": {
+                    "type": "integer"
+                },
+                "WorkerStats": {
+                    "$ref": "#/definitions/worker.Stats"
+                }
+            }
+        },
+        "api.StorageStatistics": {
+            "type": "object",
+            "properties": {
+                "by_path": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.PathStatistic"
+                    }
+                },
+                "partial": {
+                    "description": "Partial is set when at least one path walk hit the request deadline,\nso the counts are lower bounds.",
+                    "type": "boolean"
+                },
+                "total_file_count": {
+                    "type": "integer"
+                },
+                "total_paths": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.SystemStatistics": {
+            "type": "object",
+            "properties": {
+                "gc_count": {
+                    "type": "integer"
+                },
+                "go_routines": {
+                    "description": "Alias for JavaScript compatibility",
+                    "type": "integer"
+                },
+                "goarch": {
+                    "type": "string"
+                },
+                "goos": {
+                    "type": "string"
+                },
+                "last_gc_time": {
+                    "type": "string"
+                },
+                "memory_alloc_mb": {
+                    "type": "number"
+                },
+                "memory_sys_mb": {
+                    "type": "number"
+                },
+                "num_cpu": {
+                    "type": "integer"
+                },
+                "num_goroutine": {
+                    "type": "integer"
+                },
+                "uptime_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.apiAlbumForceMatchJSON": {
+            "type": "object",
+            "required": [
+                "configentry",
+                "folder",
+                "forced_id",
+                "grouptype",
+                "sourcepathtemplate",
+                "targetpathtemplate"
+            ],
+            "properties": {
+                "configentry": {
+                    "type": "string"
+                },
+                "folder": {
+                    "type": "string"
+                },
+                "forced_id": {
+                    "type": "string"
+                },
+                "grouptype": {
+                    "type": "string"
+                },
+                "preview": {
+                    "type": "boolean"
+                },
+                "sourcepathtemplate": {
+                    "type": "string"
+                },
+                "targetpathtemplate": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.apiCacheAddJSON": {
+            "type": "object",
+            "required": [
+                "cache_type",
+                "key",
+                "value"
+            ],
+            "properties": {
+                "cache_type": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.apiNameInput": {
+            "type": "object",
+            "properties": {
+                "cfg_media": {
+                    "type": "string"
+                },
+                "filepath": {
+                    "type": "string"
+                },
+                "grouptype": {
+                    "type": "string"
+                },
+                "movieid": {
+                    "type": "integer"
+                },
+                "serieid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.apiStructureJSON": {
+            "type": "object",
+            "properties": {
+                "Configentry": {
+                    "type": "string"
+                },
+                "Disabledeletewronglanguage": {
+                    "type": "boolean"
+                },
+                "Disabledisallowed": {
+                    "type": "boolean"
+                },
+                "Disableruntimecheck": {
+                    "type": "boolean"
+                },
+                "Folder": {
+                    "type": "string"
+                },
+                "Forceid": {
+                    "type": "integer"
+                },
+                "Grouptype": {
+                    "type": "string"
+                },
+                "Sourcepathtemplate": {
+                    "type": "string"
+                },
+                "Targetpathtemplate": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.apiparse": {
+            "type": "object",
+            "properties": {
+                "Config": {
+                    "type": "string"
+                },
+                "Name": {
+                    "type": "string"
+                },
+                "Path": {
+                    "type": "string"
+                },
+                "Quality": {
+                    "type": "string"
+                },
+                "Typ": {
+                    "type": "string"
+                },
+                "Year": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apiexternal_v2.Nzb": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "description": "Category is the Newznab category ID from the indexer (e.g. \"3010\" for MP3, \"3040\" for Lossless).\nUsed as a fallback to infer audio format when none is present in the release title.",
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "episode": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "imdb": {
+                    "type": "string"
+                },
+                "is_torrent": {
+                    "type": "boolean"
+                },
+                "pub_date": {
+                    "type": "string"
+                },
+                "season": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "source_endpoint": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "tvdbid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apiexternal_v2.Nzbwithprio": {
+            "type": "object",
+            "properties": {
+                "additional_reason": {},
+                "additional_reason_int": {
+                    "type": "integer"
+                },
+                "additional_reason_str": {
+                    "type": "string"
+                },
+                "dbid": {
+                    "type": "integer"
+                },
+                "dont_search": {
+                    "type": "boolean"
+                },
+                "dont_upgrade": {
+                    "type": "boolean"
+                },
+                "id_searched": {
+                    "type": "boolean"
+                },
+                "info": {
+                    "$ref": "#/definitions/database.ParseInfo"
+                },
+                "listname": {
+                    "type": "string"
+                },
+                "minimum_priority": {
+                    "type": "integer"
+                },
+                "nzb": {
+                    "$ref": "#/definitions/apiexternal_v2.Nzb"
+                },
+                "nzb_album_id": {
+                    "type": "integer"
+                },
+                "nzb_audiobook_id": {
+                    "type": "integer"
+                },
+                "nzb_book_id": {
+                    "type": "integer"
+                },
+                "nzb_episode_id": {
+                    "type": "integer"
+                },
+                "nzb_movie_id": {
+                    "type": "integer"
+                },
+                "quality": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "search_for": {
+                    "description": "Complete search query (e.g., \"Album Title Artist Name\" for music)",
+                    "type": "string"
+                },
+                "wanted_alternates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/syncops.DbstaticTwoStringOneInt"
+                    }
+                },
+                "wanted_title": {
+                    "type": "string"
+                }
+            }
+        },
+        "apiexternal_v2.OAuthToken": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string"
+                },
+                "expiry": {
+                    "type": "string"
+                },
+                "refresh_token": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "token_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "config.DownloaderConfig": {
+            "type": "object",
+            "properties": {
+                "AddPaused": {
+                    "description": "AddPaused specifies whether to add entries in paused state",
+                    "type": "boolean"
+                },
+                "DelugeDlTo": {
+                    "description": "DelugeDlTo is the Deluge target for downloads",
+                    "type": "string"
+                },
+                "DelugeMoveAfter": {
+                    "description": "DelugeMoveAfter specifies if downloads should be moved after completion in Deluge",
+                    "type": "boolean"
+                },
+                "DelugeMoveTo": {
+                    "description": "DelugeMoveTo is the Deluge target for downloads after completion",
+                    "type": "string"
+                },
+                "DlType": {
+                    "description": "DlType is the type of downloader, e.g. drone, nzbget, etc.",
+                    "type": "string"
+                },
+                "Enabled": {
+                    "description": "Enabled specifies if this template is active",
+                    "type": "boolean"
+                },
+                "Hostname": {
+                    "description": "Hostname is the hostname to use if needed",
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the downloader template",
+                    "type": "string"
+                },
+                "Password": {
+                    "description": "Password is the password to use if needed",
+                    "type": "string"
+                },
+                "Port": {
+                    "description": "Port is the port to use if needed",
+                    "type": "integer"
+                },
+                "Priority": {
+                    "description": "Priority is the priority to set if needed",
+                    "type": "integer"
+                },
+                "RemoveFailed": {
+                    "description": "RemoveFailed removes a download the client reports as failed",
+                    "type": "boolean"
+                },
+                "Username": {
+                    "description": "Username is the username to use if needed",
+                    "type": "string"
+                }
+            }
+        },
+        "config.GeneralConfig": {
+            "type": "object",
+            "properties": {
+                "AcoustIDAPIKey": {
+                    "description": "AcoustIDAPIKey is the API key for AcoustID audio fingerprint lookups",
+                    "type": "string"
+                },
+                "AcoustIDLimiterCalls": {
+                    "description": "AcoustIDLimiterCalls defines calls limit for AcoustID API in defined seconds - default: 3",
+                    "type": "integer"
+                },
+                "AcoustIDLimiterSeconds": {
+                    "description": "AcoustIDLimiterSeconds defines seconds limit for AcoustID API calls - default: 1",
+                    "type": "integer"
+                },
+                "AudibleLimiterCalls": {
+                    "description": "AudibleLimiterCalls defines calls limit for Audible API in defined seconds - 0 = built-in 1",
+                    "type": "integer"
+                },
+                "AudibleLimiterSeconds": {
+                    "description": "AudibleLimiterSeconds defines seconds limit for Audible API calls - 0 = built-in 2",
+                    "type": "integer"
+                },
+                "AudnexLimiterCalls": {
+                    "description": "AudnexLimiterCalls defines calls limit for Audnex API in defined seconds - default: 10",
+                    "type": "integer"
+                },
+                "AudnexLimiterSeconds": {
+                    "description": "AudnexLimiterSeconds defines seconds limit for Audnex API calls - default: 1",
+                    "type": "integer"
+                },
+                "CacheAutoExtend": {
+                    "description": "CacheAutoExtend defines whether cache expiration will be reset on access - default: false",
+                    "type": "boolean"
+                },
+                "CacheDuration": {
+                    "description": "CacheDuration defines hours after which cached data will be refreshed - default: 12",
+                    "type": "integer"
+                },
+                "CacheDuration2": {
+                    "type": "integer"
+                },
+                "DBLogLevel": {
+                    "description": "DBLogLevel defines the database log level to use, options are info or debug (not recommended) - default: info",
+                    "type": "string"
+                },
+                "DatabaseBackupStopTasks": {
+                    "description": "DatabaseBackupStopTasks specifies whether to stop background tasks during database backups",
+                    "type": "boolean"
+                },
+                "DeezerLimiterCalls": {
+                    "description": "DeezerLimiterCalls defines calls limit for Deezer API in defined seconds - default: 50",
+                    "type": "integer"
+                },
+                "DeezerLimiterSeconds": {
+                    "description": "DeezerLimiterSeconds defines seconds limit for Deezer API calls - default: 5",
+                    "type": "integer"
+                },
+                "DisableParserStringMatch": {
+                    "description": "DisableParserStringMatch defines whether to disable string matching in parsers - default: false",
+                    "type": "boolean"
+                },
+                "DiscogsLimiterCalls": {
+                    "description": "DiscogsLimiterCalls defines calls limit for Discogs API in defined seconds - default: 60",
+                    "type": "integer"
+                },
+                "DiscogsLimiterSeconds": {
+                    "description": "DiscogsLimiterSeconds defines seconds limit for Discogs API calls - default: 60",
+                    "type": "integer"
+                },
+                "DiscogsToken": {
+                    "description": "DiscogsToken is the personal access token for Discogs API",
+                    "type": "string"
+                },
+                "EnableFileWatcher": {
+                    "description": "UseGoDir                           bool     `toml:\"use_godir\"`\nConcurrentScheduler                int      `toml:\"concurrent_scheduler\"`\nEnableFileWatcher specifies whether the file watcher functionality is enabled\nWhen set to true, the application will monitor specified directories for file changes\nDefault is false",
+                    "type": "boolean"
+                },
+                "FailedIndexerBlockTime": {
+                    "description": "FailedIndexerBlockTime specifies how long in minutes an indexer should be blocked after failures",
+                    "type": "integer"
+                },
+                "FfprobePath": {
+                    "description": "FfprobePath specifies the folder containing the ffprobe executable\nUsed for media analysis",
+                    "type": "string"
+                },
+                "FpcalcPath": {
+                    "description": "FpcalcPath specifies the path to the fpcalc executable for audio fingerprinting",
+                    "type": "string"
+                },
+                "GoodreadsAPIKey": {
+                    "description": "GoodreadsAPIKey is the API key for Goodreads (deprecated but still partially functional)",
+                    "type": "string"
+                },
+                "GoodreadsLimiterCalls": {
+                    "description": "GoodreadsLimiterCalls defines calls limit for Goodreads API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "GoodreadsLimiterSeconds": {
+                    "description": "GoodreadsLimiterSeconds defines seconds limit for Goodreads API calls - default: 1",
+                    "type": "integer"
+                },
+                "ITunesLimiterCalls": {
+                    "description": "ITunesLimiterCalls defines calls limit for iTunes API in defined seconds - default: 20",
+                    "type": "integer"
+                },
+                "ITunesLimiterSeconds": {
+                    "description": "ITunesLimiterSeconds defines seconds limit for iTunes API calls - default: 60",
+                    "type": "integer"
+                },
+                "JellyfinDisableTLSVerify": {
+                    "description": "JellyfinDisableTLSVerify specifies whether to disable TLS certificate verification for Jellyfin API calls - default: false",
+                    "type": "boolean"
+                },
+                "JellyfinLimiterCalls": {
+                    "description": "JellyfinLimiterCalls defines calls limit for Jellyfin API in defined seconds - default: 10",
+                    "type": "integer"
+                },
+                "JellyfinLimiterSeconds": {
+                    "description": "JellyfinLimiterSeconds defines seconds limit for Jellyfin API calls - default: 1",
+                    "type": "integer"
+                },
+                "JellyfinTimeoutSeconds": {
+                    "description": "JellyfinTimeoutSeconds defines the HTTP timeout in seconds for Jellyfin API calls - default: 30",
+                    "type": "integer"
+                },
+                "LastFMAPIKey": {
+                    "description": "LastFMAPIKey is the API key for Last.fm - get one at https://www.last.fm/api/account/create",
+                    "type": "string"
+                },
+                "LastFMLimiterCalls": {
+                    "description": "LastFMLimiterCalls defines calls limit for Last.fm API in defined seconds - default: 5",
+                    "type": "integer"
+                },
+                "LastFMLimiterSeconds": {
+                    "description": "LastFMLimiterSeconds defines seconds limit for Last.fm API calls - default: 1",
+                    "type": "integer"
+                },
+                "LogColorize": {
+                    "description": "LogColorize defines whether to use colors in console output - default: false",
+                    "type": "boolean"
+                },
+                "LogCompress": {
+                    "description": "LogCompress defines whether to compress old log files - default: false",
+                    "type": "boolean"
+                },
+                "LogFileCount": {
+                    "description": "LogFileCount defines how many log files to keep - default: 5",
+                    "type": "integer"
+                },
+                "LogFileSize": {
+                    "description": "LogFileSize defines the size in MB for the log files - default: 5",
+                    "type": "integer"
+                },
+                "LogLevel": {
+                    "description": "LogLevel defines the log level to use, options are info or debug - default: info",
+                    "type": "string"
+                },
+                "LogToFileOnly": {
+                    "description": "LogToFileOnly defines whether to only log to file and not console - default: false",
+                    "type": "boolean"
+                },
+                "MaxDatabaseBackups": {
+                    "description": "MaxDatabaseBackups defines the maximum number of database backups to retain",
+                    "type": "integer"
+                },
+                "MediainfoPath": {
+                    "description": "MediainfoPath specifies the folder containing the mediainfo executable\nUsed as an alternative to ffprobe for media analysis",
+                    "type": "string"
+                },
+                "MetaflacPath": {
+                    "description": "MetaflacPath specifies the path to the metaflac executable\nUsed for writing FLAC audio file tags",
+                    "type": "string"
+                },
+                "MoveBufferSizeKB": {
+                    "description": "MoveBufferSizeKB defines buffer size in KB to use if file buffer copy enabled - default: 1024",
+                    "type": "integer"
+                },
+                "MovieAlternateTitleMetaSourceImdb": {
+                    "description": "MovieAlternateTitleMetaSourceImdb defines whether to scan IMDB for alternate movie titles - default: false",
+                    "type": "boolean"
+                },
+                "MovieAlternateTitleMetaSourceOmdb": {
+                    "description": "MovieAlternateTitleMetaSourceOmdb defines whether to scan OMDB for alternate movie titles - default: false",
+                    "type": "boolean"
+                },
+                "MovieAlternateTitleMetaSourceTmdb": {
+                    "description": "MovieAlternateTitleMetaSourceTmdb defines whether to scan TMDb for alternate movie titles - default: false",
+                    "type": "boolean"
+                },
+                "MovieAlternateTitleMetaSourceTrakt": {
+                    "description": "MovieAlternateTitleMetaSourceTrakt defines whether to scan Trakt for alternate movie titles - default: false",
+                    "type": "boolean"
+                },
+                "MovieMetaSourceImdb": {
+                    "description": "MovieMetaSourceImdb defines whether to scan IMDB for movie metadata - default: false",
+                    "type": "boolean"
+                },
+                "MovieMetaSourceOmdb": {
+                    "description": "MovieMetaSourceOmdb defines whether to scan OMDB for movie metadata - default: false",
+                    "type": "boolean"
+                },
+                "MovieMetaSourcePriority": {
+                    "description": "MovieMetaSourcePriority defines priority order to scan metadata providers for movies - overrides individual settings",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MovieMetaSourceTmdb": {
+                    "description": "MovieMetaSourceTmdb defines whether to scan TMDb for movie metadata - default: false",
+                    "type": "boolean"
+                },
+                "MovieMetaSourceTrakt": {
+                    "description": "MovieMetaSourceTrakt defines whether to scan Trakt for movie metadata - default: false",
+                    "type": "boolean"
+                },
+                "MovieParseMetaSourcePriority": {
+                    "description": "MovieParseMetaSourcePriority defines priority order to scan metadata providers for movie file parsing - overrides individual settings",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MovieRSSMetaSourcePriority": {
+                    "description": "MovieRSSMetaSourcePriority defines priority order to scan metadata providers for movie RSS - overrides individual settings",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MusicBrainzLimiterCalls": {
+                    "description": "MusicBrainzLimiterCalls defines calls limit for MusicBrainz API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "MusicBrainzLimiterSeconds": {
+                    "description": "MusicBrainzLimiterSeconds defines seconds limit for MusicBrainz API calls - default: 1",
+                    "type": "integer"
+                },
+                "MusicMetaSourcePenalties": {
+                    "description": "MusicMetaSourcePenalties adds a fixed distance penalty for candidates from specific\nmetadata providers. Keys are provider names (e.g. \"discogs\", \"lastfm\"), values are\npenalty amounts added to albumDistanceWithTracks before recommendation is evaluated.\nA positive value makes a provider's candidates harder to match; use 0.0 to disable.\nExample: {\"discogs\": 0.1} adds 0.10 to every Discogs candidate's distance score.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                },
+                "MusicMetaSourcePriority": {
+                    "description": "MusicMetaSourcePriority controls which music metadata providers are active and in what order.\nAn empty list enables all providers in the default order: musicbrainz → acoustid → lastfm → discogs → deezer.\nTo disable a provider, omit it from the list.\nNote: removing 'musicbrainz' severely limits matching — it is the track-listing source\nfor candidates not yet fully populated in the database.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "OmdbAPIKey": {
+                    "description": "OmdbAPIKey is the API key for OMDB - get one at https://www.omdbapi.com/apikey.aspx",
+                    "type": "string"
+                },
+                "OmdbDisableTLSVerify": {
+                    "description": "OmdbDisableTLSVerify disables TLS certificate verification for OMDb API requests\nSetting this to true may increase performance but reduces security",
+                    "type": "boolean"
+                },
+                "OmdbLimiterCalls": {
+                    "description": "OmdbLimiterCalls defines calls limit for OMDb API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "OmdbLimiterSeconds": {
+                    "description": "OmdbLimiterSeconds defines seconds limit for OMDb API calls - default: 1",
+                    "type": "integer"
+                },
+                "OmdbTimeoutSeconds": {
+                    "description": "DisableVariableCleanup specifies whether to disable cleanup of variables after use\nThis may reduce RAM usage but variables will persist\nDefault is false\nDisableVariableCleanup bool `toml:\"disable_variable_cleanup\" displayname:\"Disable Variable Cleanup\"       comment:\"Disable automatic cleanup of variables after use to potentially reduce RAM usage.\\nWhen true, variables remain\" longcomment:\"Disable automatic cleanup of variables after use to potentially reduce RAM usage.\\nWhen true, variables remain in memory longer, possibly reducing allocations.\\nMay actually increase memory usage if variables accumulate over time.\\nWhen false, variables are cleaned up promptly after use (recommended).\\nThis is an experimental optimization that may or may not help performance.\\nDefault: false (enable cleanup)\"`\nOmdbTimeoutSeconds defines the HTTP timeout in seconds for OMDb API calls\nDefault is 10 seconds",
+                    "type": "integer"
+                },
+                "OpenLibraryLimiterCalls": {
+                    "description": "OpenLibraryLimiterCalls defines calls limit for OpenLibrary API in defined seconds - 0 = built-in 100",
+                    "type": "integer"
+                },
+                "OpenLibraryLimiterSeconds": {
+                    "description": "OpenLibraryLimiterSeconds defines seconds limit for OpenLibrary API calls - 0 = built-in 60",
+                    "type": "integer"
+                },
+                "PlexDisableTLSVerify": {
+                    "description": "PlexDisableTLSVerify specifies whether to disable TLS certificate verification for Plex API calls - default: false",
+                    "type": "boolean"
+                },
+                "PlexLimiterCalls": {
+                    "description": "PlexLimiterCalls defines calls limit for Plex API in defined seconds - default: 10",
+                    "type": "integer"
+                },
+                "PlexLimiterSeconds": {
+                    "description": "PlexLimiterSeconds defines seconds limit for Plex API calls - default: 1",
+                    "type": "integer"
+                },
+                "PlexTimeoutSeconds": {
+                    "description": "PlexTimeoutSeconds defines the HTTP timeout in seconds for Plex API calls - default: 30",
+                    "type": "integer"
+                },
+                "SchedulerDisabled": {
+                    "description": "SchedulerDisabled enables/disables scheduler - default false",
+                    "type": "boolean"
+                },
+                "SearcherSize": {
+                    "description": "SearcherSize defines initial size of found entries slice - default: 5000",
+                    "type": "integer"
+                },
+                "SerieAlternateTitleMetaSourceImdb": {
+                    "description": "SerieAlternateTitleMetaSourceImdb defines whether to scan IMDB for alternate series titles - default: false",
+                    "type": "boolean"
+                },
+                "SerieAlternateTitleMetaSourceTrakt": {
+                    "description": "SerieAlternateTitleMetaSourceTrakt defines whether to scan Trakt for alternate series titles - default: false",
+                    "type": "boolean"
+                },
+                "SerieMetaSourceTmdb": {
+                    "description": "SerieMetaSourceTmdb defines whether to scan TMDb for series metadata - default: false",
+                    "type": "boolean"
+                },
+                "SerieMetaSourceTrakt": {
+                    "description": "SerieMetaSourceTrakt defines whether to scan Trakt for series metadata - default: false",
+                    "type": "boolean"
+                },
+                "SevenZipPath": {
+                    "description": "SevenZipPath specifies the path to the 7z executable for unpacking various archive formats",
+                    "type": "string"
+                },
+                "SpotifyClientID": {
+                    "description": "SpotifyClientID is the client ID for Spotify Web API",
+                    "type": "string"
+                },
+                "SpotifyClientSecret": {
+                    "description": "SpotifyClientSecret is the client secret for Spotify Web API",
+                    "type": "string"
+                },
+                "SpotifyRegion": {
+                    "description": "SpotifyRegion is the ISO 3166-1 alpha-2 country code for market filtering",
+                    "type": "string"
+                },
+                "TarPath": {
+                    "description": "TarPath specifies the path to the tar executable for unpacking TAR archives",
+                    "type": "string"
+                },
+                "TheAudioDBAPIKey": {
+                    "description": "TheAudioDBAPIKey defines the API key for TheAudioDB - defaults to the free public key \"2\"",
+                    "type": "string"
+                },
+                "TheAudioDBLimiterCalls": {
+                    "description": "TheAudioDBLimiterCalls defines calls limit for TheAudioDB API in defined seconds - default: 2",
+                    "type": "integer"
+                },
+                "TheAudioDBLimiterSeconds": {
+                    "description": "TheAudioDBLimiterSeconds defines seconds limit for TheAudioDB API calls - default: 1",
+                    "type": "integer"
+                },
+                "TheMovieDBApiKey": {
+                    "description": "TheMovieDBApiKey defines API key for TMDb - get from: https://www.themoviedb.org/settings/api",
+                    "type": "string"
+                },
+                "TheMovieDBDisableTLSVerify": {
+                    "description": "TheMovieDBDisableTLSVerify disables TLS certificate verification for TheMovieDB API requests\nSetting this to true may increase performance but reduces security",
+                    "type": "boolean"
+                },
+                "TimeFormat": {
+                    "description": "TimeFormat defines the time format to use, options are rfc3339, iso8601, rfc1123, rfc822, rfc850 - default: rfc3339",
+                    "type": "string"
+                },
+                "TimeZone": {
+                    "description": "TimeZone defines the timezone to use, options are local, utc or one from IANA Time Zone database",
+                    "type": "string"
+                },
+                "TmdbLimiterCalls": {
+                    "description": "TmdbLimiterCalls defines calls limit for TMDb API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "TmdbLimiterSeconds": {
+                    "description": "TmdbLimiterSeconds defines seconds limit for TMDb API calls - default: 1",
+                    "type": "integer"
+                },
+                "TmdbTimeoutSeconds": {
+                    "description": "TmdbTimeoutSeconds defines the HTTP timeout in seconds for TMDb API calls\nDefault is 10 seconds",
+                    "type": "integer"
+                },
+                "TraktClientID": {
+                    "description": "TraktClientID defines client ID for Trakt - get from: https://trakt.tv/oauth/applications/new",
+                    "type": "string"
+                },
+                "TraktClientSecret": {
+                    "description": "TraktClientSecret defines client secret for Trakt application",
+                    "type": "string"
+                },
+                "TraktDisableTLSVerify": {
+                    "description": "TraktDisableTLSVerify disables TLS certificate verification for Trakt API requests\nSetting this to true may increase performance but reduces security",
+                    "type": "boolean"
+                },
+                "TraktLimiterCalls": {
+                    "description": "TraktLimiterCalls defines calls limit for Trakt API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "TraktLimiterSeconds": {
+                    "description": "DisableSwagger defines whether to disable Swagger API docs - default: false\nDisableSwagger bool `toml:\"disable_swagger\"              displayname:\"Disable API Documentation\"      comment:\"Disable automatic Swagger API documentation generation.\\nWhen true, the Swagger UI and API docs are not generated or served\"                  longcomment:\"Disable automatic Swagger API documentation generation.\\nWhen true, the Swagger UI and API docs are not generated or served.\\nThis can slightly improve startup time and reduce memory usage.\\nUseful in production environments where API docs are not needed.\\nWhen false, API documentation is available at /swagger endpoint.\\nDefault: false (Swagger enabled)\"`\nTraktLimiterSeconds defines seconds limit for Trakt API calls - default: 1",
+                    "type": "integer"
+                },
+                "TraktRedirectUrl": {
+                    "type": "string"
+                },
+                "TraktTimeoutSeconds": {
+                    "description": "TraktTimeoutSeconds defines the HTTP timeout in seconds for Trakt API calls\nDefault is 10 seconds",
+                    "type": "integer"
+                },
+                "TvdbDisableTLSVerify": {
+                    "description": "TvdbDisableTLSVerify disables TLS certificate verification for TVDB API requests\nSetting this to true may increase performance but reduces security",
+                    "type": "boolean"
+                },
+                "TvdbLimiterCalls": {
+                    "description": "TvdbLimiterCalls defines calls limit for TVDB API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "TvdbLimiterSeconds": {
+                    "description": "TvdbLimiterSeconds defines seconds limit for TVDB API calls - default: 1",
+                    "type": "integer"
+                },
+                "TvdbTimeoutSeconds": {
+                    "description": "TvdbTimeoutSeconds defines the HTTP timeout in seconds for TVDB API calls\nDefault is 10 seconds",
+                    "type": "integer"
+                },
+                "TvmazeDisableTLSVerify": {
+                    "description": "TvmazeDisableTLSVerify disables TLS certificate verification for TVmaze API requests\nSetting this to true may increase performance but reduces security",
+                    "type": "boolean"
+                },
+                "TvmazeLimiterCalls": {
+                    "description": "TvmazeLimiterCalls defines calls limit for TVmaze API in defined seconds - default: 1",
+                    "type": "integer"
+                },
+                "TvmazeLimiterSeconds": {
+                    "description": "TvmazeLimiterSeconds defines seconds limit for TVmaze API calls - default: 1",
+                    "type": "integer"
+                },
+                "TvmazeTimeoutSeconds": {
+                    "description": "TvmazeTimeoutSeconds defines the HTTP timeout in seconds for TVmaze API calls\nDefault is 10 seconds",
+                    "type": "integer"
+                },
+                "UnrarPath": {
+                    "description": "UnrarPath specifies the path to the unrar executable for unpacking RAR archives",
+                    "type": "string"
+                },
+                "UnzipPath": {
+                    "description": "UnzipPath specifies the path to the unzip executable for unpacking ZIP archives",
+                    "type": "string"
+                },
+                "UseCronInsteadOfInterval": {
+                    "description": "UseCronInsteadOfInterval defines whether to convert intervals to cron strings - default: false",
+                    "type": "boolean"
+                },
+                "UseFileBufferCopy": {
+                    "description": "UseFileBufferCopy defines whether to use buffered file copy - default: false",
+                    "type": "boolean"
+                },
+                "UseFileCache": {
+                    "description": "UseFileCache defines whether to cache all files in RAM - default: false",
+                    "type": "boolean"
+                },
+                "UseHistoryCache": {
+                    "description": "UseHistoryCache defines whether to cache downloaded entry history in RAM - default: false",
+                    "type": "boolean"
+                },
+                "UseIndexedCache": {
+                    "description": "UseIndexedCache enables O(1) hash-based indexes for cache lookups - default: false",
+                    "type": "boolean"
+                },
+                "UseMediaCache": {
+                    "description": "UseMediaCache defines whether to cache movies and series in RAM for better performance - default: false",
+                    "type": "boolean"
+                },
+                "UseMediaFallback": {
+                    "description": "UseMediaFallback specifies whether to use mediainfo as a fallback if ffprobe fails",
+                    "type": "boolean"
+                },
+                "UseMediainfo": {
+                    "description": "UseMediainfo specifies whether to use mediainfo instead of ffprobe for media analysis",
+                    "type": "boolean"
+                },
+                "UserAgent": {
+                    "description": "UserAgent defines the User-Agent string sent with HTTP requests to external APIs - default: go-media-downloader/2.0",
+                    "type": "string"
+                },
+                "WebAPIKey": {
+                    "description": "WebAPIKey defines API key for API calls - default: mysecure",
+                    "type": "string"
+                },
+                "WebPort": {
+                    "description": "WebPort defines port for web interface and API - default: 9090",
+                    "type": "string"
+                },
+                "WebPortalEnabled": {
+                    "description": "WebPortalEnabled enables/disables web portal - default: false",
+                    "type": "boolean"
+                },
+                "WhisperURL": {
+                    "description": "WhisperURL is the base URL of a Whisper ASR webservice used to detect\nthe spoken language of untagged audio tracks",
+                    "type": "string"
+                },
+                "WorkerFiles": {
+                    "description": "WorkerFiles defines how many parallel jobs of file scanning to run - default: 1",
+                    "type": "integer"
+                },
+                "WorkerIndexer": {
+                    "description": "WorkerIndexer defines how many indexers to query in parallel for each scan job - default: 1",
+                    "type": "integer"
+                },
+                "WorkerMetadata": {
+                    "description": "LogZeroValues determines whether to log variables without a value.\nLogZeroValues bool `toml:\"log_zero_values\"  displayname:\"Log Empty Values\"              comment:\"Include empty/zero values in log output for debugging.\\nWhen true, variables with empty strings and zero numbers are logged\"                    longcomment:\"Include empty/zero values in log output for debugging.\\nWhen true, variables with empty strings, zero numbers, etc. are logged.\\nUseful for debugging configuration issues but creates more verbose logs.\\nWhen false, only variables with actual values are logged.\\nDefault: false\"`\nWorkerMetadata defines how many parallel jobs of list retrievals to run - default: 1",
+                    "type": "integer"
+                },
+                "WorkerParse": {
+                    "description": "WorkerParse defines how many parallel parsings to run for list retrievals - default: 1",
+                    "type": "integer"
+                },
+                "WorkerRSS": {
+                    "description": "WorkerRSS defines how many parallel rss jobs to run - default: 1",
+                    "type": "integer"
+                },
+                "WorkerSearch": {
+                    "description": "WorkerSearch defines how many parallel search jobs to run - default: 1",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.ImdbConfig": {
+            "type": "object",
+            "properties": {
+                "ImdbIDSize": {
+                    "description": "ImdbIDSize is an integer specifying the number of expected entries in the IMDb database\nDefault is 12000000",
+                    "type": "integer"
+                },
+                "Indexedlanguages": {
+                    "description": "Indexedlanguages is an array of strings specifying the languages to use for titles\nExamples: \"DE\", \"UK\", \"US\"\nInclude '' or '\\N' for global titles\nDefault is empty array which imports all languages",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "Indexedtypes": {
+                    "description": "Indexedtypes is an array of strings specifying the types of IMDb media to import\nValid values are 'movie', 'tvMovie', 'tvmovie', 'tvSeries', 'tvseries', 'video'\nDefault is empty array which imports nothing",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "Indexfull": {
+                    "description": "Indexfull is a boolean specifying whether to index all available IMDb data\nor only the bare minimum\nDefault is false",
+                    "type": "boolean"
+                },
+                "UseMemory": {
+                    "description": "UseMemory is a boolean specifying whether to store the IMDb DB in RAM during generation\nAt least 2GB RAM required. Highly recommended.\nDefault is false",
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.IndexersConfig": {
+            "type": "object",
+            "properties": {
+                "Addquotesfortitlequery": {
+                    "description": "Addquotesfortitlequery indicates if quotes should be added to a title query",
+                    "type": "boolean"
+                },
+                "Apikey": {
+                    "description": "Apikey is the apikey for the indexer",
+                    "type": "string"
+                },
+                "CheckTitleOnIDSearch": {
+                    "description": "CheckTitleOnIDSearch is a bool indicating if the title of the release should be checked during an id based search? - default: false",
+                    "type": "boolean"
+                },
+                "Customapi": {
+                    "description": "Customapi is used if the indexer needs a different value then 'apikey' for the key",
+                    "type": "string"
+                },
+                "Customrsscategory": {
+                    "description": "Customrsscategory is used if the indexer uses something other than \u0026t= for rss categories",
+                    "type": "string"
+                },
+                "Customrssurl": {
+                    "description": "Customrssurl is used if the indexer uses a custom rss url (not url/rss/)",
+                    "type": "string"
+                },
+                "Customurl": {
+                    "description": "Customurl is used if the indexer needs a different API endpoint than url/api.\nIt may be a path below URL or a full URL; the API key is added unless present.",
+                    "type": "string"
+                },
+                "DisableCompression": {
+                    "description": "DisableCompression disables compression of data",
+                    "type": "boolean"
+                },
+                "DisableTLSVerify": {
+                    "description": "DisableTLSVerify disables SSL Certificate Checks",
+                    "type": "boolean"
+                },
+                "Enabled": {
+                    "description": "Enabled indicates if this template is active",
+                    "type": "boolean"
+                },
+                "IndexerType": {
+                    "description": "IndexerType is the type of the indexer, currently has to be newznab",
+                    "type": "string"
+                },
+                "Limitercalls": {
+                    "description": "Limitercalls is the number of calls allowed in Limiterseconds",
+                    "type": "integer"
+                },
+                "LimitercallsDaily": {
+                    "description": "LimitercallsDaily is the number of calls allowed daily, 0 is unlimited",
+                    "type": "integer"
+                },
+                "Limiterseconds": {
+                    "description": "Limiterseconds is the number of seconds for Limitercalls calls",
+                    "type": "integer"
+                },
+                "MaxAge": {
+                    "description": "MaxAge is the maximum age of releases in days",
+                    "type": "integer"
+                },
+                "MaxEntries": {
+                    "description": "MaxEntries is the maximum number of entries to process, default is 100",
+                    "type": "integer"
+                },
+                "MaxEntriesStr": {
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the template",
+                    "type": "string"
+                },
+                "OutputAsJSON": {
+                    "description": "OutputAsJSON indicates if the indexer should return json instead of xml\nNot recommended since the conversion is sometimes different",
+                    "type": "boolean"
+                },
+                "RssEntriesloop": {
+                    "description": "RssEntriesloop is the number of rss calls to make to find last processed release, default is 2",
+                    "type": "integer"
+                },
+                "Rssenabled": {
+                    "description": "Rssenabled indicates if this template is active for rss queries",
+                    "type": "boolean"
+                },
+                "TimeoutSeconds": {
+                    "description": "TimeoutSeconds is the timeout in seconds for queries",
+                    "type": "integer"
+                },
+                "TrustWithIMDBIDs": {
+                    "type": "boolean"
+                },
+                "TrustWithTVDBIDs": {
+                    "type": "boolean"
+                },
+                "URL": {
+                    "description": "URL is the main url of the indexer",
+                    "type": "string"
+                },
+                "Userid": {
+                    "description": "Userid is the userid for rss queries to the indexer if needed",
+                    "type": "string"
+                }
+            }
+        },
+        "config.ListsConfig": {
+            "type": "object",
+            "properties": {
+                "ChartArtistAttribute": {
+                    "description": "ChartArtistAttribute is the optional HTML attribute to extract the artist/author from (defaults to inner text)",
+                    "type": "string"
+                },
+                "ChartArtistXPath": {
+                    "description": "ChartArtistXPath is the XPath for artist/author name extraction relative to the entry node",
+                    "type": "string"
+                },
+                "ChartDateFormat": {
+                    "description": "ChartDateFormat controls how the date is formatted into {date} in ChartDateURLPattern.\nSpecial values:\n  \"timestamp_ms\" (or empty) - Unix millisecond timestamp, e.g. 1704412800000\n  \"timestamp\"               - Unix second timestamp, e.g. 1704412800\nAny other value is treated as a Go time layout string, e.g. \"20060102\" for YYYYMMDD.",
+                    "type": "string"
+                },
+                "ChartDateURLPattern": {
+                    "description": "ChartDateURLPattern is the URL template used when importing a chart for a specific date.\nUse {date} as the placeholder for the formatted date value.\nLeave empty to disable date-specific imports for this list.\nExamples:\n  offiziellecharts.de:  \"https://www.offiziellecharts.de/charts/compilation/for-date-{date}\"\n  officialcharts.com:   \"https://www.officialcharts.com/charts/albums-chart/{date}/7501/\"",
+                    "type": "string"
+                },
+                "ChartDefaultArtist": {
+                    "description": "ChartDefaultArtist is the fallback artist/author name used when the XPath yields an empty value.\nUseful for compilation charts where there is no per-entry artist (e.g. set to \"Various Artists\").",
+                    "type": "string"
+                },
+                "ChartEntryNodeXPath": {
+                    "description": "ChartEntryNodeXPath is the XPath to select each chart/bestseller entry node",
+                    "type": "string"
+                },
+                "ChartTitleAttribute": {
+                    "description": "ChartTitleAttribute is the optional HTML attribute to extract the title from (defaults to inner text)",
+                    "type": "string"
+                },
+                "ChartTitleXPath": {
+                    "description": "ChartTitleXPath is the XPath for album/book title extraction relative to the entry node",
+                    "type": "string"
+                },
+                "Enabled": {
+                    "description": "Enabled indicates if this template is active",
+                    "type": "boolean"
+                },
+                "Excludegenre": {
+                    "description": "Excludegenre don't import if it's one of the configured genres",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ExcludegenreLen": {
+                    "description": "ExcludegenreLen is the length of Excludegenre",
+                    "type": "integer"
+                },
+                "IMDBCSVFile": {
+                    "type": "string"
+                },
+                "IRCAnnounceNicks": {
+                    "description": "IRCAnnounceNicks restricts which sender nicks are treated as announcements.\nEmpty means accept messages from any nick in the joined channels.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "IRCAnnounceRegex": {
+                    "description": "IRCAnnounceRegex is a Go regexp with named capture groups used to extract release fields.\nRecognised groups by media type: movie -\u003e imdb; series -\u003e title,tvdb; music -\u003e title,artist;\nbooks/audiobooks -\u003e title,author. A 'year' group is optional.",
+                    "type": "string"
+                },
+                "IRCChannels": {
+                    "description": "IRCChannels are the announce channels to join.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "IRCInviteCommand": {
+                    "description": "IRCInviteCommand is an optional command sent to a bot to be invited into announce channels.",
+                    "type": "string"
+                },
+                "IRCNick": {
+                    "description": "IRCNick is the nickname to register on the IRC network.",
+                    "type": "string"
+                },
+                "IRCNickServPassword": {
+                    "description": "IRCNickServPassword, when set, sends a NickServ IDENTIFY after connecting.",
+                    "type": "string"
+                },
+                "IRCReadSeconds": {
+                    "description": "IRCReadSeconds is how long each scheduled run listens to the channels before returning.",
+                    "type": "integer"
+                },
+                "IRCServer": {
+                    "description": "IRCServer is the IRC server address in host:port form (e.g. \"irc.tracker.org:6697\").",
+                    "type": "string"
+                },
+                "IRCUseTLS": {
+                    "description": "IRCUseTLS enables a TLS connection to the IRC server.",
+                    "type": "boolean"
+                },
+                "Includegenre": {
+                    "description": "Includegenre only import if it's one of the configured genres",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "IncludegenreLen": {
+                    "description": "IncludegenreLen is the length of Includegenre",
+                    "type": "integer"
+                },
+                "JellyfinServerURL": {
+                    "description": "JellyfinServerURL is the URL of the Jellyfin Media Server",
+                    "type": "string"
+                },
+                "JellyfinToken": {
+                    "description": "JellyfinToken is the authentication token for Jellyfin API access",
+                    "type": "string"
+                },
+                "JellyfinUsername": {
+                    "description": "JellyfinUsername is the Jellyfin username for watchlist access",
+                    "type": "string"
+                },
+                "Limit": {
+                    "description": "Limit is how many entries should only be processed",
+                    "type": "string"
+                },
+                "ListType": {
+                    "description": "ListType is the type of the list",
+                    "type": "string"
+                },
+                "ManualConfigFile": {
+                    "description": "ManualConfigFile is the path of the toml file for manual media configuration\nUsed for series, audiobooks, and music manual monitoring",
+                    "type": "string"
+                },
+                "MinRating": {
+                    "description": "MinRating only import if that imdb rating has been reached",
+                    "type": "number"
+                },
+                "MinVotes": {
+                    "description": "MinVotes only import if that number of imdb votes have been reached",
+                    "type": "integer"
+                },
+                "MovieAPIURLPattern": {
+                    "description": "MovieAPIURLPattern is the API URL pattern with {page} placeholder",
+                    "type": "string"
+                },
+                "MovieCSRFCookieName": {
+                    "description": "MovieCSRFCookieName is the name of the cookie containing CSRF token",
+                    "type": "string"
+                },
+                "MovieCSRFHeaderName": {
+                    "description": "MovieCSRFHeaderName is the name of the header to send CSRF token in",
+                    "type": "string"
+                },
+                "MovieDateFormat": {
+                    "description": "MovieDateFormat is the date format string (Go time format)",
+                    "type": "string"
+                },
+                "MovieGenreField": {
+                    "description": "MovieGenreField is the JSON field for genre",
+                    "type": "string"
+                },
+                "MovieGenreXPath": {
+                    "description": "MovieGenreXPath is the XPath for genre extraction",
+                    "type": "string"
+                },
+                "MovieImdbIDField": {
+                    "description": "MovieImdbIDField is the JSON field for IMDB ID",
+                    "type": "string"
+                },
+                "MovieImdbIDXPath": {
+                    "description": "MovieImdbIDXPath is the XPath for IMDB ID extraction",
+                    "type": "string"
+                },
+                "MoviePageIncrement": {
+                    "description": "MoviePageIncrement is the increment for offset pagination",
+                    "type": "integer"
+                },
+                "MoviePageStartIndex": {
+                    "description": "MoviePageStartIndex is the starting page index",
+                    "type": "integer"
+                },
+                "MoviePageURLPattern": {
+                    "description": "MoviePageURLPattern is the URL pattern with {page} placeholder",
+                    "type": "string"
+                },
+                "MoviePaginationType": {
+                    "description": "MoviePaginationType specifies pagination style",
+                    "type": "string"
+                },
+                "MovieRatingField": {
+                    "description": "MovieRatingField is the JSON field for rating",
+                    "type": "string"
+                },
+                "MovieRatingXPath": {
+                    "description": "MovieRatingXPath is the XPath for rating extraction",
+                    "type": "string"
+                },
+                "MovieReleaseDateField": {
+                    "description": "MovieReleaseDateField is the JSON field for release date",
+                    "type": "string"
+                },
+                "MovieReleaseDateXPath": {
+                    "description": "MovieReleaseDateXPath is the XPath for release date extraction",
+                    "type": "string"
+                },
+                "MovieResultsArrayPath": {
+                    "description": "MovieResultsArrayPath is the JSON path to results array",
+                    "type": "string"
+                },
+                "MovieSceneNodeXPath": {
+                    "description": "MovieSceneNodeXPath is the XPath to select movie containers",
+                    "type": "string"
+                },
+                "MovieScraperSiteID": {
+                    "description": "MovieScraperSiteID is the numeric ID for the scraping site",
+                    "type": "integer"
+                },
+                "MovieScraperSiteURL": {
+                    "description": "MovieScraperSiteURL is the base URL for the movie scraping site",
+                    "type": "string"
+                },
+                "MovieScraperStartURL": {
+                    "description": "MovieScraperStartURL is the starting URL for the movie scraper",
+                    "type": "string"
+                },
+                "MovieScraperType": {
+                    "description": "MovieScraperType is the type of scraper to use for movies",
+                    "type": "string"
+                },
+                "MovieTitleAttribute": {
+                    "description": "MovieTitleAttribute is the HTML attribute to extract title from",
+                    "type": "string"
+                },
+                "MovieTitleField": {
+                    "description": "MovieTitleField is the JSON field for title",
+                    "type": "string"
+                },
+                "MovieTitleXPath": {
+                    "description": "MovieTitleXPath is the XPath for title extraction",
+                    "type": "string"
+                },
+                "MovieURLAttribute": {
+                    "description": "MovieURLAttribute is the HTML attribute to extract URL from",
+                    "type": "string"
+                },
+                "MovieURLField": {
+                    "description": "MovieURLField is the JSON field for URL",
+                    "type": "string"
+                },
+                "MovieURLXPath": {
+                    "description": "MovieURLXPath is the XPath for URL extraction",
+                    "type": "string"
+                },
+                "MovieWaitSeconds": {
+                    "description": "MovieWaitSeconds is the seconds to wait between requests",
+                    "type": "integer"
+                },
+                "MovieYearField": {
+                    "description": "MovieYearField is the JSON field for year",
+                    "type": "string"
+                },
+                "MovieYearXPath": {
+                    "description": "MovieYearXPath is the XPath for year extraction",
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the template",
+                    "type": "string"
+                },
+                "PlexServerURL": {
+                    "description": "PlexServerURL is the URL of the Plex Media Server",
+                    "type": "string"
+                },
+                "PlexToken": {
+                    "description": "PlexToken is the authentication token for Plex API access",
+                    "type": "string"
+                },
+                "PlexUsername": {
+                    "description": "PlexUsername is the Plex username for watchlist access",
+                    "type": "string"
+                },
+                "RemoveFromList": {
+                    "type": "boolean"
+                },
+                "SkipEmptySize": {
+                    "description": "SkipEmptySize indicates if releases with an empty size are allowed when\nsearching this list's own custom RSS feed (searcher.validateSize's\nper-list fallback, distinct from QualityIndexerConfig.SkipEmptySize\nwhich only applies to real configured indexers)",
+                    "type": "boolean"
+                },
+                "TmdbDiscover": {
+                    "description": "URLExtensions for discover",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "TmdbList": {
+                    "description": "List IDs of TMDB Lists",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "TmdbPages": {
+                    "description": "TmdbPages is how many result pages to request per TMDB discover query and\nper TMDB list. TMDB returns 20 items per page.",
+                    "type": "integer"
+                },
+                "TraktListName": {
+                    "description": "TraktListName is the listname of the trakt list",
+                    "type": "string"
+                },
+                "TraktListType": {
+                    "description": "TraktListType is the listtype of the trakt list",
+                    "type": "string"
+                },
+                "TraktUsername": {
+                    "description": "TraktUsername is the username who owns the trakt list",
+                    "type": "string"
+                },
+                "URL": {
+                    "description": "URL is the url of the list",
+                    "type": "string"
+                }
+            }
+        },
+        "config.MediaDataConfig": {
+            "type": "object",
+            "properties": {
+                "AddFound": {
+                    "description": "AddFound indicates if entries not in watched media should be added if found\nDefault is false",
+                    "type": "boolean"
+                },
+                "AddFoundList": {
+                    "description": "AddFoundList is the list name that found entries should be added to",
+                    "type": "string"
+                },
+                "AllowAllFormatsWhenStructuring": {
+                    "description": "AllowAllFormatsWhenStructuring disables the MBMediaFormats filter when structuring\n(organizing already-downloaded files). Set to true to allow Vinyl, Cassette, or other\nnon-standard formats to be matched and imported during structuring, even when MBMediaFormats\nrestricts discovery to CD / Digital Media only.",
+                    "type": "boolean"
+                },
+                "AllowAlternativeReleases": {
+                    "description": "AllowAlternativeReleases enables searching MusicBrainz for alternative releases\nwhen the DB has a title match but with a different track count/edition.\nIf the existing DB release has no files attached, it will be replaced.\nIf it has files, the alternative release is added as a new entry.",
+                    "type": "boolean"
+                },
+                "AllowMissingTracks": {
+                    "description": "AllowMissingTracks skips the strict track count check during runtime verification.\nWhen true, a local folder with fewer tracks than expected is still accepted.",
+                    "type": "boolean"
+                },
+                "AllowedReleaseTypes": {
+                    "description": "AllowedReleaseTypes filters which MusicBrainz release types are added during artist/series discovery.\nValues: Album, Single, EP, Compilation, Broadcast, Other.\nIf empty, all release types are allowed.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "CfgPath": {
+                    "description": "CfgPath is a pointer to PathsConfig",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.PathsConfig"
+                        }
+                    ]
+                },
+                "DiscoverSeriesAlbums": {
+                    "description": "DiscoverSeriesAlbums enables automatic discovery of other albums in the same release\ngroup (series) when a Various Artists album is successfully imported via addFound.\nWhen false (default), only artist discovery runs; series discovery is skipped.",
+                    "type": "boolean"
+                },
+                "EmbedArt": {
+                    "description": "EmbedArt enables downloading and embedding cover art into audio file tags during organization.",
+                    "type": "boolean"
+                },
+                "EmbedLyrics": {
+                    "description": "EmbedLyrics enables fetching and embedding plain-text lyrics into audio file tags during organization.\nLyrics are fetched from LyricsOVH then LRCLIB (both free, no API key required).\nThey are written to the USLT frame (MP3) or LYRICS Vorbis comment (FLAC/OGG) and are never stored in the database.",
+                    "type": "boolean"
+                },
+                "EnableUnpacking": {
+                    "description": "EnableUnpacking enables automatic unpacking of archives before media file processing",
+                    "type": "boolean"
+                },
+                "ExceedToleranceIfTotalMatch": {
+                    "description": "ExceedToleranceIfTotalMatch controls the runtime fallback behavior in track sorting.\nWhen true, if all per-track runtime strategies fail but the total runtime is within tolerance,\nthe album is accepted using standard sort order.\nWhen false (default), standard sort is always used as the final fallback regardless of total runtime.",
+                    "type": "boolean"
+                },
+                "MBMediaFormats": {
+                    "description": "MBMediaFormats restricts artist/series discovery to releases where every disc matches one of these formats.\nUses MusicBrainz medium format names (e.g., \"CD\", \"Vinyl\", \"Digital Media\").\nEmpty list = accept all formats.\nExample: [\"CD\"] accepts 1xCD, 2xCD, 3xCD, etc. but rejects Vinyl or Digital-only releases.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MaxTotalDifferenceSeconds": {
+                    "description": "MaxTotalDifferenceSeconds is the maximum total runtime difference allowed in seconds.\nDefault 0 uses PerTrackToleranceSeconds * track count.",
+                    "type": "integer"
+                },
+                "MediumRecThresh": {
+                    "description": "MediumRecThresh overrides the medium recommendation threshold / reject cutoff (default 0.30).\nAlbum candidates with distance \u003e this are rejected outright.",
+                    "type": "number"
+                },
+                "PerTrackToleranceSeconds": {
+                    "description": "PerTrackToleranceSeconds is the grace threshold for per-track runtime matching.\nTracks within this tolerance receive no length penalty.\nIf PerTrackToleranceSecondsMax is also set, tracks between the two values receive\na graduated penalty; tracks beyond Max are hard-rejected.\nIf only PerTrackToleranceSeconds is set (Max == 0), it acts as a hard cutoff.\nDefault 0 uses beets' built-in 10 s grace / 30 s max windows.",
+                    "type": "integer"
+                },
+                "PerTrackToleranceSecondsMax": {
+                    "description": "PerTrackToleranceSecondsMax is the hard cutoff for per-track runtime matching.\nTrack pairs whose diff exceeds this value are excluded from matching entirely.\nOnly effective when PerTrackToleranceSeconds \u003e 0.\nDefault 0 means PerTrackToleranceSeconds is used as both grace and hard limit.",
+                    "type": "integer"
+                },
+                "SkipSeriesTrackMatch": {
+                    "description": "SkipSeriesTrackMatch disables chapter/track count matching for audiobooks that belong to a series.",
+                    "type": "boolean"
+                },
+                "StrongRecThresh": {
+                    "description": "StrongRecThresh overrides the strong recommendation threshold (default 0.04).\nAlbum candidates with distance below this are accepted unconditionally.",
+                    "type": "number"
+                },
+                "TemplatePath": {
+                    "description": "TemplatePath is the template to use for the path",
+                    "type": "string"
+                },
+                "TrackArtistWeight": {
+                    "type": "number"
+                },
+                "TrackIdWeight": {
+                    "type": "number"
+                },
+                "TrackIndexWeight": {
+                    "type": "number"
+                },
+                "TrackLengthWeight": {
+                    "type": "number"
+                },
+                "TrackTitleWeight": {
+                    "description": "Track distance weight overrides (0 = use built-in default from beetsWeights / audiobookTrackWeights).",
+                    "type": "number"
+                },
+                "WriteRenameLog": {
+                    "description": "WriteRenameLog enables writing a rename log file after media file organization",
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.MediaDataImportConfig": {
+            "type": "object",
+            "properties": {
+                "AddFound": {
+                    "description": "AddFound indicates if entries not in the database should be added when found during import.\nWhen true and the media is not in the DB (no_match), it will be imported automatically.\nRequires add_found_list to be set.",
+                    "type": "boolean"
+                },
+                "AddFoundList": {
+                    "description": "AddFoundList is the list name that unrecognized entries should be added to.",
+                    "type": "string"
+                },
+                "AllowAllFormatsWhenStructuring": {
+                    "description": "AllowAllFormatsWhenStructuring disables the MBMediaFormats filter when structuring\n(organizing already-downloaded files). Set to true to allow Vinyl, Cassette, or other\nnon-standard formats to be matched and imported during structuring, even when MBMediaFormats\nrestricts discovery to CD / Digital Media only.",
+                    "type": "boolean"
+                },
+                "AllowAlternativeReleases": {
+                    "description": "AllowAlternativeReleases enables searching MusicBrainz for alternative releases\nwhen the DB has a title match but with a different track count/edition.",
+                    "type": "boolean"
+                },
+                "AllowMissingTracks": {
+                    "description": "AllowMissingTracks skips the strict track count check during runtime verification.\nWhen true, a local folder with fewer tracks than expected is still accepted.",
+                    "type": "boolean"
+                },
+                "AllowedReleaseTypes": {
+                    "description": "AllowedReleaseTypes filters which MusicBrainz release types are added during artist/series discovery.\nValues: Album, Single, EP, Compilation, Broadcast, Other.\nIf empty, all release types are allowed.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "CfgPath": {
+                    "description": "CfgPath is the PathsConfig reference",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.PathsConfig"
+                        }
+                    ]
+                },
+                "DiscoverSeriesAlbums": {
+                    "description": "DiscoverSeriesAlbums enables automatic discovery of other albums in the same release\ngroup (series) when a Various Artists album is successfully imported via addFound.\nWhen false (default), only artist discovery runs; series discovery is skipped.",
+                    "type": "boolean"
+                },
+                "EmbedArt": {
+                    "description": "EmbedArt enables downloading and embedding cover art into audio file tags during organization.",
+                    "type": "boolean"
+                },
+                "EnableUnpacking": {
+                    "description": "EnableUnpacking enables automatic unpacking of archives before media file processing",
+                    "type": "boolean"
+                },
+                "ExceedToleranceIfTotalMatch": {
+                    "description": "ExceedToleranceIfTotalMatch controls the runtime fallback behavior in track sorting.\nWhen true, if all per-track runtime strategies fail but the total runtime is within tolerance,\nthe album is accepted using standard sort order.\nWhen false (default), standard sort is always used as the final fallback regardless of total runtime.",
+                    "type": "boolean"
+                },
+                "MBMediaFormats": {
+                    "description": "MBMediaFormats restricts artist/series discovery to releases where every disc matches one of these formats.\nUses MusicBrainz medium format names (e.g., \"CD\", \"Vinyl\", \"Digital Media\").\nEmpty list = accept all formats.\nExample: [\"CD\"] accepts 1xCD, 2xCD, 3xCD, etc. but rejects Vinyl or Digital-only releases.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MaxTotalDifferenceSeconds": {
+                    "description": "MaxTotalDifferenceSeconds is the maximum total runtime difference allowed in seconds.\nDefault 0 uses PerTrackToleranceSeconds * track count.",
+                    "type": "integer"
+                },
+                "MediumRecThresh": {
+                    "description": "MediumRecThresh overrides the medium recommendation threshold / reject cutoff (default 0.30).\nAlbum candidates with distance \u003e this are rejected outright.",
+                    "type": "number"
+                },
+                "MoveUnprocessed": {
+                    "description": "MoveUnprocessed is the path to move unprocessed/unmatched folders to.\nWhen set, folders that cannot be organized are moved to \u003cpath\u003e/\u003creason\u003e/\u003coriginal_folder\u003e/",
+                    "type": "string"
+                },
+                "PerTrackToleranceSeconds": {
+                    "description": "PerTrackToleranceSeconds is the grace threshold for per-track runtime matching.\nTracks within this tolerance receive no length penalty.\nIf PerTrackToleranceSecondsMax is also set, tracks between the two values receive\na graduated penalty; tracks beyond Max are hard-rejected.\nIf only PerTrackToleranceSeconds is set (Max == 0), it acts as a hard cutoff.\nDefault 0 uses beets' built-in 10 s grace / 30 s max windows.",
+                    "type": "integer"
+                },
+                "PerTrackToleranceSecondsMax": {
+                    "description": "PerTrackToleranceSecondsMax is the hard cutoff for per-track runtime matching.\nTrack pairs whose diff exceeds this value are excluded from matching entirely.\nOnly effective when PerTrackToleranceSeconds \u003e 0.\nDefault 0 means PerTrackToleranceSeconds is used as both grace and hard limit.",
+                    "type": "integer"
+                },
+                "StrongRecThresh": {
+                    "description": "StrongRecThresh overrides the strong recommendation threshold (default 0.04).\nAlbum candidates with distance below this are accepted unconditionally.",
+                    "type": "number"
+                },
+                "TemplatePath": {
+                    "description": "TemplatePath is the template to use for the path",
+                    "type": "string"
+                },
+                "TrackArtistWeight": {
+                    "type": "number"
+                },
+                "TrackIdWeight": {
+                    "type": "number"
+                },
+                "TrackIndexWeight": {
+                    "type": "number"
+                },
+                "TrackLengthWeight": {
+                    "type": "number"
+                },
+                "TrackTitleWeight": {
+                    "description": "Track distance weight overrides (0 = use built-in default from beetsWeights / audiobookTrackWeights).",
+                    "type": "number"
+                }
+            }
+        },
+        "config.MediaListsConfig": {
+            "type": "object",
+            "properties": {
+                "Addfound": {
+                    "description": "Addfound indicates if entries not already watched should be added when found",
+                    "type": "boolean"
+                },
+                "CfgList": {
+                    "description": "CfgList is the pointer to the ListsConfig",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.ListsConfig"
+                        }
+                    ]
+                },
+                "CfgQuality": {
+                    "description": "CfgQuality is the pointer to the QualityConfig",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.QualityConfig"
+                        }
+                    ]
+                },
+                "CfgScheduler": {
+                    "description": "CfgScheduler is the pointer to the SchedulerConfig",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.SchedulerConfig"
+                        }
+                    ]
+                },
+                "Enabled": {
+                    "description": "Enabled indicates if this configuration is active",
+                    "type": "boolean"
+                },
+                "IgnoreMapLists": {
+                    "description": "IgnoreMapLists are the lists to check for ignoring entries",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "IgnoreMapListsLen": {
+                    "description": "IgnoreMapListsLen is the length of IgnoreMapLists",
+                    "type": "integer"
+                },
+                "IgnoreMapListsQu": {
+                    "description": "IgnoreMapListsQu is the quality string",
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the list - use this name in ignore or replace lists",
+                    "type": "string"
+                },
+                "ReplaceMapLists": {
+                    "description": "ReplaceMapLists are the lists to check for replacing entries",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ReplaceMapListsLen": {
+                    "description": "ReplaceMapListsLen is the length of ReplaceMapLists",
+                    "type": "integer"
+                },
+                "TemplateList": {
+                    "description": "TemplateList is the template to use for the list",
+                    "type": "string"
+                },
+                "TemplateQuality": {
+                    "description": "TemplateQuality is the template to use for the quality",
+                    "type": "string"
+                },
+                "TemplateScheduler": {
+                    "description": "TemplateScheduler is the template to use for the scheduler - overrides default of media",
+                    "type": "string"
+                }
+            }
+        },
+        "config.MediaNotificationConfig": {
+            "type": "object",
+            "properties": {
+                "CfgNotification": {
+                    "description": "CfgNotification is the NotificationConfig reference",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.NotificationConfig"
+                        }
+                    ]
+                },
+                "Event": {
+                    "description": "Event is the type of event this is for, one of providers.NotificationEvents",
+                    "type": "string"
+                },
+                "MapNotification": {
+                    "description": "MapNotification is the template to use for the notification",
+                    "type": "string"
+                },
+                "Message": {
+                    "description": "Message is the message body - look at https://github.com/Kellerman81/go_media_downloader/wiki/Groups for format info",
+                    "type": "string"
+                },
+                "ReplacedPrefix": {
+                    "description": "ReplacedPrefix is text to write in front of the old path if media was replaced",
+                    "type": "string"
+                },
+                "Title": {
+                    "description": "Title is the title of your message (for pushover)",
+                    "type": "string"
+                }
+            }
+        },
+        "config.MediaTypeConfig": {
+            "type": "object",
+            "properties": {
+                "AudibleRegion": {
+                    "description": "AudibleRegion specifies the Audible marketplace region for audiobook metadata\nValid values: us, uk, ca, au, de, fr, it, es, in, jp",
+                    "type": "string"
+                },
+                "CfgQuality": {
+                    "description": "CfgQuality is the parsed quality config (not set in TOML)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.QualityConfig"
+                        }
+                    ]
+                },
+                "CfgScheduler": {
+                    "description": "CfgScheduler is the parsed scheduler config (not set in TOML)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.SchedulerConfig"
+                        }
+                    ]
+                },
+                "Data": {
+                    "description": "Data contains the media data configs",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.MediaDataConfig"
+                    }
+                },
+                "DataImport": {
+                    "description": "DataImport contains media data import configs",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.MediaDataImportConfig"
+                    }
+                },
+                "DataImportMap": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.MediaDataImportConfig"
+                    }
+                },
+                "DataLen": {
+                    "description": "DataLen is the number of data configs (not set in TOML)",
+                    "type": "integer"
+                },
+                "DataMap": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.MediaDataConfig"
+                    }
+                },
+                "DefaultQuality": {
+                    "description": "DefaultQuality is the default quality to assume if none was found - keep it low",
+                    "type": "string"
+                },
+                "DefaultResolution": {
+                    "description": "DefaultResolution is the default resolution to assume if none was found - keep it low",
+                    "type": "string"
+                },
+                "IsType": {
+                    "type": "integer"
+                },
+                "Lists": {
+                    "description": "Lists contains media lists configs",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.MediaListsConfig"
+                    }
+                },
+                "ListsLen": {
+                    "description": "ListsLen is the number of lists configs (not set in TOML)",
+                    "type": "integer"
+                },
+                "ListsMap": {
+                    "description": "ListsMap is a map of the lists configs (not set in TOML)",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.MediaListsConfig"
+                    }
+                },
+                "ListsMapIdx": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "ListsNames": {
+                    "description": "ListsNames is a pre-computed slice of all list names — avoids re-allocating\n[]string{cfgp.Lists[i].Name} on every call to FindDb*ByArtistFirst* / FindDb*ByAuthorFirst*.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ListsQu": {
+                    "description": "ListsQu is the quality from the lists config (not set in TOML)",
+                    "type": "string"
+                },
+                "ListsQualities": {
+                    "description": "ListsQualities are the quality strings from lists (not set in TOML)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MetadataLanguage": {
+                    "description": "MetadataLanguage is the default language for metadata",
+                    "type": "string"
+                },
+                "MetadataTitleLanguages": {
+                    "description": "MetadataTitleLanguages are the languages to import titles in",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "MetadataTitleLanguagesLen": {
+                    "description": "MetadataTitleLanguagesLen is the number of title languages (not set in TOML)",
+                    "type": "integer"
+                },
+                "Name": {
+                    "description": "Name is the name of the media group - keep it unique",
+                    "type": "string"
+                },
+                "NamePrefix": {
+                    "description": "NamePrefix is not set in the TOML config",
+                    "type": "string"
+                },
+                "Naming": {
+                    "description": "Naming is the naming scheme for files - see wiki for details",
+                    "type": "string"
+                },
+                "Notification": {
+                    "description": "Notification contains notification configs",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.MediaNotificationConfig"
+                    }
+                },
+                "SearchmissingIncremental": {
+                    "description": "SearchmissingIncremental is the number of entries to process in incremental missing scans",
+                    "type": "integer"
+                },
+                "SearchupgradeIncremental": {
+                    "description": "SearchupgradeIncremental is the number of entries to process in incremental upgrade scans",
+                    "type": "integer"
+                },
+                "Structure": {
+                    "description": "Structure indicates whether to structure media after download",
+                    "type": "boolean"
+                },
+                "TemplateQuality": {
+                    "description": "TemplateQuality is the name of the quality template to use",
+                    "type": "string"
+                },
+                "TemplateScheduler": {
+                    "description": "TemplateScheduler is the name of the scheduler template to use",
+                    "type": "string"
+                }
+            }
+        },
+        "config.NotificationConfig": {
+            "type": "object",
+            "properties": {
+                "Apikey": {
+                    "description": "Apikey is the API key/token for the service",
+                    "type": "string"
+                },
+                "AppriseURLs": {
+                    "description": "AppriseURLs contains the notification service URLs for Apprise",
+                    "type": "string"
+                },
+                "Command": {
+                    "description": "Command is the program the exec notification runs",
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the notification template",
+                    "type": "string"
+                },
+                "NotificationType": {
+                    "description": "NotificationType is the type of notification, one of providers.NotificationTypeNames",
+                    "type": "string"
+                },
+                "Outputto": {
+                    "description": "Outputto is the path to output csv notifications",
+                    "type": "string"
+                },
+                "Recipient": {
+                    "description": "Recipient is the user key, chat, topic, device or notification the service sends to",
+                    "type": "string"
+                },
+                "SMTPFromEmail": {
+                    "description": "SMTPFromEmail is the sender address for sendmail",
+                    "type": "string"
+                },
+                "SMTPPassword": {
+                    "description": "SMTPPassword is the SMTP auth password for sendmail",
+                    "type": "string"
+                },
+                "SMTPPort": {
+                    "description": "SMTPPort is the SMTP server port for sendmail",
+                    "type": "string"
+                },
+                "SMTPServer": {
+                    "description": "SMTPServer is the SMTP server hostname for sendmail",
+                    "type": "string"
+                },
+                "SMTPToEmail": {
+                    "description": "SMTPToEmail is the recipient address for sendmail",
+                    "type": "string"
+                },
+                "SMTPUsername": {
+                    "description": "SMTPUsername is the SMTP auth username for sendmail",
+                    "type": "string"
+                },
+                "Sender": {
+                    "description": "Sender is the sending account for services that need one (Signal)",
+                    "type": "string"
+                },
+                "ServerURL": {
+                    "description": "ServerURL is the server URL for self-hosted services",
+                    "type": "string"
+                }
+            }
+        },
+        "config.PathsConfig": {
+            "type": "object",
+            "properties": {
+                "AllowedAudioExtensions": {
+                    "description": "AllowedAudioExtensions lists the allowed audio file extensions for music/audiobooks",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedAudioExtensionsLen": {
+                    "description": "AllowedAudioExtensionsLen is the number of allowed audio extensions",
+                    "type": "integer"
+                },
+                "AllowedAudioExtensionsNoRename": {
+                    "description": "AllowedAudioExtensionsNoRename lists audio extensions that should not be renamed",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedAudioExtensionsNoRenameLen": {
+                    "description": "AllowedAudioExtensionsNoRenameLen is the number of audio extensions not to rename",
+                    "type": "integer"
+                },
+                "AllowedBookExtensions": {
+                    "description": "AllowedBookExtensions lists the allowed ebook file extensions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedBookExtensionsLen": {
+                    "description": "AllowedBookExtensionsLen is the number of allowed book extensions",
+                    "type": "integer"
+                },
+                "AllowedBookExtensionsNoRename": {
+                    "description": "AllowedBookExtensionsNoRename lists book extensions that should not be renamed",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedBookExtensionsNoRenameLen": {
+                    "description": "AllowedBookExtensionsNoRenameLen is the number of book extensions not to rename",
+                    "type": "integer"
+                },
+                "AllowedLanguages": {
+                    "description": "AllowedLanguages lists allowed languages for audio streams in videos",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedLanguagesLen": {
+                    "description": "AllowedLanguagesLen is the number of allowed languages",
+                    "type": "integer"
+                },
+                "AllowedOtherExtensions": {
+                    "description": "AllowedOtherExtensions lists other allowed file extensions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedOtherExtensionsLen": {
+                    "description": "AllowedOtherExtensionsLen is the number of other allowed extensions",
+                    "type": "integer"
+                },
+                "AllowedOtherExtensionsNoRename": {
+                    "description": "AllowedOtherExtensionsNoRename lists other extensions not to rename",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedOtherExtensionsNoRenameLen": {
+                    "description": "AllowedOtherExtensionsNoRenameLen is the number of other extensions not to rename",
+                    "type": "integer"
+                },
+                "AllowedVideoExtensions": {
+                    "description": "AllowedVideoExtensions lists the allowed video file extensions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedVideoExtensionsLen": {
+                    "description": "AllowedVideoExtensionsLen is the number of allowed video extensions",
+                    "type": "integer"
+                },
+                "AllowedVideoExtensionsNoRename": {
+                    "description": "AllowedVideoExtensionsNoRename lists video extensions that should not be renamed",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "AllowedVideoExtensionsNoRenameLen": {
+                    "description": "AllowedVideoExtensionsNoRenameLen is the number of video extensions not to rename",
+                    "type": "integer"
+                },
+                "Blocked": {
+                    "description": "Blocked lists strings that will block processing of files",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "BlockedLen": {
+                    "description": "BlockedLen is the number of blocked strings",
+                    "type": "integer"
+                },
+                "CheckRuntime": {
+                    "description": "CheckRuntime indicates if runtime should be checked before import, default false",
+                    "type": "boolean"
+                },
+                "CleanupsizeMB": {
+                    "description": "CleanupsizeMB is the minimum size in MB to keep a folder, 0 removes all",
+                    "type": "integer"
+                },
+                "DeleteDisallowed": {
+                    "description": "DeleteDisallowed indicates if media with disallowed strings should be deleted, default false",
+                    "type": "boolean"
+                },
+                "DeleteWrongLanguage": {
+                    "description": "DeleteWrongLanguage indicates if media with wrong language should be deleted, default false",
+                    "type": "boolean"
+                },
+                "DeleteWrongRuntime": {
+                    "description": "DeleteWrongRuntime indicates if media with wrong runtime should be deleted, default false",
+                    "type": "boolean"
+                },
+                "DetectAudioLanguage": {
+                    "description": "DetectAudioLanguage lets untagged audio tracks be identified by listening",
+                    "type": "boolean"
+                },
+                "Disallowed": {
+                    "description": "Disallowed lists strings that will block processing if found",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "DisallowedLen": {
+                    "description": "DisallowedLen is the number of disallowed strings",
+                    "type": "integer"
+                },
+                "MaxRuntimeDifference": {
+                    "description": "MaxRuntimeDifference is the max minutes of difference allowed in runtime checks, 0 means no check",
+                    "type": "integer"
+                },
+                "MaxSize": {
+                    "description": "MaxSize is the maximum media size in MB for searches",
+                    "type": "integer"
+                },
+                "MaxSizeByte": {
+                    "description": "MaxSizeByte is the maximum size in bytes",
+                    "type": "integer"
+                },
+                "MinSize": {
+                    "description": "MinSize is the minimum media size in MB for searches",
+                    "type": "integer"
+                },
+                "MinSizeByte": {
+                    "description": "MinSizeByte is the minimum size in bytes",
+                    "type": "integer"
+                },
+                "MinVideoSize": {
+                    "description": "MinVideoSize is the minimum video size in MB for structure",
+                    "type": "integer"
+                },
+                "MinVideoSizeByte": {
+                    "description": "MinVideoSizeByte is the minimum video size in bytes",
+                    "type": "integer"
+                },
+                "MissingScanInterval": {
+                    "description": "MissingScanInterval is the number of days to wait after last search before looking for missing media, 0 means don't wait",
+                    "type": "integer"
+                },
+                "MissingScanReleaseDatePre": {
+                    "description": "MissingScanReleaseDatePre is the minimum number of days to wait after media release before scanning, 0 means don't check",
+                    "type": "integer"
+                },
+                "MoveReplaced": {
+                    "description": "MoveReplaced indicates if replaced media should be moved to old folder, default false",
+                    "type": "boolean"
+                },
+                "MoveReplacedTargetPath": {
+                    "description": "MoveReplacedTargetPath is the path to the folder for replaced media",
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the media template",
+                    "type": "string"
+                },
+                "Path": {
+                    "description": "Path is the path where the media will be stored",
+                    "type": "string"
+                },
+                "PresortFolderPath": {
+                    "description": "PresortFolderPath is the path to the presort folder",
+                    "type": "string"
+                },
+                "Replacelower": {
+                    "description": "Replacelower indicates if lower quality video files should be replaced, default false",
+                    "type": "boolean"
+                },
+                "SetChmod": {
+                    "description": "SetChmod is the chmod for files in octal format, default 0777",
+                    "type": "string"
+                },
+                "SetChmodFolder": {
+                    "type": "string"
+                },
+                "Upgrade": {
+                    "description": "Upgrade indicates if media should be upgraded",
+                    "type": "boolean"
+                },
+                "UpgradeScanInterval": {
+                    "description": "UpgradeScanInterval is the number of days to wait after last search before looking for upgrades, 0 means don't wait",
+                    "type": "integer"
+                },
+                "Usepresort": {
+                    "description": "Usepresort indicates if a presort folder should be used before media is moved, default false",
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.QualityConfig": {
+            "type": "object",
+            "properties": {
+                "BackupSearchForAlternateTitle": {
+                    "description": "BackupSearchForAlternateTitle is a bool indicating if we want to search for alternate titles and not only id's - default: false",
+                    "type": "boolean"
+                },
+                "BackupSearchForTitle": {
+                    "description": "BackupSearchForTitle is a bool indicating if we want to search for titles and not only id's - default: false",
+                    "type": "boolean"
+                },
+                "CheckTitle": {
+                    "description": "CheckTitle is a bool indicating if the title of the release should be checked? - default: false",
+                    "type": "boolean"
+                },
+                "CheckTitleOnIDSearch": {
+                    "description": "CheckTitleOnIDSearch is a bool indicating if the title of the release should be checked during an id based search? - default: false",
+                    "type": "boolean"
+                },
+                "CheckUntilFirstFound": {
+                    "description": "CheckUntilFirstFound is a bool indicating if we should stop searching if we found a release? - default: false",
+                    "type": "boolean"
+                },
+                "CheckYear": {
+                    "description": "CheckYear is a bool indicating if the year of the release should be checked? - default: false",
+                    "type": "boolean"
+                },
+                "CheckYear1": {
+                    "description": "CheckYear1 is a bool indicating if the year of the release should be checked and is +-1 year allowed? - default: false",
+                    "type": "boolean"
+                },
+                "CutoffPriority": {
+                    "description": "CutoffPriority is the priority cutoff",
+                    "type": "integer"
+                },
+                "CutoffQuality": {
+                    "description": "CutoffQuality is after which quality should we stop searching for upgrades",
+                    "type": "string"
+                },
+                "CutoffResolution": {
+                    "description": "CutoffResolution is after which resolution should we stop searching for upgrades",
+                    "type": "string"
+                },
+                "ExcludeYearFromTitleSearch": {
+                    "description": "ExcludeYearFromTitleSearch is a bool indicating if the year should not be included in the title search? - default: false",
+                    "type": "boolean"
+                },
+                "Indexer": {
+                    "description": "Indexer is a []QualityIndexerConfig for configs of the indexers to be used for this quality",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.QualityIndexerConfig"
+                    }
+                },
+                "IndexerCfg": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.IndexersConfig"
+                    }
+                },
+                "IndexerLen": {
+                    "description": "IndexerLen is the length of the Indexer slice",
+                    "type": "integer"
+                },
+                "MinAudioBitrate": {
+                    "description": "MinAudioBitrate is the minimum audio bitrate in kbps to accept (0 = no minimum)",
+                    "type": "integer"
+                },
+                "Name": {
+                    "description": "Name is the name of the template",
+                    "type": "string"
+                },
+                "PreferLossless": {
+                    "description": "PreferLossless indicates if lossless audio formats should be preferred over lossy",
+                    "type": "boolean"
+                },
+                "QualityReorder": {
+                    "description": "QualityReorder is a []QualityReorderConfig for configs if a quality reordering is needed - for example if 720p releases should be preferred over 1080p",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.QualityReorderConfig"
+                    }
+                },
+                "QualityReorderLen": {
+                    "description": "QualityReorderLen is the length of the QualityReorder slice",
+                    "type": "integer"
+                },
+                "SearchForAlternateTitleIfEmpty": {
+                    "description": "SearchForAlternateTitleIfEmpty is a bool indicating if we should do a alternate title search if the id search didn't return an accepted release\n- backup_search_for_alternate_title needs to be true? - default: false",
+                    "type": "boolean"
+                },
+                "SearchForTitleIfEmpty": {
+                    "description": "SearchForTitleIfEmpty is a bool indicating if we should do a title search if the id search didn't return an accepted release\n- backup_search_for_title needs to be true? - default: false",
+                    "type": "boolean"
+                },
+                "TitleStripPrefixForSearch": {
+                    "description": "TitleStripPrefixForSearch is a []string indicating what prefixes should be removed from the title",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "TitleStripPrefixForSearchLen": {
+                    "description": "TitleStripPrefixForSearchLen is the length of the TitleStripPrefixForSearch slice",
+                    "type": "integer"
+                },
+                "TitleStripSuffixForSearch": {
+                    "description": "TitleStripSuffixForSearch is a []string indicating what suffixes should be removed from the title",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "TitleStripSuffixForSearchLen": {
+                    "description": "TitleStripSuffixForSearchLen is a int for the length of the TitleStripSuffixForSearch slice",
+                    "type": "integer"
+                },
+                "UseForPriorityAudio": {
+                    "description": "UseForPriorityAudio indicates if audio codecs should be used for priority",
+                    "type": "boolean"
+                },
+                "UseForPriorityAudioBitrate": {
+                    "description": "UseForPriorityAudioBitrate indicates if audio bitrate should be used for priority (music/audiobooks)",
+                    "type": "boolean"
+                },
+                "UseForPriorityAudioFormat": {
+                    "description": "UseForPriorityAudioFormat indicates if audio format should be used for priority (music/audiobooks)",
+                    "type": "boolean"
+                },
+                "UseForPriorityCodec": {
+                    "description": "UseForPriorityCodec indicates if video codecs should be used for priority",
+                    "type": "boolean"
+                },
+                "UseForPriorityMinDifference": {
+                    "description": "UseForPriorityMinDifference is the min difference to use a release for upgrade",
+                    "type": "integer"
+                },
+                "UseForPriorityOther": {
+                    "description": "UseForPriorityOther indicates if other data should be used for priority",
+                    "type": "boolean"
+                },
+                "UseForPriorityQuality": {
+                    "description": "UseForPriorityQuality indicates if quality should be used for priority",
+                    "type": "boolean"
+                },
+                "UseForPriorityResolution": {
+                    "description": "UseForPriorityResolution indicates if resolution should be used for priority",
+                    "type": "boolean"
+                },
+                "WantedAudio": {
+                    "description": "WantedAudio is audio codecs which are wanted - others are skipped - empty = allow all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "WantedAudioFormats": {
+                    "description": "WantedAudioFormats is a list of wanted audio formats for music/audiobooks (empty = allow all)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "WantedAudioFormatsLen": {
+                    "description": "WantedAudioFormatsLen is the length of the WantedAudioFormats slice",
+                    "type": "integer"
+                },
+                "WantedAudioLen": {
+                    "description": "WantedAudioLen is the length of the WantedAudio slice",
+                    "type": "integer"
+                },
+                "WantedCodec": {
+                    "description": "WantedCodec is video codecs which are wanted - others are skipped - empty = allow all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "WantedCodecLen": {
+                    "description": "WantedCodecLen is the length of the WantedCodec slice",
+                    "type": "integer"
+                },
+                "WantedQuality": {
+                    "description": "WantedQuality is qualities which are wanted - others are skipped - empty = allow all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "WantedQualityLen": {
+                    "description": "WantedQualityLen is the length of the WantedQuality slice",
+                    "type": "integer"
+                },
+                "WantedResolution": {
+                    "description": "WantedResolution is resolutions which are wanted - others are skipped - empty = allow all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "WantedResolutionLen": {
+                    "description": "WantedResolutionLen is the length of the WantedResolution slice",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.QualityIndexerConfig": {
+            "type": "object",
+            "properties": {
+                "AdditionalQueryParams": {
+                    "description": "AdditionalQueryParams are additional params to add to the indexer query string",
+                    "type": "string"
+                },
+                "CategoriesIndexer": {
+                    "description": "CategoriesIndexer are the categories to use for the indexer",
+                    "type": "string"
+                },
+                "CategoryDownloader": {
+                    "description": "CategoryDownloader is the category to use for the downloader",
+                    "type": "string"
+                },
+                "CfgDownloader": {
+                    "description": "CfgDownloader is a pointer to the DownloaderConfig for this downloader",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.DownloaderConfig"
+                        }
+                    ]
+                },
+                "CfgIndexer": {
+                    "description": "CfgIndexer is a pointer to the IndexersConfig for this indexer",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.IndexersConfig"
+                        }
+                    ]
+                },
+                "CfgPath": {
+                    "description": "CfgPath is a pointer to the PathsConfig for this path",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.PathsConfig"
+                        }
+                    ]
+                },
+                "CfgRegex": {
+                    "description": "CfgRegex is a pointer to the RegexConfig for this regex",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.RegexConfig"
+                        }
+                    ]
+                },
+                "HistoryCheckTitle": {
+                    "description": "HistoryCheckTitle indicates if the download history should check the title in addition to the url",
+                    "type": "boolean"
+                },
+                "SkipEmptySize": {
+                    "description": "SkipEmptySize indicates if releases with an empty size are allowed",
+                    "type": "boolean"
+                },
+                "TemplateDownloader": {
+                    "description": "TemplateDownloader is the template to use for the downloader",
+                    "type": "string"
+                },
+                "TemplateIndexer": {
+                    "description": "TemplateIndexer is the template to use for the indexer",
+                    "type": "string"
+                },
+                "TemplatePathNzb": {
+                    "description": "TemplatePathNzb is the template to use for the nzb path",
+                    "type": "string"
+                },
+                "TemplateRegex": {
+                    "description": "TemplateRegex is the template to use for the regex",
+                    "type": "string"
+                }
+            }
+        },
+        "config.QualityReorderConfig": {
+            "type": "object",
+            "properties": {
+                "Name": {
+                    "description": "Name is the name of the quality to reorder",
+                    "type": "string"
+                },
+                "Newpriority": {
+                    "description": "Newpriority is the new priority to set for the quality",
+                    "type": "integer"
+                },
+                "ReorderType": {
+                    "description": "ReorderType is the type of reordering to use",
+                    "type": "string"
+                }
+            }
+        },
+        "config.RegexConfig": {
+            "type": "object",
+            "properties": {
+                "Name": {
+                    "description": "Name is the name of the regex template",
+                    "type": "string"
+                },
+                "Rejected": {
+                    "description": "Rejected is a slice of regex strings that cause rejection if matched",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "RejectedLen": {
+                    "description": "RejectedLen is the length of the Rejected slice",
+                    "type": "integer"
+                },
+                "Required": {
+                    "description": "Required is a slice of regex strings that are required (one must match)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "RequiredLen": {
+                    "description": "RequiredLen is the length of the Required slice",
+                    "type": "integer"
+                }
+            }
+        },
+        "config.SchedulerConfig": {
+            "type": "object",
+            "properties": {
+                "CronCacheRefresh": {
+                    "description": "CronCacheRefresh is the cron schedule for cache refreshes",
+                    "type": "string"
+                },
+                "CronDatabaseBackup": {
+                    "description": "CronDatabaseBackup is the cron schedule for database backups",
+                    "type": "string"
+                },
+                "CronDatabaseCheck": {
+                    "description": "CronDatabaseCheck is the cron schedule for database checks",
+                    "type": "string"
+                },
+                "CronDownloadCheck": {
+                    "description": "CronDownloadCheck is the cron schedule for checking the state of sent downloads",
+                    "type": "string"
+                },
+                "CronFeeds": {
+                    "description": "CronFeeds is the cron schedule for rss feed scans",
+                    "type": "string"
+                },
+                "CronFeedsRefreshAudiobooks": {
+                    "description": "CronFeedsRefreshAudiobooks is the cron schedule for metadata refreshes for audiobooks",
+                    "type": "string"
+                },
+                "CronFeedsRefreshAudiobooksFull": {
+                    "description": "CronFeedsRefreshAudiobooksFull is the cron schedule for full metadata refreshes for audiobooks",
+                    "type": "string"
+                },
+                "CronFeedsRefreshBooks": {
+                    "description": "CronFeedsRefreshBooks is the cron schedule for metadata refreshes for books",
+                    "type": "string"
+                },
+                "CronFeedsRefreshBooksFull": {
+                    "description": "CronFeedsRefreshBooksFull is the cron schedule for full metadata refreshes for books",
+                    "type": "string"
+                },
+                "CronFeedsRefreshMovies": {
+                    "description": "CronFeedsRefreshMovies is the cron schedule for refreshing movie RSS feeds",
+                    "type": "string"
+                },
+                "CronFeedsRefreshMoviesFull": {
+                    "description": "CronFeedsRefreshMoviesFull is the cron schedule for full refreshing of movie RSS feeds",
+                    "type": "string"
+                },
+                "CronFeedsRefreshMusic": {
+                    "description": "CronFeedsRefreshMusic is the cron schedule for metadata refreshes for music",
+                    "type": "string"
+                },
+                "CronFeedsRefreshMusicFull": {
+                    "description": "CronFeedsRefreshMusicFull is the cron schedule for full metadata refreshes for music",
+                    "type": "string"
+                },
+                "CronFeedsRefreshSeries": {
+                    "description": "CronFeedsRefreshSeries is the cron schedule for refreshing series RSS feeds",
+                    "type": "string"
+                },
+                "CronFeedsRefreshSeriesFull": {
+                    "description": "CronFeedsRefreshSeriesFull is the cron schedule for full refreshing of series RSS feeds",
+                    "type": "string"
+                },
+                "CronImdb": {
+                    "description": "CronImdb is the cron schedule for imdb scans",
+                    "type": "string"
+                },
+                "CronIndexerMissing": {
+                    "description": "CronIndexerMissing is the cron schedule for missing media scans",
+                    "type": "string"
+                },
+                "CronIndexerMissingFull": {
+                    "description": "CronIndexerMissingFull is the cron schedule for full missing media scans",
+                    "type": "string"
+                },
+                "CronIndexerMissingFullTitle": {
+                    "description": "CronIndexerMissingFullTitle is the cron schedule for full missing media scans",
+                    "type": "string"
+                },
+                "CronIndexerMissingTitle": {
+                    "description": "CronIndexerMissingTitle is the cron schedule for missing media scans by title",
+                    "type": "string"
+                },
+                "CronIndexerRss": {
+                    "description": "CronIndexerRss is the cron schedule for rss feed scans",
+                    "type": "string"
+                },
+                "CronIndexerRssArtists": {
+                    "description": "CronIndexerRssArtists is the cron schedule for artist-based missing searches (music)",
+                    "type": "string"
+                },
+                "CronIndexerRssArtistsUpgrade": {
+                    "description": "CronIndexerRssArtistsUpgrade is the cron schedule for artist-based upgrade searches (music)",
+                    "type": "string"
+                },
+                "CronIndexerRssAuthors": {
+                    "description": "CronIndexerRssAuthors is the cron schedule for author-based missing searches (audiobooks/books)",
+                    "type": "string"
+                },
+                "CronIndexerRssAuthorsUpgrade": {
+                    "description": "CronIndexerRssAuthorsUpgrade is the cron schedule for author-based upgrade searches (audiobooks/books)",
+                    "type": "string"
+                },
+                "CronIndexerRssSeasons": {
+                    "description": "CronIndexerRssSeasons is the cron schedule for rss feed season scans",
+                    "type": "string"
+                },
+                "CronIndexerRssSeasonsAll": {
+                    "description": "CronIndexerRssSeasonsAll is the cron schedule for rss feed all season scans",
+                    "type": "string"
+                },
+                "CronIndexerUpgrade": {
+                    "description": "CronIndexerUpgrade is the cron schedule for upgrade media scans",
+                    "type": "string"
+                },
+                "CronIndexerUpgradeFull": {
+                    "description": "CronIndexerUpgradeFull is the cron schedule for full upgrade media scans",
+                    "type": "string"
+                },
+                "CronIndexerUpgradeFullTitle": {
+                    "description": "CronIndexerUpgradeFullTitle is the cron schedule for full upgrade media scans",
+                    "type": "string"
+                },
+                "CronIndexerUpgradeTitle": {
+                    "description": "CronIndexerUpgradeTitle is the cron schedule for upgrade media scans by title",
+                    "type": "string"
+                },
+                "CronScanData": {
+                    "description": "CronScanData is the cron schedule for data scans",
+                    "type": "string"
+                },
+                "CronScanDataFlags": {
+                    "description": "CronScanDataFlags is the cron schedule for flagged data scans",
+                    "type": "string"
+                },
+                "CronScanDataMissing": {
+                    "description": "CronScanDataMissing is the cron schedule for missing data scans",
+                    "type": "string"
+                },
+                "CronScanDataimport": {
+                    "description": "CronScanDataimport is the cron schedule for data import scans",
+                    "type": "string"
+                },
+                "IntervalCacheRefresh": {
+                    "description": "IntervalCacheRefresh is the interval for cache refreshes",
+                    "type": "string"
+                },
+                "IntervalDatabaseBackup": {
+                    "description": "IntervalDatabaseBackup is the interval for database backups",
+                    "type": "string"
+                },
+                "IntervalDatabaseCheck": {
+                    "description": "IntervalDatabaseCheck is the interval for database checks",
+                    "type": "string"
+                },
+                "IntervalDownloadCheck": {
+                    "description": "IntervalDownloadCheck is the interval for checking the state of sent downloads",
+                    "type": "string"
+                },
+                "IntervalFeeds": {
+                    "description": "IntervalFeeds is the interval for rss feed scans",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshAudiobooks": {
+                    "description": "IntervalFeedsRefreshAudiobooks is the interval for metadata refreshes for audiobooks",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshAudiobooksFull": {
+                    "description": "IntervalFeedsRefreshAudiobooksFull is the interval for full metadata refreshes for audiobooks",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshBooks": {
+                    "description": "IntervalFeedsRefreshBooks is the interval for metadata refreshes for books",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshBooksFull": {
+                    "description": "IntervalFeedsRefreshBooksFull is the interval for full metadata refreshes for books",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshMovies": {
+                    "description": "IntervalFeedsRefreshMovies is the interval for rss feed refreshes for movies",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshMoviesFull": {
+                    "description": "IntervalFeedsRefreshMoviesFull is the interval for full rss feed refreshes for movies",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshMusic": {
+                    "description": "IntervalFeedsRefreshMusic is the interval for metadata refreshes for music",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshMusicFull": {
+                    "description": "IntervalFeedsRefreshMusicFull is the interval for full metadata refreshes for music",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshSeries": {
+                    "description": "IntervalFeedsRefreshSeries is the interval for rss feed refreshes for series",
+                    "type": "string"
+                },
+                "IntervalFeedsRefreshSeriesFull": {
+                    "description": "IntervalFeedsRefreshSeriesFull is the interval for full rss feed refreshes for series",
+                    "type": "string"
+                },
+                "IntervalImdb": {
+                    "description": "IntervalImdb is the interval for imdb scans",
+                    "type": "string"
+                },
+                "IntervalIndexerMissing": {
+                    "description": "IntervalIndexerMissing is the interval for missing media scans",
+                    "type": "string"
+                },
+                "IntervalIndexerMissingFull": {
+                    "description": "IntervalIndexerMissingFull is the interval for full missing media scans",
+                    "type": "string"
+                },
+                "IntervalIndexerMissingFullTitle": {
+                    "description": "IntervalIndexerMissingFullTitle is the interval for full missing media scans",
+                    "type": "string"
+                },
+                "IntervalIndexerMissingTitle": {
+                    "description": "IntervalIndexerMissingTitle is the interval for missing media scans by title",
+                    "type": "string"
+                },
+                "IntervalIndexerRss": {
+                    "description": "IntervalIndexerRss is the interval for rss feed scans",
+                    "type": "string"
+                },
+                "IntervalIndexerRssArtists": {
+                    "description": "IntervalIndexerRssArtists is the interval for artist-based missing/upgrade searches (music)",
+                    "type": "string"
+                },
+                "IntervalIndexerRssArtistsUpgrade": {
+                    "description": "IntervalIndexerRssArtistsUpgrade is the interval for artist-based upgrade searches (music)",
+                    "type": "string"
+                },
+                "IntervalIndexerRssAuthors": {
+                    "description": "IntervalIndexerRssAuthors is the interval for author-based missing searches (audiobooks/books)",
+                    "type": "string"
+                },
+                "IntervalIndexerRssAuthorsUpgrade": {
+                    "description": "IntervalIndexerRssAuthorsUpgrade is the interval for author-based upgrade searches (audiobooks/books)",
+                    "type": "string"
+                },
+                "IntervalIndexerRssSeasons": {
+                    "description": "IntervalIndexerRssSeasons is the interval for rss feed season scans",
+                    "type": "string"
+                },
+                "IntervalIndexerRssSeasonsAll": {
+                    "description": "IntervalIndexerRssSeasonsAll is the interval for rss feed all season scans",
+                    "type": "string"
+                },
+                "IntervalIndexerUpgrade": {
+                    "description": "IntervalIndexerUpgrade is the interval for upgrade media scans",
+                    "type": "string"
+                },
+                "IntervalIndexerUpgradeFull": {
+                    "description": "IntervalIndexerUpgradeFull is the interval for full upgrade media scans",
+                    "type": "string"
+                },
+                "IntervalIndexerUpgradeFullTitle": {
+                    "description": "IntervalIndexerUpgradeFullTitle is the interval for full upgrade media scans",
+                    "type": "string"
+                },
+                "IntervalIndexerUpgradeTitle": {
+                    "description": "IntervalIndexerUpgradeTitle is the interval for upgrade media scans by title",
+                    "type": "string"
+                },
+                "IntervalScanData": {
+                    "description": "IntervalScanData is the interval for data scans",
+                    "type": "string"
+                },
+                "IntervalScanDataFlags": {
+                    "description": "IntervalScanDataFlags is the interval for flagged data scans",
+                    "type": "string"
+                },
+                "IntervalScanDataMissing": {
+                    "description": "IntervalScanDataMissing is the interval for missing data scans",
+                    "type": "string"
+                },
+                "IntervalScanDataimport": {
+                    "description": "IntervalScanDataimport is the interval for data import scans",
+                    "type": "string"
+                },
+                "Name": {
+                    "description": "Name is the name of the template - see https://github.com/Kellerman81/go_media_downloader/wiki/Scheduler for details",
+                    "type": "string"
+                }
+            }
+        },
+        "database.Album": {
+            "type": "object",
+            "properties": {
+                "ArtistID": {
+                    "type": "integer"
+                },
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbalbumID": {
+                    "type": "integer"
+                },
+                "DontSearch": {
+                    "type": "boolean"
+                },
+                "DontUpgrade": {
+                    "type": "boolean"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Audiobook": {
+            "type": "object",
+            "properties": {
+                "AuthorID": {
+                    "type": "integer"
+                },
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "BookSeriesID": {
+                    "type": "integer"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbaudiobookID": {
+                    "type": "integer"
+                },
+                "DontSearch": {
+                    "type": "boolean"
+                },
+                "DontUpgrade": {
+                    "type": "boolean"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Book": {
+            "type": "object",
+            "properties": {
+                "AuthorID": {
+                    "type": "integer"
+                },
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "BookSeriesID": {
+                    "type": "integer"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbbookID": {
+                    "type": "integer"
+                },
+                "DontSearch": {
+                    "type": "boolean"
+                },
+                "DontUpgrade": {
+                    "type": "boolean"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Dbalbum": {
+            "type": "object",
+            "properties": {
+                "Country": {
+                    "type": "string"
+                },
+                "CoverURL": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DiscogsMasterID": {
+                    "type": "string"
+                },
+                "DiscogsReleaseID": {
+                    "type": "string"
+                },
+                "Format": {
+                    "type": "string"
+                },
+                "Genres": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Label": {
+                    "type": "string"
+                },
+                "MusicbrainzReleaseGroupID": {
+                    "type": "string"
+                },
+                "MusicbrainzReleaseID": {
+                    "type": "string"
+                },
+                "ReleaseType": {
+                    "type": "string"
+                },
+                "SeriesName": {
+                    "type": "string"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "SpotifyID": {
+                    "type": "string"
+                },
+                "Styles": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "TotalRuntimeMs": {
+                    "type": "integer"
+                },
+                "TotalTracks": {
+                    "type": "integer"
+                },
+                "UPC": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "Year": {
+                    "type": "integer"
+                },
+                "release_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Dbartist": {
+            "type": "object",
+            "properties": {
+                "ArtistType": {
+                    "type": "string"
+                },
+                "BeginDate": {
+                    "type": "string"
+                },
+                "Bio": {
+                    "type": "string"
+                },
+                "Country": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "Disambiguation": {
+                    "type": "string"
+                },
+                "DiscogsID": {
+                    "type": "string"
+                },
+                "EndDate": {
+                    "type": "string"
+                },
+                "Genres": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "ImageURL": {
+                    "type": "string"
+                },
+                "MusicbrainzID": {
+                    "type": "string"
+                },
+                "Name": {
+                    "type": "string"
+                },
+                "SortName": {
+                    "type": "string"
+                },
+                "SpotifyID": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Dbaudiobook": {
+            "type": "object",
+            "properties": {
+                "ASIN": {
+                    "type": "string"
+                },
+                "Abridged": {
+                    "type": "boolean"
+                },
+                "AudibleID": {
+                    "type": "string"
+                },
+                "AverageRating": {
+                    "type": "number"
+                },
+                "ChapterCount": {
+                    "type": "integer"
+                },
+                "CoverURL": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbbookID": {
+                    "type": "integer"
+                },
+                "Description": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Language": {
+                    "type": "string"
+                },
+                "Publisher": {
+                    "type": "string"
+                },
+                "RatingsCount": {
+                    "type": "integer"
+                },
+                "RuntimeMinutes": {
+                    "type": "integer"
+                },
+                "SampleURL": {
+                    "type": "string"
+                },
+                "SeriesName": {
+                    "type": "string"
+                },
+                "SeriesPosition": {
+                    "type": "string"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "Year": {
+                    "type": "integer"
+                },
+                "release_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Dbbook": {
+            "type": "object",
+            "properties": {
+                "ASIN": {
+                    "type": "string"
+                },
+                "AverageRating": {
+                    "type": "number"
+                },
+                "CoverURL": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbauthorID": {
+                    "type": "integer"
+                },
+                "DbbookSeriesID": {
+                    "type": "integer"
+                },
+                "Description": {
+                    "type": "string"
+                },
+                "Genres": {
+                    "type": "string"
+                },
+                "GoodreadsID": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "ISBN10": {
+                    "type": "string"
+                },
+                "ISBN13": {
+                    "type": "string"
+                },
+                "Language": {
+                    "type": "string"
+                },
+                "OpenlibraryID": {
+                    "type": "string"
+                },
+                "OriginalTitle": {
+                    "type": "string"
+                },
+                "PageCount": {
+                    "type": "integer"
+                },
+                "Publisher": {
+                    "type": "string"
+                },
+                "RatingsCount": {
+                    "type": "integer"
+                },
+                "SeriesPosition": {
+                    "type": "string"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "Year": {
+                    "type": "integer"
+                },
+                "publish_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Dbmovie": {
+            "type": "object",
+            "properties": {
+                "Adult": {
+                    "type": "boolean"
+                },
+                "Backdrop": {
+                    "type": "string"
+                },
+                "Budget": {
+                    "type": "integer"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "FacebookID": {
+                    "type": "string"
+                },
+                "FreebaseID": {
+                    "type": "string"
+                },
+                "FreebaseMID": {
+                    "type": "string"
+                },
+                "Genres": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "ImdbID": {
+                    "type": "string"
+                },
+                "InstagramID": {
+                    "type": "string"
+                },
+                "MoviedbID": {
+                    "type": "integer"
+                },
+                "OriginalLanguage": {
+                    "type": "string"
+                },
+                "OriginalTitle": {
+                    "type": "string"
+                },
+                "Overview": {
+                    "type": "string"
+                },
+                "Popularity": {
+                    "type": "number"
+                },
+                "Poster": {
+                    "type": "string"
+                },
+                "Revenue": {
+                    "type": "integer"
+                },
+                "Runtime": {
+                    "type": "integer"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "SpokenLanguages": {
+                    "type": "string"
+                },
+                "Status": {
+                    "type": "string"
+                },
+                "Tagline": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "TraktID": {
+                    "type": "integer"
+                },
+                "TwitterID": {
+                    "type": "string"
+                },
+                "URL": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "VoteAverage": {
+                    "type": "number"
+                },
+                "VoteCount": {
+                    "type": "integer"
+                },
+                "Year": {
+                    "type": "integer"
+                },
+                "release_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Dbserie": {
+            "type": "object",
+            "properties": {
+                "Banner": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "Facebook": {
+                    "type": "string"
+                },
+                "Fanart": {
+                    "type": "string"
+                },
+                "Firstaired": {
+                    "type": "string"
+                },
+                "FreebaseID": {
+                    "type": "string"
+                },
+                "FreebaseMID": {
+                    "type": "string"
+                },
+                "Genre": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Identifiedby": {
+                    "type": "string"
+                },
+                "ImdbID": {
+                    "type": "string"
+                },
+                "Instagram": {
+                    "type": "string"
+                },
+                "Language": {
+                    "type": "string"
+                },
+                "Network": {
+                    "type": "string"
+                },
+                "Overview": {
+                    "type": "string"
+                },
+                "Poster": {
+                    "type": "string"
+                },
+                "Rating": {
+                    "type": "string"
+                },
+                "Runtime": {
+                    "type": "string"
+                },
+                "Season": {
+                    "type": "string"
+                },
+                "Seriename": {
+                    "type": "string"
+                },
+                "Siterating": {
+                    "type": "string"
+                },
+                "SiteratingCount": {
+                    "type": "string"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "Status": {
+                    "type": "string"
+                },
+                "ThetvdbID": {
+                    "type": "integer"
+                },
+                "TraktID": {
+                    "type": "integer"
+                },
+                "TvrageID": {
+                    "type": "integer"
+                },
+                "Twitter": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.DbserieEpisode": {
+            "type": "object",
+            "properties": {
+                "AbsoluteEpisode": {
+                    "type": "integer"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbserieID": {
+                    "type": "integer"
+                },
+                "Episode": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Identifier": {
+                    "type": "string"
+                },
+                "Overview": {
+                    "type": "string"
+                },
+                "Poster": {
+                    "type": "string"
+                },
+                "Runtime": {
+                    "type": "integer"
+                },
+                "ScraperID": {
+                    "type": "string"
+                },
+                "ScraperURL": {
+                    "type": "string"
+                },
+                "Season": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "first_aired": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.JobHistory": {
+            "type": "object",
+            "properties": {
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "Ended": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "JobCategory": {
+                    "type": "string"
+                },
+                "JobGroup": {
+                    "type": "string"
+                },
+                "JobType": {
+                    "type": "string"
+                },
+                "Started": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Movie": {
+            "type": "object",
+            "properties": {
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbmovieID": {
+                    "type": "integer"
+                },
+                "DontSearch": {
+                    "type": "boolean"
+                },
+                "DontUpgrade": {
+                    "type": "boolean"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.MovieFileUnmatched": {
+            "type": "object",
+            "properties": {
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "Filepath": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "LastChecked": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "ParsedData": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.ParseInfo": {
+            "type": "object",
+            "properties": {
+                "File": {
+                    "description": "File is the path to the media file",
+                    "type": "string"
+                },
+                "FirstIDX": {
+                    "type": "integer"
+                },
+                "FirstYearIDX": {
+                    "type": "integer"
+                },
+                "ListID": {
+                    "description": "ListID is the ID of the list this came from",
+                    "type": "integer"
+                },
+                "Str": {
+                    "description": "used internally",
+                    "type": "string"
+                },
+                "TempID": {
+                    "type": "integer"
+                },
+                "TempTitle": {
+                    "type": "string"
+                },
+                "Title": {
+                    "description": "Title is the title of the media",
+                    "type": "string"
+                },
+                "absolute_episode": {
+                    "description": "AbsoluteEpisode is the absolute episode number (for anime and shows with continuous numbering)",
+                    "type": "integer"
+                },
+                "albumid": {
+                    "description": "AlbumID is the application ID of the music album",
+                    "type": "integer"
+                },
+                "artist": {
+                    "description": "Artist is the artist name for music",
+                    "type": "string"
+                },
+                "asin": {
+                    "description": "ASIN is the Amazon ASIN identifier for audiobooks",
+                    "type": "string"
+                },
+                "audio": {
+                    "description": "Audio is the audio description",
+                    "type": "string"
+                },
+                "audio_bit_depth": {
+                    "description": "AudioBitDepth is the bit depth (16, 24, 32) for lossless audio",
+                    "type": "integer"
+                },
+                "audio_bitrate": {
+                    "description": "AudioBitrate is the audio bitrate in kbps for music/audiobooks",
+                    "type": "integer"
+                },
+                "audio_format": {
+                    "description": "AudioFormat is the audio codec/format (mp3, flac, aac, etc.) for music/audiobooks",
+                    "type": "string"
+                },
+                "audio_format_id": {
+                    "description": "AudioFormatID is the database ID for the audio format",
+                    "type": "integer"
+                },
+                "audio_sample_rate": {
+                    "description": "AudioSampleRate is the sample rate in Hz for music/audiobooks",
+                    "type": "integer"
+                },
+                "audiobookid": {
+                    "description": "AudiobookID is the application ID of the audiobook",
+                    "type": "integer"
+                },
+                "audioid": {
+                    "description": "AudioID is the database ID of the audio",
+                    "type": "integer"
+                },
+                "bitrate": {
+                    "description": "Bitrate is the probed overall bitrate in kbit/s, 0 when unknown",
+                    "type": "integer"
+                },
+                "bookid": {
+                    "description": "BookID is the application ID of the book",
+                    "type": "integer"
+                },
+                "codec": {
+                    "description": "Codec is the video codec",
+                    "type": "string"
+                },
+                "codecid": {
+                    "description": "CodecID is the database ID of the codec",
+                    "type": "integer"
+                },
+                "date": {
+                    "description": "Date is the release date",
+                    "type": "string"
+                },
+                "dbalbumid": {
+                    "description": "DbalbumID is the database ID of the music album",
+                    "type": "integer"
+                },
+                "dbaudiobookid": {
+                    "description": "DbaudiobookID is the database ID of the audiobook",
+                    "type": "integer"
+                },
+                "dbbookid": {
+                    "description": "DbbookID is the database ID of the book",
+                    "type": "integer"
+                },
+                "dbmovieid": {
+                    "description": "DbmovieID is the database ID of the movie",
+                    "type": "integer"
+                },
+                "dbserieepisodeid": {
+                    "description": "DbserieEpisodeID is the database ID of the episode",
+                    "type": "integer"
+                },
+                "dbserieid": {
+                    "description": "DbserieID is the database ID of the TV series",
+                    "type": "integer"
+                },
+                "episode": {
+                    "description": "Episode is the episode number, if applicable",
+                    "type": "integer"
+                },
+                "episodestr": {
+                    "description": "EpisodeStr is the episode number as a string, if applicable",
+                    "type": "string"
+                },
+                "extended": {
+                    "description": "Extended is a flag indicating if it is an extended version",
+                    "type": "boolean"
+                },
+                "height": {
+                    "description": "Height is the video height in pixels",
+                    "type": "integer"
+                },
+                "identifier": {
+                    "description": "Identifier is an identifier string",
+                    "type": "string"
+                },
+                "imdb": {
+                    "description": "Imdb is the IMDB ID",
+                    "type": "string"
+                },
+                "isbn": {
+                    "description": "ISBN is the ISBN-13 or ISBN-10 identifier for books",
+                    "type": "string"
+                },
+                "languages": {
+                    "description": "Languages is a list of language codes",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "movieid": {
+                    "description": "MovieID is the application ID of the movie",
+                    "type": "integer"
+                },
+                "musicbrainz_id": {
+                    "description": "MusicBrainzID is the MusicBrainz release ID for music",
+                    "type": "string"
+                },
+                "priority": {
+                    "description": "Priority is the priority for downloading",
+                    "type": "integer"
+                },
+                "proper": {
+                    "description": "Proper is a flag indicating if it is a proper release",
+                    "type": "boolean"
+                },
+                "quality": {
+                    "description": "Quality is the video quality description",
+                    "type": "string"
+                },
+                "qualityid": {
+                    "description": "QualityID is the database ID of the quality",
+                    "type": "integer"
+                },
+                "repack": {
+                    "description": "Repack is a flag indicating if it is a repack release",
+                    "type": "boolean"
+                },
+                "resolution": {
+                    "description": "Resolution is the video resolution",
+                    "type": "string"
+                },
+                "resolutionid": {
+                    "description": "ResolutionID is the database ID of the resolution",
+                    "type": "integer"
+                },
+                "retail": {
+                    "description": "Retail is a flag indicating a retail ebook release (books only)",
+                    "type": "boolean"
+                },
+                "runtime": {
+                    "description": "Runtime is the runtime in seconds once the file is probed",
+                    "type": "integer"
+                },
+                "season": {
+                    "description": "Season is the season number, if applicable",
+                    "type": "integer"
+                },
+                "seasonstr": {
+                    "description": "SeasonStr is the season number as a string, if applicable",
+                    "type": "string"
+                },
+                "serieepisodeid": {
+                    "description": "SerieEpisodeID is the application ID of the episode",
+                    "type": "integer"
+                },
+                "serieid": {
+                    "description": "SerieID is the application ID of the TV series",
+                    "type": "integer"
+                },
+                "tvdb": {
+                    "description": "Tvdb is the TVDB ID",
+                    "type": "string"
+                },
+                "upc": {
+                    "description": "UPC is the Universal Product Code for music",
+                    "type": "string"
+                },
+                "width": {
+                    "description": "Width is the video width in pixels",
+                    "type": "integer"
+                },
+                "year": {
+                    "description": "Year is the year of release",
+                    "type": "integer"
+                }
+            }
+        },
+        "database.Qualities": {
+            "type": "object",
+            "properties": {
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Name": {
+                    "type": "string"
+                },
+                "Priority": {
+                    "type": "integer"
+                },
+                "QualityType": {
+                    "type": "integer"
+                },
+                "Regex": {
+                    "type": "string"
+                },
+                "Regexgroup": {
+                    "type": "integer"
+                },
+                "Strings": {
+                    "type": "string"
+                },
+                "StringsLower": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "UseRegex": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "database.ResultMovies": {
+            "type": "object",
+            "properties": {
+                "Adult": {
+                    "type": "boolean"
+                },
+                "Backdrop": {
+                    "type": "string"
+                },
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "Budget": {
+                    "type": "integer"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbmovieID": {
+                    "type": "integer"
+                },
+                "FacebookID": {
+                    "type": "string"
+                },
+                "FreebaseID": {
+                    "type": "string"
+                },
+                "FreebaseMID": {
+                    "type": "string"
+                },
+                "Genres": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "ImdbID": {
+                    "type": "string"
+                },
+                "InstagramID": {
+                    "type": "string"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "MoviedbID": {
+                    "type": "integer"
+                },
+                "OriginalLanguage": {
+                    "type": "string"
+                },
+                "OriginalTitle": {
+                    "type": "string"
+                },
+                "Overview": {
+                    "type": "string"
+                },
+                "Popularity": {
+                    "type": "number"
+                },
+                "Poster": {
+                    "type": "string"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "Revenue": {
+                    "type": "integer"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "Runtime": {
+                    "type": "integer"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "SpokenLanguages": {
+                    "type": "string"
+                },
+                "Status": {
+                    "type": "string"
+                },
+                "Tagline": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "TraktID": {
+                    "type": "integer"
+                },
+                "TwitterID": {
+                    "type": "string"
+                },
+                "URL": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "VoteAverage": {
+                    "type": "number"
+                },
+                "VoteCount": {
+                    "type": "integer"
+                },
+                "Year": {
+                    "type": "integer"
+                },
+                "release_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.ResultSerieEpisodes": {
+            "type": "object",
+            "properties": {
+                "AbsoluteEpisode": {
+                    "type": "integer"
+                },
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbserieEpisodeID": {
+                    "type": "integer"
+                },
+                "DbserieID": {
+                    "type": "integer"
+                },
+                "Episode": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Identifier": {
+                    "type": "string"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "Overview": {
+                    "type": "string"
+                },
+                "Poster": {
+                    "type": "string"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "Runtime": {
+                    "type": "integer"
+                },
+                "ScraperID": {
+                    "type": "string"
+                },
+                "ScraperURL": {
+                    "type": "string"
+                },
+                "Season": {
+                    "type": "string"
+                },
+                "Title": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                },
+                "first_aired": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.ResultSeries": {
+            "type": "object",
+            "properties": {
+                "Aliases": {
+                    "type": "string"
+                },
+                "Banner": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbserieID": {
+                    "type": "integer"
+                },
+                "Facebook": {
+                    "type": "string"
+                },
+                "Fanart": {
+                    "type": "string"
+                },
+                "Firstaired": {
+                    "type": "string"
+                },
+                "FreebaseID": {
+                    "type": "string"
+                },
+                "FreebaseMID": {
+                    "type": "string"
+                },
+                "Genre": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "Identifiedby": {
+                    "type": "string"
+                },
+                "ImdbID": {
+                    "type": "string"
+                },
+                "Instagram": {
+                    "type": "string"
+                },
+                "Language": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "Network": {
+                    "type": "string"
+                },
+                "Overview": {
+                    "type": "string"
+                },
+                "Poster": {
+                    "type": "string"
+                },
+                "Rating": {
+                    "type": "string"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "Runtime": {
+                    "type": "string"
+                },
+                "Season": {
+                    "type": "string"
+                },
+                "Seriename": {
+                    "type": "string"
+                },
+                "Siterating": {
+                    "type": "string"
+                },
+                "SiteratingCount": {
+                    "type": "string"
+                },
+                "Slug": {
+                    "type": "string"
+                },
+                "Status": {
+                    "type": "string"
+                },
+                "ThetvdbID": {
+                    "type": "integer"
+                },
+                "TraktID": {
+                    "type": "integer"
+                },
+                "TvrageID": {
+                    "type": "integer"
+                },
+                "Twitter": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.Serie": {
+            "type": "object",
+            "properties": {
+                "Aliases": {
+                    "type": "string"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbserieID": {
+                    "type": "integer"
+                },
+                "DontSearch": {
+                    "type": "boolean"
+                },
+                "DontUpgrade": {
+                    "type": "boolean"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "IgnoreRuntime": {
+                    "type": "boolean"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "Rootpath": {
+                    "type": "string"
+                },
+                "SearchSpecials": {
+                    "type": "boolean"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.SerieEpisode": {
+            "type": "object",
+            "properties": {
+                "Blacklisted": {
+                    "type": "boolean"
+                },
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "DbserieEpisodeID": {
+                    "type": "integer"
+                },
+                "DbserieID": {
+                    "type": "integer"
+                },
+                "DontSearch": {
+                    "type": "boolean"
+                },
+                "DontUpgrade": {
+                    "type": "boolean"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "IgnoreRuntime": {
+                    "type": "boolean"
+                },
+                "Lastscan": {
+                    "type": "string"
+                },
+                "Missing": {
+                    "type": "boolean"
+                },
+                "QualityProfile": {
+                    "type": "string"
+                },
+                "QualityReached": {
+                    "type": "boolean"
+                },
+                "SerieID": {
+                    "type": "integer"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "database.SerieFileUnmatched": {
+            "type": "object",
+            "properties": {
+                "CreatedAt": {
+                    "type": "string"
+                },
+                "Filepath": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer"
+                },
+                "LastChecked": {
+                    "type": "string"
+                },
+                "Listname": {
+                    "type": "string"
+                },
+                "ParsedData": {
+                    "type": "string"
+                },
+                "UpdatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "parser.Prioarr": {
+            "type": "object",
+            "properties": {
+                "AudioFormatID": {
+                    "type": "integer"
+                },
+                "AudioID": {
+                    "type": "integer"
+                },
+                "CodecID": {
+                    "type": "integer"
+                },
+                "Priority": {
+                    "type": "integer"
+                },
+                "QualityGroup": {
+                    "type": "string"
+                },
+                "QualityID": {
+                    "type": "integer"
+                },
+                "ResolutionID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "structure.AlbumForceMatchPreview": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "type": "string"
+                },
+                "folder_target": {
+                    "description": "computed target folder path",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "tracks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/structure.AlbumForceMatchTrack"
+                    }
+                },
+                "upgrade": {
+                    "description": "Upgrade is the check that decides whether the run replaces what the\nlibrary already holds or stops with lower_quality.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/structure.AlbumUpgradeCheck"
+                        }
+                    ]
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "structure.AlbumForceMatchTrack": {
+            "type": "object",
+            "properties": {
+                "db_runtime_ms": {
+                    "type": "integer"
+                },
+                "disc_number": {
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "current file path (basename)",
+                    "type": "string"
+                },
+                "target": {
+                    "description": "target filename after rename",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "track_number": {
+                    "type": "integer"
+                }
+            }
+        },
+        "structure.AlbumLibraryFile": {
+            "type": "object",
+            "properties": {
+                "bitrate": {
+                    "type": "integer"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                }
+            }
+        },
+        "structure.AlbumUpgradeCheck": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "type": "boolean"
+                },
+                "existing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/structure.AlbumLibraryFile"
+                    }
+                },
+                "new_files": {
+                    "type": "integer"
+                },
+                "new_priority": {
+                    "type": "integer"
+                },
+                "old_priority": {
+                    "type": "integer"
+                }
+            }
+        },
+        "syncops.DbstaticTwoStringOneInt": {
+            "type": "object",
+            "properties": {
+                "Num": {
+                    "type": "integer"
+                },
+                "Str1": {
+                    "type": "string"
+                },
+                "Str2": {
+                    "type": "string"
+                }
+            }
+        },
+        "syncops.Job": {
+            "type": "object",
+            "properties": {
+                "Added": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "Name": {
+                    "type": "string"
+                },
+                "Queue": {
+                    "type": "string"
+                },
+                "SchedulerID": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "Started": {
+                    "type": "string"
+                }
+            }
+        },
+        "syncops.JobSchedule": {
+            "type": "object",
+            "properties": {
+                "Cfgpstr": {
+                    "type": "string"
+                },
+                "CronID": {
+                    "type": "integer"
+                },
+                "CronSchedule": {
+                    "type": "string"
+                },
+                "ID": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "Interval": {
+                    "type": "string"
+                },
+                "IsRunning": {
+                    "type": "boolean"
+                },
+                "JobFunc": {
+                    "description": "job function name, looked up per Cfgpstr",
+                    "type": "string"
+                },
+                "JobID": {
+                    "type": "integer",
+                    "format": "int32"
+                },
+                "JobName": {
+                    "type": "string"
+                },
+                "LastRun": {
+                    "type": "string"
+                },
+                "NextRun": {
+                    "type": "string"
+                },
+                "Paused": {
+                    "description": "stopped by the user; fires but submits no jobs",
+                    "type": "boolean"
+                },
+                "Queue": {
+                    "description": "worker queue; selects the cron instance on removal",
+                    "type": "string"
+                },
+                "ScheduleString": {
+                    "type": "string"
+                },
+                "ScheduleTyp": {
+                    "type": "string"
+                }
+            }
+        },
+        "trakt.TraktIDs": {
+            "type": "object",
+            "properties": {
+                "imdb": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "tmdb": {
+                    "type": "integer"
+                },
+                "trakt": {
+                    "type": "integer"
+                },
+                "tvdb": {
+                    "type": "integer"
+                }
+            }
+        },
+        "trakt.TraktMovie": {
+            "type": "object",
+            "properties": {
+                "certification": {
+                    "type": "string"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "homepage": {
+                    "type": "string"
+                },
+                "ids": {
+                    "$ref": "#/definitions/trakt.TraktIDs"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "rating": {
+                    "type": "number"
+                },
+                "released": {
+                    "type": "string"
+                },
+                "runtime": {
+                    "type": "integer"
+                },
+                "tagline": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "trailer": {
+                    "type": "string"
+                },
+                "votes": {
+                    "type": "integer"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "trakt.TraktShow": {
+            "type": "object",
+            "properties": {
+                "aired_episodes": {
+                    "type": "integer"
+                },
+                "certification": {
+                    "type": "string"
+                },
+                "country": {
+                    "type": "string"
+                },
+                "first_aired": {
+                    "type": "string"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "homepage": {
+                    "type": "string"
+                },
+                "ids": {
+                    "$ref": "#/definitions/trakt.TraktIDs"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                },
+                "rating": {
+                    "type": "number"
+                },
+                "runtime": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "trailer": {
+                    "type": "string"
+                },
+                "votes": {
+                    "type": "integer"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "trakt.TraktUserListItem": {
+            "type": "object",
+            "properties": {
+                "listed_at": {
+                    "type": "string"
+                },
+                "movie": {
+                    "$ref": "#/definitions/trakt.TraktMovie"
+                },
+                "rank": {
+                    "type": "integer"
+                },
+                "show": {
+                    "$ref": "#/definitions/trakt.TraktShow"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "worker.Stats": {
+            "type": "object",
+            "properties": {
+                "ListQueue": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/syncops.Job"
+                    }
+                },
+                "ListSchedule": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/syncops.JobSchedule"
+                    }
+                },
+                "WorkerFiles": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                },
+                "WorkerIndex": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                },
+                "WorkerIndexRSS": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                },
+                "WorkerMeta": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                },
+                "WorkerParse": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                },
+                "WorkerRSS": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                },
+                "WorkerSearch": {
+                    "$ref": "#/definitions/worker.StatsDetail"
+                }
+            }
+        },
+        "worker.StatsDetail": {
+            "type": "object",
+            "properties": {
+                "CompletedTasks": {
+                    "type": "integer"
+                },
+                "DroppedTasks": {
+                    "type": "integer"
+                },
+                "FailedTasks": {
+                    "type": "integer"
+                },
+                "RunningWorkers": {
+                    "type": "integer"
+                },
+                "SubmittedTasks": {
+                    "type": "integer"
+                },
+                "SuccessfulTasks": {
+                    "type": "integer"
+                },
+                "WaitingTasks": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "apikey",
+            "in": "query"
+        }
+    },
+    "tags": [
+        {
+            "description": "Jobs for every media group at once: list imports, library scans and searches.",
+            "name": "all"
+        },
+        {
+            "description": "Movie metadata (dbmovies) and list entries (movies): list, add or update, delete, unmatched files, metadata lookup.",
+            "name": "movies · data"
+        },
+        {
+            "description": "Search the indexers for one movie or a whole group, preview results, download a release, clear search history.",
+            "name": "movies · search"
+        },
+        {
+            "description": "Start jobs for one or all movie groups and refresh movie metadata.",
+            "name": "movies · jobs"
+        },
+        {
+            "description": "Series metadata (dbseries) and list entries (series): list, add or update, delete, unmatched files, metadata lookup.",
+            "name": "series · data"
+        },
+        {
+            "description": "Episodes: metadata (dbserie_episodes) and list entries (serie_episodes) - list, add or update, delete.",
+            "name": "series · episodes"
+        },
+        {
+            "description": "Search the indexers for a series, season or episode (normal or RSS), preview results, download a release, clear search history.",
+            "name": "series · search"
+        },
+        {
+            "description": "Start jobs for one or all series groups and refresh series metadata.",
+            "name": "series · jobs"
+        },
+        {
+            "description": "Album metadata (dbalbums) and list entries (albums): list and delete.",
+            "name": "music · data"
+        },
+        {
+            "description": "Artists: list them, import an artist into a list, discover series albums.",
+            "name": "music · artists"
+        },
+        {
+            "description": "Search the indexers for one album, a group or its artists, preview results, clear search history.",
+            "name": "music · search"
+        },
+        {
+            "description": "Start jobs for one or all music groups, feeds date import, refresh album metadata.",
+            "name": "music · jobs"
+        },
+        {
+            "description": "Rewrite the audio tags of one album, an artist or all albums.",
+            "name": "music · tags"
+        },
+        {
+            "description": "Book metadata (dbbooks) and list entries (books): list and delete.",
+            "name": "books · data"
+        },
+        {
+            "description": "Search the indexers for one book, a group or its authors, preview results, clear search history.",
+            "name": "books · search"
+        },
+        {
+            "description": "Start jobs for one or all book groups, feeds date import, refresh book metadata.",
+            "name": "books · jobs"
+        },
+        {
+            "description": "Audiobook metadata (dbaudiobooks) and list entries (audiobooks): list, delete, import an author.",
+            "name": "audiobooks · data"
+        },
+        {
+            "description": "Search the indexers for one audiobook, a group or its authors, preview results, clear search history.",
+            "name": "audiobooks · search"
+        },
+        {
+            "description": "Start jobs for one or all audiobook groups and refresh audiobook metadata.",
+            "name": "audiobooks · jobs"
+        },
+        {
+            "description": "Rewrite the audio tags of one audiobook, an author or all audiobooks.",
+            "name": "audiobooks · tags"
+        },
+        {
+            "description": "Jobs waiting in or running from the job queue, the job history, and cancelling a queued job.",
+            "name": "queue"
+        },
+        {
+            "description": "Scheduled jobs: list them, pause or resume all or one, or run one now.",
+            "name": "scheduler"
+        },
+        {
+            "description": "Read, change, reload and delete configuration entries.",
+            "name": "config"
+        },
+        {
+            "description": "Quality rows (resolution, source, codec, audio) and the priorities of each quality profile.",
+            "name": "quality"
+        },
+        {
+            "description": "In-memory caches: list, rebuild, clear, add and remove entries.",
+            "name": "cache"
+        },
+        {
+            "description": "Database maintenance: backup, integrity check, vacuum, cleanup, row deletes, slugs and the IMDB database.",
+            "name": "database"
+        },
+        {
+            "description": "Organizer tools: test the naming template, organize a folder, and match an album folder to a release.",
+            "name": "organize"
+        },
+        {
+            "description": "Parse a release name or file the way the searcher and organizer do.",
+            "name": "parse"
+        },
+        {
+            "description": "Trakt authorization and reading a Trakt user list.",
+            "name": "trakt"
+        },
+        {
+            "description": "Library, download and worker statistics, and Go runtime statistics.",
+            "name": "statistics"
+        },
+        {
+            "description": "Used by the web interface: these need a login session (and for POST the CSRF token) instead of the apikey, so they cannot be called from Swagger, curl or scripts.",
+            "name": "web-only"
+        }
+    ]
+};

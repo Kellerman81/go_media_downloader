@@ -16,6 +16,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/downloader"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/downloadstate"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
@@ -329,6 +330,17 @@ func (s *ConfigSearcher) MediaSearch(
 			s.Quality,
 			false,
 		)
+	}
+
+	var pendingOK bool
+
+	p.e.MinimumPriority, pendingOK = withPending(cfgp.IsType, nzbID, p.e.MinimumPriority, s.Quality)
+	if !pendingOK {
+		logger.Logtype("debug", 0).
+			Uint(logger.StrID, mediaid).
+			Msg("Skipped search - download pending")
+
+		return nil
 	}
 
 	p.e.Info.ListID = s.Cfgp.GetMediaListsEntryListID(p.e.Listname)
@@ -1887,6 +1899,50 @@ func Getpriobyfiles(
 	)
 }
 
+// withPending folds the pending downloads of list entry id (sent to a client,
+// not yet organized - see downloadstate.PendingFor) into minPrio, the priority
+// of its files with 0 meaning none. Until the structure job has organized a
+// download its files are not in the *_files tables, so without this every
+// search in between sees the entry as missing and grabs it again. ok is false
+// when a pending download's quality is unknown (audio types, or ids missing
+// from the profile): the entry must then not be grabbed at all.
+func withPending(isType uint, id *uint, minPrio int, qualcfg *config.QualityConfig) (prio int, ok bool) {
+	if id == nil || *id == 0 || qualcfg == nil {
+		return minPrio, true
+	}
+
+	pending := downloadstate.PendingFor(isType, *id)
+	if len(pending) == 0 {
+		return minPrio, true
+	}
+
+	if !mediatype.SupportsVideoFile(isType) {
+		return minPrio, false
+	}
+
+	prio = minPrio
+
+	for i := range pending {
+		p := calculateFilePriority(&database.FilePrio{
+			ResolutionID: pending[i].ResolutionID,
+			QualityID:    pending[i].QualityID,
+			CodecID:      pending[i].CodecID,
+			AudioID:      pending[i].AudioID,
+		}, qualcfg, false)
+		if p == 0 {
+			return minPrio, false
+		}
+
+		// Priorities can be negative (reorder rules), so 0 is "nothing yet",
+		// not a floor.
+		if prio == 0 || p > prio {
+			prio = p
+		}
+	}
+
+	return prio, true
+}
+
 // calculateFilePriority determines the priority of a file based on its resolution, quality, codec, audio attributes,
 // and optional special attributes like 'proper', 'extended', or 'repack' flags.
 // The priority is calculated using quality configuration settings and can consider all attributes or
@@ -2190,6 +2246,14 @@ func (s *ConfigSearcher) getminimumpriority(
 			cfgqual,
 			false,
 		)
+	}
+
+	var ok bool
+
+	entry.MinimumPriority, ok = withPending(s.Cfgp.IsType, &entry.Info.TempID, entry.MinimumPriority, cfgqual)
+	if !ok {
+		s.logdenied("download pending", entry)
+		return true
 	}
 
 	// Check upgrade/search permissions

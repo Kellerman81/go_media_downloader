@@ -707,9 +707,9 @@ func wantedScript() gomponents.Node {
 				switch (media) {
 					case 'movie':     return '/api/movies/search/list/' + id + '?searchByTitle=false&download=true';
 					case 'episode':   return '/api/series/episodes/search/list/' + id + '?download=true';
-					case 'album':     return '/api/music/search/list/' + id;
-					case 'book':      return '/api/books/search/list/' + id;
-					case 'audiobook': return '/api/audiobooks/search/list/' + id;
+					case 'album':     return '/api/music/search/list/' + id + '?download=true';
+					case 'book':      return '/api/books/search/list/' + id + '?download=true';
+					case 'audiobook': return '/api/audiobooks/search/list/' + id + '?download=true';
 				}
 				return null;
 			}

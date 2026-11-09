@@ -2,6 +2,7 @@ package downloadstate
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -191,5 +192,68 @@ func TestCheckRowRemovesFailed(t *testing.T) {
 
 	if len(c.removed) != 1 || c.removed[0] != "abc" {
 		t.Errorf("removed %v, want the stored id abc", c.removed)
+	}
+}
+
+// TestOrganizedImportFolderSuffix covers the folder names the downloader
+// really uses: the release name plus " (<external id>)". Without stripping
+// it the newest row was marked instead of the organized one.
+func TestOrganizedImportFolderSuffix(t *testing.T) {
+	useTestDB(t)
+
+	ids := seed(t, "a.season.of.promises.2026.720p.web.h264-norbit", "a.season.of.promises.2026.1080p.web.h264-norbit")
+	Started(config.MediaTypeMovie, ids[0], "en", "")
+	Started(config.MediaTypeMovie, ids[1], "en", "")
+
+	folder := "/downloads/completed/Movies/a.season.of.promises.2026.720p.web.h264-norbit (tt46075510)"
+	Organized(config.MediaTypeMovie, []uint{1}, folder, folder+"/a.season.of.promises.2026.720p.web.h264-norbit (tt46075510).mkv", "", "")
+
+	if got := history(t, ids[0]); got.State != Processed {
+		t.Errorf("organized row: %+v", got)
+	}
+
+	if got := history(t, ids[1]); got.State != Added {
+		t.Errorf("newest row changed: %+v", got)
+	}
+}
+
+func TestImportNames(t *testing.T) {
+	tests := map[string][]string{
+		"Heat.1995.1080p-GRP (tt0113277)": {"heat 1995 1080p grp (tt0113277)", "heat 1995 1080p grp"},
+		"Heat.1995.1080p-GRP":             {"heat 1995 1080p grp"},
+		"Show.S01E01 (76568)":             {"show s01e01 (76568)", "show s01e01"},
+	}
+	for in, want := range tests {
+		if got := importNames(in); !slices.Equal(got, want) {
+			t.Errorf("importNames(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPendingFor(t *testing.T) {
+	useTestDB(t)
+
+	ids := seed(t, "added", "downloading.old", "added.old", "completed", "processed", "failed")
+	exec(t, "update movie_histories set resolution_id = 5, quality_id = 7 where id = ?", ids[0])
+
+	states := []string{Added, Downloading, Added, Completed, Processed, Failed}
+	for i, id := range ids {
+		exec(t, "update movie_histories set download_state = ? where id = ?", states[i], id)
+	}
+
+	// Two days old: a client-reported download still counts, a plain "added" no longer does.
+	exec(t, "update movie_histories set downloaded_at = datetime('now','localtime','-2 days') where id in (?, ?)", ids[1], ids[2])
+
+	got := PendingFor(config.MediaTypeMovie, 1)
+	if len(got) != 3 {
+		t.Fatalf("PendingFor = %+v, want the added, old downloading and completed rows", got)
+	}
+
+	if !slices.Contains(got, Pending{ResolutionID: 5, QualityID: 7}) {
+		t.Errorf("quality ids not read: %+v", got)
+	}
+
+	if got := PendingFor(config.MediaTypeMovie, 2); len(got) != 0 {
+		t.Errorf("other movie: %+v", got)
 	}
 }

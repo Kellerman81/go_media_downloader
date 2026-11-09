@@ -582,6 +582,7 @@ func createPathsConfig(index string, c *gin.Context) (config.PathsConfig, error)
 		SetBool(&cfg.Replacelower, "Replacelower").
 		SetBool(&cfg.Usepresort, "Usepresort").
 		SetBool(&cfg.DeleteWrongLanguage, "DeleteWrongLanguage").
+		SetBool(&cfg.DetectAudioLanguage, "DetectAudioLanguage").
 		SetBool(&cfg.DeleteDisallowed, "DeleteDisallowed").
 		SetBool(&cfg.CheckRuntime, "CheckRuntime").
 		SetBool(&cfg.DeleteWrongRuntime, "DeleteWrongRuntime").

@@ -856,7 +856,7 @@ func performSearch(
 			database.Querywithargs{Select: "id, listname", Where: "id = ?"},
 			movieID,
 		)
-		if movie.ID == 0 {
+		if movie == nil || movie.ID == 0 {
 			// logger.Logtype("error", 1).Any("id", movieID).Msg("movie db search")
 			return nil, fmt.Errorf("movie with ID %d not found", movieID)
 		}
@@ -893,7 +893,7 @@ func performSearch(
 			database.Querywithargs{Select: "id, listname", Where: "id = ?"},
 			serieID,
 		)
-		if serie.ID == 0 {
+		if serie == nil || serie.ID == 0 {
 			return nil, fmt.Errorf("series with ID %d not found", serieID)
 		}
 
@@ -922,7 +922,7 @@ func performSearch(
 			database.Querywithargs{Select: "id, listname", Where: "id = ?"},
 			serieID,
 		)
-		if serie.ID == 0 {
+		if serie == nil || serie.ID == 0 {
 			return nil, fmt.Errorf("series with ID %d not found", serieID)
 		}
 
@@ -1028,7 +1028,7 @@ func performSearch(
 			},
 			episodeID,
 		)
-		if episode.ID == 0 {
+		if episode == nil || episode.ID == 0 {
 			return nil, fmt.Errorf("episode with ID %d not found", episodeID)
 		}
 
@@ -1037,7 +1037,7 @@ func performSearch(
 			database.Querywithargs{Select: "id, listname", Where: "id = ?"},
 			episode.SerieID,
 		)
-		if serie.ID == 0 {
+		if serie == nil || serie.ID == 0 {
 			return nil, fmt.Errorf("series with ID %d not found", episode.SerieID)
 		}
 

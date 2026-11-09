@@ -53,6 +53,13 @@ jobs:
         echo "IS_RELEASE=$IS_RELEASE" >> $GITHUB_OUTPUT
         echo "GITHASH=$GITHASH" >> $GITHUB_OUTPUT
 
+    # Regenerates docs/swagger.json + .yaml from the code annotations, so the
+    # packages and the image ship docs matching the code (docs/index.html loads them).
+    - name: Generate Swagger docs
+      run: |
+        go install github.com/swaggo/swag/cmd/swag@v1.16.4
+        make swagger
+
     - name: Build binaries
       env:
         VERSION: ${{ steps.version.outputs.VERSION }}
@@ -104,15 +111,18 @@ jobs:
         path: packages/
         retention-days: 5
 
-    - name: Upload Linux binaries for the Docker image
+    - name: Upload Linux binaries and docs for the Docker image
       uses: actions/upload-artifact@v4
       with:
-        name: linux-binaries
+        name: docker-files
         path: |
           go_media_downloader-linux-amd64
           go_media_downloader-linux-arm64
           init_imdb-linux-amd64
           init_imdb-linux-arm64
+          docs/swagger.json
+          docs/swagger.yaml
+          docs/swagger.js
         retention-days: 1
   
   docker:
@@ -124,10 +134,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Download Linux binaries
+    # Overwrites the checked-out docs/swagger.* with the generated ones.
+    - name: Download Linux binaries and docs
       uses: actions/download-artifact@v4
       with:
-        name: linux-binaries
+        name: docker-files
 
     # Still needed: the runtime stage's RUN steps execute per platform.
     - name: Set up QEMU

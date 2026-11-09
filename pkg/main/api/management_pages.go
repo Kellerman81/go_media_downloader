@@ -1839,7 +1839,7 @@ func renderPushoverTestPage(csrfToken string) gomponents.Node {
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Send a test message through any configured notification (Pushover, Gotify, Pushbullet, Apprise, CSV) to verify it is working correctly.",
+							"Send a test message through any configured notification to verify it is working correctly.",
 						),
 					),
 				),
@@ -1888,15 +1888,12 @@ func renderPushoverTestPage(csrfToken string) gomponents.Node {
 					),
 					html.P(
 						gomponents.Text(
-							"The message is sent using the selected configuration's type:",
+							"The message is sent through the selected configuration with its own type and settings. "+
+								"Every notification type works: "+strings.Join(providers.NotificationTypeNames(), ", ")+".",
 						),
 					),
-					html.Ul(
-						html.Li(gomponents.Text("Pushover - uses the API token and recipient (user key)")),
-						html.Li(gomponents.Text("Gotify - uses the server URL and API token")),
-						html.Li(gomponents.Text("Pushbullet - uses the API token")),
-						html.Li(gomponents.Text("Apprise - uses the server URL and Apprise URLs")),
-						html.Li(gomponents.Text("CSV - appends the message to the configured output file")),
+					html.P(
+						gomponents.Text("A CSV notification appends the message to its output file; exec runs its command."),
 					),
 					html.P(
 						html.Class("mt-3"),

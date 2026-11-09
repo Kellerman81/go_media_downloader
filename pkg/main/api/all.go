@@ -50,84 +50,84 @@ func AddAllRoutes(rg *gin.RouterGroup) {
 	}
 }
 
-// @Summary      Search all feeds
-// @Description  Search all feeds of every configured media type for new entries
-// @Tags         feeds
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Import all lists of every media group
+// @Description  Runs the feeds job for every list of every configured media group: new entries from IMDB, Trakt, TMDB, RSS and the other list types are added to the database. The request waits until all imports are finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/feeds [get].
 func apiAllGetFeeds(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, logger.StrFeeds, true)
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Search all folders
-// @Description  Search all folders of every configured media type for new entries
-// @Tags         data
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Scan all library folders
+// @Description  Runs the data scan for every media group: scans the library paths for new, changed and removed files and updates the file tables. The request waits until all scans are finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/data [get].
 func apiAllGetData(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, "data", true)
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Search all rss feeds
-// @Description  Search all rss feeds of every configured media type for new releases
-// @Tags         search
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      RSS search for every media group
+// @Description  Reads the RSS feeds of the indexers of every media group and downloads accepted releases for missing items and upgrades. The request waits until all searches are finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/search/rss [get].
 func apiAllGetRss(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, logger.StrRss, true)
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Search all Missing
-// @Description  Search all media of every configured media type for missing releases
-// @Tags         search
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search all missing items (full)
+// @Description  Searches the indexers for every missing item of every media group and downloads accepted releases. Can take a long time and use many indexer calls. The request waits until finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/search/missing/full [get].
 func apiAllGetMissingFull(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchMissingFull, true)
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Search all Missing Incremental
-// @Description  Search all media of every configured media type for missing releases (incremental)
-// @Tags         search
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search missing items (incremental)
+// @Description  Searches the indexers for the missing items of every media group that were not searched recently (incremental batch) and downloads accepted releases. The request waits until finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/search/missing/inc [get].
 func apiAllGetMissingInc(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchMissingInc, true)
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Search all Upgrades
-// @Description  Search all media of every configured media type for upgrades
-// @Tags         search
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search all upgrades (full)
+// @Description  Searches the indexers for better releases of every item below its quality cutoff, in every media group, and downloads accepted upgrades. Can take a long time. The request waits until finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/search/upgrade/full [get].
 func apiAllGetUpgradeFull(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchUpgradeFull, true)
 	sendSuccess(c, StrOK)
 }
 
-// @Summary      Search all Upgrades Incremental
-// @Description  Search all media of every configured media type for upgrades (incremental)
-// @Tags         search
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search upgrades (incremental)
+// @Description  Searches the indexers for better releases of items below their quality cutoff that were not searched recently (incremental batch), in every media group. The request waits until finished and then returns ok.
+// @Tags         all
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Jobs queued for every media group"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/all/search/upgrade/inc [get].
 func apiAllGetUpgradeInc(c *gin.Context) {
 	utils.AllJobs(utils.MediaTypeAll, logger.StrSearchUpgradeInc, true)

@@ -398,6 +398,7 @@ func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 		SetString(&updatedConfig.MetaflacPath, "MetaflacPath").
 		SetString(&updatedConfig.UnrarPath, "UnrarPath").
 		SetString(&updatedConfig.SevenZipPath, "SevenZipPath").
+		SetString(&updatedConfig.WhisperURL, "WhisperURL").
 		SetString(&updatedConfig.UnzipPath, "UnzipPath").
 		SetString(&updatedConfig.TarPath, "TarPath").
 		SetBool(&updatedConfig.TvdbDisableTLSVerify, "TvdbDisableTLSVerify").

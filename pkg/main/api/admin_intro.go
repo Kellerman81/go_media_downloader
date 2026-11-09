@@ -558,7 +558,7 @@ func dashboardGuide() gomponents.Node {
 			"fas fa-magnifying-glass", "#fd7e14", "Find & download", "Search releases yourself or see what's still missing.",
 			[]guideLink{
 				{"fas fa-magnifying-glass-arrow-right", "Search & Download", "Search the indexers for one item and pick a release", "/api/admin/searchdownload"},
-				{"fas fa-bullseye", "Wanted", "Everything that is still missing or can be upgraded", "/api/admin/wanted"},
+				{"fas fa-bullseye", "Wanted", "Everything that is still missing", "/api/admin/wanted"},
 				{"fas fa-calendar-alt", "Calendar", "Upcoming and recent episodes and releases", "/api/admin/calendar"},
 				{"fas fa-list-check", "Missing episodes", "Series episodes without a file", "/api/admin/missing-episodes"},
 			},

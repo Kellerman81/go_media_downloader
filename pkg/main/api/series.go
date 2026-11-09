@@ -153,15 +153,15 @@ func AddSeriesRoutes(routerseries *gin.RouterGroup) {
 
 const querybydbserieid = "dbserie_id = ?"
 
-// @Summary      List Series
-// @Description  List Series
-// @Tags         series
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.Dbserie}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List series (metadata)
+// @Description  Returns the series of the dbseries table - one row per series with its metadata, independent of lists - paginated, with the total count.
+// @Tags         series · data
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.Dbserie}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series [get].
 func apiSeriesGet(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -178,13 +178,14 @@ func apiSeriesGet(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Delete Series
-// @Description  Delete Series
-// @Tags         series
-// @Param        id   path      int  true  "Series ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Delete a series everywhere
+// @Description  Deletes a series' metadata (dbseries), its episodes, its entries in all lists and their history and file rows. Files on disk are not touched.
+// @Tags         series · data
+// @Param        id   path      int  true  "ID of the series in the dbseries table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/{id} [delete].
 func apiSeriesDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -203,16 +204,16 @@ func apiSeriesDelete(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      List Series (List)
-// @Description  List Series
-// @Tags         series
-// @Param        name   path      string  true   "List Name"
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.ResultSeries}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List the series of a list
+// @Description  Returns the entries of one list (series table joined with dbseries), paginated, with the total count.
+// @Tags         series · data
+// @Param        name   path      string  true   "Name of the list (case-insensitive), as configured in the media group"
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.ResultSeries}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series/list/{name} [get].
 func apiSeriesListGet(ctx *gin.Context) {
 	listName, ok := getParamID(ctx, StrName)
@@ -240,13 +241,14 @@ func apiSeriesListGet(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Delete Series (List)
-// @Description  Delete Series
-// @Tags         series
+// @Summary      Remove a series from a list
+// @Description  Deletes one list entry (series table) with its episode, history and file rows. The series metadata and other lists stay. Files on disk are not touched.
+// @Tags         series · data
 // @Param        id   path      int  true  "Series list entry ID (series.id)"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/list/{id} [delete].
 func apiSeriesListDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -265,15 +267,15 @@ func apiSeriesListDelete(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      List Series Unmatched
-// @Description  List Unmatched episodes
-// @Tags         series
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.SerieFileUnmatched}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List unmatched episode files
+// @Description  Returns the episode files the organizer could not match (serie_file_unmatcheds), paginated, with the total count.
+// @Tags         series · data
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.SerieFileUnmatched}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series/unmatched [get].
 func apiSeriesUnmatched(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -290,15 +292,15 @@ func apiSeriesUnmatched(ctx *gin.Context) {
 	)
 }
 
-// @Summary      List Series Episodes
-// @Description  List episodes
-// @Tags         series
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.DbserieEpisode}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List episodes (metadata)
+// @Description  Returns the episodes of the dbserie_episodes table (metadata of all series), paginated, with the total count.
+// @Tags         series · episodes
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.DbserieEpisode}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series/episodes [get].
 func apiSeriesEpisodesGet(ctx *gin.Context) {
 	params := parsePaginationParams(ctx)
@@ -315,16 +317,16 @@ func apiSeriesEpisodesGet(ctx *gin.Context) {
 	)
 }
 
-// @Summary      List Series Episodes (Single)
-// @Description  List episodes
-// @Tags         series
-// @Param        id     path      int     true   "Series ID"
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.DbserieEpisode}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List the episodes of a series (metadata)
+// @Description  Returns the dbserie_episodes rows of one series, paginated, with the total count.
+// @Tags         series · episodes
+// @Param        id     path      int     true   "ID of the series in the dbseries table"
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.DbserieEpisode}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series/episodes/{id} [get].
 func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -350,13 +352,14 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Delete Episode
-// @Description  Delete Series Episode
-// @Tags         series
-// @Param        id   path      int  true  "Episode ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Delete an episode everywhere
+// @Description  Deletes an episode's metadata (dbserie_episodes) and its entries, history and file rows in all lists. Files on disk are not touched.
+// @Tags         series · episodes
+// @Param        id   path      int  true  "ID of the episode in the dbserie_episodes table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/episodes/{id} [delete].
 func apiSeriesEpisodesDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -373,16 +376,16 @@ func apiSeriesEpisodesDelete(ctx *gin.Context) {
 	handleDBError(ctx, err, StrOK)
 }
 
-// @Summary      List Series Episodes (List)
-// @Description  List episodes
-// @Tags         series
-// @Param        id     path      int     true   "Series ID"
-// @Param        limit  query     int     false  "Limit"
-// @Param        page   query     int     false  "Page"
-// @Param        order  query     string  false  "Order By"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200    {object}   Jsondatarows{data=[]database.ResultSerieEpisodes}
-// @Failure      401    {object}  Jsonerror
+// @Summary      List the episodes of a series list entry
+// @Description  Returns the serie_episodes rows (missing, quality, ...) of one series list entry joined with their metadata, paginated, with the total count.
+// @Tags         series · episodes
+// @Param        id     path      int     true   "series (list entry) ID"
+// @Param        limit  query     int     false  "Rows per page; without it all rows are returned"
+// @Param        page   query     int     false  "Page number, starting at 1; only used together with limit"
+// @Param        order  query     string  false  "Sort order: column names with optional asc/desc, e.g. 'id desc' or 'year desc, title'"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondatarows{data=[]database.ResultSerieEpisodes}  "One page of rows and the total row count"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series/episodes/list/{id} [get].
 func apiSeriesEpisodesListGet(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -410,13 +413,14 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 	)
 }
 
-// @Summary      Delete Episode (List)
-// @Description  Delete Series Episode
-// @Tags         series
-// @Param        id   path      int  true  "Episode ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns ok"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Remove an episode from a list entry
+// @Description  Deletes one serie_episodes row with its history and file rows. The episode metadata stays. Files on disk are not touched.
+// @Tags         series · episodes
+// @Param        id   path      int  true  "ID of the list entry in the serie_episodes table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonok  "Finished"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/episodes/list/{id} [delete].
 func apiSeriesEpisodesListDelete(ctx *gin.Context) {
 	id, ok := getParamID(ctx, StrID)
@@ -434,14 +438,17 @@ func apiSeriesEpisodesListDelete(ctx *gin.Context) {
 
 const allowedjobsseriesstr = "rss,rssseasons,rssseasonsall,data,datafull,checkmissing,checkmissingflag,checkreachedflag,structure,searchmissingfull,searchmissinginc,searchupgradefull,searchupgradeinc,searchmissingfulltitle,searchmissinginctitle,searchupgradefulltitle,searchupgradeinctitle,clearhistory,feeds,refresh,refreshinc"
 
-// @Summary      Start Jobs (All Lists)
-// @Description  Starts a Job
-// @Tags         series
-// @Param        job  path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns job name started"
-// @Failure      204  {object}  string "error message"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Start a job for all series groups
+// @Description  Queues the given job for every series media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.
+// @Tags         series · jobs
+// @Param        job  path      string  true  "Job to start, one of: rss, rssseasons, rssseasonsall, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonjobstarted  "'Job <job> started', or 'Nothing Done'"
+// @Failure      400  {object}  Jsonbadrequest  "Job is not allowed for this media type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/job/{job} [get].
 func apiseriesAllJobs(c *gin.Context) {
 	dispatchMediaAllJobs(c, mediaJobDispatchConfig{
@@ -451,15 +458,18 @@ func apiseriesAllJobs(c *gin.Context) {
 	})
 }
 
-// @Summary      Start Jobs
-// @Description  Starts a Job
-// @Tags         series
-// @Param        job   path      string  true  "Job Name one of: rss, data, datafull, checkmissing, checkmissingflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
-// @Param        name  path      string  true  "List Name: ex. list"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns job name started"
-// @Failure      204  {object}  string "error message"
-// @Failure      401   {object}  Jsonerror
+// @Summary      Start a job for one series group
+// @Description  Queues the given job for one series media group (list jobs like feeds once per enabled list) and returns how many were started. Returns immediately; the work runs in the job queue.
+// @Tags         series · jobs
+// @Param        job   path      string  true  "Job to start, one of: rss, rssseasons, rssseasonsall, data, datafull, checkmissing, checkmissingflag, checkreachedflag, structure, searchmissingfull, searchmissinginc, searchupgradefull, searchupgradeinc, searchmissingfulltitle, searchmissinginctitle, searchupgradefulltitle, searchupgradeinctitle, clearhistory, feeds, refresh, refreshinc"
+// @Param        name  path      string  true  "Media group name without type prefix, e.g. EN"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonjobstarted  "'Job <job> started', or 'Nothing Done'"
+// @Failure      400  {object}  Jsonbadrequest  "Job is not allowed for this media type"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/job/{job}/{name} [get].
 func apiseriesJobs(c *gin.Context) {
 	dispatchMediaJob(c, mediaJobDispatchConfig{
@@ -469,15 +479,14 @@ func apiseriesJobs(c *gin.Context) {
 	})
 }
 
-// @Summary      Update Series (Global)
-// @Description  Updates or creates a series
-// @Tags         series
-// @Param        series  body      database.Dbserie  true  "Series"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  int64
-// @Failure      403  {object}  error "error message"
-// @Failure      400     {object}  Jsonerror
-// @Failure      401  {object}  Jsonerror
+// @Summary      Add or update series metadata
+// @Description  Inserts the dbseries row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.
+// @Tags         series · data
+// @Param        series  body      database.Dbserie  true  "Series metadata row (dbseries); an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "ID of the new row, or the number of updated rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series [post].
 func updateDBSeries(c *gin.Context) {
 	var dbserie database.Dbserie
@@ -619,15 +628,14 @@ func updateDBSeries(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
 }
 
-// @Summary      Update Series Episodes (Global)
-// @Description  Updates or creates a episode
-// @Tags         series
-// @Param        episode  body      database.DbserieEpisode  true  "Episode"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}  int64
-// @Failure      403      {object}  error
-// @Failure      400      {object}  Jsonerror
-// @Failure      401      {object}  Jsonerror
+// @Summary      Add or update episode metadata
+// @Description  Inserts the dbserie_episodes row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.
+// @Tags         series · episodes
+// @Param        episode  body      database.DbserieEpisode  true  "Episode metadata row (dbserie_episodes); an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "ID of the new row, or the number of updated rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/episodes [post].
 func updateDBEpisode(c *gin.Context) {
 	var dbserieepisode database.DbserieEpisode
@@ -697,15 +705,14 @@ func updateDBEpisode(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
 }
 
-// @Summary      Update Series (List)
-// @Description  Updates or creates a series
-// @Tags         series
-// @Param        series  body      database.Serie  true  "Series"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  int64
-// @Failure      403     {object}  error "error message"
-// @Failure      400     {object}  Jsonerror
-// @Failure      401  {object}  Jsonerror
+// @Summary      Add or update a series list entry
+// @Description  Inserts the series (list entry) row when its id is 0 or unknown, otherwise updates it. Returns the number of affected rows.
+// @Tags         series · data
+// @Param        series  body      database.Serie  true  "Series list entry (series table); an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "ID of the new row, or the number of updated rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/list [post].
 func updateSeries(c *gin.Context) {
 	var serie database.Serie
@@ -751,15 +758,14 @@ func updateSeries(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
 }
 
-// @Summary      Update Series Episodes (List)
-// @Description  Updates or creates a episode
-// @Tags         series
-// @Param        episode  body      database.SerieEpisode  true  "Episode"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200      {object}  int64
-// @Failure      403      {object}  error
-// @Failure      400      {object}  Jsonerror
-// @Failure      401      {object}  Jsonerror
+// @Summary      Add or update an episode list entry
+// @Description  Inserts the serie_episodes row when its id is 0 or unknown, otherwise updates it (missing, quality profile, blacklisted, ...). Returns the number of affected rows.
+// @Tags         series · episodes
+// @Param        episode  body      database.SerieEpisode  true  "Episode list entry (serie_episodes); an ID that does not exist yet creates a new row"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "ID of the new row, or the number of updated rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/episodes/list [post].
 func updateEpisode(c *gin.Context) {
 	var serieepisode database.SerieEpisode
@@ -833,13 +839,16 @@ func updateEpisode(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, inerr, counter == 0)
 }
 
-// @Summary      Refresh Single Series
-// @Description  Refreshes Series Metadata
-// @Tags         series
-// @Param        id   path      int  true  "Serie ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh the metadata of one series
+// @Description  Queues a metadata refresh of one series and its episodes from the configured sources. Returns immediately; the work runs in the job queue.
+// @Tags         series · jobs
+// @Param        id   path      int  true  "ID of the series in the dbseries table"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No media group has this entry"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/refresh/{id} [get].
 func apirefreshSerie(c *gin.Context) {
 	id, ok := getParamID(c, StrID)
@@ -895,42 +904,55 @@ func apirefreshSerie(c *gin.Context) {
 	sendSuccess(c, StrStarted)
 }
 
-// @Summary      Refresh Series
-// @Description  Refreshes Series Metadata
-// @Tags         series
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh the metadata of all series
+// @Description  Queues a metadata refresh of every series in the lists of all series media groups. Returns immediately; the work runs in the job queue.
+// @Tags         series · jobs
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job; 'Nothing Done' when no configuration started it"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/all/refreshall [get].
 func apirefreshSeries(c *gin.Context) {
 	dispatchJobAllConfigs(c, logger.StrSerie, logger.StrSerie, "refresh", StrStarted)
 }
 
-// @Summary      Refresh Series Incremental
-// @Description  Refreshes Series Metadata
-// @Tags         series
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Refresh series metadata (incremental)
+// @Description  Queues a metadata refresh of the 20 least recently updated continuing series of each series media group. Returns immediately; the work runs in the job queue.
+// @Tags         series · jobs
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job; 'Nothing Done' when no configuration started it"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "No configuration of this media type"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/all/refresh [get].
 func apirefreshSeriesInc(c *gin.Context) {
 	dispatchJobAllConfigs(c, logger.StrSerie, logger.StrSerie, "refreshinc", StrStarted)
 }
 
-// @Summary      Search a series (all seasons)
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id   path      int  true  "Series ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Success      204  {object}  string "returns nothing done"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search all episodes of a series and download
+// @Description  Queues a search of the indexers for every episode of one series list entry and downloads the best accepted release per episode. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        id   path      int  true  "series (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Series not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/search/id/{id} [get].
 func apiSeriesSearch(c *gin.Context) {
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 
 	found := false
@@ -981,21 +1003,28 @@ func apiSeriesSearch(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a series (one season)
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id   path      int  true  "Series ID"
-// @Param        season  path      string  true  "Season"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Success      204  {object}  string "returns nothing done"
-// @Failure      401    {object}  Jsonerror
+// @Summary      Search the episodes of one season and download
+// @Description  Queues a search of the indexers for every episode of one season of a series list entry and downloads accepted releases. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        id   path      int  true  "series (list entry) ID"
+// @Param        season  path      string  true  "Season number as stored for the series, e.g. 1 (0 for specials)"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Series not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/search/id/{id}/{season} [get].
 func apiSeriesSearchSeason(c *gin.Context) {
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 	season := c.Param("season")
 
@@ -1049,20 +1078,27 @@ func apiSeriesSearchSeason(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a series (any season - one search call)
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id      path      int     true  "Series ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Success      204  {object}  string "returns nothing done"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search a series with one indexer call
+// @Description  Queues one indexer search by TVDB ID for the whole series (no season) and downloads accepted releases for its missing episodes and upgrades. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        id      path      int     true  "series (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Series not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/searchrss/id/{id} [get].
 func apiSeriesSearchRSS(c *gin.Context) {
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Select: "id, listname", Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 
 	found := false
@@ -1104,19 +1140,25 @@ func apiSeriesSearchRSS(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a series (any season - one search call)
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id      path      int     true  "Series ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  Jsonresults
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search a series with one call and show the results
+// @Description  Searches the indexers once by TVDB ID for the whole series, downloads accepted releases, and returns the accepted and denied releases.
+// @Tags         series · search
+// @Param        id      path      int     true  "series (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Series not found"
 // @Router       /api/series/searchrss/list/id/{id} [get].
 func apiSeriesSearchRSSList(c *gin.Context) {
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Select: "id, listname", Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 
 	found := false
@@ -1164,14 +1206,17 @@ func apiSeriesSearchRSSList(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a series (every season - one search call per season)
-// @Description  Searches for upgrades and missing, one RSS season search per season
-// @Tags         series
-// @Param        id      path      int     true  "Series ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Success      204  {object}  string "returns nothing done"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search every season of a series
+// @Description  Queues one indexer search per season (by TVDB ID and season) for a series list entry and downloads accepted releases, e.g. season packs. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        id      path      int     true  "series (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Series not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/searchrss/seasons/id/{id} [get].
 func apiSeriesSearchRSSSeasons(c *gin.Context) {
 	serie, err := database.GetSeries(
@@ -1220,21 +1265,28 @@ func apiSeriesSearchRSSSeasons(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a series (one season - one search call)
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id      path      int     true  "Series ID"
-// @Param        season  path      string  true  "Season"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200   {object}  string "returns started"
-// @Success      204   {object}  string "returns nothing done"
-// @Failure      401   {object}  Jsonerror
+// @Summary      Search one season with one indexer call
+// @Description  Queues one indexer search by TVDB ID and season for a series list entry and downloads accepted releases, e.g. a season pack. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        id      path      int     true  "series (list entry) ID"
+// @Param        season  path      string  true  "Season number as stored for the series, e.g. 1 (0 for specials)"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Series not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/searchrss/id/{id}/{season} [get].
 func apiSeriesSearchRSSSeason(c *gin.Context) {
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Select: "id, listname", Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 	season := c.Param("season")
 
@@ -1283,14 +1335,17 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a episode
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id   path      int  true  "Episode ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200  {object}  string "returns started"
-// @Success      204  {object}  string "returns nothing done"
-// @Failure      401  {object}  Jsonerror
+// @Summary      Search an episode and download
+// @Description  Queues a search of the indexers for one episode (missing or upgrade) and downloads the best accepted release. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        id   path      int  true  "serie_episodes (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Episode or series not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/episodes/search/id/{id} [get].
 func apiSeriesEpisodeSearch(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param(logger.StrID))
@@ -1298,6 +1353,10 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	dbid := c.Param(logger.StrID)
 	serieid := database.Getdatarow[uint](false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
 	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 
 	found := false
@@ -1356,27 +1415,38 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 	}
 }
 
-// @Summary      Search a episode (list ok, nok)
-// @Description  Searches for upgrades and missing
-// @Tags         series
-// @Param        id             path      int     true   "Episode ID"
-// @Param        searchByTitle  query     string  false  "searchByTitle"
-// @Param        download       query     bool    false  "download"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200            {object}  Jsonresults
-// @Failure      401            {object}  string
+// @Summary      Search an episode and show the results
+// @Description  Searches the indexers for one episode and waits for the result: returns the accepted and denied releases with the reasons. download=true also downloads the best accepted release.
+// @Tags         series · search
+// @Param        id             path      int     true   "serie_episodes (list entry) ID"
+// @Param        searchByTitle  query     string  false  "true: also search by title, not only by TVDB ID"
+// @Param        download       query     bool    false  "true: download the best accepted release"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Episode or series not found"
+// @Failure      404  {object}  string  "failed with <search error> (plain JSON string)"
 // @Router       /api/series/episodes/search/list/{id} [get].
 func apiSeriesEpisodeSearchList(c *gin.Context) {
 	serieepi, _ := database.GetSerieEpisodes(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
 	)
+	if serieepi == nil {
+		sendNotFound(c, "Episode not found")
+		return
+	}
 	// defer logger.ClearVar(&serieepi)
 
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
 		serieepi.SerieID,
 	)
+	if serie == nil {
+		sendNotFound(c, "Series not found")
+		return
+	}
 	// defer logger.ClearVar(&serie)
 
 	titlesearch := false
@@ -1430,13 +1500,15 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 	}
 }
 
-// @Summary      Series RSS (list ok, nok)
-// @Description  Series RSS
-// @Tags         series
-// @Param        group  path      string  true  "Group Name"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  Jsonresults
-// @Failure      401     {object}  Jsonerror
+// @Summary      Preview the RSS search of a series group
+// @Description  Reads the indexers' RSS feeds for one series media group and returns the accepted and denied releases. Nothing is downloaded.
+// @Tags         series · search
+// @Param        group  path      string  true  "Media group name without type prefix, e.g. EN"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonresults  "Releases the indexers returned, split into accepted and denied with the reason"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  string  "failed with <search error> (plain JSON string)"
 // @Router       /api/series/rss/search/list/{group} [get].
 func apiSeriesRssSearchList(c *gin.Context) {
 	found := false
@@ -1484,16 +1556,19 @@ func apiSeriesRssSearchList(c *gin.Context) {
 	}
 }
 
-// @Summary      Download a episode (manual)
-// @Description  Downloads a release after select
-// @Tags         series
+// @Summary      Download a chosen release for an episode
+// @Description  Sends the given release (e.g. one from /episodes/search/list) for the episode to the download client of the indexer's quality profile entry.
+// @Tags         series · search
 // @Param        nzb  body      apiexternal_v2.Nzbwithprio  true  "Nzb: Req. Title, Indexer, tvdbid, downloadurl, parseinfo"
-// @Param        id   path      int                     true  "Episode ID"
+// @Param        id   path      int                     true  "ID of the list entry in the serie_episodes table"
 // @Param        indexer query  string                  true  "Indexer config name the release came from"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  string "returns started"
-// @Success      204     {object}  string "returns nothing done"
-// @Failure      400     {object}  Jsonerror
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Success      204  "Nothing Done - no media group or nothing to search (no body)"
+// @Failure      400  {object}  Jsonbadrequest  "Invalid id or body, or IDs do not match"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Episode or series not found"
+// @Failure      500  {object}  Jsonerror  "Download failed"
 // @Router       /api/series/episodes/search/download/{id} [post].
 func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param(logger.StrID), 10, 64)
@@ -1565,26 +1640,29 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 	}
 }
 
-// @Summary      Clear History (Full List)
-// @Description  Clear Episode Download History
-// @Tags         series
-// @Param        name  path      string  true  "List Name"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  string "returns started"
-// @Failure      401     {object}  Jsonerror
+// @Summary      Clear the download history of a group or list
+// @Description  Queues deleting the episode download history of a series media group (or of one of its lists), so releases can be downloaded again. Returns immediately; the work runs in the job queue.
+// @Tags         series · search
+// @Param        name  path      string  true  "Media group name, or the name of one of its lists (the whole group is processed)"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsonstarted  "Queued as a background job"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      404  {object}  Jsonnotfound  "Media group or list not found"
+// @Failure      409  {object}  Jsonconflict  "The job is already queued"
+// @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/search/history/clear/{name} [get].
 func apiSeriesClearHistoryName(c *gin.Context) {
 	dispatchClearHistory(c, logger.StrSerie, logger.StrSerie, c.Param(StrName))
 }
 
-// @Summary      Clear History (Single Item)
-// @Description  Clear Episode Download History
-// @Tags         series
-// @Param        id   path      string  true  "Episode ID"
-// @Param        apikey query     string    true  "apikey"
-// @Success      200     {object}  int64
-// @Failure      403     {object}  error
-// @Failure      401     {object}  Jsonerror
+// @Summary      Clear the download history of an episode
+// @Description  Deletes all download history rows of one episode list entry, so its releases can be downloaded again. Returns the number of deleted rows.
+// @Tags         series · search
+// @Param        id   path      string  true  "serie_episodes (list entry) ID"
+// @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsoncount  "Number of deleted history rows"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
+// @Failure      403  {object}  Jsonforbidden  "Database error"
 // @Router       /api/series/search/history/clearid/{id} [get].
 func apiSeriesClearHistoryID(c *gin.Context) {
 	id, ok := getParamID(c, StrID)
@@ -1596,15 +1674,16 @@ func apiSeriesClearHistoryID(c *gin.Context) {
 	handleDBInsertOrUpdate(c, inres, inerr, false)
 }
 
-// @Summary      Get Series Metadata
-// @Description  Gets metadata of a series by TVDB ID (for testing). Use ?update=1 to save results to DB.
-// @Tags         series
-// @Param        tvdb      path   int     true   "TVDB ID"
+// @Summary      Look up series metadata
+// @Description  Fetches the metadata of a series by TVDB ID from TVDB, or from the given provider, and returns it. update=1 also saves it to dbseries.
+// @Tags         series · data
+// @Param        tvdb      path   int     true   "TheTVDB ID of the series"
 // @Param        provider  query  string  false  "Provider: tvdb (default), tmdb, trakt"
 // @Param        update    query  string  false  "Save to DB: 1"
-// @Param        apikey    query  string  true   "apikey"
-// @Success      200  {object}  Jsondata{data=database.Dbserie}
-// @Failure      401  {object}  Jsonerror
+// @Param        apikey    query  string  true   "API key: the webapikey setting from [general] in config.toml"
+// @Success      200  {object}  Jsondata{data=database.Dbserie}  "Series metadata from the configured providers (not saved)"
+// @Failure      400  {object}  Jsonbadrequest  "invalid tvdb id"
+// @Failure      401  {object}  Jsonunauthorized  "Missing or wrong apikey"
 // @Router       /api/series/metadata/{tvdb} [get].
 func apiSeriesMetadataGet(ctx *gin.Context) {
 	tvdbID, err := strconv.Atoi(ctx.Param("tvdb"))
