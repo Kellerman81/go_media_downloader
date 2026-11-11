@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -297,5 +298,92 @@ func TestParseMoovAudioTrackSelection(t *testing.T) {
 
 	if tags.Channels != 2 || tags.BitDepth != 24 || tags.SampleRate != 96000 {
 		t.Fatalf("channels=%d depth=%d rate=%d", tags.Channels, tags.BitDepth, tags.SampleRate)
+	}
+}
+
+func TestTrakBitrate(t *testing.T) {
+	// mdhd v0: version/flags, creation, modification, timescale, duration, language.
+	mdhd := make([]byte, 24)
+	binary.BigEndian.PutUint32(mdhd[12:16], 1000)  // timescale
+	binary.BigEndian.PutUint32(mdhd[16:20], 10000) // 10 s
+	mdia := mp4Box("mdhd", mdhd)
+
+	stsz := func(constant uint32, sizes ...uint32) []mp4box {
+		body := make([]byte, 12+4*len(sizes))
+		binary.BigEndian.PutUint32(body[4:8], constant)
+
+		count := uint32(len(sizes))
+		if constant > 0 {
+			count = 100
+		}
+
+		binary.BigEndian.PutUint32(body[8:12], count)
+
+		for i, s := range sizes {
+			binary.BigEndian.PutUint32(body[12+4*i:], s)
+		}
+
+		return mp4children(mp4Box("stsz", body))
+	}
+
+	truncatedStsz := func() []mp4box {
+		body := make([]byte, 16) // claims 3 sizes, holds 1
+		binary.BigEndian.PutUint32(body[8:12], 3)
+		binary.BigEndian.PutUint32(body[12:16], 1000)
+
+		return mp4children(mp4Box("stsz", body))
+	}
+
+	tests := []struct {
+		name string
+		stbl []mp4box
+		want int
+	}{
+		{"sample sizes", stsz(0, 1000, 2000, 2000), 4}, // 5000 B in 10 s
+		{"constant size", stsz(500), 40},               // 100 × 500 B in 10 s
+		{"short sample", stsz(0, 1000), 1},             // 1000 B in 10 s = 0.8
+		{"truncated table", truncatedStsz(), 0},
+		{"no stsz", nil, 0},
+	}
+
+	for _, tt := range tests {
+		if got := trakBitrate(mdia, tt.stbl); got != tt.want {
+			t.Errorf("%s: got %d kbps, want %d", tt.name, got, tt.want)
+		}
+	}
+
+	if got := trakBitrate(nil, stsz(500)); got != 0 {
+		t.Errorf("no mdhd: got %d kbps, want 0", got)
+	}
+}
+
+func TestMP4ReadBitrateMatchesFFprobe(t *testing.T) {
+	requireFFmpegTools(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.m4b")
+
+	genFixture(t, "-f", "lavfi", "-i", "anoisesrc=duration=20:amplitude=0.5", "-c:a", "aac",
+		"-b:a", "128k", "-f", "mp4", path)
+
+	got, err := NewMP4Handler().ReadTags(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runTool(t, "ffprobe", "-v", "error", "-select_streams", "a",
+		"-show_entries", "stream=bit_rate", "-of", "csv=p=0", path)
+	if err != nil {
+		t.Fatalf("ffprobe: %v %s", err, out)
+	}
+
+	want, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("ffprobe bit_rate %q: %v", out, err)
+	}
+
+	want /= 1000
+	if diff := got.Bitrate - want; diff < -2 || diff > 2 {
+		t.Errorf("bitrate %d kbps, ffprobe says %d kbps", got.Bitrate, want)
 	}
 }

@@ -176,6 +176,9 @@ func parseMediaDataConfigs(
 			SetInt(&cfg.PerTrackToleranceSecondsMax, "PerTrackToleranceSecondsMax").
 			SetInt(&cfg.MaxTotalDifferenceSeconds, "MaxTotalDifferenceSeconds").
 			SetBool(&cfg.AllowMissingTracks, "AllowMissingTracks").
+			SetBool(&cfg.AllowExtraTracks, "AllowExtraTracks").
+			SetBool(&cfg.AllowCountMismatchIfTotalMatch, "AllowCountMismatchIfTotalMatch").
+			SetBool(&cfg.ReplaceEmbeddedChapters, "ReplaceEmbeddedChapters").
 			SetBool(&cfg.ExceedToleranceIfTotalMatch, "ExceedToleranceIfTotalMatch").
 			SetFloat64(&cfg.StrongRecThresh, "StrongRecThresh").
 			SetFloat64(&cfg.MediumRecThresh, "MediumRecThresh").
@@ -231,6 +234,9 @@ func parseMediaDataImportConfigs(
 			SetInt(&cfg.PerTrackToleranceSecondsMax, "PerTrackToleranceSecondsMax").
 			SetInt(&cfg.MaxTotalDifferenceSeconds, "MaxTotalDifferenceSeconds").
 			SetBool(&cfg.AllowMissingTracks, "AllowMissingTracks").
+			SetBool(&cfg.AllowExtraTracks, "AllowExtraTracks").
+			SetBool(&cfg.AllowCountMismatchIfTotalMatch, "AllowCountMismatchIfTotalMatch").
+			SetBool(&cfg.ReplaceEmbeddedChapters, "ReplaceEmbeddedChapters").
 			SetBool(&cfg.ExceedToleranceIfTotalMatch, "ExceedToleranceIfTotalMatch").
 			SetFloat64(&cfg.StrongRecThresh, "StrongRecThresh").
 			SetFloat64(&cfg.MediumRecThresh, "MediumRecThresh").
@@ -399,6 +405,7 @@ func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 		SetString(&updatedConfig.UnrarPath, "UnrarPath").
 		SetString(&updatedConfig.SevenZipPath, "SevenZipPath").
 		SetString(&updatedConfig.WhisperURL, "WhisperURL").
+		SetString(&updatedConfig.HeadlessChromeURL, "HeadlessChromeURL").
 		SetString(&updatedConfig.UnzipPath, "UnzipPath").
 		SetString(&updatedConfig.TarPath, "TarPath").
 		SetBool(&updatedConfig.TvdbDisableTLSVerify, "TvdbDisableTLSVerify").

@@ -3,6 +3,7 @@ package importfeed
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -74,7 +75,11 @@ type PreviewCandidate struct {
 	Dist       float64
 	Missing    int
 	Extra      int
-	Rows       []PreviewTrack
+	// CountOK is set when Missing and Extra are acceptable under
+	// allow_missing_tracks / allow_extra_tracks, or the release passes
+	// allow_count_mismatch_if_total_match.
+	CountOK bool
+	Rows    []PreviewTrack
 
 	// What ImportPreviewCandidate needs to create a non-MusicBrainz music
 	// release as a synthetic album.
@@ -349,8 +354,18 @@ func previewMusicFolder(
 		}
 
 		pc.AlbumDist = albumMatchDistance(mc.c, artist, albumTitle, mbid, "", "", meta.Year, fileCount, data)
-		pc.Dist = albumDistanceWithTracks(mc.c, artist, albumTitle, mbid, meta.Year, tracks, mc.dbTracks, isVA, data)
 		pc.Rows, pc.Missing, pc.Extra = previewTrackRows(tracks, mc.dbTracks, isVA, false, data)
+
+		candData := data
+		pc.CountOK = trackCountAllowed(data, pc.Missing, pc.Extra)
+		if !pc.CountOK && countMismatchTotalMatch(data,
+			albumMetaDistance(mc.c, artist, albumTitle, mbid, meta.Year, data),
+			localTotalMs, pc.RuntimeMS, pc.Tracks) {
+			pc.CountOK = true
+			candData = withCountMismatchAllowed(data)
+		}
+
+		pc.Dist = albumDistanceWithTracks(mc.c, artist, albumTitle, mbid, meta.Year, tracks, mc.dbTracks, isVA, candData)
 
 		entry.Candidates = append(entry.Candidates, pc)
 	}
@@ -869,13 +884,34 @@ func (a *audiobookCandidates) score(
 		}
 
 		pc.AlbumDist = audiobookMatchDistance(ac.c, title, author, len(tracks))
-		pc.Dist = audiobookDistanceWithTracks(ac.c, title, author, tracks, dbTracks, data)
+
+		candData := data
+		pc.CountOK = true
 
 		if len(tracks) == 1 && len(dbTracks) > 1 {
 			pc.Rows = []PreviewTrack{singleFilePreviewRow(ac.c, &tracks[0], dbTracks, data)}
+			if len(tracks[0].Chapters) == len(dbTracks) {
+				// The chapter pairing, when audiobookDistanceWithTracks scores it
+				// (every chapter paired); otherwise the total decides.
+				rows, missing, extra := previewTrackRows(embeddedChapterTracks(&tracks[0]), dbTracks, isVA, true, data)
+				if missing == 0 && extra == 0 {
+					pc.Rows = rows
+				}
+			}
+		} else if repacked, ok := repackedAudiobookTracks(ac.c, tracks, dbTracks, data); ok {
+			pc.Rows = repackedPreviewRows(ac.c, repacked, len(dbTracks))
 		} else {
 			pc.Rows, pc.Missing, pc.Extra = previewTrackRows(tracks, dbTracks, isVA, true, data)
+
+			pc.CountOK = trackCountAllowed(data, pc.Missing, pc.Extra)
+			if !pc.CountOK && countMismatchTotalMatch(data, audiobookMetaDistance(ac.c, title, author),
+				tracksTotalMs(tracks), pc.RuntimeMS, pc.Tracks) {
+				pc.CountOK = true
+				candData = withCountMismatchAllowed(data)
+			}
 		}
+
+		pc.Dist = audiobookDistanceWithTracks(ac.c, title, author, tracks, dbTracks, candData)
 
 		entry.Candidates = append(entry.Candidates, pc)
 	}
@@ -889,6 +925,8 @@ func previewAudiobookFolder(
 	data *config.MediaDataConfig,
 ) *PreviewEntry {
 	tracks := parser_v2.EnrichTracksWithTags(parser_v2.CollectTracksFromFiles(files))
+	readEmbeddedChapters(ctx, tracks)
+
 	meta := parseFolderMetadata(folder, files, data)
 	author, title := meta.audiobookQuery()
 
@@ -979,6 +1017,36 @@ func singleFilePreviewRow(
 		WantedRuntimeMS: chaptersMs,
 		Dist:            dist,
 	}
+}
+
+// repackedPreviewRows lists files cut differently than the candidate's
+// chapters (see repackedAudiobookTracks), each as the part it will be filed
+// as, with the total-runtime distance.
+func repackedPreviewRows(
+	c *database.AudiobookSearchResult,
+	repacked []parser_v2.TrackInfo,
+	chapters int,
+) []PreviewTrack {
+	rows := make([]PreviewTrack, len(repacked))
+	for i := range repacked {
+		t := &repacked[i]
+		rows[i] = PreviewTrack{
+			LocalFile:       t.Filename,
+			LocalTitle:      t.Title,
+			LocalArtist:     t.Artist,
+			LocalTrack:      t.TrackNumber,
+			LocalDisc:       1,
+			LocalRuntimeMS:  t.RuntimeMS,
+			WantedTitle:     fmt.Sprintf("%s (part %d, %d chapters in total)", c.Title, i+1, chapters),
+			WantedArtist:    c.Author,
+			WantedTrack:     t.TrackNumber,
+			WantedDisc:      1,
+			WantedRuntimeMS: t.RuntimeMS,
+			Dist:            min(t.TrackDist, 1.0),
+		}
+	}
+
+	return rows
 }
 
 // ── Shared ───────────────────────────────────────────────────────────────────

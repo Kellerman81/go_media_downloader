@@ -2,13 +2,16 @@ package importfeed
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -739,6 +742,70 @@ func countUnmatched(matched, used []bool) (unmatchedDB, unusedLocal int) {
 	return
 }
 
+// trackCountAllowed reports whether a release that leaves unmatchedDB of its
+// tracks without a local file and unusedLocal local files without a track is
+// acceptable: missing tracks need allow_missing_tracks, extra files
+// allow_extra_tracks.
+func trackCountAllowed(data *config.MediaDataConfig, unmatchedDB, unusedLocal int) bool {
+	if unmatchedDB > 0 && (data == nil || !data.AllowMissingTracks) {
+		return false
+	}
+
+	return unusedLocal == 0 || (data != nil && data.AllowExtraTracks)
+}
+
+// countMismatchTotalMatch reports whether allow_count_mismatch_if_total_match
+// accepts a release despite missing or extra tracks: its tags match on their
+// own (metaDist, the distance without track-count penalties, within
+// medium_rec_thresh) and the local total runtime localMs matches its total
+// expectedMs (see runtimeDiffWithinTolerance, per track of the release).
+func countMismatchTotalMatch(
+	data *config.MediaDataConfig,
+	metaDist float64,
+	localMs, expectedMs int64,
+	releaseTracks int,
+) bool {
+	if data == nil || !data.AllowCountMismatchIfTotalMatch || localMs <= 0 {
+		return false
+	}
+
+	if _, medium := recThresholds(data); metaDist > medium {
+		return false
+	}
+
+	return runtimeDiffWithinTolerance(localMs, expectedMs, releaseTracks, data)
+}
+
+// withCountMismatchAllowed returns a copy of data with allow_missing_tracks
+// and allow_extra_tracks on, for one release countMismatchTotalMatch accepted.
+func withCountMismatchAllowed(data *config.MediaDataConfig) *config.MediaDataConfig {
+	relaxed := *data
+	relaxed.AllowMissingTracks = true
+	relaxed.AllowExtraTracks = true
+
+	return &relaxed
+}
+
+// dbTracksTotalMs is the summed runtime of a release's tracks.
+func dbTracksTotalMs(dbTracks []database.DbtrackWithArtist) int64 {
+	var total int64
+	for i := range dbTracks {
+		total += dbTracks[i].RuntimeMs
+	}
+
+	return total
+}
+
+// tracksTotalMs is the summed runtime of local files.
+func tracksTotalMs(tracks []parser_v2.TrackInfo) int64 {
+	var total int64
+	for i := range tracks {
+		total += tracks[i].RuntimeMS
+	}
+
+	return total
+}
+
 // runtimeDiffWithinTolerance returns true when |localMs - expectedMs| is within
 // the configured tolerance (per-track or max-total).
 func runtimeDiffWithinTolerance(
@@ -1074,8 +1141,18 @@ func runMusicCandidateMatchingLoop(
 			continue
 		}
 
+		// The list is sorted by dist, but with allow_count_mismatch_if_total_match
+		// a release over maxDist only for its track count may still qualify.
+		metaDist := -1.0
 		if preScored[i].dist > maxDist {
-			break
+			if data == nil || !data.AllowCountMismatchIfTotalMatch {
+				break
+			}
+
+			metaDist = albumMetaDistance(preScored[i].c, artist, albumTitle, musicBrainzID, year, data)
+			if metaDist > maxDist {
+				continue
+			}
 		}
 
 		dbTracks := resolveTracksForMatching(
@@ -1092,17 +1169,29 @@ func runMusicCandidateMatchingLoop(
 		result, matched, used := matchTracksByDistance(albumTracks, dbTracks, isVA, false, data)
 		unmatchedDB, unusedLocal := countUnmatched(matched, used)
 
-		if (unmatchedDB > 0 || unusedLocal > 0) && (data == nil || !data.AllowMissingTracks) {
-			if !withTierTwo ||
-				!tierTwoRuntimeAccepted(preScored[i].c, dbTracks, localTotalMs, fileCount, data) {
+		candData := data
+		if !trackCountAllowed(data, unmatchedDB, unusedLocal) {
+			if metaDist < 0 {
+				metaDist = albumMetaDistance(preScored[i].c, artist, albumTitle, musicBrainzID, year, data)
+			}
+
+			switch {
+			case countMismatchTotalMatch(data, metaDist, localTotalMs, dbTracksTotalMs(dbTracks), len(dbTracks)):
+				candData = withCountMismatchAllowed(data)
+			case preScored[i].dist <= maxDist && withTierTwo &&
+				tierTwoRuntimeAccepted(preScored[i].c, dbTracks, localTotalMs, fileCount, data):
+			default:
 				continue
 			}
+		} else if preScored[i].dist > maxDist {
+			// Only the track count put it over maxDist, and it was not verified.
+			continue
 		}
 
-		matchedTracks := applyTrackDBOverrides(result, matched, dbTracks, isVA, false, data)
+		matchedTracks := applyTrackDBOverrides(result, matched, dbTracks, isVA, false, candData)
 		fullDist := albumDistanceWithTracks(
 			preScored[i].c, artist, albumTitle, musicBrainzID, year,
-			albumTracks, dbTracks, isVA, data,
+			albumTracks, dbTracks, isVA, candData,
 		)
 
 		validMatches = append(
@@ -1198,12 +1287,11 @@ func runAudiobookCandidatePass(
 
 	var validMatches []audiobookValidMatch
 	for i := range bestCandidates {
-		if audiobookMatchDistance(
-			bestCandidates[i],
-			albumTitle,
-			artist,
-			fileCount,
-		) > mediumThresh {
+		// A chapter count other than the file count is no reason to skip when
+		// the files may be cut differently; repackedAudiobookTracks decides.
+		if audiobookMatchDistance(bestCandidates[i], albumTitle, artist, fileCount) > mediumThresh &&
+			(fileCount < 2 || bestCandidates[i].ChapterCount == fileCount ||
+				audiobookMetaDistance(bestCandidates[i], albumTitle, artist) > mediumThresh) {
 			continue
 		}
 
@@ -1231,16 +1319,35 @@ func runAudiobookCandidatePass(
 			continue
 		}
 
-		result, matched, used := matchTracksByDistance(albumTracks, dbTracks, isVA, true, data)
+		if tr, ok := repackedAudiobookTracks(bestCandidates[i], albumTracks, dbTracks, data); ok {
+			validMatches = append(validMatches, audiobookValidMatch{
+				bestCandidates[i],
+				audiobookDistanceWithTracks(
+					bestCandidates[i], albumTitle, artist, albumTracks, dbTracks, data,
+				),
+				tr,
+			})
 
-		unmatchedDB, unusedLocal := countUnmatched(matched, used)
-		if (unmatchedDB > 0 || unusedLocal > 0) && (data == nil || !data.AllowMissingTracks) {
 			continue
 		}
 
-		matchedTracks := applyTrackDBOverrides(result, matched, dbTracks, isVA, true, data)
+		result, matched, used := matchTracksByDistance(albumTracks, dbTracks, isVA, true, data)
+
+		unmatchedDB, unusedLocal := countUnmatched(matched, used)
+
+		candData := data
+		if !trackCountAllowed(data, unmatchedDB, unusedLocal) {
+			if !countMismatchTotalMatch(data, audiobookMetaDistance(bestCandidates[i], albumTitle, artist),
+				tracksTotalMs(albumTracks), dbTracksTotalMs(dbTracks), len(dbTracks)) {
+				continue
+			}
+
+			candData = withCountMismatchAllowed(data)
+		}
+
+		matchedTracks := applyTrackDBOverrides(result, matched, dbTracks, isVA, true, candData)
 		fullDist := audiobookDistanceWithTracks(
-			bestCandidates[i], albumTitle, artist, albumTracks, dbTracks, data,
+			bestCandidates[i], albumTitle, artist, albumTracks, dbTracks, candData,
 		)
 
 		validMatches = append(
@@ -1256,9 +1363,126 @@ func runAudiobookCandidatePass(
 	return validMatches
 }
 
+// repackedAudiobookTracks verifies files cut differently than the candidate's
+// chapters (see repackedTotalMatch) by total runtime and returns them in disc
+// and track order, numbered 1..n. A file keeps its own title; one without
+// gets the book title and its number.
+func repackedAudiobookTracks(
+	c *database.AudiobookSearchResult,
+	local []parser_v2.TrackInfo,
+	dbTracks []database.DbtrackWithArtist,
+	data *config.MediaDataConfig,
+) ([]parser_v2.TrackInfo, bool) {
+	var chaptersMs int64
+	for i := range dbTracks {
+		chaptersMs += dbTracks[i].RuntimeMs
+	}
+
+	ok, diffMs, toleranceMs := repackedTotalMatch(local, chaptersMs, len(dbTracks), data)
+	if !ok {
+		return nil, false
+	}
+
+	out := slices.Clone(local)
+	slices.SortStableFunc(out, func(a, b parser_v2.TrackInfo) int {
+		if a.DiscNumber != b.DiscNumber {
+			return a.DiscNumber - b.DiscNumber
+		}
+
+		return a.TrackNumber - b.TrackNumber
+	})
+
+	for i := range out {
+		out[i].TrackNumber = i + 1
+		out[i].DiscNumber = 1
+		out[i].ExpectedRuntimeMS = 0 // no chapter corresponds to the file
+		out[i].TrackDist = float64(diffMs) / float64(toleranceMs)
+
+		if out[i].Title == "" {
+			out[i].Title = fmt.Sprintf("%s - %03d", c.Title, i+1)
+		}
+	}
+
+	return out, true
+}
+
+// readEmbeddedChapters loads the chapter list of a single-file audiobook into
+// tracks[0].Chapters, so that audiobookDistanceWithTracks can compare the file
+// chapter by chapter. Folders with more than one file are left alone: their
+// files are the chapters.
+func readEmbeddedChapters(ctx context.Context, tracks []parser_v2.TrackInfo) {
+	if len(tracks) != 1 || tracks[0].Filepath == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	chapters, err := parser_v2.ReadEmbeddedChapters(ctx, tracks[0].Filepath)
+	if err != nil {
+		logger.Logtype("debug", 1).
+			Err(err).
+			Str(logger.StrFile, tracks[0].Filepath).
+			Msg("Reading embedded chapters failed")
+
+		return
+	}
+
+	if len(chapters) > 1 {
+		tracks[0].Chapters = chapters
+	}
+}
+
+// AddReleaseChapters reads the chapters embedded in track, the one file of
+// single-file audiobook dbID, and sets track.ReleaseChapters from the
+// audiobook's chapters (releaseChapterList), which TagAlbumFiles then writes
+// into the file.
+func AddReleaseChapters(
+	ctx context.Context,
+	track *parser_v2.TrackInfo,
+	dbID uint,
+	asin, region string,
+	data *config.MediaDataConfig,
+) {
+	tracks := []parser_v2.TrackInfo{*track}
+
+	readEmbeddedChapters(ctx, tracks)
+
+	track.Chapters = tracks[0].Chapters
+	track.ReleaseChapters = releaseChapterList(
+		track, resolveChaptersForMatching(ctx, dbID, asin, region), data,
+	)
+}
+
+// embeddedChapterTracks returns the embedded chapters of local as one track
+// each, for scoring against a candidate's chapters.
+func embeddedChapterTracks(local *parser_v2.TrackInfo) []parser_v2.TrackInfo {
+	out := make([]parser_v2.TrackInfo, len(local.Chapters))
+	for i := range local.Chapters {
+		out[i] = parser_v2.TrackInfo{
+			Filepath:    local.Filepath,
+			Filename:    local.Filename,
+			Extension:   local.Extension,
+			Title:       local.Chapters[i].Title,
+			Artist:      local.Artist,
+			AlbumArtist: local.AlbumArtist,
+			Album:       local.Album,
+			TrackNumber: i + 1,
+			DiscNumber:  1,
+			RuntimeMS:   local.Chapters[i].RuntimeMS,
+			Runtime:     time.Duration(local.Chapters[i].RuntimeMS) * time.Millisecond,
+			IsChapter:   true,
+			ChapterNum:  i + 1,
+		}
+	}
+
+	return out
+}
+
 // singleFileAudiobookTrack verifies one local file holding a whole book against
 // the candidate's chapters by total runtime, and returns the file as the
-// book's only track.
+// book's only track, carrying the chapter list to write into it
+// (releaseChapterList).
 func singleFileAudiobookTrack(
 	c *database.AudiobookSearchResult,
 	local *parser_v2.TrackInfo,
@@ -1281,6 +1505,7 @@ func singleFileAudiobookTrack(
 	tr.Title = c.Title
 	tr.ExpectedRuntimeMS = chaptersMs
 	tr.TrackDist = float64(diffMs) / float64(toleranceMs)
+	tr.ReleaseChapters = releaseChapterList(local, dbTracks, data)
 
 	return tr, true
 }
@@ -1292,6 +1517,7 @@ func selectAudiobookCandidatesWithRefresh(
 	ctx context.Context,
 	allMatches []*database.AudiobookSearchResult,
 	fileCount int,
+	localTotalMs int64,
 	data *config.MediaDataConfig,
 	albumTitle, artist string,
 	cfgp *config.MediaTypeConfig,
@@ -1300,7 +1526,7 @@ func selectAudiobookCandidatesWithRefresh(
 		return nil, nil
 	}
 
-	bestCandidates := selectBestAudiobookMatches(allMatches, fileCount, data, albumTitle, artist)
+	bestCandidates := selectBestAudiobookMatches(allMatches, fileCount, localTotalMs, data, albumTitle, artist)
 	if len(bestCandidates) > 0 {
 		return bestCandidates, bestCandidates[0]
 	}
@@ -1336,7 +1562,7 @@ func selectAudiobookCandidatesWithRefresh(
 	}
 
 	if refreshed {
-		bestCandidates = selectBestAudiobookMatches(allMatches, fileCount, data, albumTitle, artist)
+		bestCandidates = selectBestAudiobookMatches(allMatches, fileCount, localTotalMs, data, albumTitle, artist)
 		if len(bestCandidates) > 0 {
 			return bestCandidates, bestCandidates[0]
 		}
@@ -1413,8 +1639,25 @@ func audnexAddFoundPreFlight(
 		return ok
 	}
 
+	if trackCount < len(chapters) && len(tracks) == trackCount {
+		if ok, diffMs, toleranceMs := repackedTotalMatch(
+			tracks, audnexChaptersTotalMs(chapters), len(chapters), data,
+		); ok {
+			logger.Logtype("debug", 0).
+				Str("folder", folder).
+				Int("localTracks", trackCount).
+				Int("audnexChapters", len(chapters)).
+				Int64("diffMs", diffMs).
+				Int64("toleranceMs", toleranceMs).
+				Msg("Fewer local tracks than Audnex chapters - total runtime matches, proceeding with import")
+
+			return true
+		}
+	}
+
 	if trackCount < len(chapters) {
-		if data.AllowMissingTracks && data.ExceedToleranceIfTotalMatch {
+		if (data.AllowMissingTracks && data.ExceedToleranceIfTotalMatch) ||
+			data.AllowCountMismatchIfTotalMatch {
 			var audnexTotalMs int64
 			for i := range chapters {
 				if chapters[i].LengthMs > 0 {
@@ -2017,9 +2260,16 @@ func tryMusicAlternativeRelease(
 	altCandidate := database.FillAlbumResult(&database.AlbumSearchResult{ID: importedID}, "")
 
 	altUnmatchedDB, altUnusedLocal := countUnmatched(altMatched, altUsed)
-	if (altUnmatchedDB > 0 || altUnusedLocal > 0) && !data.AllowMissingTracks {
-		// Mirror runMusicCandidateMatchingLoop: try tier-2 runtime fallback before giving up.
-		if !tierTwoRuntimeAccepted(altCandidate, altDbTracks, localTotalMs, *fileCount, data) {
+
+	altData := data
+	if !trackCountAllowed(data, altUnmatchedDB, altUnusedLocal) {
+		// Mirror runMusicCandidateMatchingLoop: try the total-runtime fallbacks before giving up.
+		switch {
+		case countMismatchTotalMatch(data, albumMetaDistance(altCandidate, *artist, *albumTitle, "", 0, data),
+			localTotalMs, dbTracksTotalMs(altDbTracks), len(altDbTracks)):
+			altData = withCountMismatchAllowed(data)
+		case tierTwoRuntimeAccepted(altCandidate, altDbTracks, localTotalMs, *fileCount, data):
+		default:
 			return dbID, expectedTracks, matchedTracks, sortSuccess
 		}
 	}
@@ -2027,13 +2277,13 @@ func tryMusicAlternativeRelease(
 	// Mirror runMusicCandidateMatchingLoop: gate on fullDist recommendation.
 	fullDist := albumDistanceWithTracks(
 		altCandidate, *artist, *albumTitle, "", 0,
-		albumTracks, altDbTracks, isVA, data,
+		albumTracks, altDbTracks, isVA, altData,
 	)
 	if recommendation([]float64{fullDist}, data) < recMedium {
 		return dbID, expectedTracks, matchedTracks, sortSuccess
 	}
 
-	altMatchedTracks := applyTrackDBOverrides(altResult, altMatched, altDbTracks, isVA, false, data)
+	altMatchedTracks := applyTrackDBOverrides(altResult, altMatched, altDbTracks, isVA, false, altData)
 
 	logger.Logtype("info", 1).
 		Str("folder", folder).

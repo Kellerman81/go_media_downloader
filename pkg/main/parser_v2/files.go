@@ -3,7 +3,9 @@ package parser_v2
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +45,11 @@ type AlbumInfo struct {
 	SeriesNum string // Position in series
 	ASIN      string // Amazon ID
 	Abridged  bool   // True if abridged version
+	// ChapterTitles are the book's chapter titles and ChapterNote says how the
+	// files were mapped to them; both set when the filenames are generated,
+	// for the rename log.
+	ChapterTitles []string
+	ChapterNote   string
 
 	// For music
 	Label         string // Record label
@@ -859,6 +866,63 @@ func runFFProbeAudio(ctx context.Context, filePath string) (*ffprobeAudioResult,
 	}
 
 	return &result, nil
+}
+
+// ReadEmbeddedChapters returns the chapter list stored inside filePath; nil
+// when it has none. MP4 files (m4b/m4a) are read natively
+// (tags.ReadMP4Chapters), other formats (ID3 CHAP frames, ...) and MP4 files
+// the native reader fails on with ffprobe.
+func ReadEmbeddedChapters(ctx context.Context, filePath string) ([]tags.Chapter, error) {
+	switch strings.ToLower(filepath.Ext(filePath)) {
+	case ".m4b", ".m4a", ".mp4":
+		if chapters, err := tags.ReadMP4Chapters(filePath); err == nil {
+			return chapters, nil
+		}
+	}
+
+	return ffprobeChapters(ctx, filePath)
+}
+
+// ffprobeChapters reads the chapter list of filePath with ffprobe.
+func ffprobeChapters(ctx context.Context, filePath string) ([]tags.Chapter, error) {
+	out, err := exec.CommandContext(ctx, "ffprobe",
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_chapters",
+		filePath,
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe chapters: %w", err)
+	}
+
+	var res struct {
+		Chapters []struct {
+			StartTime string            `json:"start_time"`
+			EndTime   string            `json:"end_time"`
+			Tags      map[string]string `json:"tags"`
+		} `json:"chapters"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return nil, fmt.Errorf("ffprobe chapters: %w", err)
+	}
+
+	if len(res.Chapters) == 0 {
+		return nil, nil
+	}
+
+	chapters := make([]tags.Chapter, len(res.Chapters))
+	for i := range res.Chapters {
+		start, _ := strconv.ParseFloat(res.Chapters[i].StartTime, 64)
+		end, _ := strconv.ParseFloat(res.Chapters[i].EndTime, 64)
+
+		chapters[i] = tags.Chapter{
+			Title:     res.Chapters[i].Tags["title"],
+			StartMS:   int64(math.Round(start * 1000)),
+			RuntimeMS: int64(math.Round((end - start) * 1000)),
+		}
+	}
+
+	return chapters, nil
 }
 
 // IsLosslessFormat returns true if the format is lossless audio.

@@ -271,7 +271,7 @@ func ShouldProcessTitle(
 // -----------------------------------------------------------------------------
 
 // metaUnicodeReplacer maps accented Latin characters and German umlauts to their
-// ASCII equivalents for fuzzy title/author matching (mirrors importfeed.unicodeReplacer).
+// ASCII equivalents for fuzzy title/author matching (mirrors importfeed.unicodeFold).
 var metaUnicodeReplacer = strings.NewReplacer(
 	"ä", "ae", "Ä", "ae",
 	"ö", "oe", "Ö", "oe",

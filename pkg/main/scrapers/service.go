@@ -403,6 +403,7 @@ func (*Service) createHTMLXPathScraperFromSerie(
 		BaseURL:         cfg.SiteURL,
 		SerieName:       cfg.Name,
 		FirstPageDBOnly: firstPageDBOnly,
+		ChromeURL:       config.GetSettingsGeneral().HeadlessChromeURL,
 
 		// XPath selectors
 		SceneNodeXPath: cfg.SceneNodeXPath,

@@ -856,6 +856,13 @@ func (s *Organizer) languageOK(ctx context.Context, m *database.ParseInfo, file 
 		}
 	}
 
+	return s.languageOrNameAllowed(m, names)
+}
+
+// languageOrNameAllowed reports whether m's audio languages, or one of the
+// detected language names (see parser.languageNames), satisfy the target
+// path's allowed_languages.
+func (s *Organizer) languageOrNameAllowed(m *database.ParseInfo, names []string) bool {
 	if s.languageAllowed(m) {
 		return true
 	}
@@ -867,6 +874,67 @@ func (s *Organizer) languageOK(ctx context.Context, m *database.ParseInfo, file 
 	}
 
 	return false
+}
+
+// validateAudiobookLanguage checks the spoken language of a matched audiobook
+// against the target path's allowed_languages, as validateLanguage does for a
+// video file: only with delete_wrong_language, and with detect_audio_language
+// Whisper listens when the files carry no language tag
+// (parser.DetectBookLanguages). A book in a wrong language has its audio
+// files deleted and returns errWrongLanguage; the rest of the folder then goes
+// to move_unprocessed as wrong_language. Unlike a video file, a book whose
+// language stays unknown passes: audio files rarely carry a language tag, so
+// counting unknown as wrong would delete every book whenever Whisper is
+// unavailable or unsure.
+func (s *Organizer) validateAudiobookLanguage(ctx context.Context, album *parser_v2.AlbumInfo) error {
+	if !s.deletewronglanguage || s.targetpathCfg.AllowedLanguagesLen == 0 || len(album.Tracks) == 0 {
+		return nil
+	}
+
+	files := make([]string, len(album.Tracks))
+	for i := range album.Tracks {
+		files[i] = album.Tracks[i].Filepath
+	}
+
+	languages, names, err := parser.DetectBookLanguages(ctx, files, s.targetpathCfg.DetectAudioLanguage)
+	if err != nil {
+		logger.Logtype("warn", 1).
+			Err(err).
+			Str(logger.StrPath, album.SourceFolder).
+			Msg("audiobook language detection failed - language not checked")
+
+		return nil
+	}
+
+	if len(languages) == 0 {
+		logger.Logtype("debug", 1).
+			Str(logger.StrPath, album.SourceFolder).
+			Msg("audiobook language unknown - not checked")
+
+		return nil
+	}
+
+	if s.languageOrNameAllowed(&database.ParseInfo{Languages: languages}, names) {
+		return nil
+	}
+
+	for i := range files {
+		if _, err := scanner.RemoveFile(files[i]); err != nil {
+			logger.Logtype("error", 1).
+				Str(logger.StrFile, files[i]).
+				Err(err).
+				Msg("failed to delete wrong language audiobook file")
+		}
+	}
+
+	logger.Logtype("warn", 1).
+		Str(logger.StrPath, album.SourceFolder).
+		Str(logger.StrFound, languages[0]).
+		Str(logger.StrWanted, s.targetpathCfg.AllowedLanguages[0]).
+		Int("files", len(files)).
+		Msg("wrong language")
+
+	return errWrongLanguage
 }
 
 // languageAllowed reports whether the audio languages of m satisfy the
@@ -1043,7 +1111,8 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 
 	var err error
 
-	bl, o.Foldername, err = logger.ParseStringTemplate(o.Foldername, &forparser)
+	bl, o.Foldername, err = logger.ParseStringTemplate(protectTemplateSeparators(o.Foldername), &forparser)
+	o.Foldername = folderSepReplacer.Replace(o.Foldername)
 
 	if bl {
 		o.cleanorgafilefolder()
@@ -1072,14 +1141,97 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 
 	logger.Path(&o.Foldername, true)
 
-	o.Foldername = unidecode.Unidecode(o.Foldername)
+	o.Foldername = cleanFolderPath(unidecode.Unidecode(o.Foldername))
 
 	o.Filename = logger.Trim(o.Filename, '.')
 
 	o.Filename = namingReplacer.Replace(o.Filename)
 	logger.Path(&o.Filename, false)
 
-	o.Filename = unidecode.Unidecode(o.Filename)
+	o.Filename = cleanPathName(unidecode.Unidecode(o.Filename))
+}
+
+// Placeholders for the folder separators written in a naming template, so
+// they can be told apart from separators inside the values after rendering.
+const (
+	templateSlash     = '\x1e'
+	templateBackslash = '\x1f'
+)
+
+// folderSepReplacer turns separators that came from values (an author
+// "AC/DC", a series "Book 1/2") into "-" and the template's own separators
+// (see protectTemplateSeparators) back into folder separators.
+var folderSepReplacer = strings.NewReplacer(
+	"/", "-",
+	"\\", "-",
+	string(templateSlash), "/",
+	string(templateBackslash), "\\",
+)
+
+// protectTemplateSeparators replaces the folder separators in the literal
+// text of naming template tmpl - outside {{ }} actions - with placeholders.
+func protectTemplateSeparators(tmpl string) string {
+	if !strings.ContainsAny(tmpl, "/\\") {
+		return tmpl
+	}
+
+	var b strings.Builder
+	b.Grow(len(tmpl))
+
+	inAction := false
+	for i := 0; i < len(tmpl); i++ {
+		switch {
+		case !inAction && strings.HasPrefix(tmpl[i:], "{{"):
+			inAction = true
+
+			b.WriteString("{{")
+			i++
+		case inAction && strings.HasPrefix(tmpl[i:], "}}"):
+			inAction = false
+
+			b.WriteString("}}")
+			i++
+		case !inAction && tmpl[i] == '/':
+			b.WriteByte(templateSlash)
+		case !inAction && tmpl[i] == '\\':
+			b.WriteByte(templateBackslash)
+		default:
+			b.WriteByte(tmpl[i])
+		}
+	}
+
+	return b.String()
+}
+
+// cleanPathName makes name a folder or file name Windows and SMB shares can
+// show: spaces trimmed at both ends, dots and spaces at the end removed, and
+// '"' replaced. A share shows a name that breaks these rules as a mangled
+// short name such as "1V80HR~T".
+func cleanPathName(name string) string {
+	return strings.TrimRight(strings.TrimLeft(strings.ReplaceAll(name, `"`, "'"), " "), " .")
+}
+
+// cleanFolderPath applies cleanPathName to every folder of p, which also
+// removes spaces around the separators ("Kantzius/1 - /Amissa" becomes
+// "Kantzius/1 -/Amissa"), and drops folders left empty.
+func cleanFolderPath(p string) string {
+	if p == "" {
+		return p
+	}
+
+	segs := strings.Split(p, "/")
+	out := segs[:0]
+
+	for i, seg := range segs {
+		seg = cleanPathName(seg)
+		if seg == "" && i > 0 {
+			continue
+		}
+
+		out = append(out, seg)
+	}
+
+	return strings.Join(out, "/")
 }
 
 // cleanorgafilefolder clears the foldername and filename fields of the provided Organizerdata struct to empty strings.
@@ -2194,7 +2346,8 @@ func OrganizeSingleFolder(
 	defer s.Close()
 
 	// Unpack archives before processing media files if enabled
-	if err := unpackArchivesInFolder(ctx, folder, data); err != nil {
+	extracted, err := unpackArchivesInFolder(ctx, folder, data)
+	if err != nil {
 		logger.Logtype("error", 1).
 			Str(logger.StrPath, folder).
 			Err(err).
@@ -2207,6 +2360,13 @@ func OrganizeSingleFolder(
 		logger.Logtype("info", 1).
 			Str(logger.StrPath, folder).
 			Msg("skipped - folder has recently modified files")
+		return nil
+	}
+
+	if unpackInProgress(folder, extracted) {
+		logger.Logtype("info", 1).
+			Str(logger.StrPath, folder).
+			Msg("skipped - unpacking in progress")
 		return nil
 	}
 

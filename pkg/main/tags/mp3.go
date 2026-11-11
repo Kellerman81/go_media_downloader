@@ -366,7 +366,7 @@ func keepFrames(tag *id3v2.Tag, id string, keep func(id3v2.Framer) bool) {
 }
 
 // hasPicture reports whether the tag already holds an APIC with exactly data
-// (e.g. the existing cover carried over by the caller via ReadCoverData).
+// (e.g. a cover the caller read with ReadCoverData and passed back).
 func hasPicture(tag *id3v2.Tag, data []byte) bool {
 	for _, f := range tag.GetFrames("APIC") {
 		if pf, ok := f.(id3v2.PictureFrame); ok && bytes.Equal(pf.Picture, data) {

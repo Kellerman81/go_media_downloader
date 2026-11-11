@@ -4,16 +4,20 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/books"
 	_ "github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/movies"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 )
 
 func TestTrimStringInclAfterString(t *testing.T) {
@@ -1365,5 +1369,134 @@ func TestRuntimeMismatch(t *testing.T) {
 	s.targetpathCfg.MaxRuntimeDifference = 0
 	if _, _, wrong := s.runtimeMismatch(m, 207, true); !wrong {
 		t.Error("without a tolerance any difference must be rejected")
+	}
+}
+
+func TestFolderTemplateSeparators(t *testing.T) {
+	type author struct{ Name string }
+
+	data := struct {
+		Author author
+		Series string
+		Title  string
+	}{author{"AC/DC"}, `Back\Black`, "Live / 1991"}
+
+	tmpl := "{{.Author.Name}}/{{if .Series}}{{.Series}}/{{end}}{{.Title}}"
+
+	_, got, err := logger.ParseStringTemplate(protectTemplateSeparators(tmpl), &data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got = folderSepReplacer.Replace(got); got != "AC-DC/Back-Black/Live - 1991" {
+		t.Errorf("got %q, want value separators as - and template ones as /", got)
+	}
+
+	if protectTemplateSeparators("no separators") != "no separators" {
+		t.Error("template without separators changed")
+	}
+}
+
+func TestCleanFolderPath(t *testing.T) {
+	cases := map[string]string{
+		"F/Frank Kodiak/Kantzius/1 - /Amissa - Die Verlorenen (3965191691)": "F/Frank Kodiak/Kantzius/1 -/Amissa - Die Verlorenen (3965191691)",
+		"A/Arthur Conan Doyle/Der schwarze Peter / Das Glas (B07D3P24KJ)":   "A/Arthur Conan Doyle/Der schwarze Peter/Das Glas (B07D3P24KJ)",
+		"C/Christiane F./Wir Kinder vom Bahnhof Zoo (B004SG7JWY)":           "C/Christiane F/Wir Kinder vom Bahnhof Zoo (B004SG7JWY)",
+		`H/H.G. Francis/Gauner mit der "Goldenen Hand" (B0B1QL1P1H)`:        "H/H.G. Francis/Gauner mit der 'Goldenen Hand' (B0B1QL1P1H)",
+		"Series. ./Season 1": "Series/Season 1",
+		"a//b/ /c":           "a/b/c",
+		"":                   "",
+		"Movie (2020)":       "Movie (2020)",
+	}
+
+	for in, want := range cases {
+		if got := cleanFolderPath(in); got != want {
+			t.Errorf("cleanFolderPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+
+	if got := cleanPathName(` Track 1 - "Intro". `); got != "Track 1 - 'Intro'" {
+		t.Errorf("cleanPathName = %q", got)
+	}
+}
+
+func TestValidateAudiobookLanguage(t *testing.T) {
+	for _, tool := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s not installed", tool)
+		}
+	}
+
+	// book writes a 3-chapter audiobook folder, tagged with language when set.
+	book := func(t *testing.T, language string) *parser_v2.AlbumInfo {
+		t.Helper()
+
+		album := &parser_v2.AlbumInfo{SourceFolder: t.TempDir()}
+		for i := range 3 {
+			f := filepath.Join(album.SourceFolder, strconv.Itoa(i+1)+".m4a")
+
+			args := []string{"-v", "error", "-f", "lavfi", "-i", "sine=duration=2", "-c:a", "aac"}
+			if language != "" {
+				args = append(args, "-metadata:s:a:0", "language="+language)
+			}
+
+			if out, err := exec.Command("ffmpeg", append(args, f)...).CombinedOutput(); err != nil {
+				t.Fatalf("creating test file: %v: %s", err, out)
+			}
+
+			album.Tracks = append(album.Tracks, parser_v2.TrackInfo{Filepath: f})
+		}
+
+		return album
+	}
+
+	org := func(deleteWrong bool, allowed ...string) *Organizer {
+		return &Organizer{
+			deletewronglanguage: deleteWrong,
+			targetpathCfg:       &config.PathsConfig{AllowedLanguages: allowed, AllowedLanguagesLen: len(allowed)},
+		}
+	}
+
+	remaining := func(album *parser_v2.AlbumInfo) int {
+		n := 0
+		for i := range album.Tracks {
+			if _, err := os.Stat(album.Tracks[i].Filepath); err == nil {
+				n++
+			}
+		}
+
+		return n
+	}
+
+	tests := []struct {
+		name     string
+		s        *Organizer
+		language string
+		wrong    bool
+	}{
+		{"allowed", org(true, "German", "ger"), "ger", false},
+		{"wrong language deleted", org(true, "eng"), "ger", true},
+		{"delete_wrong_language off", org(false, "eng"), "ger", false},
+		{"no allowed_languages", org(true), "ger", false},
+		// Untagged and nothing detected (no whisper_url): not checked.
+		{"unknown passes", org(true, "eng"), "", false},
+	}
+
+	for _, tt := range tests {
+		album := book(t, tt.language)
+
+		err := tt.s.validateAudiobookLanguage(context.Background(), album)
+		if got := errors.Is(err, errWrongLanguage); got != tt.wrong {
+			t.Errorf("%s: err %v, want wrong language %v", tt.name, err, tt.wrong)
+		}
+
+		want := 3
+		if tt.wrong {
+			want = 0
+		}
+
+		if n := remaining(album); n != want {
+			t.Errorf("%s: %d of 3 files left, want %d", tt.name, n, want)
+		}
 	}
 }

@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -429,16 +431,16 @@ func unpackArchivesInFolder(
 	ctx context.Context,
 	folder string,
 	data *config.MediaDataImportConfig,
-) error {
+) ([]string, error) {
 	if !data.EnableUnpacking {
-		return nil
+		return nil, nil
 	}
 
 	logger.Logtype("info", 1).
 		Str(logger.StrPath, folder).
 		Msg("Scanning for archives to unpack")
 
-	var archiveFiles []string
+	var archiveFiles, extracted []string
 
 	// Find all archive files in the folder (only main archives for multipart)
 	err := filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
@@ -467,11 +469,11 @@ func unpackArchivesInFolder(
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(archiveFiles) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	logger.Logtype("info", 1).
@@ -481,7 +483,7 @@ func unpackArchivesInFolder(
 	// Extract each archive
 	for i := range archiveFiles {
 		if err := ctx.Err(); err != nil {
-			return err
+			return extracted, err
 		}
 
 		// Create extraction path: <archive_dir>/<archive_name>_unpack/
@@ -518,7 +520,11 @@ func unpackArchivesInFolder(
 			continue
 		}
 
-		if err := extractArchive(ctx, archiveFiles[i], extractPath); err != nil {
+		activeUnpacks.Store(extractPath, struct{}{})
+		err := extractArchive(ctx, archiveFiles[i], extractPath)
+		activeUnpacks.Delete(extractPath)
+
+		if err != nil {
 			logger.Logtype("error", 1).
 				Str(logger.StrFile, archiveFiles[i]).
 				Err(err).
@@ -536,7 +542,53 @@ func unpackArchivesInFolder(
 
 			continue
 		}
+
+		extracted = append(extracted, extractPath)
 	}
 
-	return nil
+	return extracted, nil
+}
+
+// activeUnpacks holds the <name>_unpack folders an extraction of this
+// process is writing into.
+var activeUnpacks sync.Map
+
+// unpackActiveWindow is how recently an _unpack folder must have changed to
+// count as still being written by another program.
+const unpackActiveWindow = time.Minute
+
+// unpackInProgress reports whether an unpack is still being written below
+// folder: a <name>_unpack folder (or NZBGet's _unpack) that this process is
+// extracting into, or one that changed within unpackActiveWindow and that
+// this run did not just finish itself (extracted) - another program, e.g. a
+// download client, still unpacking. Such a folder is left for a later run.
+// An older _unpack folder, empty or not, is no reason to wait: the folder is
+// organized as it is (and goes to no_files when it holds no audio).
+func unpackInProgress(folder string, extracted []string) bool {
+	cutoff := logger.TimeGetNow().Add(-unpackActiveWindow)
+	active := false
+
+	_ = filepath.WalkDir(folder, func(fpath string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || !logger.HasSuffixI(d.Name(), "_unpack") {
+			return nil
+		}
+
+		if _, ok := activeUnpacks.Load(fpath); ok {
+			active = true
+			return fs.SkipAll
+		}
+
+		if slices.Contains(extracted, fpath) {
+			return fs.SkipDir
+		}
+
+		if info, infoErr := d.Info(); infoErr == nil && logger.TimeAfter(info.ModTime(), cutoff) {
+			active = true
+			return fs.SkipAll
+		}
+
+		return nil
+	})
+
+	return active
 }

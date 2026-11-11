@@ -12,6 +12,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/headless"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/sitethrottle"
 	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
@@ -24,6 +25,7 @@ type Config struct {
 	BaseURL         string
 	SerieName       string
 	FirstPageDBOnly bool
+	ChromeURL       string // headless_chrome_url: load pages through this headless Chrome; empty fetches directly
 
 	// XPath selectors for extracting data
 	SceneNodeXPath string // XPath to select each scene/video container
@@ -108,9 +110,11 @@ func NewScraper(cfg *Config) (*Scraper, error) {
 		cfg.URLAttribute = "href"
 	}
 
-	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+	}
+	if cfg.ChromeURL != "" {
+		client.Timeout = headless.Timeout
 	}
 
 	return &Scraper{
@@ -187,16 +191,14 @@ func (s *Scraper) fetchPage(ctx context.Context, pageNum int) (*html.Node, error
 		url = s.config.StartURL
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := pageRequest(ctx, s.config.ChromeURL, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
 	// Enforce the configured delay per site (host), shared across all scraper
 	// configs targeting the same site rather than only between this scrape's pages.
-	sitethrottle.Wait(ctx, req.URL.Host, time.Duration(s.config.WaitSeconds)*time.Second)
+	sitethrottle.Wait(ctx, siteHost(url), time.Duration(s.config.WaitSeconds)*time.Second)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -215,6 +217,28 @@ func (s *Scraper) fetchPage(ctx context.Context, pageNum int) (*html.Node, error
 	}
 
 	return doc, nil
+}
+
+// pageRequest returns the request for page url, through the headless Chrome
+// at chromeURL when set.
+func pageRequest(ctx context.Context, chromeURL, pageURL string) (*http.Request, error) {
+	req, err := headless.PageRequest(ctx, chromeURL, pageURL)
+	if err == nil && chromeURL == "" {
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	}
+
+	return req, err
+}
+
+// siteHost returns the host of page url, the key pages of one site are
+// throttled under even when they are loaded through headless Chrome.
+func siteHost(pageURL string) string {
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return pageURL
+	}
+
+	return u.Host
 }
 
 // extractText extracts text from a node using XPath.

@@ -1,7 +1,9 @@
 package tags
 
 import (
+	"bytes"
 	"context"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -76,5 +78,51 @@ func TestManagerReadTagsRecoversPanic(t *testing.T) {
 	tags, err := m.ReadTags("/x/file.boom")
 	if err == nil || tags != nil {
 		t.Fatalf("expected error from recovered panic, got %v, %v", tags, err)
+	}
+}
+
+// TestWriteTagsKeepsCover: a write without CoverData keeps the embedded
+// cover in every format, so callers need not read it first and pass it back.
+func TestWriteTagsKeepsCover(t *testing.T) {
+	requireFFmpegTools(t)
+
+	dir := t.TempDir()
+	cover := genCover(t, dir)
+
+	fixtures := map[string][]string{
+		".mp3":  {"-c:a", "libmp3lame"},
+		".flac": {"-c:a", "flac"},
+		".ogg":  {"-c:a", "libvorbis"},
+		".m4a":  {"-c:a", "aac"},
+		".m4b":  {"-c:a", "aac", "-f", "mp4"},
+	}
+
+	for ext, codec := range fixtures {
+		t.Run(ext, func(t *testing.T) {
+			path := filepath.Join(dir, "a"+ext)
+			genFixture(t, append(append([]string{"-f", "lavfi", "-i", "sine=frequency=440:duration=2"}, codec...), path)...)
+
+			ctx := context.Background()
+			if err := WriteTags(ctx, path, &AudioTags{Title: "First", CoverData: cover, CoverMIME: "image/jpeg"}); err != nil {
+				t.Fatal(err)
+			}
+
+			if got, _ := ReadCoverData(path); !bytes.Equal(got, cover) {
+				t.Fatalf("cover not written (%d bytes)", len(got))
+			}
+
+			if err := WriteTags(ctx, path, &AudioTags{Title: "Second", Artist: "Someone"}); err != nil {
+				t.Fatal(err)
+			}
+
+			if got, _ := ReadCoverData(path); !bytes.Equal(got, cover) {
+				t.Errorf("cover lost by a write without CoverData (%d bytes left)", len(got))
+			}
+
+			got, err := ReadTags(path)
+			if err != nil || got.Title != "Second" || got.Artist != "Someone" {
+				t.Errorf("second write: %+v %v", got, err)
+			}
+		})
 	}
 }

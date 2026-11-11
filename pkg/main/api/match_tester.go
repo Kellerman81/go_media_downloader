@@ -70,6 +70,18 @@ func (e *mtEntry) hasCandidate() bool {
 	return e.candidate() != nil
 }
 
+// preselect reports whether the entry starts out checked: its best candidate
+// is a strong match and its missing and extra tracks are acceptable as the
+// structure job sees them (allow_missing_tracks, allow_extra_tracks,
+// allow_count_mismatch_if_total_match; see PreviewCandidate.CountOK).
+func (e *mtEntry) preselect(strong float64) bool {
+	if e.bestDist() >= strong {
+		return false
+	}
+
+	return e.Entry == nil || e.Entry.Best().CountOK
+}
+
 // candidate returns the chosen candidate, or the best one.
 func (e *mtEntry) candidate() *importfeed.PreviewCandidate {
 	if e.Chosen != "" {
@@ -201,7 +213,7 @@ func (s *mtSession) testFolders(folders []*mtFolder) {
 				s.nextID++
 				e.ID = s.nextID
 
-				e.Selected = e.bestDist() < strong
+				e.Selected = e.preselect(strong)
 
 				f.Entries = append(f.Entries, e)
 				s.entries[e.ID] = e

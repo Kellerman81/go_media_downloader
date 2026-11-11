@@ -645,6 +645,7 @@ func renderGeneralConfigSections(
 				{Name: "UnrarPath", Type: "text", Value: configv.UnrarPath},
 				{Name: "SevenZipPath", Type: "text", Value: configv.SevenZipPath},
 				{Name: "WhisperURL", Type: "text", Value: configv.WhisperURL},
+				{Name: "HeadlessChromeURL", Type: "text", Value: configv.HeadlessChromeURL},
 				{Name: "UnzipPath", Type: "text", Value: configv.UnzipPath},
 				{Name: "TarPath", Type: "text", Value: configv.TarPath},
 			}, group, comments, displayNames),
@@ -1067,6 +1068,24 @@ func renderMediaDataForm(prefix string, i int, configv *config.MediaDataConfig) 
 			Options: nil,
 		},
 		{
+			Name:    "AllowExtraTracks",
+			Type:    "checkbox",
+			Value:   configv.AllowExtraTracks,
+			Options: nil,
+		},
+		{
+			Name:    "AllowCountMismatchIfTotalMatch",
+			Type:    "checkbox",
+			Value:   configv.AllowCountMismatchIfTotalMatch,
+			Options: nil,
+		},
+		{
+			Name:    "ReplaceEmbeddedChapters",
+			Type:    "checkbox",
+			Value:   configv.ReplaceEmbeddedChapters,
+			Options: nil,
+		},
+		{
 			Name:    "ExceedToleranceIfTotalMatch",
 			Type:    "checkbox",
 			Value:   configv.ExceedToleranceIfTotalMatch,
@@ -1149,6 +1168,24 @@ func renderMediaDataImportForm(
 			Name:    "AllowMissingTracks",
 			Type:    "checkbox",
 			Value:   configv.AllowMissingTracks,
+			Options: nil,
+		},
+		{
+			Name:    "AllowExtraTracks",
+			Type:    "checkbox",
+			Value:   configv.AllowExtraTracks,
+			Options: nil,
+		},
+		{
+			Name:    "AllowCountMismatchIfTotalMatch",
+			Type:    "checkbox",
+			Value:   configv.AllowCountMismatchIfTotalMatch,
+			Options: nil,
+		},
+		{
+			Name:    "ReplaceEmbeddedChapters",
+			Type:    "checkbox",
+			Value:   configv.ReplaceEmbeddedChapters,
 			Options: nil,
 		},
 		{

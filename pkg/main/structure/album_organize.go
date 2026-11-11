@@ -10,12 +10,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/lyrics"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -32,7 +34,11 @@ import (
 
 // CollectAlbumFolders returns the album folders below folderPath, in walk
 // order: a folder holding audio files or a disc set (CD1, CD2, …) is one
-// album; any other folder is searched further (Artist/Album nesting).
+// album; any other folder is searched further (Artist/Album nesting). When
+// there is none, folderPath itself is returned: organizing it unpacks its
+// archives, or moves it to move_unprocessed as no_files (leftover covers and
+// NFOs, an empty folder). Otherwise such folders would stay in the import
+// path forever.
 func CollectAlbumFolders(
 	ctx context.Context,
 	folderPath string,
@@ -93,6 +99,10 @@ func CollectAlbumFolders(
 	}
 
 	walk(folderPath)
+
+	if len(out) == 0 && ctx.Err() == nil {
+		return []string{folderPath}
+	}
 
 	return out
 }
@@ -405,6 +415,9 @@ func AlbumDataConfig(
 		dataCfg.PerTrackToleranceSeconds = data.PerTrackToleranceSeconds
 		dataCfg.MaxTotalDifferenceSeconds = data.MaxTotalDifferenceSeconds
 		dataCfg.AllowMissingTracks = data.AllowMissingTracks
+		dataCfg.AllowExtraTracks = data.AllowExtraTracks
+		dataCfg.AllowCountMismatchIfTotalMatch = data.AllowCountMismatchIfTotalMatch
+		dataCfg.ReplaceEmbeddedChapters = data.ReplaceEmbeddedChapters
 		dataCfg.AllowAllFormatsWhenStructuring = data.AllowAllFormatsWhenStructuring
 		dataCfg.AllowAlternativeReleases = data.AllowAlternativeReleases
 		dataCfg.TrackArtistWeight = data.TrackArtistWeight
@@ -451,6 +464,18 @@ func AlbumDataConfig(
 
 		if !dataCfg.AllowMissingTracks && cfgp.Data[idx].AllowMissingTracks {
 			dataCfg.AllowMissingTracks = true
+		}
+
+		if !dataCfg.AllowExtraTracks && cfgp.Data[idx].AllowExtraTracks {
+			dataCfg.AllowExtraTracks = true
+		}
+
+		if !dataCfg.AllowCountMismatchIfTotalMatch && cfgp.Data[idx].AllowCountMismatchIfTotalMatch {
+			dataCfg.AllowCountMismatchIfTotalMatch = true
+		}
+
+		if !dataCfg.ReplaceEmbeddedChapters && cfgp.Data[idx].ReplaceEmbeddedChapters {
+			dataCfg.ReplaceEmbeddedChapters = true
 		}
 
 		if len(dataCfg.MBMediaFormats) == 0 && len(cfgp.Data[idx].MBMediaFormats) > 0 {
@@ -589,6 +614,15 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 				Msg("album files were organized by another run meanwhile - skipping")
 
 			return "already_organized", matchReport, nil
+		}
+	}
+
+	if cfgp.IsType == config.MediaTypeAudiobook {
+		if err := s.validateAudiobookLanguage(ctx, album); err != nil {
+			um := database.ParseInfo{TempTitle: folder}
+			um.AddUnmatched(cfgp, &logger.StrStructure, err)
+
+			return "wrong_language", matchReport, errUnprocessed
 		}
 	}
 
@@ -1028,6 +1062,11 @@ func (*Organizer) writeRenameLog(
 		b.WriteString(strconv.Itoa(album.ExpectedTracks))
 	}
 
+	if album.ChapterNote != "" {
+		b.WriteString("\nChapters: ")
+		b.WriteString(album.ChapterNote)
+	}
+
 	b.WriteString("\n\nRenamed files:\n")
 
 	// Build a position→runtime map from Last.fm if any track is missing ExpectedRuntimeMS.
@@ -1124,6 +1163,8 @@ func (*Organizer) writeRenameLog(
 				b.WriteString("s")
 			}
 
+			writeChapterSpan(&b, track, album.ChapterTitles)
+
 			b.WriteByte(']')
 		}
 
@@ -1131,6 +1172,22 @@ func (*Organizer) writeRenameLog(
 	}
 
 	appendRenameLog(logPath, b.String())
+}
+
+// writeChapterSpan writes the chapters track covers, e.g.
+// ` chapter=12 "Kapitel 12"` or ` chapters=12-14 "Kapitel 12" .. "Kapitel 14"`.
+func writeChapterSpan(b *strings.Builder, track *parser_v2.TrackInfo, titles []string) {
+	first, last := track.ChapterFirst, track.ChapterLast
+	if first < 1 || last < first || last > len(titles) {
+		return
+	}
+
+	if first == last {
+		fmt.Fprintf(b, " chapter=%d %q", first, titles[first-1])
+		return
+	}
+
+	fmt.Fprintf(b, " chapters=%d-%d %q .. %q", first, last, titles[first-1], titles[last-1])
 }
 
 // appendRenameLog appends one entry to the folder's rename log. Appending
@@ -1701,9 +1758,16 @@ func (s *Organizer) generateTrackFilenames(
 			break
 		}
 
-		dbTrackTitles = make([]string, len(chaptersT))
-		for i, ch := range chaptersT {
-			dbTrackTitles[i] = ch.Title
+		dbTrackTitles, album.ChapterNote = assignAudiobookChapters(chaptersT, album.Tracks)
+		if len(album.Tracks) == 1 {
+			if note := embeddedChapterNote(&album.Tracks[0], len(chaptersT)); note != "" {
+				album.ChapterNote += "; " + note
+			}
+		}
+
+		album.ChapterTitles = make([]string, len(chaptersT))
+		for i := range chaptersT {
+			album.ChapterTitles[i] = chaptersT[i].Title
 		}
 
 	case config.MediaTypeMusic:
@@ -1796,7 +1860,7 @@ func (s *Organizer) generateTrackFilenames(
 		// Music: look up by (disc, track) number — album.Tracks is the matched
 		// subset and may have gaps where DB tracks were unmatched, so positional
 		// indexing would assign the wrong title to every track after a gap.
-		// Audiobook: use positional chapter titles (sequential from Audnex).
+		// Audiobook: chapter title per track (see assignAudiobookChapters).
 		if dbtrackByNum != nil {
 			disc := int64(track.DiscNumber)
 			if disc == 0 {
@@ -1827,12 +1891,141 @@ func (s *Organizer) generateTrackFilenames(
 		ext := filepath.Ext(track.Filepath)
 
 		logger.Path(&filename, false)
+		filename = cleanPathName(filename)
 
 		filenames[idx] = filename + ext
 		album.Tracks[idx].GeneratedFilename = filenames[idx]
 	}
 
 	return filenames
+}
+
+// chapterStartSlackMs lets a file that starts just before a chapter boundary
+// (rounding, a few ms of silence) be named after that chapter, and one that
+// ends just after a boundary not count the next chapter.
+const chapterStartSlackMs = 2_000
+
+// assignAudiobookChapters sets ChapterFirst/ChapterLast of each track and
+// returns the chapter title each track is named after, plus a note for the
+// rename log on how the files were mapped. With as many tracks as chapters it
+// is by position, and a single file covers all chapters under the first
+// title. Files cut differently than the chapters cover the chapters their
+// time span falls into - the summed runtime of the files before each one,
+// scaled to the chapters' total - and are named after the chapter they start
+// in.
+func assignAudiobookChapters(
+	chapters []apiexternal_v2.AudiobookChapter,
+	tracks []parser_v2.TrackInfo,
+) (titles []string, note string) {
+	n := len(chapters)
+	if n == 0 || len(tracks) == 0 {
+		return nil, ""
+	}
+
+	titles = make([]string, len(tracks))
+
+	if len(tracks) == n {
+		for i := range tracks {
+			tracks[i].ChapterFirst, tracks[i].ChapterLast = i+1, i+1
+			titles[i] = chapters[i].Title
+		}
+
+		return titles, fmt.Sprintf("one file per chapter (%d chapters)", n)
+	}
+
+	if len(tracks) == 1 {
+		tracks[0].ChapterFirst, tracks[0].ChapterLast = 1, n
+		titles[0] = chapters[0].Title
+
+		return titles, fmt.Sprintf("one file for all %d chapters", n)
+	}
+
+	starts := make([]int64, n)
+
+	var chaptersMs int64
+	for i := range chapters {
+		starts[i] = chaptersMs
+
+		length := chapters[i].LengthMs
+		if length <= 0 {
+			length = chapters[i].Duration.Milliseconds()
+		}
+
+		chaptersMs += length
+	}
+
+	var localMs int64
+	for i := range tracks {
+		localMs += tracks[i].RuntimeMS
+	}
+
+	if chaptersMs <= 0 || localMs <= 0 {
+		return nil, ""
+	}
+
+	// chapterAt returns the index of the chapter position ms falls into.
+	chapterAt := func(ms int64) int {
+		ch := 0
+		for ch+1 < n && starts[ch+1] <= ms {
+			ch++
+		}
+
+		return ch
+	}
+
+	var before int64
+	for i := range tracks {
+		first := chapterAt(before*chaptersMs/localMs + chapterStartSlackMs)
+		before += tracks[i].RuntimeMS
+		last := max(chapterAt(before*chaptersMs/localMs-chapterStartSlackMs), first)
+
+		tracks[i].ChapterFirst, tracks[i].ChapterLast = first+1, last+1
+		titles[i] = chapters[first].Title
+	}
+
+	diff := localMs - chaptersMs
+	if diff < 0 {
+		diff = -diff
+	}
+
+	return titles, fmt.Sprintf(
+		"%d files for %d chapters, mapped by runtime (files %s, chapters %s, difference %.1fs); each file is named after the chapter it starts in",
+		len(tracks), n, formatHMS(localMs), formatHMS(chaptersMs), float64(diff)/1000,
+	)
+}
+
+// embeddedChapterNote describes for the rename log what happens to the
+// chapter list inside a single file holding a book of bookChapters chapters.
+func embeddedChapterNote(t *parser_v2.TrackInfo, bookChapters int) string {
+	n := len(t.Chapters)
+
+	switch {
+	case t.ReleaseChapters == nil && n == 0:
+		return ""
+	case t.ReleaseChapters == nil:
+		return fmt.Sprintf("its %d embedded chapters are kept", n)
+	case len(t.ReleaseChapters) != n || !sameChapterStarts(t.ReleaseChapters, t.Chapters):
+		return fmt.Sprintf(
+			"its %d embedded chapters are replaced by the book's %d, start times scaled to the file's runtime",
+			n, len(t.ReleaseChapters))
+	case n == bookChapters:
+		return fmt.Sprintf("its %d embedded chapters get the book's chapter titles", n)
+	default:
+		return fmt.Sprintf(
+			"its %d embedded chapters are kept, each titled after the book chapter it starts in", n)
+	}
+}
+
+// sameChapterStarts reports whether two chapter lists start at the same times.
+func sameChapterStarts(a, b []tags.Chapter) bool {
+	return slices.EqualFunc(a, b, func(x, y tags.Chapter) bool { return x.StartMS == y.StartMS })
+}
+
+// formatHMS formats ms as h:mm:ss.
+func formatHMS(ms int64) string {
+	s := ms / 1000
+
+	return fmt.Sprintf("%d:%02d:%02d", s/3600, s/60%60, s%60)
 }
 
 // addAudiobookFilesToDatabase is a local wrapper that calls importfeed's add function.
@@ -2238,21 +2431,15 @@ func TagAlbumFiles(
 			audioTags.CatalogNum = album.Tracks[i].ASIN // Store ASIN in catalog number field
 		}
 
-		// Embed cover art if available
+		// A single-file audiobook gets chapters named after the book's
+		// (importfeed.releaseChapterList; MP4 only).
+		audioTags.Chapters = album.Tracks[i].ReleaseChapters
+
+		// Embed cover art if available. Without one, WriteTags keeps the
+		// cover already embedded (tags.TestWriteTagsKeepsCover).
 		if len(coverData) > 0 {
 			audioTags.CoverData = coverData
 			audioTags.CoverMIME = coverMIME
-		} else {
-			// No new album-wide cover was fetched - carry forward whatever
-			// cover is already embedded in this specific file. Without this,
-			// WriteTags below would silently strip any existing embedded
-			// cover art (confirmed for MP3 via the id3v2 library's ParseFrames
-			// behavior, which discards unlisted frames like APIC entirely
-			// rather than round-tripping them - see tags.ReadCoverData).
-			if existingCover, existingMIME := tags.ReadCoverData(album.Tracks[i].Filepath); len(existingCover) > 0 {
-				audioTags.CoverData = existingCover
-				audioTags.CoverMIME = existingMIME
-			}
 		}
 
 		// Fetch and embed lyrics when enabled.

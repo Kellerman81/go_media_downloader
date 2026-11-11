@@ -2,12 +2,15 @@ package importfeed
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 )
 
 func TestRuntimeDiffWithinTolerance(t *testing.T) {
@@ -366,6 +369,223 @@ func TestMusicCandidatePassesRejectsWrongRelease(t *testing.T) {
 	}
 }
 
+func TestMusicCandidatePassesCountMismatchTotalMatch(t *testing.T) {
+	useTestDB(t)
+
+	// The first two songs as one track: same music, one track fewer.
+	merged := seedAlbum(t, 1, "The Wall",
+		dbTrack{"In the Flesh? / The Thin Ice", 346_000}, dbTrack{"Another Brick in the Wall, Part 1", 191_000})
+	// Same tags, but an hour longer.
+	longer := seedAlbum(t, 2, "The Wall",
+		dbTrack{"In the Flesh? / The Thin Ice", 346_000}, dbTrack{"Another Brick in the Wall, Part 1", 3_791_000})
+
+	tracks, total := localTracks(studio...)
+	// Past the relaxed cap only because of the track-count penalties.
+	cands := []preScoredC{{merged, 0.7}, {longer, 0.7}}
+
+	for _, data := range []*config.MediaDataConfig{
+		{},
+		{AllowMissingTracks: true},
+		{AllowExtraTracks: true},
+	} {
+		if got := runMusicCandidatePasses(context.Background(), cands, tracks, total, false, "The Wall", "Pink Floyd", "", 0, len(tracks), data); len(got) != 0 {
+			t.Errorf("%+v: matched %+v", data, got)
+		}
+	}
+
+	data := &config.MediaDataConfig{AllowCountMismatchIfTotalMatch: true}
+
+	got := runMusicCandidatePasses(context.Background(), cands, tracks, total, false, "The Wall", "Pink Floyd", "", 0, len(tracks), data)
+	if len(got) != 1 || got[0].c.ID != 1 {
+		t.Fatalf("matches = %+v, want only the release with the same total runtime", got)
+	}
+
+	if data.AllowMissingTracks || data.AllowExtraTracks {
+		t.Error("the configured data was changed")
+	}
+
+	// Tags that don't match keep the release out.
+	got = runMusicCandidatePasses(context.Background(), cands, tracks, total, false, "Animals", "Pink Floyd", "", 0, len(tracks), data)
+	if len(got) != 0 {
+		t.Errorf("matched with other tags: %+v", got)
+	}
+}
+
+// countSettings are all combinations of allow_missing_tracks,
+// allow_extra_tracks and allow_count_mismatch_if_total_match.
+func countSettings(base config.MediaDataConfig) []config.MediaDataConfig {
+	out := make([]config.MediaDataConfig, 0, 8)
+	for i := range 8 {
+		d := base
+		d.AllowMissingTracks = i&1 != 0
+		d.AllowExtraTracks = i&2 != 0
+		d.AllowCountMismatchIfTotalMatch = i&4 != 0
+		out = append(out, d)
+	}
+
+	return out
+}
+
+func countSettingsName(d *config.MediaDataConfig) string {
+	return fmt.Sprintf("missing=%t/extra=%t/total=%t",
+		d.AllowMissingTracks, d.AllowExtraTracks, d.AllowCountMismatchIfTotalMatch)
+}
+
+// countScenario is a folder whose files don't line up with the release's
+// tracks; want says whether the release may match under data.
+type countScenario struct {
+	name  string
+	local []dbTrack
+	want  func(d *config.MediaDataConfig) bool
+}
+
+// TestMusicCountSettingsMatrix runs folders with fewer files, more files and
+// differently cut files against one release under every combination of the
+// track-count settings, with the production per-track tolerances (10 s grace,
+// 30 s hard cutoff).
+func TestMusicCountSettingsMatrix(t *testing.T) {
+	// Release: the three studio tracks, 537 s.
+	scenarios := []countScenario{
+		{"one track missing", studio[:2],
+			func(d *config.MediaDataConfig) bool { return d.AllowMissingTracks }},
+		{"one bonus track", append(append([]dbTrack{}, studio...), dbTrack{"Bonus Demo", 60_000}),
+			func(d *config.MediaDataConfig) bool { return d.AllowExtraTracks }},
+		{"first track split in two, same total", append([]dbTrack{{"In the Flesh? (Part A)", 99_000}, {"In the Flesh? (Part B)", 100_000}}, studio[1:]...),
+			func(d *config.MediaDataConfig) bool {
+				return (d.AllowMissingTracks && d.AllowExtraTracks) || d.AllowCountMismatchIfTotalMatch
+			}},
+		// Total 486 s against 537 s: only accepting both missing and extra
+		// tracks lets it through.
+		{"track missing, shorter bonus track", append(append([]dbTrack{}, studio[:2]...), dbTrack{"Bonus Demo", 140_000}),
+			func(d *config.MediaDataConfig) bool { return d.AllowMissingTracks && d.AllowExtraTracks }},
+	}
+
+	for _, sc := range scenarios {
+		for _, data := range countSettings(config.MediaDataConfig{PerTrackToleranceSeconds: 10, PerTrackToleranceSecondsMax: 30}) {
+			t.Run(sc.name+"/"+countSettingsName(&data), func(t *testing.T) {
+				useTestDB(t)
+
+				release := seedAlbum(t, 1, "The Wall", studio...)
+				tracks, total := localTracks(sc.local...)
+				d := albumMatchDistance(release, "Pink Floyd", "The Wall", "", "", "", 0, len(tracks), &data)
+
+				got := runMusicCandidatePasses(context.Background(), []preScoredC{{release, d}}, tracks, total,
+					false, "The Wall", "Pink Floyd", "", 0, len(tracks), &data)
+
+				_, _, _, accepted := applyMusicRecommendation(got, total, len(tracks), &data)
+				t.Logf("matched=%t accepted=%t", len(got) == 1, accepted)
+
+				if want := sc.want(&data); (len(got) == 1) != want {
+					t.Errorf("matched = %t, want %t", len(got) == 1, want)
+				}
+			})
+		}
+	}
+}
+
+// TestAudiobookCountSettingsMatrix is TestMusicCountSettingsMatrix for an
+// audiobook with three chapters, with the production per-track tolerances
+// (3 s grace, 30 s hard cutoff).
+func TestAudiobookCountSettingsMatrix(t *testing.T) {
+	chapters := []int64{1_140_000, 1_150_000, 1_130_000}
+	part := func(ms ...int64) []dbTrack {
+		out := make([]dbTrack, len(ms))
+		for i, m := range ms {
+			out[i] = dbTrack{fmt.Sprintf("Teil %d", i+1), m}
+		}
+
+		return out
+	}
+
+	scenarios := []countScenario{
+		{"one chapter missing", part(1_140_000, 1_150_000),
+			func(d *config.MediaDataConfig) bool { return d.AllowMissingTracks }},
+		{"one extra file", part(1_140_000, 1_150_000, 1_130_000, 300_000),
+			func(d *config.MediaDataConfig) bool { return d.AllowExtraTracks }},
+		// Different file count, same total: the repack check accepts it under
+		// any setting.
+		{"cut into four files, same total", part(855_000, 855_000, 855_000, 855_000),
+			func(*config.MediaDataConfig) bool { return true }},
+		// Same file count, cut at other points: no file matches its chapter.
+		{"three files cut elsewhere, same total", part(1_000_000, 1_300_000, 1_120_000),
+			func(d *config.MediaDataConfig) bool {
+				return (d.AllowMissingTracks && d.AllowExtraTracks) || d.AllowCountMismatchIfTotalMatch
+			}},
+	}
+
+	cfgp := &config.MediaTypeConfig{IsType: config.MediaTypeAudiobook}
+
+	for _, sc := range scenarios {
+		for _, data := range countSettings(config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}) {
+			t.Run(sc.name+"/"+countSettingsName(&data), func(t *testing.T) {
+				useTestDB(t)
+
+				book := seedAudiobook(t, 1, "Die Schatzinsel", chapters...)
+				tracks, _ := localTracks(sc.local...)
+
+				got := runAudiobookCandidatePass(context.Background(), []*database.AudiobookSearchResult{book}, tracks,
+					false, "Die Schatzinsel", "Robert Louis Stevenson", len(tracks), &data, cfgp)
+
+				_, _, _, accepted := applyAudiobookRecommendation(got, &data)
+				t.Logf("matched=%t accepted=%t", len(got) == 1, accepted)
+
+				if want := sc.want(&data); (len(got) == 1) != want {
+					t.Errorf("matched = %t, want %t", len(got) == 1, want)
+				}
+			})
+		}
+	}
+}
+
+func TestTrackCountAllowed(t *testing.T) {
+	cases := []struct {
+		data          *config.MediaDataConfig
+		missing, xtra int
+		want          bool
+	}{
+		{nil, 0, 0, true},
+		{nil, 1, 0, false},
+		{&config.MediaDataConfig{AllowMissingTracks: true}, 2, 0, true},
+		{&config.MediaDataConfig{AllowMissingTracks: true}, 2, 1, false},
+		{&config.MediaDataConfig{AllowExtraTracks: true}, 0, 3, true},
+		{&config.MediaDataConfig{AllowExtraTracks: true}, 1, 3, false},
+		{&config.MediaDataConfig{AllowMissingTracks: true, AllowExtraTracks: true}, 1, 3, true},
+	}
+
+	for _, tc := range cases {
+		if got := trackCountAllowed(tc.data, tc.missing, tc.xtra); got != tc.want {
+			t.Errorf("%+v missing %d extra %d: got %v", tc.data, tc.missing, tc.xtra, got)
+		}
+	}
+}
+
+func TestCountMismatchTotalMatch(t *testing.T) {
+	on := &config.MediaDataConfig{AllowCountMismatchIfTotalMatch: true}
+
+	cases := []struct {
+		name     string
+		data     *config.MediaDataConfig
+		metaDist float64
+		local    int64
+		want     bool
+	}{
+		{"off", &config.MediaDataConfig{}, 0, 600_000, false},
+		{"total and tags match", on, 0, 600_000 + 20_000, true},
+		// default 3 s per release track: 10 tracks = 30 s
+		{"total off", on, 0, 600_000 + 31_000, false},
+		{"tags off", on, 0.5, 600_000, false},
+		{"absolute cap", &config.MediaDataConfig{AllowCountMismatchIfTotalMatch: true, MaxTotalDifferenceSeconds: 60}, 0, 600_000 + 50_000, true},
+		{"per-track tolerance", &config.MediaDataConfig{AllowCountMismatchIfTotalMatch: true, PerTrackToleranceSeconds: 1}, 0, 600_000 + 20_000, false},
+		{"no local runtime", on, 0, 0, false},
+	}
+
+	for _, tc := range cases {
+		if got := countMismatchTotalMatch(tc.data, tc.metaDist, tc.local, 600_000, 10); got != tc.want {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
+	}
+}
+
 func TestTierTwoRuntimeAccepted(t *testing.T) {
 	c := &database.AlbumSearchResult{TotalRuntime: 537_000}
 	data := &config.MediaDataConfig{ExceedToleranceIfTotalMatch: true}
@@ -441,6 +661,40 @@ func TestAudiobookCandidatePassPicksEditionByRuntime(t *testing.T) {
 	id, chapters, _, ok := applyAudiobookRecommendation(got, &config.MediaDataConfig{})
 	if !ok || id != 1 || chapters != 3 {
 		t.Errorf("recommendation = %d %d %t", id, chapters, ok)
+	}
+}
+
+// TestAudiobookCandidatePassCountMismatchTotalMatch: as many files as
+// chapters, but cut at other points, so with a hard per-track cutoff no file
+// matches its chapter.
+func TestAudiobookCandidatePassCountMismatchTotalMatch(t *testing.T) {
+	useTestDB(t)
+
+	book := seedAudiobook(t, 1, "Die Schatzinsel", 1_140_000, 1_150_000, 1_130_000)
+
+	local := []parser_v2.TrackInfo{
+		{Title: "Teil 1", TrackNumber: 1, RuntimeMS: 1_000_000},
+		{Title: "Teil 2", TrackNumber: 2, RuntimeMS: 1_300_000},
+		{Title: "Teil 3", TrackNumber: 3, RuntimeMS: 1_121_000},
+	}
+	cfgp := &config.MediaTypeConfig{IsType: config.MediaTypeAudiobook}
+	books := []*database.AudiobookSearchResult{book}
+
+	if got := runAudiobookCandidatePass(context.Background(), books, local, false,
+		"Die Schatzinsel", "Robert Louis Stevenson", len(local), &config.MediaDataConfig{PerTrackToleranceSeconds: 10}, cfgp); len(got) != 0 {
+		t.Fatalf("matched without the option: %+v", got)
+	}
+
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 10, AllowCountMismatchIfTotalMatch: true}
+
+	if got := runAudiobookCandidatePass(context.Background(), books, local, false,
+		"Die Schatzinsel", "Robert Louis Stevenson", len(local), data, cfgp); len(got) != 1 {
+		t.Errorf("matches = %+v, want the book (same total runtime)", got)
+	}
+
+	if got := runAudiobookCandidatePass(context.Background(), books, local, false,
+		"Kidnapped", "Robert Louis Stevenson", len(local), data, cfgp); len(got) != 0 {
+		t.Errorf("matched with another title: %+v", got)
 	}
 }
 
@@ -596,5 +850,90 @@ func TestSyntheticAlbumsDropExcept(t *testing.T) {
 		"select (select count() from dbtracks where dbalbum_id = 2) + (select count() from dbalbum_artists where dbalbum_id = 2)",
 	); got != 0 {
 		t.Errorf("dropped album left %d child rows", got)
+	}
+}
+
+func TestRepackedAudiobookTracks(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+	c := &database.AudiobookSearchResult{Title: "Der Drachenflüsterer", ChapterCount: 29}
+	db := chaptersOf(29, 600_000)
+
+	// 27 files on two discs, read in shuffled order; one file has no title.
+	local := filesOf(27, 29*600_000/27)
+	for i := range local {
+		local[i].DiscNumber = 1 + i/14
+		local[i].TrackNumber = 1 + i%14
+		local[i].Title = "Teil"
+	}
+
+	local[26].Title = ""
+	local[0], local[20] = local[20], local[0]
+
+	got, ok := repackedAudiobookTracks(c, local, db, data)
+	if !ok {
+		t.Fatal("27 files as long as the 29 chapters must match")
+	}
+
+	if len(got) != 27 {
+		t.Fatalf("got %d tracks, want 27", len(got))
+	}
+
+	for i := range got {
+		if got[i].TrackNumber != i+1 || got[i].DiscNumber != 1 {
+			t.Errorf("track %d numbered %d/%d, want %d/1", i, got[i].TrackNumber, got[i].DiscNumber, i+1)
+		}
+	}
+
+	if got[14].RuntimeMS != local[14].RuntimeMS || got[0].ExpectedRuntimeMS != 0 {
+		t.Error("runtime changed or expected runtime set")
+	}
+
+	if got[26].Title != "Der Drachenflüsterer - 027" {
+		t.Errorf("untitled file named %q", got[26].Title)
+	}
+
+	if local[0].TrackNumber != 7 {
+		t.Error("input slice was modified")
+	}
+
+	if _, ok := repackedAudiobookTracks(c, filesOf(27, 300_000), db, data); ok {
+		t.Error("27 files of half the length must not match")
+	}
+}
+
+func TestSingleFileAudiobookTrackReleaseChapters(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+	c := &database.AudiobookSearchResult{Title: "Buch", Author: "Autor", ChapterCount: 2}
+
+	db := chaptersOf(2, 300_000)
+	db[0].Title, db[1].Title = "Kapitel 1", "Kapitel 2"
+
+	local := fileWithChapters(300_000, 300_000)
+
+	tr, ok := singleFileAudiobookTrack(c, &local, db, data)
+	if !ok {
+		t.Fatal("whole-book file not accepted")
+	}
+
+	titles := func(chapters []tags.Chapter) []string {
+		out := make([]string, len(chapters))
+		for i := range chapters {
+			out[i] = chapters[i].Title
+		}
+
+		return out
+	}
+
+	if tr.Title != "Buch" || !slices.Equal(titles(tr.ReleaseChapters), []string{"Kapitel 1", "Kapitel 2"}) {
+		t.Errorf("title %q, chapters %+v", tr.Title, tr.ReleaseChapters)
+	}
+
+	// Chapters cut differently: accepted on the total, each titled after the
+	// book chapter it starts in.
+	split := fileWithChapters(200_000, 200_000, 200_000)
+
+	tr, ok = singleFileAudiobookTrack(c, &split, db, data)
+	if want := []string{"Kapitel 1", "Kapitel 1", "Kapitel 2"}; !ok || !slices.Equal(titles(tr.ReleaseChapters), want) {
+		t.Errorf("differently cut chapters: ok %v, chapters %+v, want titles %q", ok, tr.ReleaseChapters, want)
 	}
 }

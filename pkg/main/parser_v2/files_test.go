@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 )
 
 func TestDeriveQualityProfile(t *testing.T) {
@@ -708,5 +710,67 @@ func TestEnrichTracksWithTagsKeepsOrderAndFallback(t *testing.T) {
 
 	if got := EnrichTracksWithTags(nil); len(got) != 0 {
 		t.Errorf("nil input gave %d tracks", len(got))
+	}
+}
+
+func TestReadEmbeddedChapters(t *testing.T) {
+	for _, tool := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s not installed - skipping", tool)
+		}
+	}
+
+	dir := t.TempDir()
+	meta := filepath.Join(dir, "chapters.txt")
+	if err := os.WriteFile(meta, []byte(";FFMETADATA1\n"+
+		"[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=2500\ntitle=Kapitel 1\n"+
+		"[CHAPTER]\nTIMEBASE=1/1000\nSTART=2500\nEND=6000\ntitle=Kapitel 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	withChapters := filepath.Join(dir, "book.m4b")
+	plain := filepath.Join(dir, "plain.m4b")
+
+	for _, args := range [][]string{
+		{"-f", "lavfi", "-i", "sine=duration=6", "-i", meta, "-map_metadata", "1",
+			"-map_chapters", "1", "-c:a", "aac", "-f", "mp4", withChapters},
+		{"-f", "lavfi", "-i", "sine=duration=6", "-c:a", "aac", "-f", "mp4", plain},
+	} {
+		if out, err := exec.Command("ffmpeg", append([]string{"-v", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
+			t.Skipf("ffmpeg cannot generate fixture (%v): %s", err, out)
+		}
+	}
+
+	got, err := ReadEmbeddedChapters(context.Background(), withChapters)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []tags.Chapter{
+		{Title: "Kapitel 1", StartMS: 0, RuntimeMS: 2500},
+		{Title: "Kapitel 2", StartMS: 2500, RuntimeMS: 3500},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("chapters = %+v, want %+v", got, want)
+	}
+
+	if got, err := ReadEmbeddedChapters(context.Background(), plain); err != nil || got != nil {
+		t.Errorf("file without chapters: got %+v, %v; want nil, nil", got, err)
+	}
+
+	if _, err := ReadEmbeddedChapters(context.Background(), filepath.Join(dir, "missing.m4b")); err == nil {
+		t.Error("missing file: want an error")
+	}
+
+	// Other formats go through ffprobe: ID3 CHAP frames in an MP3.
+	mp3 := filepath.Join(dir, "book.mp3")
+	if out, err := exec.Command("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=duration=6",
+		"-i", meta, "-map_metadata", "1", "-map_chapters", "1", "-c:a", "libmp3lame", mp3).CombinedOutput(); err != nil {
+		t.Skipf("ffmpeg cannot generate mp3 fixture (%v): %s", err, out)
+	}
+
+	got, err = ReadEmbeddedChapters(context.Background(), mp3)
+	if err != nil || len(got) != 2 || got[1].Title != "Kapitel 2" || got[1].StartMS != 2500 {
+		t.Errorf("mp3 chapters = %+v, %v", got, err)
 	}
 }

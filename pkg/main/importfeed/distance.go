@@ -1,9 +1,9 @@
 package importfeed
 
 import (
-	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +15,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -109,9 +110,10 @@ var (
 	// ampReplacer replaces & with "and" in one allocation-free scan when & is absent.
 	ampReplacer = strings.NewReplacer("&", "and")
 
-	// unicodeReplacer maps accented Latin characters and German umlauts to their ASCII
+	// unicodeFold maps accented Latin characters and German umlauts to their ASCII
 	// equivalents before Levenshtein comparison, so "Müller"≈"Mueller", "étude"≈"etude".
-	unicodeReplacer = strings.NewReplacer(
+	// Applied by foldUnicode.
+	unicodeFold = foldMap(
 		// German umlauts and sharp-s
 		"ä", "ae", "Ä", "ae",
 		"ö", "oe", "Ö", "oe",
@@ -204,6 +206,54 @@ var (
 	// levBufPool recycles the prev+curr buffer across levenshteinInt calls.
 	levBufPool = pool.NewPool(200, 0, nil, func(*levBuf) bool { return false })
 )
+
+// foldMap builds unicodeFold from rune/replacement pairs.
+func foldMap(pairs ...string) map[rune]string {
+	m := make(map[rune]string, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		r, _ := utf8.DecodeRuneInString(pairs[i])
+		m[r] = pairs[i+1]
+	}
+
+	return m
+}
+
+// foldUnicode replaces the characters in unicodeFold. It returns s itself,
+// without allocating, when there is nothing to replace - always for ASCII.
+// (strings.Replacer with multi-byte keys allocates on every call; stringDist
+// runs for every local file x release track pair.)
+func foldUnicode(s string) string {
+	first := -1
+
+	for i, r := range s {
+		if r < utf8.RuneSelf {
+			continue
+		}
+
+		if _, ok := unicodeFold[r]; ok {
+			first = i
+			break
+		}
+	}
+
+	if first < 0 {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	b.WriteString(s[:first])
+
+	for _, r := range s[first:] {
+		if rep, ok := unicodeFold[r]; ok {
+			b.WriteString(rep)
+		} else {
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
+}
 
 // sdNormalize lowercases and strips everything that is not a letter or digit.
 // Letters and digits of every script are kept; Latin diacritics are folded
@@ -467,11 +517,13 @@ func levenshteinRunes(a, b []rune) int {
 // When nothing alphanumeric survives on both sides there is no evidence of a
 // match, so only literally equal inputs count as identical.
 func stringDistBasic(str1, str2 string) float64 {
-	raw1, raw2 := str1, str2
-	str1 = sdNormalize(str1)
+	return normalizedDist(sdNormalize(str1), sdNormalize(str2), str1, str2)
+}
 
-	str2 = sdNormalize(str2)
-	if str1 == "" && str2 == "" {
+// normalizedDist is stringDistBasic on the sdNormalize forms n1, n2 of raw1,
+// raw2.
+func normalizedDist(n1, n2, raw1, raw2 string) float64 {
+	if n1 == "" && n2 == "" {
 		if strings.EqualFold(raw1, raw2) {
 			return 0.0
 		}
@@ -479,9 +531,9 @@ func stringDistBasic(str1, str2 string) float64 {
 		return 1.0
 	}
 
-	maxLen := max(utf8.RuneCountInString(str2), utf8.RuneCountInString(str1))
+	maxLen := max(utf8.RuneCountInString(n2), utf8.RuneCountInString(n1))
 
-	return float64(levenshteinInt(str1, str2)) / float64(maxLen)
+	return float64(levenshteinInt(n1, n2)) / float64(maxLen)
 }
 
 // importMatchMaxDist is the largest stringDist at which a search hit's
@@ -545,63 +597,135 @@ func bestNameMatch(want string, n int, get func(int) string, accept func(int) bo
 // stringDist mirrors beets string_dist:
 // handles "X, the"→"the X" normalisation, & replacement, and SD_PATTERNS weighting.
 func stringDist(str1, str2 string) float64 {
-	if str1 == "" && str2 == "" {
-		return 0.0
-	}
+	t1, t2 := prepareSD(str1), prepareSD(str2)
 
-	if str1 == "" || str2 == "" {
-		return 1.0
+	return stringDistPrepared(&t1, &t2)
+}
+
+// sdCut is a string with one of sdPatterns removed, and its sdNormalize form.
+type sdCut struct {
+	s, n string
+}
+
+// sdText is a string prepared for stringDistPrepared: the steps of stringDist
+// that depend on one side only. Track matching compares every local title
+// with every release title, so it prepares each title once (see trackTexts).
+type sdText struct {
+	raw string
+	// s is raw folded (foldUnicode), with a trailing ", the" moved to the
+	// front and & replaced; n is sdNormalize(s).
+	s, n string
+	// mask has bit i set when sdPatterns[i] matches s; cuts[i] is s with that
+	// pattern removed, filled on first use (cutDone).
+	mask, cutDone uint8
+	cuts          []sdCut
+	// paren is n with numParenRe groups removed first, filled on first use.
+	paren     string
+	parenDone bool
+}
+
+// prepareSD prepares raw for stringDistPrepared.
+func prepareSD(raw string) sdText {
+	t := sdText{raw: raw}
+	if raw == "" {
+		return t
 	}
 
 	// Pre-normalize: map accented chars and German umlauts to ASCII equivalents so that
 	// "Müller"≡"Mueller", "étude"≡"etude", etc. contribute zero Levenshtein distance.
-	str1 = unicodeReplacer.Replace(str1)
-	str2 = unicodeReplacer.Replace(str2)
+	str := foldUnicode(raw)
 
 	// SD_END_WORDS: "something, the" → "the something"
 	for i, suffix := range sdEndWordSuffixes {
-		if trimmed := logger.TrimSuffixI(str1, suffix); trimmed != str1 {
-			str1 = logger.JoinStrings(sdEndWordList[i], " ", trimmed)
-		}
-
-		if trimmed := logger.TrimSuffixI(str2, suffix); trimmed != str2 {
-			str2 = logger.JoinStrings(sdEndWordList[i], " ", trimmed)
+		if trimmed := logger.TrimSuffixI(str, suffix); trimmed != str {
+			str = logger.JoinStrings(sdEndWordList[i], " ", trimmed)
 		}
 	}
 
 	// SD_REPLACE: & → and
-	str1 = ampReplacer.Replace(str1)
-	str2 = ampReplacer.Replace(str2)
+	t.s = ampReplacer.Replace(str)
+	t.n = sdNormalize(t.s)
+
+	for i := range sdPatterns {
+		if sdPatterns[i].re.MatchString(t.s) {
+			t.mask |= 1 << i
+		}
+	}
+
+	return t
+}
+
+// sdPatternCut applies sdPatterns[i] to str (n is its sdNormalize form): from
+// t (computing and keeping the cut on first use) while str is still t.s,
+// otherwise directly.
+func sdPatternCut(t *sdText, i int, str, n string, prepared bool) (matched bool, cut, cutN string) {
+	if prepared {
+		if t.mask&(1<<i) == 0 {
+			return false, str, n
+		}
+
+		if t.cutDone&(1<<i) == 0 {
+			if t.cuts == nil {
+				t.cuts = make([]sdCut, len(sdPatterns))
+			}
+
+			cut = sdPatterns[i].re.ReplaceAllLiteralString(t.s, "")
+			t.cuts[i] = sdCut{cut, sdNormalize(cut)}
+			t.cutDone |= 1 << i
+		}
+
+		return true, t.cuts[i].s, t.cuts[i].n
+	}
+
+	if !sdPatterns[i].re.MatchString(str) {
+		return false, str, n
+	}
+
+	cut = sdPatterns[i].re.ReplaceAllLiteralString(str, "")
+
+	return true, cut, sdNormalize(cut)
+}
+
+// stringDistPrepared is stringDist on prepared strings. It fills the lazy
+// parts of t1 and t2, so a prepared text must not be shared between
+// goroutines.
+func stringDistPrepared(t1, t2 *sdText) float64 {
+	if t1.raw == "" && t2.raw == "" {
+		return 0.0
+	}
+
+	if t1.raw == "" || t2.raw == "" {
+		return 1.0
+	}
+
+	str1, str2 := t1.s, t2.s
+	n1, n2 := t1.n, t2.n
+	// prep1/prep2: str1/str2 are still the prepared t1.s/t2.s.
+	prep1, prep2 := true, true
 
 	// SD_PATTERNS: each match is credited at its weight rather than full distance.
-	baseDist := stringDistBasic(str1, str2)
+	baseDist := normalizedDist(n1, n2, str1, str2)
 
 	penalty := 0.0
 	for i := range sdPatterns {
-		match1 := sdPatterns[i].re.MatchString(str1)
+		match1, case1, c1 := sdPatternCut(t1, i, str1, n1, prep1)
+		match2, case2, c2 := sdPatternCut(t2, i, str2, n2, prep2)
 
-		match2 := sdPatterns[i].re.MatchString(str2)
 		if !match1 && !match2 {
 			continue
 		}
 
-		case1, case2 := str1, str2
-		if match1 {
-			case1 = sdPatterns[i].re.ReplaceAllLiteralString(str1, "")
-		}
-
-		if match2 {
-			case2 = sdPatterns[i].re.ReplaceAllLiteralString(str2, "")
-		}
-
-		caseDist := stringDistBasic(case1, case2)
+		caseDist := normalizedDist(c1, c2, case1, case2)
 
 		caseDelta := math.Max(0.0, baseDist-caseDist)
 		if caseDelta == 0.0 {
 			continue
 		}
 
+		prep1 = prep1 && !match1
+		prep2 = prep2 && !match2
 		str1, str2 = case1, case2
+		n1, n2 = c1, c2
 		baseDist = caseDist
 
 		penalty += sdPatterns[i].weight * caseDelta
@@ -612,8 +736,8 @@ func stringDist(str1, str2 string) float64 {
 	// prefix or suffix of the other, cap the distance at 0.3 × extra-content fraction.
 	// Example: "Preludio (Largo)" is a suffix of "Sonata in E minor - Preludio (Largo)".
 	if reg := baseDist + penalty; reg > 0 {
-		s1 := sdNormalize(numParenRe.ReplaceAllLiteralString(str1, ""))
-		s2 := sdNormalize(numParenRe.ReplaceAllLiteralString(str2, ""))
+		s1 := parenStripped(t1, str1, n1, prep1)
+		s2 := parenStripped(t2, str2, n2, prep2)
 
 		shortS, longS := s1, s2
 		if len(shortS) > len(longS) {
@@ -631,6 +755,23 @@ func stringDist(str1, str2 string) float64 {
 	return baseDist + penalty
 }
 
+// parenStripped is sdNormalize of str without numParenRe groups.
+func parenStripped(t *sdText, str, n string, prepared bool) string {
+	switch {
+	case prepared:
+		if !t.parenDone {
+			t.paren = parenStripped(t, str, n, false)
+			t.parenDone = true
+		}
+
+		return t.paren
+	case strings.IndexByte(str, '(') < 0:
+		return n
+	default:
+		return sdNormalize(numParenRe.ReplaceAllLiteralString(str, ""))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Beets-faithful per-track distance and bipartite track matching
 // ---------------------------------------------------------------------------
@@ -642,71 +783,136 @@ const (
 	trackLengthMaxMs   = int64(30_000)
 )
 
-// trackDistance mirrors beets track_distance().
-// It scores how well a local file matches a database track using:
+// trackDistance mirrors beets track_distance(): how well a local file matches
+// a release track, from
 //
 //	track_length  (weight 3.0)
 //	track_title   (weight 3.0 music / 1.0 audiobook)
 //	track_artist  (weight 2.0) — only for VA albums
 //	track_index   (weight 1.0 music / 3.0 audiobook)
-//	track_id      (weight 5.0) — skipped if local has no MB recording ID
+//	track_id      (weight 5.0) — only when both carry a MusicBrainz recording ID
 //
-// Returns [0..1]; lower is better.
+// overridable per config. For many pairs use one trackScorer with localTexts /
+// dbTexts, so the config and every title are prepared once.
 func trackDistance(
 	local *parser_v2.TrackInfo,
 	db *database.DbtrackWithArtist,
 	isVA, isAudiobook bool,
 	data *config.MediaDataConfig,
 ) float64 {
+	sc := newTrackScorer(isVA, isAudiobook, data)
+
+	var lt, dt trackText
+
+	return sc.dist(local, db, &lt, &dt)
+}
+
+// trackScorer holds what trackDistance derives from the config: runtime
+// bounds and the track weights.
+type trackScorer struct {
+	isVA                                     bool
+	strictMode                               bool
+	graceMs, hardMs                          int64
+	wLength, wTitle, wArtist, wIndex, wTrkID float64
+}
+
+// trackText is a track's title (and artist, for VA releases) prepared for
+// stringDistPrepared. It is prepared on first use: pairs rejected on runtime
+// never compare titles.
+type trackText struct {
+	title, artist sdText
+	ready         bool
+}
+
+func newTrackScorer(isVA, isAudiobook bool, data *config.MediaDataConfig) trackScorer {
+	sc := trackScorer{
+		isVA:    isVA,
+		graceMs: trackLengthGraceMs,
+		hardMs:  trackLengthMaxMs,
+		wLength: beetsWeights["track_length"],
+		wTitle:  beetsWeights["track_title"],
+		wArtist: beetsWeights["track_artist"],
+		wIndex:  beetsWeights["track_index"],
+		wTrkID:  beetsWeights["track_id"],
+	}
+
 	// Derive runtime bounds from config; fall back to beets defaults.
 	// When PerTrackToleranceSeconds > 0:
 	//   graceMs = PerTrackToleranceSeconds * 1000  (diff ≤ grace → no penalty)
 	//   hardMs  = PerTrackToleranceSecondsMax * 1000, if > 0 (diff > hard → hard reject)
 	//           = graceMs, if PerTrackToleranceSecondsMax == 0 (grace is the hard limit)
-	graceMs := trackLengthGraceMs
-	hardMs := trackLengthMaxMs
-
-	strictMode := data != nil && data.PerTrackToleranceSeconds > 0
-	if strictMode {
-		graceMs = int64(data.PerTrackToleranceSeconds) * 1000
+	sc.strictMode = data != nil && data.PerTrackToleranceSeconds > 0
+	if sc.strictMode {
+		sc.graceMs = int64(data.PerTrackToleranceSeconds) * 1000
 		if data.PerTrackToleranceSecondsMax > 0 &&
 			data.PerTrackToleranceSecondsMax > data.PerTrackToleranceSeconds {
-			hardMs = int64(data.PerTrackToleranceSecondsMax) * 1000
+			sc.hardMs = int64(data.PerTrackToleranceSecondsMax) * 1000
 		} else {
-			hardMs = graceMs // grace == hard → any excess is a hard reject
+			sc.hardMs = sc.graceMs // grace == hard → any excess is a hard reject
 		}
 	}
 
-	// Build weight override map: start from audiobook defaults (if applicable),
-	// then apply any per-config field overrides on top.
-	var weightOverride map[string]float64
+	// Weights: audiobook defaults (if applicable), then per-config overrides.
 	if isAudiobook {
-		weightOverride = make(map[string]float64, len(audiobookTrackWeights))
-		maps.Copy(weightOverride, audiobookTrackWeights)
+		sc.wLength = audiobookTrackWeights["track_length"]
+		sc.wTitle = audiobookTrackWeights["track_title"]
+		sc.wArtist = audiobookTrackWeights["track_artist"]
+		sc.wIndex = audiobookTrackWeights["track_index"]
+		sc.wTrkID = audiobookTrackWeights["track_id"]
 	}
 
 	if data != nil {
-		apply := func(key string, v float64) {
-			if v == 0 {
-				return
+		override := func(w *float64, v float64) {
+			if v != 0 {
+				*w = v
 			}
-
-			if weightOverride == nil {
-				weightOverride = make(map[string]float64)
-			}
-
-			weightOverride[key] = v
 		}
-		apply("track_title", data.TrackTitleWeight)
-		apply("track_index", data.TrackIndexWeight)
-		apply("track_length", data.TrackLengthWeight)
-		apply("track_artist", data.TrackArtistWeight)
-		apply("track_id", data.TrackIdWeight)
+		override(&sc.wTitle, data.TrackTitleWeight)
+		override(&sc.wIndex, data.TrackIndexWeight)
+		override(&sc.wLength, data.TrackLengthWeight)
+		override(&sc.wArtist, data.TrackArtistWeight)
+		override(&sc.wTrkID, data.TrackIdWeight)
 	}
 
-	dist := &beetsDistance{
-		penalties:      make(map[string]penaltyEntry),
-		weightOverride: weightOverride,
+	return sc
+}
+
+// prepare fills t from title and artist unless already done.
+func (sc *trackScorer) prepare(t *trackText, title, artist string) {
+	if t.ready {
+		return
+	}
+
+	t.title = prepareSD(title)
+	if sc.isVA {
+		t.artist = prepareSD(artist)
+	}
+
+	t.ready = true
+}
+
+// localTexts returns unprepared texts for tracks, filled by dist on first use.
+func (*trackScorer) localTexts(tracks []parser_v2.TrackInfo) []trackText {
+	return make([]trackText, len(tracks))
+}
+
+// dbTexts returns unprepared texts for dbTracks, filled by dist on first use.
+func (*trackScorer) dbTexts(dbTracks []database.DbtrackWithArtist) []trackText {
+	return make([]trackText, len(dbTracks))
+}
+
+// dist mirrors beets' track_distance: each component adds value×weight to
+// the raw distance and weight to the maximum; the result is raw/max.
+func (sc *trackScorer) dist(
+	local *parser_v2.TrackInfo,
+	db *database.DbtrackWithArtist,
+	lt, dt *trackText,
+) float64 {
+	var raw, maxDist float64
+
+	add := func(value, weight float64) {
+		raw += value * weight
+		maxDist += weight
 	}
 
 	// track_length
@@ -716,36 +922,38 @@ func trackDistance(
 			diff = -diff
 		}
 
-		if strictMode {
+		if sc.strictMode {
 			// Strict two-tier mode:
 			//   diff ≤ graceMs → no penalty
 			//   graceMs < diff ≤ hardMs → graduated penalty (diff−grace)/(hard−grace)
 			//   diff > hardMs → hard reject (excluded from matching entirely)
-			if diff > hardMs {
+			if diff > sc.hardMs {
 				return 1.0
 			}
 
-			window := hardMs - graceMs
-			if window <= 0 || diff <= graceMs {
-				dist.add("track_length", 0.0)
+			window := sc.hardMs - sc.graceMs
+			if window <= 0 || diff <= sc.graceMs {
+				add(0, sc.wLength)
 			} else {
-				dist.addRatio("track_length", float64(diff-graceMs), float64(window))
+				add(clampRatio(float64(diff-sc.graceMs), float64(window)), sc.wLength)
 			}
 		} else {
 			// Beets default: 10 s grace window, 30 s max penalty window.
-			penaltyMs := float64(diff - graceMs)
-			dist.addRatio("track_length", penaltyMs, float64(hardMs))
+			add(clampRatio(float64(diff-sc.graceMs), float64(sc.hardMs)), sc.wLength)
 		}
 	}
 
+	sc.prepare(lt, local.Title, local.Artist)
+	sc.prepare(dt, db.Title, db.Artist)
+
 	// track_title
-	dist.addString("track_title", local.Title, db.Title)
+	add(stringDistPrepared(&lt.title, &dt.title), sc.wTitle)
 
 	// track_artist — beets only adds this for VA releases when the DB track has
 	// an artist and the local artist is not one of the "various artists" tokens.
-	if isVA && db.Artist != "" &&
+	if sc.isVA && db.Artist != "" &&
 		!logger.SlicesContainsI(vaArtistTokens, strings.TrimSpace(local.Artist)) {
-		dist.addString("track_artist", local.Artist, db.Artist)
+		add(stringDistPrepared(&lt.artist, &dt.artist), sc.wArtist)
 	}
 
 	// track_index — graduated penalty mirroring beets: abs(diff) / max(local#, db#).
@@ -761,20 +969,33 @@ func trackDistance(
 			diff = -diff
 		}
 
-		denom := max(localN, dbN)
-		dist.add("track_index", float64(diff)/float64(denom))
+		add(float64(diff)/float64(max(localN, dbN)), sc.wIndex)
 	}
 
 	// track_id — only when local file carries a MusicBrainz recording ID
 	if local.MusicBrainzRecordingID != "" && db.MusicbrainzRecordingID != "" {
 		if local.MusicBrainzRecordingID == db.MusicbrainzRecordingID {
-			dist.add("track_id", 0.0)
+			add(0, sc.wTrkID)
 		} else {
-			dist.add("track_id", 1.0)
+			add(1, sc.wTrkID)
 		}
 	}
 
-	return dist.distance()
+	if maxDist == 0 {
+		return 0
+	}
+
+	return raw / maxDist
+}
+
+// clampRatio mirrors beets Distance.add_ratio: number1 clamped to [0, number2],
+// divided by number2.
+func clampRatio(number1, number2 float64) float64 {
+	if number2 <= 0 {
+		return 0
+	}
+
+	return math.Max(math.Min(number1, number2), 0) / number2
 }
 
 // singleFileTotalMatch reports whether one local file holding a whole book
@@ -810,6 +1031,63 @@ func singleFileTotalMatch(
 	}
 
 	return diffMs <= toleranceMs, diffMs, toleranceMs
+}
+
+// repackedTotalMatch reports whether local holds the whole book although it
+// is cut into more than one file and not into the book's chapters (e.g. 152
+// parts of a 60-chapter book): every file has a runtime and their total
+// matches chaptersMs. The tolerance is per_track_tolerance_seconds (default
+// 10 s) per chapter, or max_total_difference_seconds - stricter than for a
+// single file, because the file count says nothing about completeness and a
+// release missing a chapter must not pass.
+func repackedTotalMatch(
+	local []parser_v2.TrackInfo,
+	chaptersMs int64,
+	chapters int,
+	data *config.MediaDataConfig,
+) (ok bool, diffMs, toleranceMs int64) {
+	if len(local) < 2 || len(local) == chapters || chapters <= 0 || chaptersMs <= 0 {
+		return false, 0, 0
+	}
+
+	var localMs int64
+	for i := range local {
+		if local[i].RuntimeMS <= 0 {
+			return false, 0, 0
+		}
+
+		localMs += local[i].RuntimeMS
+	}
+
+	toleranceMs = repackToleranceMs(chapters, data)
+
+	diffMs = localMs - chaptersMs
+	if diffMs < 0 {
+		diffMs = -diffMs
+	}
+
+	return diffMs <= toleranceMs, diffMs, toleranceMs
+}
+
+// repackToleranceMs is the total-runtime tolerance of repackedTotalMatch for a
+// book of chapters chapters.
+func repackToleranceMs(chapters int, data *config.MediaDataConfig) int64 {
+	perChapterMs := trackLengthGraceMs
+	if data != nil && data.PerTrackToleranceSeconds > 0 {
+		perChapterMs = int64(data.PerTrackToleranceSeconds) * 1000
+	}
+
+	if data != nil && data.MaxTotalDifferenceSeconds > 0 {
+		return int64(data.MaxTotalDifferenceSeconds) * 1000
+	}
+
+	return int64(chapters) * perChapterMs
+}
+
+// audiobookMetaDistance is audiobookMatchDistance without the chapter-count
+// penalties, for candidates whose total runtime is verified instead.
+func audiobookMetaDistance(c *database.AudiobookSearchResult, title, author string) float64 {
+	return audiobookMatchDistance(c, title, author, 1)
 }
 
 // globaliseDiscTrackNumbers returns a copy of dbTracks where per-disc track
@@ -908,6 +1186,10 @@ func matchTracksByDistance(
 
 	const dummyCost = 1.0
 
+	// Each title is prepared once, not once per pair.
+	sc := newTrackScorer(isVA, isAudiobook, data)
+	lts, dts := sc.localTexts(tracks), sc.dbTexts(dbTracks)
+
 	// Single contiguous allocation; row headers slice into it — 2 allocs instead of size+1.
 	backing := make([]float64, size*size)
 
@@ -919,7 +1201,7 @@ func matchTracksByDistance(
 		if i < n {
 			for j := range size {
 				if j < m {
-					row[j] = trackDistance(&tracks[j], &dbTracks[i], isVA, isAudiobook, data)
+					row[j] = sc.dist(&tracks[j], &dbTracks[i], &lts[j], &dts[i])
 				} else {
 					row[j] = dummyCost
 				}
@@ -1385,13 +1667,25 @@ func albumMatchDistance(
 	}
 
 	// Unmatched tracks: local files with no counterpart in the album (weight 0.6 each).
-	if trackCount > c.TotalTracks {
+	// Skipped when AllowExtraTracks is set, like missing tracks above.
+	if (data == nil || !data.AllowExtraTracks) && trackCount > c.TotalTracks {
 		for range trackCount - c.TotalTracks {
 			dist.add("unmatched_tracks", 1.0)
 		}
 	}
 
 	return dist.distance()
+}
+
+// albumMetaDistance is albumMatchDistance without the track-count penalties:
+// how well the release matches the tags alone.
+func albumMetaDistance(
+	c *database.AlbumSearchResult,
+	artist, album, mbReleaseID string,
+	year int,
+	data *config.MediaDataConfig,
+) float64 {
+	return albumMatchDistance(c, artist, album, mbReleaseID, "", "", year, c.TotalTracks, data)
 }
 
 // audiobookMatchDistance computes a beets-inspired weighted distance score [0..1]
@@ -1515,12 +1809,15 @@ func albumDistanceWithTracks(
 	// Build padded square cost matrix and run Hungarian assignment.
 	size := max(nLocal, nDB)
 
+	sc := newTrackScorer(isVA, false, data)
+	lts, dts := sc.localTexts(localTracks), sc.dbTexts(dbTracks)
+
 	cost := make([][]float64, size)
 	for i := range cost {
 		cost[i] = make([]float64, size)
 		for j := range cost[i] {
 			if i < nDB && j < nLocal {
-				cost[i][j] = trackDistance(&localTracks[j], &dbTracks[i], isVA, false, data)
+				cost[i][j] = sc.dist(&localTracks[j], &dbTracks[i], &lts[j], &dts[i])
 			} else {
 				cost[i][j] = 1.0
 			}
@@ -1594,34 +1891,130 @@ func audiobookDistanceWithTracks(
 		return dist.distance()
 	}
 
-	if nLocal == 1 && nDB > 1 {
-		var chaptersMs int64
-		for i := range dbTracks {
-			chaptersMs += dbTracks[i].RuntimeMs
-		}
+	var chaptersMs int64
+	for i := range dbTracks {
+		chaptersMs += dbTracks[i].RuntimeMs
+	}
 
+	if nLocal == 1 && nDB > 1 {
 		ok, diffMs, toleranceMs := singleFileTotalMatch(
 			localTracks[0].RuntimeMS, chaptersMs, nDB, data,
 		)
-		if ok {
-			dist.add("tracks", float64(diffMs)/float64(toleranceMs))
-		} else {
+		if !ok {
 			dist.add("missing_tracks", 1.0)
 			dist.add("unmatched_tracks", 1.0)
+
+			return dist.distance()
 		}
+
+		// A file whose embedded chapters are the candidate's chapters is
+		// scored chapter by chapter, which tells editions of the same length
+		// apart. Its total already matches, so a chapter that does not pair
+		// (a boundary moved) is no sign of missing content: then the total
+		// decides, as for a file without chapters. Embedded chapter titles are
+		// the release's own ("001 - Kapitel 1 & Kapitel 2.1 - <book>"), so
+		// only lengths and order count.
+		if sum, ok := embeddedChapterPairing(&localTracks[0], dbTracks, data); ok {
+			dist.add("tracks", sum/float64(nDB))
+
+			return dist.distance()
+		}
+
+		dist.add("tracks", float64(diffMs)/float64(toleranceMs))
 
 		return dist.distance()
 	}
 
+	if ok, diffMs, toleranceMs := repackedTotalMatch(localTracks, chaptersMs, nDB, data); ok {
+		dist.add("tracks", float64(diffMs)/float64(toleranceMs))
+
+		return dist.distance()
+	}
+
+	// Accumulate per-chapter distances as a single averaged "tracks" component,
+	// mirroring beets' approach. Adding one entry per chapter would give chapters
+	// weight 3.0×N vs metadata weight ~5, completely overwhelming title/author for
+	// audiobooks with many chapters. A single averaged entry keeps the weight fixed
+	// at 3.0 regardless of chapter count.
+	sum, pairs := audiobookChapterPairing(localTracks, dbTracks, data, true)
+	paired := pairedCount(pairs)
+
+	for range nDB - paired {
+		dist.add("missing_tracks", 1.0)
+	}
+
+	if paired > 0 {
+		dist.add("tracks", sum/float64(paired))
+	}
+
+	// Every local track not paired with a chapter is unmatched, whether the
+	// assignment left it on a rejected pair or a padding row.
+	for range nLocal - paired {
+		dist.add("unmatched_tracks", 1.0)
+	}
+
+	return dist.distance()
+}
+
+// embeddedChapterPairing pairs the chapters embedded in a single file with
+// the candidate's chapters on length and order. Titles are left out: they are
+// the release's own ("001 - Kapitel 1 & Kapitel 2.1 - <book>"). ok only when
+// the counts are equal and every chapter pairs; sum is the summed distance.
+func embeddedChapterPairing(
+	local *parser_v2.TrackInfo,
+	dbTracks []database.DbtrackWithArtist,
+	data *config.MediaDataConfig,
+) (sum float64, ok bool) {
+	if len(dbTracks) < 2 || len(local.Chapters) != len(dbTracks) {
+		return 0, false
+	}
+
+	sum, pairs := audiobookChapterPairing(embeddedChapterTracks(local), dbTracks, data, false)
+
+	return sum, pairedCount(pairs) == len(dbTracks)
+}
+
+// pairedCount counts the paired entries of an audiobookChapterPairing result.
+func pairedCount(pairs []int) int {
+	n := 0
+
+	for _, j := range pairs {
+		if j >= 0 {
+			n++
+		}
+	}
+
+	return n
+}
+
+// audiobookChapterPairing pairs local tracks with the candidate's chapters the
+// way matchTracksByDistance does. pairs[i] is the local track paired with
+// chapter i, or -1 when its distance is not below the track-distance limit;
+// sum is the summed distance of the pairs. Without titles, only lengths and
+// order are compared.
+func audiobookChapterPairing(
+	localTracks []parser_v2.TrackInfo,
+	dbTracks []database.DbtrackWithArtist,
+	data *config.MediaDataConfig,
+	titles bool,
+) (sum float64, pairs []int) {
+	nLocal, nDB := len(localTracks), len(dbTracks)
+
 	// Build padded square cost matrix and run Hungarian assignment (audiobook mode).
 	size := max(nLocal, nDB)
+
+	sc := newTrackScorer(false, true, data)
+	if !titles {
+		sc.wTitle = 0
+	}
+	lts, dts := sc.localTexts(localTracks), sc.dbTexts(dbTracks)
 
 	cost := make([][]float64, size)
 	for i := range cost {
 		cost[i] = make([]float64, size)
 		for j := range cost[i] {
 			if i < nDB && j < nLocal {
-				cost[i][j] = trackDistance(&localTracks[j], &dbTracks[i], false, true, data)
+				cost[i][j] = sc.dist(&localTracks[j], &dbTracks[i], &lts[j], &dts[i])
 			} else {
 				cost[i][j] = 1.0
 			}
@@ -1639,37 +2032,125 @@ func audiobookDistanceWithTracks(
 		rowAssign = lapAssign(cost)
 	}
 
-	// Accumulate per-chapter distances as a single averaged "tracks" component,
-	// mirroring beets' approach. Adding one entry per chapter would give chapters
-	// weight 3.0×N vs metadata weight ~5, completely overwhelming title/author for
-	// audiobooks with many chapters. A single averaged entry keeps the weight fixed
-	// at 3.0 regardless of chapter count.
-	var (
-		trackDistSum   float64
-		trackDistCount int
-	)
+	pairs = make([]int, nDB)
 
 	for i := range nDB {
-		j := rowAssign[i]
-		if j >= 0 && j < nLocal && cost[i][j] < maxTD {
-			trackDistSum += cost[i][j]
-			trackDistCount++
-		} else {
-			dist.add("missing_tracks", 1.0)
+		pairs[i] = -1
+		if j := rowAssign[i]; j >= 0 && j < nLocal && cost[i][j] < maxTD {
+			sum += cost[i][j]
+			pairs[i] = j
 		}
 	}
 
-	if trackDistCount > 0 {
-		dist.add("tracks", trackDistSum/float64(trackDistCount))
+	return sum, pairs
+}
+
+// releaseChapterList returns the chapter list to write into local, one file
+// holding the whole book, from the candidate's chapters dbTracks:
+//   - the file's chapters pair 1:1 with the candidate's (embeddedChapterPairing):
+//     the file's chapters under the candidate's titles;
+//   - otherwise, with replace_embedded_chapters: the candidate's chapters,
+//     their starts scaled to the file's runtime (also for a file without
+//     chapters);
+//   - otherwise: the file's chapters, each under the title of the candidate's
+//     chapter it starts in, the way files cut differently than the chapters
+//     are named (structure.assignAudiobookChapters).
+//
+// nil when the candidate's chapters lack a title or runtime, the file has
+// nothing to rename, or the list would not change.
+func releaseChapterList(
+	local *parser_v2.TrackInfo,
+	dbTracks []database.DbtrackWithArtist,
+	data *config.MediaDataConfig,
+) []tags.Chapter {
+	if len(dbTracks) < 2 || local.RuntimeMS <= 0 ||
+		slices.ContainsFunc(dbTracks, func(t database.DbtrackWithArtist) bool {
+			return t.Title == "" || t.RuntimeMs <= 0
+		}) {
+		return nil
 	}
 
-	// Every local track not paired with a chapter is unmatched, whether the
-	// assignment left it on a rejected pair or a padding row.
-	for range nLocal - trackDistCount {
-		dist.add("unmatched_tracks", 1.0)
+	var out []tags.Chapter
+
+	if _, ok := embeddedChapterPairing(local, dbTracks, data); ok {
+		_, pairs := audiobookChapterPairing(embeddedChapterTracks(local), dbTracks, data, false)
+
+		out = slices.Clone(local.Chapters)
+		for i, j := range pairs {
+			out[j].Title = dbTracks[i].Title
+		}
+	} else if data != nil && data.ReplaceEmbeddedChapters {
+		out = scaledReleaseChapters(dbTracks, local.RuntimeMS)
+	} else if len(local.Chapters) > 0 {
+		out = chaptersTitledByStart(local.Chapters, dbTracks, local.RuntimeMS)
 	}
 
-	return dist.distance()
+	if out == nil || slices.Equal(out, local.Chapters) {
+		return nil
+	}
+
+	return out
+}
+
+// releaseChapterStarts returns the start of each of the candidate's chapters
+// on its own timeline, and its total runtime.
+func releaseChapterStarts(dbTracks []database.DbtrackWithArtist) (starts []int64, totalMs int64) {
+	starts = make([]int64, len(dbTracks))
+	for i := range dbTracks {
+		starts[i] = totalMs
+		totalMs += dbTracks[i].RuntimeMs
+	}
+
+	return starts, totalMs
+}
+
+// scaledReleaseChapters returns the candidate's chapters with their starts
+// scaled to a file of fileMs; the last one runs to the end of the file.
+func scaledReleaseChapters(dbTracks []database.DbtrackWithArtist, fileMs int64) []tags.Chapter {
+	starts, totalMs := releaseChapterStarts(dbTracks)
+
+	out := make([]tags.Chapter, len(dbTracks))
+	for i := range dbTracks {
+		out[i] = tags.Chapter{Title: dbTracks[i].Title, StartMS: starts[i] * fileMs / totalMs}
+	}
+
+	for i := range out {
+		end := fileMs
+		if i+1 < len(out) {
+			end = out[i+1].StartMS
+		}
+
+		out[i].RuntimeMS = end - out[i].StartMS
+	}
+
+	return out
+}
+
+// chapterStartSlackMs lets a chapter that starts just before a release
+// chapter boundary (rounding, a little silence) take that chapter's title.
+// Same value as structure.chapterStartSlackMs for files.
+const chapterStartSlackMs = 2_000
+
+// chaptersTitledByStart returns the file's chapters, each titled after the
+// candidate's chapter its start falls into, positions scaled from the file's
+// runtime fileMs to the candidate's total.
+func chaptersTitledByStart(
+	chapters []tags.Chapter,
+	dbTracks []database.DbtrackWithArtist,
+	fileMs int64,
+) []tags.Chapter {
+	starts, totalMs := releaseChapterStarts(dbTracks)
+
+	out := slices.Clone(chapters)
+	for i := range out {
+		pos := out[i].StartMS*totalMs/fileMs + chapterStartSlackMs
+
+		// The last release chapter starting at or before pos.
+		ch, _ := slices.BinarySearch(starts, pos+1)
+		out[i].Title = dbTracks[max(ch-1, 0)].Title
+	}
+
+	return out
 }
 
 // recommendation returns the match quality level for a set of full-distance scores.
@@ -1769,13 +2250,25 @@ func selectBestAlbumMatches(
 		// The hard cap prevents unrelated artists/albums from bypassing the distance check
 		// just because their track count happens to match.
 		// When AllowMissingTracks is set, also apply the lenient cap to albums with more
-		// tracks than local files (m.TotalTracks >= fileCount), since the user accepts partial albums.
+		// tracks than local files (m.TotalTracks >= fileCount), since the user accepts partial
+		// albums; AllowExtraTracks does the same for albums with fewer tracks.
 		allowMissing := data != nil && data.AllowMissingTracks
+		allowExtra := data != nil && data.AllowExtraTracks
 
 		isExactOrAllowed := m.TotalTracks == fileCount ||
-			(allowMissing && m.TotalTracks >= fileCount)
+			(allowMissing && m.TotalTracks >= fileCount) ||
+			(allowExtra && m.TotalTracks <= fileCount)
 		if (isExactOrAllowed && d <= exactTrackHardCap) || d <= mediumThresh {
 			candidates = append(candidates, scored{m, d})
+			continue
+		}
+
+		// allow_count_mismatch_if_total_match: the tags must match on their own;
+		// the candidate pass checks the total runtime.
+		if data != nil && data.AllowCountMismatchIfTotalMatch {
+			if md := albumMetaDistance(m, artist, album, mbReleaseID, year, data); md <= mediumThresh {
+				candidates = append(candidates, scored{m, md})
+			}
 		}
 	}
 
@@ -1804,6 +2297,7 @@ func selectBestAlbumMatches(
 func selectBestAudiobookMatches(
 	matches []*database.AudiobookSearchResult,
 	fileCount int,
+	localTotalMs int64,
 	data *config.MediaDataConfig,
 	title, author string,
 ) []*database.AudiobookSearchResult {
@@ -1831,8 +2325,35 @@ func selectBestAudiobookMatches(
 		isExact := m.ChapterCount == fileCount
 
 		isAllowedMissing := data != nil && data.AllowMissingTracks && m.ChapterCount >= fileCount
-		if ((isExact || isAllowedMissing) && d <= exactChapterHardCap) || d <= mediumThresh {
+		isAllowedExtra := data != nil && data.AllowExtraTracks && m.ChapterCount <= fileCount
+		if ((isExact || isAllowedMissing || isAllowedExtra) && d <= exactChapterHardCap) || d <= mediumThresh {
 			candidates = append(candidates, scored{m, d})
+			continue
+		}
+
+		// Files cut differently than the chapters: title and author must match
+		// on their own, and a stored runtime must fit. The candidate pass then
+		// checks the total runtime against the chapters.
+		if fileCount > 1 && m.ChapterCount > 0 && !isExact {
+			md := audiobookMetaDistance(m, title, author)
+			if md > mediumThresh {
+				continue
+			}
+
+			// The stored runtime is in whole minutes; the candidate pass checks
+			// the exact chapter runtimes.
+			if m.Runtime > 0 {
+				diff := localTotalMs - int64(m.Runtime)*60_000
+				if diff < 0 {
+					diff = -diff
+				}
+
+				if localTotalMs <= 0 || diff > repackToleranceMs(m.ChapterCount, data)+60_000 {
+					continue
+				}
+			}
+
+			candidates = append(candidates, scored{m, md})
 		}
 	}
 

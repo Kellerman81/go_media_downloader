@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"testing"
 
@@ -130,4 +131,27 @@ func TestFeedResultsSettleIRC(t *testing.T) {
 	}
 
 	(&feedResults{}).requeueIRC(true) // no IRC lines: must be a no-op
+}
+
+func TestChartPageRequest(t *testing.T) {
+	const page = "https://charts.example/album"
+
+	req, err := chartPageRequest(context.Background(), page, "http://chrome.example:9222")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if req.Method != http.MethodPost || req.URL.String() != "http://chrome.example:9222/content" {
+		t.Errorf("chrome request = %s %s, want POST http://chrome.example:9222/content", req.Method, req.URL)
+	}
+
+	req, err = chartPageRequest(context.Background(), page, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if req.Method != http.MethodGet || req.URL.String() != page || req.Header.Get("User-Agent") == "" {
+		t.Errorf("direct request = %s %s UA=%q, want GET %s with a user agent",
+			req.Method, req.URL, req.Header.Get("User-Agent"), page)
+	}
 }

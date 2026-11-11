@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 )
 
@@ -39,6 +40,31 @@ func TestRenderMTUpgrade(t *testing.T) {
 			if !strings.Contains(b.String(), w) {
 				t.Errorf("%s: output lacks %q:\n%s", tc.name, w, b.String())
 			}
+		}
+	}
+}
+
+func TestMTEntryPreselect(t *testing.T) {
+	entry := func(dist float64, countOK bool) *mtEntry {
+		return &mtEntry{Entry: &importfeed.PreviewEntry{Candidates: []*importfeed.PreviewCandidate{
+			{Dist: dist, CountOK: countOK},
+		}}}
+	}
+
+	cases := []struct {
+		name string
+		e    *mtEntry
+		want bool
+	}{
+		{"strong, count ok", entry(0.05, true), true},
+		{"weak", entry(0.5, true), false},
+		{"strong, missing or extra tracks not allowed", entry(0.05, false), false},
+		{"no candidate", &mtEntry{Entry: &importfeed.PreviewEntry{}}, false},
+	}
+
+	for _, tc := range cases {
+		if got := tc.e.preselect(0.1); got != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

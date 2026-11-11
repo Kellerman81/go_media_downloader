@@ -197,11 +197,32 @@ func detectTrackLanguage(
 	track int,
 	duration float64,
 ) (code, name string, err error) {
-	votes := make(map[string]int, len(langClipPositions))
-	names := make(map[string]string, len(langClipPositions))
+	starts := clipStarts(duration)
 
-	for _, pos := range clipStarts(duration) {
-		wav, err := extractClip(ctx, file, track, pos)
+	clips := make([]langClip, len(starts))
+	for i := range starts {
+		clips[i] = langClip{file: file, track: track, start: starts[i]}
+	}
+
+	return voteLanguage(ctx, client, clips)
+}
+
+// langClip is where one clip is cut: an audio track of a file and the start
+// offset in seconds.
+type langClip struct {
+	file  string
+	track int
+	start float64
+}
+
+// voteLanguage sends each clip to Whisper and returns the language at least
+// langMinVotes confident clips agree on, or "" when there is none.
+func voteLanguage(ctx context.Context, client langDetector, clips []langClip) (code, name string, err error) {
+	votes := make(map[string]int, len(clips))
+	names := make(map[string]string, len(clips))
+
+	for _, c := range clips {
+		wav, err := extractClip(ctx, c.file, c.track, c.start)
 		if err != nil {
 			return "", "", err
 		}
@@ -222,6 +243,87 @@ func detectTrackLanguage(
 	code = pickLanguage(votes)
 
 	return code, names[code], nil
+}
+
+// DetectBookLanguages returns the spoken language of an audiobook held in
+// files (in reading order). The language tags of a file from the middle of
+// the book are used when it has any. Otherwise, with listen and a Whisper
+// client (whisper_url), clips are identified by listening: for one file at
+// langClipPositions of its runtime, for several files one clip from the
+// middle of each of the files at langClipPositions of the book - chapter
+// files are often too short for separate clips. languages and names are as
+// for DetectAudioLanguages; both nil when the language stays unknown.
+func DetectBookLanguages(ctx context.Context, files []string, listen bool) (languages, names []string, err error) {
+	if len(files) == 0 {
+		return nil, nil, nil
+	}
+
+	sample := bookSampleFiles(files)
+
+	duration, tags, err := probeAudioTags(ctx, sample[len(sample)/2])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, tag := range tags {
+		if !untaggedLanguage(tag) {
+			languages = append(languages, tag)
+		}
+	}
+
+	if languages != nil || !listen {
+		return languages, nil, nil
+	}
+
+	client := getLangDetector()
+	if client == nil {
+		return nil, nil, nil
+	}
+
+	var clips []langClip
+
+	if len(sample) == 1 {
+		for _, start := range clipStarts(duration) {
+			clips = append(clips, langClip{file: sample[0], start: start})
+		}
+	} else {
+		for _, f := range sample {
+			d := duration
+			if f != sample[len(sample)/2] {
+				if d, _, err = probeAudioTags(ctx, f); err != nil {
+					return nil, nil, err
+				}
+			}
+
+			clips = append(clips, langClip{file: f, start: max(d/2-langClipSeconds/2, 0)})
+		}
+	}
+
+	code, name, err := voteLanguage(ctx, client, clips)
+	if err != nil || code == "" {
+		return nil, nil, err
+	}
+
+	logger.Logtype("info", 1).
+		Str(logger.StrFile, sample[0]).
+		Str("language", code).
+		Msg("Detected audiobook language")
+
+	return []string{trackLanguageTag(code)}, languageNames(code, name), nil
+}
+
+// bookSampleFiles returns the distinct files at langClipPositions of files.
+func bookSampleFiles(files []string) []string {
+	out := make([]string, 0, len(langClipPositions))
+
+	for _, p := range langClipPositions {
+		f := files[int(p*float64(len(files)-1)+0.5)]
+		if len(out) == 0 || out[len(out)-1] != f {
+			out = append(out, f)
+		}
+	}
+
+	return out
 }
 
 // pickLanguage returns the language with the most votes if it has at least

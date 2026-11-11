@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -156,5 +157,105 @@ func TestDetectAudioLanguagesDisabled(t *testing.T) {
 	languages, names, err := DetectAudioLanguages(context.Background(), "/does/not/exist.mkv")
 	if err != nil || languages != nil || names != nil {
 		t.Errorf("without whisper_url: %v, %v, %v", languages, names, err)
+	}
+}
+
+func TestBookSampleFiles(t *testing.T) {
+	files := []string{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10"}
+	if got := bookSampleFiles(files); !slices.Equal(got, []string{"03", "06", "07"}) {
+		t.Errorf("10 files: %v", got)
+	}
+
+	if got := bookSampleFiles([]string{"a", "b"}); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("2 files: %v", got)
+	}
+
+	if got := bookSampleFiles([]string{"book.m4b"}); !slices.Equal(got, []string{"book.m4b"}) {
+		t.Errorf("1 file: %v", got)
+	}
+}
+
+// testChapters writes n audio files of seconds each (sine tones; the detector
+// is faked), tagged with language when it is not empty.
+func testChapters(t *testing.T, n int, seconds, language string) []string {
+	t.Helper()
+
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+
+	if _, err := exec.LookPath(getFFProbeFilename()); err != nil {
+		t.Skip("ffprobe not installed")
+	}
+
+	dir := t.TempDir()
+	files := make([]string, n)
+
+	for i := range files {
+		files[i] = filepath.Join(dir, fmt.Sprintf("%02d.m4a", i+1))
+
+		args := []string{"-v", "error", "-f", "lavfi", "-i", "sine=duration=" + seconds, "-c:a", "aac"}
+		if language != "" {
+			args = append(args, "-metadata:s:a:0", "language="+language)
+		}
+
+		if out, err := exec.Command("ffmpeg", append(args, files[i])...).CombinedOutput(); err != nil {
+			t.Fatalf("creating test file: %v: %s", err, out)
+		}
+	}
+
+	return files
+}
+
+func TestDetectBookLanguages(t *testing.T) {
+	german := []whisper.Detection{{Name: "german", Code: "de", Confidence: 0.9}}
+
+	// Short chapter files: one clip from each of three files.
+	chapters := testChapters(t, 6, "20", "")
+
+	det := &fakeDetector{answers: german}
+	useDetector(t, det)
+
+	languages, names, err := DetectBookLanguages(context.Background(), chapters, true)
+	if err != nil || !slices.Equal(languages, []string{"ger"}) || !slices.Contains(names, "Deutsch") {
+		t.Errorf("chapter files: %v, %v, %v", languages, names, err)
+	}
+
+	if det.clips != 3 {
+		t.Errorf("chapter files: %d clips, want one from each of 3 files", det.clips)
+	}
+
+	// One long file: three clips over its runtime.
+	single := testChapters(t, 1, "200", "")
+
+	det = &fakeDetector{answers: german}
+	useDetector(t, det)
+
+	if languages, _, err := DetectBookLanguages(context.Background(), single, true); err != nil ||
+		!slices.Equal(languages, []string{"ger"}) || det.clips != 3 {
+		t.Errorf("single file: %v, %v, %d clips", languages, err, det.clips)
+	}
+
+	// Without listening, or when Whisper is unsure, the language stays unknown.
+	if languages, names, err := DetectBookLanguages(context.Background(), chapters, false); err != nil ||
+		languages != nil || names != nil {
+		t.Errorf("listen off: %v, %v, %v", languages, names, err)
+	}
+
+	useDetector(t, &fakeDetector{answers: []whisper.Detection{{Code: "de", Confidence: 0.4}}})
+
+	if languages, _, err := DetectBookLanguages(context.Background(), chapters, true); err != nil || languages != nil {
+		t.Errorf("unsure: %v, %v", languages, err)
+	}
+
+	// Tagged files: the tag, no listening.
+	tagged := testChapters(t, 3, "5", "eng")
+
+	det = &fakeDetector{answers: german}
+	useDetector(t, det)
+
+	if languages, names, err := DetectBookLanguages(context.Background(), tagged, true); err != nil ||
+		!slices.Equal(languages, []string{"eng"}) || names != nil || det.clips != 0 {
+		t.Errorf("tagged: %v, %v, %v, %d clips", languages, names, err, det.clips)
 	}
 }

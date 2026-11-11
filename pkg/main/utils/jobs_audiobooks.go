@@ -175,6 +175,13 @@ func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint
 		Narrator:   narrator,
 	}
 
+	singleFile := len(files) == 1 && len(chapters) > 1
+
+	var data *config.MediaDataConfig
+	if len(cfgp.Data) > 0 {
+		data = &cfgp.Data[0]
+	}
+
 	tracks := make([]parser_v2.TrackInfo, 0, len(files))
 	for i := range files {
 		track := parser_v2.TrackInfo{
@@ -192,7 +199,12 @@ func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint
 			title = chapterMap[int(files[i].TrackNumber)]
 		}
 
-		if title != "" {
+		if singleFile {
+			// One file holding the whole book: its title is the book's, and
+			// its chapters are named after the book's (releaseChapterList).
+			track.Title = dbAudiobook.Title
+			importfeed.AddReleaseChapters(ctx, &track, dbID, dbAudiobook.ASIN, cfgp.AudibleRegion, data)
+		} else if title != "" {
 			track.Title = title
 		} else if ti, err := parser_v2.ReadAudioTags(files[i].Location); err == nil && ti != nil {
 			track.Title = ti.Title

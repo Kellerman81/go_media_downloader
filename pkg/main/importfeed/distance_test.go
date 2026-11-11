@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 )
 
 // TestAudiobookSortWithRuntimeVerification tests that matchTracksByDistance correctly
@@ -414,7 +416,9 @@ func TestSingleFileAudiobookAgainstChapters(t *testing.T) {
 // selectBestAudiobookMatches must apply the configured medium threshold, not
 // the built-in default, to non-exact candidates.
 func TestSelectBestAudiobookMatchesUsesConfiguredMediumThresh(t *testing.T) {
-	m := &database.AudiobookSearchResult{Title: "The Hobbitt", Author: "J.R.R. Tolkien", ChapterCount: 12}
+	// Runtime set and no local runtime: not a release cut differently than
+	// the chapters, so only the threshold decides.
+	m := &database.AudiobookSearchResult{Title: "The Hobbitt", Author: "J.R.R. Tolkien", ChapterCount: 12, Runtime: 600}
 
 	d := audiobookMatchDistance(m, "The Hobbit", "J.R.R. Tolkien", 10)
 	if d <= 0 || d >= 0.7 {
@@ -422,12 +426,12 @@ func TestSelectBestAudiobookMatchesUsesConfiguredMediumThresh(t *testing.T) {
 	}
 
 	strict := &config.MediaDataConfig{MediumRecThresh: d / 2}
-	if got := selectBestAudiobookMatches([]*database.AudiobookSearchResult{m}, 10, strict, "The Hobbit", "J.R.R. Tolkien"); len(got) != 0 {
+	if got := selectBestAudiobookMatches([]*database.AudiobookSearchResult{m}, 10, 0, strict, "The Hobbit", "J.R.R. Tolkien"); len(got) != 0 {
 		t.Errorf("MediumRecThresh %v: got %d candidates, want 0 (distance %v)", strict.MediumRecThresh, len(got), d)
 	}
 
 	lenient := &config.MediaDataConfig{MediumRecThresh: d + 0.01}
-	if got := selectBestAudiobookMatches([]*database.AudiobookSearchResult{m}, 10, lenient, "The Hobbit", "J.R.R. Tolkien"); len(got) != 1 {
+	if got := selectBestAudiobookMatches([]*database.AudiobookSearchResult{m}, 10, 0, lenient, "The Hobbit", "J.R.R. Tolkien"); len(got) != 1 {
 		t.Errorf("MediumRecThresh %v: got %d candidates, want 1 (distance %v)", lenient.MediumRecThresh, len(got), d)
 	}
 }
@@ -1110,5 +1114,378 @@ func TestUweJensenDiagnostic(t *testing.T) {
 			rec := recommendation([]float64{fullDist}, nil)
 			t.Logf("  recommendation: %v  (need >= recMedium=%v)", rec, recMedium)
 		}
+	}
+}
+
+// chaptersOf returns n chapters of ms each.
+func chaptersOf(n int, ms int64) []database.DbtrackWithArtist {
+	out := make([]database.DbtrackWithArtist, n)
+	for i := range out {
+		out[i] = database.DbtrackWithArtist{Dbtrack: database.Dbtrack{Title: "Kapitel", TrackNumber: uint16(i + 1), RuntimeMs: ms}}
+	}
+
+	return out
+}
+
+// filesOf returns n local files of ms each.
+func filesOf(n int, ms int64) []parser_v2.TrackInfo {
+	out := make([]parser_v2.TrackInfo, n)
+	for i := range out {
+		out[i] = parser_v2.TrackInfo{Filename: "part.mp3", TrackNumber: i + 1, RuntimeMS: ms}
+	}
+
+	return out
+}
+
+func TestRepackedTotalMatch(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+
+	// 60 chapters of 5 min = 300 min.
+	const chapters, chapterMs = 60, int64(300_000)
+
+	cases := []struct {
+		name  string
+		local []parser_v2.TrackInfo
+		want  bool
+	}{
+		{"more files, same total", filesOf(150, 120_000), true},
+		{"fewer files, same total", filesOf(30, 600_000), true},
+		{"fewer files, two chapters short", filesOf(29, 600_000), false},
+		{"same count is not a repack", filesOf(60, 300_000), false},
+		{"single file is handled elsewhere", filesOf(1, 18_000_000), false},
+		{"file without runtime", append(filesOf(29, 620_000), parser_v2.TrackInfo{}), false},
+	}
+
+	for _, tc := range cases {
+		if ok, _, _ := repackedTotalMatch(tc.local, chapters*chapterMs, chapters, data); ok != tc.want {
+			t.Errorf("%s: got %v, want %v", tc.name, ok, tc.want)
+		}
+	}
+}
+
+// A book whose chapter count differs from the file count stays a candidate
+// when title and author fit and a stored runtime matches the files.
+func TestSelectBestAudiobookMatchesRepacked(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+
+	const localMs = int64(322 * 60_000)
+
+	book := func(title string, runtime int) *database.AudiobookSearchResult {
+		return &database.AudiobookSearchResult{
+			Title: title, Author: "Andreas Schreiner", ChapterCount: 60, Runtime: runtime,
+		}
+	}
+
+	cases := []struct {
+		name string
+		m    *database.AudiobookSearchResult
+		want int
+	}{
+		{"runtime fits", book("Am Abgrund der Zeit", 322), 1},
+		{"no stored runtime", book("Am Abgrund der Zeit", 0), 1},
+		{"runtime off by an hour", book("Am Abgrund der Zeit", 262), 0},
+		{"other title", book("Die Legende von Sleepy Hollow", 322), 0},
+	}
+
+	for _, tc := range cases {
+		got := selectBestAudiobookMatches(
+			[]*database.AudiobookSearchResult{tc.m}, 152, localMs, data,
+			"Am Abgrund der Zeit", "Andreas Schreiner",
+		)
+		if len(got) != tc.want {
+			t.Errorf("%s: got %d candidates, want %d", tc.name, len(got), tc.want)
+		}
+	}
+}
+
+// A repacked folder scores like a single file: by its total runtime, not by
+// the per-chapter counts.
+func TestAudiobookDistanceWithTracksRepacked(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+	c := &database.AudiobookSearchResult{Title: "Keinhorn", Author: "Julian Leitloff", ChapterCount: 38}
+
+	db := chaptersOf(38, 300_000)
+
+	if d := audiobookDistanceWithTracks(c, "Keinhorn", "Julian Leitloff", filesOf(109, 38*300_000/109), db, data); d > mediumRecThresh {
+		t.Errorf("repacked distance %.3f, want ≤ %.2f", d, mediumRecThresh)
+	}
+
+	if d := audiobookDistanceWithTracks(c, "Keinhorn", "Julian Leitloff", filesOf(109, 60_000), db, data); d <= mediumRecThresh {
+		t.Errorf("half-length folder distance %.3f, want > %.2f", d, mediumRecThresh)
+	}
+}
+
+func TestAudiobookDistanceWithTracksEmbeddedChapters(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+	c := &database.AudiobookSearchResult{Title: "Ronja Räubertochter", Author: "Astrid Lindgren", ChapterCount: 10}
+
+	// Two editions of the same length: chapters of 290/310 s and of 300 s.
+	uneven := chaptersOf(10, 300_000)
+	for i := range uneven {
+		uneven[i].RuntimeMs = 290_000 + int64(i%2)*20_000
+	}
+
+	even := chaptersOf(10, 300_000)
+
+	file := func(chapters []database.DbtrackWithArtist) []parser_v2.TrackInfo {
+		f := filesOf(1, 3_000_000)
+		for i := range chapters {
+			f[0].Chapters = append(f[0].Chapters, tags.Chapter{
+				Title: chapters[i].Title, RuntimeMS: chapters[i].RuntimeMs,
+			})
+		}
+
+		return f
+	}
+
+	dist := func(local []parser_v2.TrackInfo, db []database.DbtrackWithArtist) float64 {
+		return audiobookDistanceWithTracks(c, c.Title, c.Author, local, db, data)
+	}
+
+	plain := filesOf(1, 3_000_000)
+	if a, b := dist(plain, uneven), dist(plain, even); a != b {
+		t.Fatalf("without chapters the editions differ: %v vs %v", a, b)
+	}
+
+	local := file(uneven)
+	for i := range local[0].Chapters {
+		// The release's own titles must not count against it.
+		local[0].Chapters[i].Title = fmt.Sprintf("%03d - Kapitel %d.1 - Ronja Räubertochter", i+1, i+1)
+	}
+
+	right, wrong := dist(local, uneven), dist(local, even)
+
+	if right >= wrong {
+		t.Errorf("matching chapters %.4f not better than other edition %.4f", right, wrong)
+	}
+
+	if right > dist(plain, uneven) {
+		t.Errorf("matching chapters %.4f worse than the total alone %.4f", right, dist(plain, uneven))
+	}
+
+	// Chapters that do not all pair (or a different count) leave the total
+	// to decide, as for a file without chapters.
+	moved := file(even)
+	moved[0].Chapters[0].RuntimeMS += 60_000 // past the 30 s per-chapter limit
+	moved[0].Chapters[1].RuntimeMS -= 60_000
+
+	if d := dist(moved, even); d != dist(plain, even) {
+		t.Errorf("moved boundary: %v, want the total-only %v", d, dist(plain, even))
+	}
+
+	if d := dist(file(even[:9]), even); d != dist(plain, even) {
+		t.Errorf("9 of 10 chapters: %v, want the total-only %v", d, dist(plain, even))
+	}
+}
+
+// fileWithChapters returns one local file holding chapters of the given
+// lengths, titled the way releases title them.
+func fileWithChapters(ms ...int64) parser_v2.TrackInfo {
+	f := parser_v2.TrackInfo{Filename: "book.m4b", TrackNumber: 1, DiscNumber: 1}
+
+	var start int64
+	for i, d := range ms {
+		f.Chapters = append(f.Chapters, tags.Chapter{
+			Title:   fmt.Sprintf("%03d - Kapitel %d.1 - Buch", i+1, i+1),
+			StartMS: start, RuntimeMS: d,
+		})
+		start += d
+		f.RuntimeMS += d
+	}
+
+	return f
+}
+
+func TestReleaseChapterList(t *testing.T) {
+	data := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30}
+	replace := &config.MediaDataConfig{PerTrackToleranceSeconds: 3, PerTrackToleranceSecondsMax: 30, ReplaceEmbeddedChapters: true}
+
+	// The book: chapters of 200, 400 and 300 s (starts 0, 200, 600 s).
+	db := chaptersOf(3, 0)
+	for i, d := range []int64{200_000, 400_000, 300_000} {
+		db[i].Title = fmt.Sprintf("Kapitel %d", i+1)
+		db[i].RuntimeMs = d
+	}
+
+	ch := func(title string, start, length int64) tags.Chapter {
+		return tags.Chapter{Title: title, StartMS: start, RuntimeMS: length}
+	}
+
+	// Same cuts: the book's titles, the file's times - with or without the option.
+	same := fileWithChapters(201_000, 399_000, 300_000)
+	for _, d := range []*config.MediaDataConfig{data, replace} {
+		want := []tags.Chapter{ch("Kapitel 1", 0, 201_000), ch("Kapitel 2", 201_000, 399_000), ch("Kapitel 3", 600_000, 300_000)}
+		if got := releaseChapterList(&same, db, d); !slices.Equal(got, want) {
+			t.Errorf("same cuts (replace %v): %+v", d.ReplaceEmbeddedChapters, got)
+		}
+	}
+
+	// Cut differently, 6 pieces of 150 s in a 900 s file.
+	pieces := fileWithChapters(150_000, 150_000, 150_000, 150_000, 150_000, 150_000)
+
+	// Option A: the file's cuts, each titled after the chapter it starts in.
+	// The piece at 600 s starts exactly where Kapitel 3 does.
+	wantA := []tags.Chapter{
+		ch("Kapitel 1", 0, 150_000), ch("Kapitel 1", 150_000, 150_000), ch("Kapitel 2", 300_000, 150_000),
+		ch("Kapitel 2", 450_000, 150_000), ch("Kapitel 3", 600_000, 150_000), ch("Kapitel 3", 750_000, 150_000),
+	}
+	if got := releaseChapterList(&pieces, db, data); !slices.Equal(got, wantA) {
+		t.Errorf("titled by start: %+v", got)
+	}
+
+	// Option B: the book's chapters, scaled to a file 1% longer (909 s).
+	long := pieces
+	long.RuntimeMS = 909_000
+
+	wantB := []tags.Chapter{ch("Kapitel 1", 0, 202_000), ch("Kapitel 2", 202_000, 404_000), ch("Kapitel 3", 606_000, 303_000)}
+	if got := releaseChapterList(&long, db, replace); !slices.Equal(got, wantB) {
+		t.Errorf("replaced: %+v", got)
+	}
+
+	// A file without chapters gets the book's only with the option.
+	bare := parser_v2.TrackInfo{RuntimeMS: 909_000}
+	if got := releaseChapterList(&bare, db, replace); !slices.Equal(got, wantB) {
+		t.Errorf("no chapters, replace: %+v", got)
+	}
+
+	if got := releaseChapterList(&bare, db, data); got != nil {
+		t.Errorf("no chapters, no option: %+v, want nil", got)
+	}
+
+	// Nothing to write.
+	untitled := slices.Clone(db)
+	untitled[1].Title = ""
+
+	already := fileWithChapters(200_000, 400_000, 300_000)
+	for i := range already.Chapters {
+		already.Chapters[i].Title = db[i].Title
+	}
+
+	for name, c := range map[string]struct {
+		local parser_v2.TrackInfo
+		db    []database.DbtrackWithArtist
+	}{
+		"book chapter without title":   {same, untitled},
+		"book chapter without runtime": {same, chaptersOf(3, 0)},
+		"titles already the book's":    {already, db},
+		"file without runtime":         {parser_v2.TrackInfo{Chapters: same.Chapters}, db},
+	} {
+		if got := releaseChapterList(&c.local, c.db, replace); got != nil {
+			t.Errorf("%s: %+v, want nil", name, got)
+		}
+	}
+}
+
+func TestAlbumMatchDistanceCountPenalties(t *testing.T) {
+	c := &database.AlbumSearchResult{Title: "The Wall", Artist: "Pink Floyd", TotalTracks: 10}
+
+	exact := albumMatchDistance(c, "Pink Floyd", "The Wall", "", "", "", 0, 10, nil)
+	extra := albumMatchDistance(c, "Pink Floyd", "The Wall", "", "", "", 0, 12, nil)
+	missing := albumMatchDistance(c, "Pink Floyd", "The Wall", "", "", "", 0, 8, nil)
+
+	if extra <= exact || missing <= exact {
+		t.Fatalf("no count penalties: exact %v extra %v missing %v", exact, extra, missing)
+	}
+
+	allowExtra := &config.MediaDataConfig{AllowExtraTracks: true}
+	if d := albumMatchDistance(c, "Pink Floyd", "The Wall", "", "", "", 0, 12, allowExtra); d != exact {
+		t.Errorf("allow_extra_tracks: extra files still penalised: %v", d)
+	}
+
+	if d := albumMatchDistance(c, "Pink Floyd", "The Wall", "", "", "", 0, 8, allowExtra); d != missing {
+		t.Errorf("allow_extra_tracks changed the missing-track penalty: %v", d)
+	}
+
+	if d := albumMetaDistance(c, "Pink Floyd", "The Wall", "", 0, nil); d != exact {
+		t.Errorf("albumMetaDistance = %v, want %v", d, exact)
+	}
+}
+
+func TestSelectBestAlbumMatchesCountMismatch(t *testing.T) {
+	// 3 tracks against 12 local files: far over the medium threshold on the
+	// count penalties alone.
+	short := &database.AlbumSearchResult{ID: 1, Title: "The Wall", Artist: "Pink Floyd", TotalTracks: 3}
+	other := &database.AlbumSearchResult{ID: 2, Title: "Animals", Artist: "Genesis", TotalTracks: 3}
+	matches := []*database.AlbumSearchResult{short, other}
+
+	if got := selectBestAlbumMatches(matches, 12, "Pink Floyd", "The Wall", "", "", "", 0, nil); len(got) != 0 {
+		t.Fatalf("without the option: %d candidates", len(got))
+	}
+
+	data := &config.MediaDataConfig{AllowCountMismatchIfTotalMatch: true}
+
+	got := selectBestAlbumMatches(matches, 12, "Pink Floyd", "The Wall", "", "", "", 0, data)
+	if len(got) != 1 || got[0].ID != 1 {
+		t.Errorf("with the option: %+v, want only the release with matching tags", got)
+	}
+}
+
+var benchPairs = [][2]string{
+	{"Kapitel 12", "Kapitel 13"},
+	{"Another Brick in the Wall, Part 1", "In the Flesh?"},
+	{"Die Schatzinsel - Teil 03", "Kapitel 3: Der alte Seebär"},
+	{"Müller & Söhne (Live)", "Mueller and Soehne"},
+	{"01 - Vorspann", "Vorspann"},
+}
+
+func BenchmarkStringDist(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, p := range benchPairs {
+			stringDist(p[0], p[1])
+		}
+	}
+}
+
+// matrixTracks is a 40-file folder against a 15-chapter book, with titles
+// that exercise folding, patterns and parentheticals.
+func matrixTracks() ([]parser_v2.TrackInfo, []database.DbtrackWithArtist) {
+	titles := []string{"Der alte Seebär", "Müller & Söhne (Live)", "Kapitel 3, The", "Another Brick in the Wall, Part 1",
+		"Vorspann feat. Someone", "Straße (Remastered 2011)", "Das Ende [Bonus]", "Teil (#4)"}
+
+	local := make([]parser_v2.TrackInfo, 40)
+	for i := range local {
+		local[i] = parser_v2.TrackInfo{Title: titles[i%len(titles)], Artist: "Robert", TrackNumber: i + 1, RuntimeMS: int64(100_000 + i*7_000)}
+	}
+
+	db := make([]database.DbtrackWithArtist, 15)
+	for i := range db {
+		db[i].Title = titles[(i*3)%len(titles)]
+		db[i].Artist = "Robert Louis"
+		db[i].TrackNumber = uint16(i + 1)
+		db[i].RuntimeMs = int64(100_000 + i*19_000)
+	}
+
+	return local, db
+}
+
+// TestTrackScorerReuse: texts prepared once and reused across all pairs score
+// exactly like trackDistance on each pair.
+func TestTrackScorerReuse(t *testing.T) {
+	local, db := matrixTracks()
+
+	for _, data := range []*config.MediaDataConfig{nil, {PerTrackToleranceSeconds: 10, PerTrackToleranceSecondsMax: 30}} {
+		for _, isVA := range []bool{false, true} {
+			sc := newTrackScorer(isVA, true, data)
+			lts, dts := sc.localTexts(local), sc.dbTexts(db)
+
+			for i := range db {
+				for j := range local {
+					if got, want := sc.dist(&local[j], &db[i], &lts[j], &dts[i]), trackDistance(&local[j], &db[i], isVA, true, data); got != want {
+						t.Fatalf("%q vs %q: reused %v, single %v", local[j].Title, db[i].Title, got, want)
+					}
+				}
+			}
+		}
+	}
+}
+
+func BenchmarkMatchTracksByDistance(b *testing.B) {
+	local, db := matrixTracks()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		matchTracksByDistance(local, db, false, false, nil)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/headless"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/sitethrottle"
 	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
@@ -19,9 +20,10 @@ import (
 
 // MovieConfig holds the configuration for the HTML/XPath movie scraper.
 type MovieConfig struct {
-	SiteName string
-	StartURL string
-	BaseURL  string
+	SiteName  string
+	StartURL  string
+	BaseURL   string
+	ChromeURL string // headless_chrome_url: load pages through this headless Chrome; empty fetches directly
 
 	// XPath selectors for extracting movie data
 	SceneNodeXPath   string // XPath to select each movie container
@@ -106,9 +108,11 @@ func NewMovieScraper(cfg *MovieConfig) (*MovieScraper, error) {
 		cfg.URLAttribute = "href"
 	}
 
-	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+	}
+	if cfg.ChromeURL != "" {
+		client.Timeout = headless.Timeout
 	}
 
 	return &MovieScraper{
@@ -236,16 +240,14 @@ func (s *MovieScraper) appendMovieImdbID(
 // scrapePage fetches and parses a single page, returning movie data.
 func (s *MovieScraper) scrapePage(ctx context.Context, url string) ([]MovieData, error) {
 	// Fetch the page
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := pageRequest(ctx, s.config.ChromeURL, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
 	// Enforce the configured delay per site (host), shared across all scraper
 	// configs targeting the same site.
-	sitethrottle.Wait(ctx, req.URL.Host, time.Duration(s.config.WaitSeconds)*time.Second)
+	sitethrottle.Wait(ctx, siteHost(url), time.Duration(s.config.WaitSeconds)*time.Second)
 
 	resp, err := s.client.Do(req)
 	if err != nil {

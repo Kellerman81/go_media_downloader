@@ -141,12 +141,9 @@ func (m *Manager) WriteTags(ctx context.Context, path string, tags *AudioTags) e
 // supports it. Returns (nil, "") if the format has no cover-reading
 // support or the file has no embedded cover.
 //
-// Callers that write new tags onto an already-tagged file without an
-// explicit replacement cover (e.g. structure.TagAlbumFiles when no new
-// cover was fetched for the album) may call this and carry the result into
-// AudioTags.CoverData/CoverMIME. All writers keep an existing embedded cover
-// when CoverData is empty, and replace (never duplicate) a cover passed back, so
-// either way is safe.
+// Writing tags needs no call to this: all writers keep an existing embedded
+// cover when CoverData is empty (TestWriteTagsKeepsCover), and replace (never
+// duplicate) a cover passed back.
 func (m *Manager) ReadCoverData(path string) (data []byte, mime string) {
 	defer recoverRead(path, nil)
 

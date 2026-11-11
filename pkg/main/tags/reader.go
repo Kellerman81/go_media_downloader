@@ -57,6 +57,10 @@ type AudioTags struct {
 	// Cover art
 	CoverData []byte
 	CoverMIME string
+
+	// Chapters, when set, replace the file's chapter list. Only the MP4
+	// writer writes them; nil keeps the chapters the file has.
+	Chapters []Chapter
 }
 
 // TagReader defines the interface for reading audio tags from files.

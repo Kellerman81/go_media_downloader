@@ -25,6 +25,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/csrfapi"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/headless"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/htmlxpath"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/movielists"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/searcher"
@@ -1590,6 +1591,7 @@ func runMovieHTMLXPathScraper(
 		SiteName:         cfglist.CfgList.Name,
 		StartURL:         cfglist.CfgList.MovieScraperStartURL,
 		BaseURL:          cfglist.CfgList.MovieScraperSiteURL,
+		ChromeURL:        config.GetSettingsGeneral().HeadlessChromeURL,
 		SceneNodeXPath:   cfglist.CfgList.MovieSceneNodeXPath,
 		TitleXPath:       cfglist.CfgList.MovieTitleXPath,
 		YearXPath:        cfglist.CfgList.MovieYearXPath,
@@ -1651,29 +1653,24 @@ func extractChartText(node *html.Node, xpath, attr string) string {
 // The request is bounded by a timeout so a slow or hung chart server cannot block
 // the feed job indefinitely.
 func fetchAndParseChartPage(ctx context.Context, url string, fn func(*html.Node)) error {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	var chromeURL string
+	if general := config.GetSettingsGeneral(); general != nil {
+		chromeURL = general.HeadlessChromeURL
+	}
+
+	// A browser render waits for the page's scripts and network to settle.
+	timeout := 60 * time.Second
+	if chromeURL != "" {
+		timeout = headless.Timeout
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := chartPageRequest(ctx, url, chromeURL)
 	if err != nil {
 		return fmt.Errorf("chart page request: %w", err)
 	}
-
-	req.Header.Set(
-		"User-Agent",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-	)
-	req.Header.Set(
-		"Accept",
-		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-	)
-	req.Header.Set("Accept-Language", "de-DE,de;q=0.9,en;q=0.8")
-	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
-	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.Header.Set("Sec-Fetch-Mode", "navigate")
-	req.Header.Set("Sec-Fetch-Site", "none")
-	req.Header.Set("Sec-Fetch-User", "?1")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -1693,6 +1690,36 @@ func fetchAndParseChartPage(ctx context.Context, url string, fn func(*html.Node)
 	fn(doc)
 
 	return nil
+}
+
+// chartPageRequest builds the request for chart page url: through the
+// headless Chrome at chromeURL (headless_chrome_url) when set, else a direct
+// GET with browser-like headers.
+func chartPageRequest(ctx context.Context, url, chromeURL string) (*http.Request, error) {
+	req, err := headless.PageRequest(ctx, chromeURL, url)
+	if err != nil || chromeURL != "" {
+		return req, err
+	}
+
+	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+	if general := config.GetSettingsGeneral(); general != nil && general.UserAgent != "" {
+		userAgent = general.UserAgent
+	}
+
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set(
+		"Accept",
+		"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+	)
+	req.Header.Set("Accept-Language", "de-DE,de;q=0.9,en;q=0.8")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
+	req.Header.Set("Sec-Fetch-User", "?1")
+
+	return req, nil
 }
 
 // getmusiccharts fetches a music chart page (offiziellecharts.de, officialcharts.com, or any

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 )
 
 // MediaType represents the type of media being parsed.
@@ -330,6 +332,18 @@ type TrackInfo struct {
 	ExpectedRuntimeMS int64   // Expected track runtime from DB (0 = unknown)
 	TrackDist         float64 // Distance score from matching (0 = unknown)
 	GeneratedFilename string  // Target filename after rename (empty = unchanged)
+	// ChapterFirst/ChapterLast are the audiobook chapters (1-based) the file
+	// covers, set with the filename; 0 = unknown.
+	ChapterFirst int
+	ChapterLast  int
+	// Chapters is the chapter list embedded in the file (m4b chapters, ID3
+	// CHAP frames). Only read for single-file audiobooks, see
+	// ReadEmbeddedChapters.
+	Chapters []tags.Chapter
+	// ReleaseChapters is the chapter list to write into the file, built from
+	// the matched book's chapters (see importfeed.releaseChapterList); nil
+	// keeps the file's chapters. TagAlbumFiles writes it.
+	ReleaseChapters []tags.Chapter
 }
 
 // regexPattern represents a compiled regex pattern for parsing.

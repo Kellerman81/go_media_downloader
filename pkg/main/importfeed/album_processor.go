@@ -351,6 +351,16 @@ func verifyASINChapterCount(
 		}
 	}
 
+	// Fewer files than chapters, but together as long as the book: cut differently.
+	if ok, _, _ := repackedTotalMatch(tracks, audnexChaptersTotalMs(chapters), len(chapters), data); ok {
+		return asin
+	}
+
+	if data != nil && data.AllowCountMismatchIfTotalMatch &&
+		runtimeDiffWithinTolerance(tracksTotalMs(tracks), audnexChaptersTotalMs(chapters), len(chapters), data) {
+		return asin
+	}
+
 	allowMissing := data != nil && data.AllowMissingTracks
 	if allowMissing && fileCount < len(chapters) {
 		perTrackMs := int64(3000)
@@ -472,6 +482,7 @@ func matchAudiobookFolder(
 	tracks := parser_v2.CollectTracksFromFiles(files)
 
 	tracks = parser_v2.EnrichTracksWithTags(tracks)
+	readEmbeddedChapters(ctx, tracks)
 
 	// Step 2: Parse folder path, first filename, parent dir, and file tags.
 	meta := parseFolderMetadata(folder, files, data)
@@ -557,7 +568,8 @@ func matchAudiobookFolder(
 
 	// Select all candidates with matching chapter count for runtime verification
 	bestCandidates, dbMatch := selectAudiobookCandidatesWithRefresh(
-		ctx, allMatches, fileCount, data, albumTitle, artist, cfgp,
+		ctx, allMatches, fileCount, int64(parser_v2.CalculateTotalRuntime(tracks)/time.Millisecond),
+		data, albumTitle, artist, cfgp,
 	)
 
 	// The text search above must not discard the ASIN hit: it always competes in
@@ -664,21 +676,13 @@ func matchAudiobookFolder(
 		return nil, "no_match", nil
 	}
 
-	// Step 6: Verify track count matches expected chapter count. With
-	// AllowMissingTracks the count may differ; runAudiobookCandidatePass verifies
-	// the per-chapter assignment instead.
-	// A single file holds the whole book; the candidate pass checks its total
-	// runtime against the chapters instead.
-	if !seriesTrackSkipped && !data.AllowMissingTracks && album.ExpectedTracks > 0 &&
-		album.TrackCount > 1 && album.TrackCount != album.ExpectedTracks {
-		logger.Logtype("debug", 0).
-			Str("folder", folder).
-			Int("localTracks", album.TrackCount).
-			Int("expectedChapters", album.ExpectedTracks).
-			Msg("Track count mismatch - skipping")
-
-		return nil, "wrong_track_count", nil
-	}
+	// Step 6: a file count other than the chapter count is decided by the
+	// candidate pass below: files cut differently than the chapters pass on
+	// their total runtime (repackedAudiobookTracks), anything else is
+	// wrong_track_count.
+	countMismatch := !seriesTrackSkipped && album.ExpectedTracks > 0 && album.TrackCount > 1 &&
+		!trackCountAllowed(data, max(album.ExpectedTracks-album.TrackCount, 0),
+			max(album.TrackCount-album.ExpectedTracks, 0))
 
 	// Step 7: Assign the tracks (already read and enriched at the top of this function).
 	album.Tracks = tracks
@@ -747,11 +751,28 @@ func matchAudiobookFolder(
 		sortSuccess = true
 	}
 
-	if !sortSuccess && len(bestCandidates) > 0 {
-		return nil, "wrong_runtime", buildAudiobookFailureReport(
-			ctx, bestCandidates, validABMatches, album.Tracks, albumTitle, artist,
-			int64(album.TotalRuntime/time.Millisecond), isVA, data, cfgp,
-		)
+	if !sortSuccess && (countMismatch || len(bestCandidates) > 0) {
+		reason := "wrong_runtime"
+		if countMismatch {
+			logger.Logtype("debug", 0).
+				Str("folder", folder).
+				Int("localTracks", album.TrackCount).
+				Int("expectedChapters", album.ExpectedTracks).
+				Msg("Track count mismatch and total runtime does not match - skipping")
+
+			reason = "wrong_track_count"
+		}
+
+		var report *MatchReport
+		if len(bestCandidates) > 0 {
+			report = buildAudiobookFailureReport(
+				ctx, bestCandidates, validABMatches, album.Tracks, albumTitle, artist,
+				int64(album.TotalRuntime/time.Millisecond), isVA, data, cfgp,
+			)
+			report.DenialReason = reason
+		}
+
+		return nil, reason, report
 	}
 
 	// Same invariant as the music path: without a database row the callers have
@@ -825,7 +846,7 @@ func findOrImportAudiobookByASIN(
 //
 // Rules for the forced path:
 //   - Skip verifyASINChapterCount, selectBestAudiobookMatches, and recommendation() entirely.
-//   - Skip the track-count equality check (AllowMissingTracks is always true).
+//   - Skip the track-count equality check (AllowMissingTracks and AllowExtraTracks are always true).
 //   - For DB tracks that matchTracksByDistance left unmatched, assign the closest
 //     remaining local file by track distance ("next-best" fallback).
 func matchAudiobookFolderToEntry(
@@ -883,13 +904,19 @@ func matchAudiobookFolderToEntry(
 	forcedData := *data
 
 	forcedData.AllowMissingTracks = true
+	forcedData.AllowExtraTracks = true
 
-	result, matched, used := matchTracksByDistance(album.Tracks, dbTracks, isVA, true, &forcedData)
+	// Files cut differently than the chapters keep their own order instead of
+	// being forced onto chapters.
+	matchedTracks, repacked := repackedAudiobookTracks(dbMatch, album.Tracks, dbTracks, data)
+	if !repacked {
+		result, matched, used := matchTracksByDistance(album.Tracks, dbTracks, isVA, true, &forcedData)
 
-	// Step 4: build the matched-tracks slice with next-best fallback for unmatched DB tracks.
-	matchedTracks := buildMatchedTracksWithFallback(
-		album.Tracks, dbTracks, result, matched, used, isVA, true, &forcedData,
-	)
+		// Step 4: build the matched-tracks slice with next-best fallback for unmatched DB tracks.
+		matchedTracks = buildMatchedTracksWithFallback(
+			album.Tracks, dbTracks, result, matched, used, isVA, true, &forcedData,
+		)
+	}
 
 	album.Tracks = matchedTracks
 	if album.ExpectedTracks == 0 {
@@ -940,7 +967,7 @@ func findOrImportAlbumByMBID(
 //
 // Rules for the forced path:
 //   - Skip selectBestMatches and the recommendation() threshold entirely.
-//   - AllowMissingTracks is always treated as true.
+//   - AllowMissingTracks and AllowExtraTracks are always treated as true.
 //   - For DB tracks that matchTracksByDistance left unmatched, assign the closest
 //     remaining local file by track distance so the rename plan is as complete as
 //     possible ("next-best" fallback).
@@ -995,11 +1022,12 @@ func matchMusicFolderToEntry(
 		return nil, "no_tracks", nil
 	}
 
-	// Use a copy of data with AllowMissingTracks forced true so the matcher
+	// Use a copy of data with AllowMissingTracks/AllowExtraTracks forced true so the matcher
 	// doesn't reject unmatched pairs before we can apply the fallback.
 	forcedData := *data
 
 	forcedData.AllowMissingTracks = true
+	forcedData.AllowExtraTracks = true
 
 	result, matched, used := matchTracksByDistance(album.Tracks, dbTracks, isVA, false, &forcedData)
 

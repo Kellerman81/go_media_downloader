@@ -601,3 +601,30 @@ func TestPageKeyDetectsRepeatedPage(t *testing.T) {
 		t.Error("different pages should have different keys")
 	}
 }
+
+func TestPageRequestThroughChrome(t *testing.T) {
+	const page = "https://site.example/videos/2"
+
+	req, err := pageRequest(t.Context(), "http://chrome.example:9222", page)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if req.URL.Host != "chrome.example:9222" || req.Header.Get("User-Agent") != "" {
+		t.Errorf("chrome request = %s UA=%q, want chrome.example:9222 without own user agent",
+			req.URL, req.Header.Get("User-Agent"))
+	}
+
+	if h := siteHost(page); h != "site.example" {
+		t.Errorf("siteHost = %q, want site.example (throttle per site, not per chrome)", h)
+	}
+
+	req, err = pageRequest(t.Context(), "", page)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if req.URL.String() != page || req.Header.Get("User-Agent") == "" {
+		t.Errorf("direct request = %s UA=%q, want %s with a user agent", req.URL, req.Header.Get("User-Agent"), page)
+	}
+}

@@ -294,6 +294,62 @@ func mdhdTimescale(mdia []byte) uint32 {
 	return binary.BigEndian.Uint32(mdhd[12:16])
 }
 
+// trakBitrate returns the average bitrate in kbps of an audio track: the sum
+// of its sample sizes (stsz) over the media duration (mdhd). The bitrate in
+// the esds descriptor is not used because many encoders leave it 0 or write
+// the maximum. 0 when either is missing (e.g. fragmented MP4).
+func trakBitrate(mdia []byte, stbl []mp4box) int {
+	mdhd, ok := findChild(mp4children(mdia), "mdhd")
+	if !ok || len(mdhd) < 4 {
+		return 0
+	}
+
+	var timescale, duration uint64
+
+	if mdhd[0] == 1 { // version 1: 64-bit creation/modification times and duration
+		if len(mdhd) < 32 {
+			return 0
+		}
+
+		timescale = uint64(binary.BigEndian.Uint32(mdhd[20:24]))
+		duration = binary.BigEndian.Uint64(mdhd[24:32])
+	} else {
+		if len(mdhd) < 20 {
+			return 0
+		}
+
+		timescale = uint64(binary.BigEndian.Uint32(mdhd[12:16]))
+		duration = uint64(binary.BigEndian.Uint32(mdhd[16:20]))
+	}
+
+	// stsz: 4-byte version/flags, 4-byte constant sample size (0 = sizes
+	// follow), 4-byte sample count, then one 4-byte size per sample.
+	stsz, ok := findChild(stbl, "stsz")
+	if !ok || len(stsz) < 12 || timescale == 0 || duration == 0 {
+		return 0
+	}
+
+	count := uint64(binary.BigEndian.Uint32(stsz[8:12]))
+
+	var total uint64
+	if size := uint64(binary.BigEndian.Uint32(stsz[4:8])); size > 0 {
+		total = size * count
+	} else {
+		sizes := stsz[12:]
+		if uint64(len(sizes)) < count*4 {
+			return 0
+		}
+
+		for i := uint64(0); i < count; i++ {
+			total += uint64(binary.BigEndian.Uint32(sizes[i*4:]))
+		}
+	}
+
+	seconds := float64(duration) / float64(timescale)
+
+	return int(math.Round(float64(total) * 8 / seconds / 1000))
+}
+
 // parseTrakAudio best-effort reads channel/sample-rate/bit-depth from the
 // track's first sample entry (trak > mdia > minf > stbl > stsd).
 func parseTrakAudio(trak []byte, tags *AudioTags) {
@@ -312,7 +368,10 @@ func parseTrakAudio(trak []byte, tags *AudioTags) {
 		return
 	}
 
-	stsd, ok := findChild(mp4children(stbl), "stsd")
+	stblBoxes := mp4children(stbl)
+	tags.Bitrate = trakBitrate(mdia, stblBoxes)
+
+	stsd, ok := findChild(stblBoxes, "stsd")
 	if !ok || len(stsd) < 8 {
 		return
 	}
@@ -492,8 +551,9 @@ func parseFreeform(body []byte, tags *AudioTags) {
 }
 
 // WriteTags writes metadata to an MP4 file by remuxing with ffmpeg (-c copy).
-// Streams and chapters are preserved; the original is atomically replaced on
-// success. Requires ffmpeg to be available.
+// Streams and chapters are preserved (tags.Chapters, when set, replaces the
+// chapter list); the original is atomically replaced on success. Requires
+// ffmpeg to be available.
 func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
 	ffmpeg, err := resolveFFmpeg()
 	if err != nil {
@@ -521,6 +581,34 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 		}
 	}
 
+	// New chapters come from an FFMETADATA input after the cover.
+	chapterInput := "0"
+
+	if len(tags.Chapters) > 0 {
+		meta, cerr := os.CreateTemp("", "chapters-*.txt")
+		if cerr != nil {
+			return &ErrWriteFailed{Path: filepath, Reason: "chapter list: " + cerr.Error()}
+		}
+
+		defer os.Remove(meta.Name())
+
+		_, cerr = meta.WriteString(ffmetadataChapters(tags.Chapters))
+		if closeErr := meta.Close(); cerr == nil {
+			cerr = closeErr
+		}
+
+		if cerr != nil {
+			return &ErrWriteFailed{Path: filepath, Reason: "chapter list: " + cerr.Error()}
+		}
+
+		chapterInput = "1"
+		if coverPath != "" {
+			chapterInput = "2"
+		}
+
+		args = append(args, "-f", "ffmetadata", "-i", meta.Name())
+	}
+
 	// Keep every stream (audio, subtitles, real video) except:
 	//   - data streams: the QuickTime chapter text track shows up as one and
 	//     can't be stream-copied into the ipod muxer (the whole remux fails);
@@ -535,7 +623,7 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 	}
 
 	args = append(args, "-map", "-0:d?",
-		"-c", "copy", "-map_metadata", "0", "-map_chapters", "0")
+		"-c", "copy", "-map_metadata", "0", "-map_chapters", chapterInput)
 
 	if coverPath != "" {
 		args = append(args, "-disposition:v:0", "attached_pic")
