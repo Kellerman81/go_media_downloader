@@ -60,6 +60,12 @@ RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.li
         libchromaprint-tools \
         unzip unrar \
         ca-certificates && \
+    # GPU drivers for the Library player's player_hwaccel: VA-API for AMD
+    # (all platforms), Intel VA-API and Quick Sync on amd64 only.
+    apt-get install -y --no-install-recommends mesa-va-drivers && \
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-media-va-driver-non-free libmfx-gen1.2 libvpl2; \
+    fi && \
     rm -rf /var/lib/apt/lists/*
 
 RUN ln -fs /usr/share/zoneinfo/Europe/Berlin /etc/localtime && \

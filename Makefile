@@ -17,14 +17,9 @@ LDFLAGS += -X 'main.buildstamp=${BUILD_DATE}'
 # GOPATH/bin so a different "swag" earlier in PATH can't shadow it.
 SWAG ?= $(shell go env GOPATH)/bin/swag
 
-# Go build settings
-export CGO_ENABLED := 1
-
-# Cross-compilation settings
-LINUX_AMD64_CC = gcc
-LINUX_ARM64_CC = aarch64-linux-gnu-gcc
-LINUX_ARM_CC = arm-linux-gnueabihf-gcc
-WINDOWS_AMD64_CC = x86_64-w64-mingw32-gcc
+# Go build settings. Both modules are pure Go (modernc.org/sqlite), so every
+# target cross-compiles without a C toolchain and the Linux binaries are static.
+export CGO_ENABLED := 0
 
 GOARM = "7"
 
@@ -51,22 +46,22 @@ buildmain:
 	
 	# Linux AMD64
 	cd pkg/main && \
-		CC=${LINUX_AMD64_CC} GOARCH=amd64 GOOS=linux \
+		GOARCH=amd64 GOOS=linux \
 		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-amd64 main.go
 	
 	# Linux ARM64
 	cd pkg/main && \
-		CC=${LINUX_ARM64_CC} GOARCH=arm64 GOOS=linux \
+		GOARCH=arm64 GOOS=linux \
 		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-arm64 main.go
 		
 	# Linux ARM7
 	cd pkg/main && \
-		CC=${LINUX_ARM_CC} GOARCH=arm GOOS=linux GOARM=${GOARM} \
+		GOARCH=arm GOOS=linux GOARM=${GOARM} \
 		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-linux-arm7 main.go
 	
 	# Windows AMD64
 	cd pkg/main && \
-		CC=${WINDOWS_AMD64_CC} GOARCH=amd64 GOOS=windows \
+		GOARCH=amd64 GOOS=windows \
 		go build -ldflags="${LDFLAGS}" -o ../../${BINARY_NAME}-windows-amd64.exe main.go
 
 buildimdb:
@@ -75,22 +70,22 @@ buildimdb:
 	
 	# Linux AMD64
 	cd pkg/imdb && \
-		CC=${LINUX_AMD64_CC} GOARCH=amd64 GOOS=linux \
+		GOARCH=amd64 GOOS=linux \
 		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-amd64 imdb.go
 	
 	# Linux ARM64
 	cd pkg/imdb && \
-		CC=${LINUX_ARM64_CC} GOARCH=arm64 GOOS=linux \
+		GOARCH=arm64 GOOS=linux \
 		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-arm64 imdb.go
 
 	# Linux ARM7
 	cd pkg/imdb && \
-		CC=${LINUX_ARM_CC} GOARCH=arm GOOS=linux GOARM=${GOARM} \
+		GOARCH=arm GOOS=linux GOARM=${GOARM} \
 		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-linux-arm7 imdb.go
 	
 	# Windows AMD64
 	cd pkg/imdb && \
-		CC=${WINDOWS_AMD64_CC} GOARCH=amd64 GOOS=windows \
+		GOARCH=amd64 GOOS=windows \
 		go build -ldflags="${LDFLAGS}" -o ../../${IMDB_BINARY_NAME}-windows-amd64.exe imdb.go
 
 build-all: buildmain buildimdb
