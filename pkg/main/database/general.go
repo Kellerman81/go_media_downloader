@@ -1399,7 +1399,7 @@ func populateTableSlugs(tableName, nameColumn string, force bool) {
 				continue
 			}
 
-			if exec(updateQuery, slug, &records[idx].Num) == nil {
+			if exec(updateQuery, &slug, &records[idx].Num) == nil {
 				count++
 			}
 		}

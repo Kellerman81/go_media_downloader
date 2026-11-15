@@ -611,3 +611,57 @@ func (p *Provider) AddNZBNamed(
 
 	return result.NzoIDs[0], nil
 }
+
+// DownloadDir is the folder SABnzbd puts finished downloads of the category
+// in, as SABnzbd sees it: the category's folder (relative ones below the
+// completed folder), else the completed folder. A relative completed folder
+// is relative to SABnzbd's own base folder and returned as is.
+func (p *Provider) DownloadDir(ctx context.Context, category string) (string, error) {
+	resp, err := p.makeRequest(ctx, url.Values{"mode": {"get_config"}, "output": {"json"}, "apikey": {p.apiKey}})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Error  string `json:"error"`
+		Config struct {
+			Misc struct {
+				CompleteDir string `json:"complete_dir"`
+			} `json:"misc"`
+			Categories []sabCategory `json:"categories"`
+		} `json:"config"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", errors.New(logger.JoinStrings("unexpected SABnzbd response: ", err.Error()))
+	}
+
+	if result.Error != "" {
+		return "", errors.New(logger.JoinStrings("SABnzbd error: ", result.Error))
+	}
+
+	return sabCategoryDir(result.Config.Misc.CompleteDir, category, result.Config.Categories), nil
+}
+
+type sabCategory struct {
+	Name string `json:"name"`
+	Dir  string `json:"dir"`
+}
+
+func sabCategoryDir(complete, category string, cats []sabCategory) string {
+	complete = strings.TrimRight(complete, `/\`)
+
+	for _, c := range cats {
+		if category == "" || !strings.EqualFold(c.Name, category) || c.Dir == "" {
+			continue
+		}
+
+		if strings.HasPrefix(c.Dir, "/") || strings.Contains(c.Dir, `:\`) {
+			return c.Dir
+		}
+
+		return complete + "/" + c.Dir
+	}
+
+	return complete
+}

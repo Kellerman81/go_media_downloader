@@ -21,9 +21,9 @@ require (
 	github.com/rs/zerolog v1.35.1 //logging
 	github.com/stretchr/testify v1.12.1 // indirect; testing toolkit
 	golang.org/x/net v0.62.0 //network utilities
-	golang.org/x/oauth2 v0.37.0 //used for trakt api
-	golang.org/x/sys v0.49.0
-	golang.org/x/text v0.43.0 //text processing utilities
+	golang.org/x/oauth2 v0.38.0 //used for trakt api
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0 //text processing utilities
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 //log file rotation
 	maragu.dev/gomponents v1.4.0 //html component library
 	maragu.dev/gomponents-htmx v0.6.1 //htmx integration for gomponents
@@ -61,7 +61,7 @@ require (
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.58.0 // bcrypt password hashes of web UI users
 	google.golang.org/protobuf v1.36.11 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

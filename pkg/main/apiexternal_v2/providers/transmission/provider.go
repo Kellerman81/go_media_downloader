@@ -564,3 +564,21 @@ func getStatusString(status int) string {
 		return "unknown"
 	}
 }
+
+// DownloadDir is Transmission's download folder, as Transmission sees it
+// (it has no per-category folders).
+func (p *Provider) DownloadDir(ctx context.Context, _ string) (string, error) {
+	response, err := p.makeRPCCall(ctx, "session-get", map[string]any{"fields": []string{"download-dir"}})
+	if err != nil {
+		return "", err
+	}
+
+	args, _ := response.Arguments.(map[string]any)
+	dir, _ := args["download-dir"].(string)
+
+	if response.Result != "success" || dir == "" {
+		return "", errors.New(logger.JoinStrings("no download folder in the answer: ", response.Result))
+	}
+
+	return dir, nil
+}

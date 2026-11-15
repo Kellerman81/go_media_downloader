@@ -22,10 +22,8 @@ import (
 // mtKind is one flavour of the match tester page.
 type mtKind struct {
 	Key        string
-	Title      string
+	Label      string // media config group in the page's config select
 	Subtitle   string
-	Icon       string
-	ConfigNoun string
 	FolderNoun string
 	FileNoun   string
 }
@@ -33,37 +31,29 @@ type mtKind struct {
 var mtKinds = []*mtKind{
 	{
 		Key:        "album",
-		Title:      "Album Match Tester",
+		Label:      "Music & Audiobooks",
 		Subtitle:   "Run the album matcher read-only over music or audiobook folders, compare every candidate from the database and the metadata providers, and organize the folders you pick with the candidate you pick. Nothing is written until you process an entry.",
-		Icon:       "fa-compact-disc",
-		ConfigNoun: "music or audiobook",
 		FolderNoun: "album folders",
 		FileNoun:   "audio",
 	},
 	{
 		Key:        "movie",
-		Title:      "Movie Match Tester",
+		Label:      "Movies",
 		Subtitle:   "Run the movie lookup read-only over import folders, compare what the structure job picks with every candidate from the database, IMDb, TMDB and OMDb, see the rename and the quality decision, and organize the files you pick with the movie you pick. Nothing is written until you process an entry.",
-		Icon:       "fa-film",
-		ConfigNoun: "movie",
 		FolderNoun: "folders",
 		FileNoun:   "movie",
 	},
 	{
 		Key:        "serie",
-		Title:      "Series Match Tester",
+		Label:      "Series",
 		Subtitle:   "Run the series and episode lookup read-only over import folders - one entry per episode file - compare what the structure job picks with every candidate from the database, TVDB and Trakt, see the rename and the quality decision, and organize the files you pick with the series you pick. Nothing is written until you process an entry.",
-		Icon:       "fa-tv",
-		ConfigNoun: "series",
 		FolderNoun: "folders",
 		FileNoun:   "episode",
 	},
 	{
 		Key:        "book",
-		Title:      "Book Match Tester",
+		Label:      "Books",
 		Subtitle:   "Run the book lookup read-only over import folders, compare what the structure job picks with every candidate from the database and OpenLibrary, see the rename, and organize the files you pick with the book you pick. Nothing is written until you process an entry.",
-		Icon:       "fa-book",
-		ConfigNoun: "book",
 		FolderNoun: "folders",
 		FileNoun:   "book",
 	},
@@ -71,17 +61,6 @@ var mtKinds = []*mtKind{
 
 func (k *mtKind) album() bool {
 	return k.Key == "album"
-}
-
-// mtKindByKey returns the kind with key; the album tester by default.
-func mtKindByKey(key string) *mtKind {
-	for _, k := range mtKinds {
-		if k.Key == key {
-			return k
-		}
-	}
-
-	return mtKinds[0]
 }
 
 // mtKindOf returns the kind testing media type isType, or nil.
@@ -247,7 +226,7 @@ func (s *mtSession) handleMediaEntry(ctx *gin.Context, id int) {
 		var err error
 
 		plan, err = structure.PlanMediaFile(ctx, e.Media.File, e.Media.Folder, cfgp, data,
-			mtDefaultTemplate(cfgp), mediaID, dbID, mtImportList(cfgp, data))
+			mtDefaultTemplate(cfgp), &mediaID, dbID, mtImportList(cfgp, data))
 		if err != nil {
 			planErr = err.Error()
 		}

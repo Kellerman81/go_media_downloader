@@ -257,10 +257,10 @@ func (col *mediaCollector) addDB(dbid uint, source string) *MediaCandidate {
 		var orig string
 		database.GetdatarowArgs(
 			"select coalesce(title, ''), coalesce(original_title, ''), coalesce(year, 0), coalesce(imdb_id, '') from dbmovies where id = ?",
-			&dbid, &c.Title, &orig, &c.Year, &c.ExternalID,
+			dbid, &c.Title, &orig, &c.Year, &c.ExternalID,
 		)
 		c.altTitles = append(database.GetrowsN[string](false, mediaAltTitleLimit,
-			"select title from dbmovie_titles where dbmovie_id = ? and title != '' limit 30", &dbid), orig)
+			"select title from dbmovie_titles where dbmovie_id = ? and title != '' limit 30", dbid), orig)
 
 	case config.MediaTypeSeries:
 		var (
@@ -269,7 +269,7 @@ func (col *mediaCollector) addDB(dbid uint, source string) *MediaCandidate {
 		)
 		database.GetdatarowArgs(
 			"select coalesce(seriename, ''), coalesce(firstaired, ''), coalesce(thetvdb_id, 0) from dbseries where id = ?",
-			&dbid, &c.Title, &firstaired, &tvdb,
+			dbid, &c.Title, &firstaired, &tvdb,
 		)
 
 		if len(firstaired) >= 4 {
@@ -281,13 +281,13 @@ func (col *mediaCollector) addDB(dbid uint, source string) *MediaCandidate {
 		}
 
 		c.altTitles = database.GetrowsN[string](false, mediaAltTitleLimit,
-			"select title from dbserie_alternates where dbserie_id = ? and title != '' limit 30", &dbid)
+			"select title from dbserie_alternates where dbserie_id = ? and title != '' limit 30", dbid)
 
 	case config.MediaTypeBook:
 		var isbn10 string
 		database.GetdatarowArgs(
 			"select coalesce(b.title, ''), coalesce(b.year, 0), coalesce(b.isbn_13, ''), coalesce(b.isbn_10, ''), coalesce(a.name, '') from dbbooks b left join dbauthors a on a.id = b.dbauthor_id where b.id = ?",
-			&dbid, &c.Title, &c.Year, &c.ExternalID, &isbn10, &c.Author,
+			dbid, &c.Title, &c.Year, &c.ExternalID, &isbn10, &c.Author,
 		)
 
 		if c.ExternalID == "" {
@@ -295,7 +295,7 @@ func (col *mediaCollector) addDB(dbid uint, source string) *MediaCandidate {
 		}
 
 		c.altTitles = database.GetrowsN[string](false, mediaAltTitleLimit,
-			"select title from dbbook_titles where dbbook_id = ? and title != '' limit 30", &dbid)
+			"select title from dbbook_titles where dbbook_id = ? and title != '' limit 30", dbid)
 	}
 
 	c.MediaID, c.ListName = mediaListEntry(col.cfgp, dbid)
@@ -514,7 +514,7 @@ func (col *mediaCollector) movieCandidates() {
 // ── Series ───────────────────────────────────────────────────────────────────
 
 func serieDBIDByTvdb(tvdb string) uint {
-	return database.Getdatarow[uint](false, "select id from dbseries where thetvdb_id = ?", &tvdb)
+	return database.Getdatarow[uint](false, "select id from dbseries where thetvdb_id = ?", tvdb)
 }
 
 func seriesExts(results []apiexternal_v2.SeriesSearchResult, err error, source, title string) []mediaExt {
@@ -612,7 +612,7 @@ func serieEpisodes(q *MediaQuery, dbid, serieID uint) []MediaEpisode {
 		if ep.DBEpisodeID != 0 && serieID != 0 {
 			database.Scanrowsdyn(false,
 				"select id from serie_episodes where dbserie_episode_id = ? and serie_id = ?",
-				&ep.EpisodeID, &ep.DBEpisodeID, &serieID)
+				&ep.EpisodeID, &ep.DBEpisodeID, serieID)
 
 			if ep.EpisodeID != 0 {
 				ep.Files = database.Getdatarow[int](false,
@@ -671,7 +671,7 @@ func mediaListEntry(cfgp *config.MediaTypeConfig, dbid uint) (uint, string) {
 	query := "select id from " + table + " where " + col + " = ? and listname = ? COLLATE NOCASE"
 	for i := range cfgp.Lists {
 		var id uint
-		database.Scanrowsdyn(false, query, &id, &dbid, &cfgp.Lists[i].Name)
+		database.Scanrowsdyn(false, query, &id, dbid, &cfgp.Lists[i].Name)
 
 		if id != 0 {
 			return id, cfgp.Lists[i].Name

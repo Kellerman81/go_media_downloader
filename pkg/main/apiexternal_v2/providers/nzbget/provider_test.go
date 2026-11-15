@@ -68,3 +68,26 @@ func TestEditQueueFalseIsError(t *testing.T) {
 		t.Errorf("append priority = %v, want 50", gotPriority)
 	}
 }
+
+func TestNzbgetCategoryDir(t *testing.T) {
+	opts := map[string]string{
+		"maindir": "/downloads", "destdir": "${MainDir}/completed",
+		"category1.name": "Movies", "category1.destdir": "${DestDir}/Film",
+		"category2.name": "Series", "category2.destdir": "",
+	}
+
+	for _, tc := range []struct{ category, want string }{
+		{"movies", "/downloads/completed/Film"},
+		{"Series", "/downloads/completed/Series"}, // AppendCategoryDir is on by default
+		{"", "/downloads/completed"},
+	} {
+		if got := nzbgetCategoryDir(opts, tc.category); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.category, got, tc.want)
+		}
+	}
+
+	opts["appendcategorydir"] = "no"
+	if got := nzbgetCategoryDir(opts, "Series"); got != "/downloads/completed" {
+		t.Errorf("without AppendCategoryDir: %q", got)
+	}
+}

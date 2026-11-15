@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -79,18 +77,8 @@ func CheckAnalyzerPaths() {
 }
 
 // getFFProbeFilename returns the path to the ffprobe executable.
-// It checks if the path has already been set, otherwise determines the path based on OS.
 func getFFProbeFilename() string {
-	ffprobeOnce.Do(func() {
-		executable := "ffprobe"
-		if runtime.GOOS == "windows" {
-			executable += ".exe"
-		}
-
-		ffprobepath = filepath.Join(config.GetSettingsGeneral().FfprobePath, executable)
-	})
-
-	return ffprobepath
+	return config.FfprobeExecutable()
 }
 
 // buildFFProbeCmd creates an *exec.Cmd for running ffprobe with specific JSON output options on the specified file.

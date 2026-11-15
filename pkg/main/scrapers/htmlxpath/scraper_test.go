@@ -3,10 +3,13 @@ package htmlxpath
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/antchfx/htmlquery"
 )
@@ -626,5 +629,80 @@ func TestPageRequestThroughChrome(t *testing.T) {
 
 	if req.URL.String() != page || req.Header.Get("User-Agent") == "" {
 		t.Errorf("direct request = %s UA=%q, want %s with a user agent", req.URL, req.Header.Get("User-Agent"), page)
+	}
+}
+
+func TestCreateEpisodePlot(t *testing.T) {
+	restore, err := database.UseMigratedTestDB("../../schema/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(restore)
+
+	if err := database.ExecNErr("insert into dbseries (id, seriename) values (1, 'site')"); err != nil {
+		t.Fatal(err)
+	}
+
+	loads := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		loads++
+		fmt.Fprint(w, `<html><body><div class="desc"> The scene page plot. </div></body></html>`)
+	}))
+	defer srv.Close()
+
+	s, err := NewScraper(&Config{SiteName: "site", SerieName: "site", StartURL: srv.URL, URLXPath: ".", SceneNodeXPath: "//x", TitleXPath: ".", DateXPath: ".",
+		ScenePlotXPath: `//div[@class="desc"]`})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s.dbserieID = 1
+	date := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
+	overview := func(title string) string {
+		return database.Getdatarow[string](false, "select overview from dbserie_episodes where title = ?", title)
+	}
+
+	ctx := context.Background()
+
+	// A plot from the list page needs no scene page.
+	if err := s.createEpisode(ctx, "A", srv.URL+"/a", date, "Ann, Bea", "List plot"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := overview("A"); got != "List plot\n\nActors: Ann, Bea" || loads != 0 {
+		t.Errorf("A = %q, loads %d", got, loads)
+	}
+
+	// Without one the scene page is loaded, once: the plot is then stored.
+	for range 2 {
+		if err := s.createEpisode(ctx, "B", srv.URL+"/b", date, "Ann", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := overview("B"); got != "The scene page plot.\n\nActors: Ann" || loads != 1 {
+		t.Errorf("B = %q, loads %d", got, loads)
+	}
+
+	// Without plot sources the actor list is the overview, as before.
+	s.config.ScenePlotXPath = ""
+	if err := s.createEpisode(ctx, "C", srv.URL+"/c", date, "Cleo", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := overview("C"); got != "Cleo" {
+		t.Errorf("C = %q", got)
+	}
+
+	// The page budget caps scene page loads per run.
+	s.config.ScenePlotXPath = `//div[@class="desc"]`
+	s.scenePlotFetches = maxScenePlotFetches
+	if err := s.createEpisode(ctx, "D", srv.URL+"/d", date, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if loads != 1 {
+		t.Errorf("page budget ignored: %d loads", loads)
 	}
 }

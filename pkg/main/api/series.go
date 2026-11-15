@@ -51,6 +51,7 @@ func searchEpisodesConcurrently(
 	ctx context.Context,
 	media *config.MediaTypeConfig,
 	episodes []uint,
+	titlesearch, download bool,
 ) error {
 	wg := pool.NewSizedGroup(maxConcurrentEpisodeSearches)
 
@@ -70,7 +71,7 @@ func searchEpisodesConcurrently(
 			results := searcher.NewSearcher(media, nil, "", nil)
 			defer results.Close()
 
-			errsub := results.MediaSearch(ctx, media, episodeID, true, false, false)
+			errsub := results.MediaSearch(ctx, media, episodeID, titlesearch, false, false)
 			if errsub != nil {
 				if !errors.Is(errsub, logger.ErrDisabled) {
 					logger.Logtype("error", 2).
@@ -83,7 +84,7 @@ func searchEpisodesConcurrently(
 					lasterr = errsub
 					mu.Unlock()
 				}
-			} else if len(results.Accepted) >= 1 {
+			} else if download && len(results.Accepted) >= 1 {
 				results.Download()
 			}
 		}()
@@ -193,13 +194,13 @@ func apiSeriesDelete(ctx *gin.Context) {
 		return
 	}
 
-	database.DeleteRow("serie_episode_files", querybydbserieid, id)
-	database.DeleteRow("serie_episode_histories", querybydbserieid, id)
-	database.DeleteRow("serie_episodes", querybydbserieid, id)
-	database.DeleteRow("dbserie_episodes", querybydbserieid, id)
-	database.DeleteRow(logger.StrSeries, querybydbserieid, id)
+	database.DeleteRow("serie_episode_files", querybydbserieid, &id)
+	database.DeleteRow("serie_episode_histories", querybydbserieid, &id)
+	database.DeleteRow("serie_episodes", querybydbserieid, &id)
+	database.DeleteRow("dbserie_episodes", querybydbserieid, &id)
+	database.DeleteRow(logger.StrSeries, querybydbserieid, &id)
 
-	_, err := database.DeleteRow("dbseries", logger.FilterByID, id)
+	_, err := database.DeleteRow("dbseries", logger.FilterByID, &id)
 
 	handleDBError(ctx, err, StrOK)
 }
@@ -231,7 +232,7 @@ func apiSeriesListGet(ctx *gin.Context) {
 		"select count() from series where listname = ? COLLATE NOCASE",
 		&listName,
 	)
-	data := database.QueryResultSeries(query, listName)
+	data := database.QueryResultSeries(query, &listName)
 
 	sendJSONResponse(
 		ctx,
@@ -258,11 +259,11 @@ func apiSeriesListDelete(ctx *gin.Context) {
 
 	// Deletes exactly one list entry (series.id) and its children; keying on
 	// dbserie_id would remove the show from every list it is in.
-	database.DeleteRow("serie_episode_files", "serie_id = ?", id)
-	database.DeleteRow("serie_episode_histories", "serie_id = ?", id)
-	database.DeleteRow("serie_episodes", "serie_id = ?", id)
+	database.DeleteRow("serie_episode_files", "serie_id = ?", &id)
+	database.DeleteRow("serie_episode_histories", "serie_id = ?", &id)
+	database.DeleteRow("serie_episodes", "serie_id = ?", &id)
 
-	_, err := database.DeleteRow(logger.StrSeries, logger.FilterByID, id)
+	_, err := database.DeleteRow(logger.StrSeries, logger.FilterByID, &id)
 
 	handleDBError(ctx, err, StrOK)
 }
@@ -342,7 +343,7 @@ func apiSeriesEpisodesGetSingle(ctx *gin.Context) {
 		"select count() from dbserie_episodes where dbserie_id = ?",
 		&id,
 	)
-	data := database.QueryDbserieEpisodes(query, id)
+	data := database.QueryDbserieEpisodes(query, &id)
 
 	sendJSONResponse(
 		ctx,
@@ -367,11 +368,11 @@ func apiSeriesEpisodesDelete(ctx *gin.Context) {
 		return
 	}
 
-	database.DeleteRow("serie_episode_files", "dbserie_episode_id = ?", id)
-	database.DeleteRow("serie_episode_histories", "dbserie_episode_id = ?", id)
-	database.DeleteRow("serie_episodes", "dbserie_episode_id = ?", id)
+	database.DeleteRow("serie_episode_files", "dbserie_episode_id = ?", &id)
+	database.DeleteRow("serie_episode_histories", "dbserie_episode_id = ?", &id)
+	database.DeleteRow("serie_episodes", "dbserie_episode_id = ?", &id)
 
-	_, err := database.DeleteRow("dbserie_episodes", logger.FilterByID, id)
+	_, err := database.DeleteRow("dbserie_episodes", logger.FilterByID, &id)
 
 	handleDBError(ctx, err, StrOK)
 }
@@ -403,7 +404,7 @@ func apiSeriesEpisodesListGet(ctx *gin.Context) {
 		"select count() from serie_episodes where serie_id = ?",
 		&id,
 	)
-	data := database.QueryResultSerieEpisodes(query, id)
+	data := database.QueryResultSerieEpisodes(query, &id)
 
 	sendJSONResponse(
 		ctx,
@@ -428,10 +429,10 @@ func apiSeriesEpisodesListDelete(ctx *gin.Context) {
 		return
 	}
 
-	database.DeleteRow("serie_episode_files", "serie_episode_id = ?", id)
-	database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", id)
+	database.DeleteRow("serie_episode_files", "serie_episode_id = ?", &id)
+	database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", &id)
 
-	_, err := database.DeleteRow("serie_episodes", logger.FilterByID, id)
+	_, err := database.DeleteRow("serie_episodes", logger.FilterByID, &id)
 
 	handleDBError(ctx, err, StrOK)
 }
@@ -536,32 +537,32 @@ func updateDBSeries(c *gin.Context) {
 				"Fanart",
 				"Identifiedby",
 			},
-			dbserie.Seriename,
-			dbserie.Season,
-			dbserie.Status,
-			dbserie.Firstaired,
-			dbserie.Network,
-			dbserie.Runtime,
-			dbserie.Language,
-			dbserie.Genre,
-			dbserie.Overview,
-			dbserie.Rating,
-			dbserie.Siterating,
-			dbserie.SiteratingCount,
-			dbserie.Slug,
-			dbserie.TraktID,
-			dbserie.ImdbID,
-			dbserie.ThetvdbID,
-			dbserie.FreebaseMID,
-			dbserie.FreebaseID,
-			dbserie.TvrageID,
-			dbserie.Facebook,
-			dbserie.Instagram,
-			dbserie.Twitter,
-			dbserie.Banner,
-			dbserie.Poster,
-			dbserie.Fanart,
-			dbserie.Identifiedby,
+			&dbserie.Seriename,
+			&dbserie.Season,
+			&dbserie.Status,
+			&dbserie.Firstaired,
+			&dbserie.Network,
+			&dbserie.Runtime,
+			&dbserie.Language,
+			&dbserie.Genre,
+			&dbserie.Overview,
+			&dbserie.Rating,
+			&dbserie.Siterating,
+			&dbserie.SiteratingCount,
+			&dbserie.Slug,
+			&dbserie.TraktID,
+			&dbserie.ImdbID,
+			&dbserie.ThetvdbID,
+			&dbserie.FreebaseMID,
+			&dbserie.FreebaseID,
+			&dbserie.TvrageID,
+			&dbserie.Facebook,
+			&dbserie.Instagram,
+			&dbserie.Twitter,
+			&dbserie.Banner,
+			&dbserie.Poster,
+			&dbserie.Fanart,
+			&dbserie.Identifiedby,
 		)
 	} else {
 		inres, inerr = database.UpdateArray(
@@ -595,33 +596,33 @@ func updateDBSeries(c *gin.Context) {
 				"Identifiedby",
 			},
 			"id != 0 and id = ?",
-			dbserie.Seriename,
-			dbserie.Season,
-			dbserie.Status,
-			dbserie.Firstaired,
-			dbserie.Network,
-			dbserie.Runtime,
-			dbserie.Language,
-			dbserie.Genre,
-			dbserie.Overview,
-			dbserie.Rating,
-			dbserie.Siterating,
-			dbserie.SiteratingCount,
-			dbserie.Slug,
-			dbserie.TraktID,
-			dbserie.ImdbID,
-			dbserie.ThetvdbID,
-			dbserie.FreebaseMID,
-			dbserie.FreebaseID,
-			dbserie.TvrageID,
-			dbserie.Facebook,
-			dbserie.Instagram,
-			dbserie.Twitter,
-			dbserie.Banner,
-			dbserie.Poster,
-			dbserie.Fanart,
-			dbserie.Identifiedby,
-			dbserie.ID,
+			&dbserie.Seriename,
+			&dbserie.Season,
+			&dbserie.Status,
+			&dbserie.Firstaired,
+			&dbserie.Network,
+			&dbserie.Runtime,
+			&dbserie.Language,
+			&dbserie.Genre,
+			&dbserie.Overview,
+			&dbserie.Rating,
+			&dbserie.Siterating,
+			&dbserie.SiteratingCount,
+			&dbserie.Slug,
+			&dbserie.TraktID,
+			&dbserie.ImdbID,
+			&dbserie.ThetvdbID,
+			&dbserie.FreebaseMID,
+			&dbserie.FreebaseID,
+			&dbserie.TvrageID,
+			&dbserie.Facebook,
+			&dbserie.Instagram,
+			&dbserie.Twitter,
+			&dbserie.Banner,
+			&dbserie.Poster,
+			&dbserie.Fanart,
+			&dbserie.Identifiedby,
+			&dbserie.ID,
 		)
 	}
 
@@ -667,14 +668,14 @@ func updateDBEpisode(c *gin.Context) {
 				"poster",
 				"dbserie_id",
 			},
-			dbserieepisode.Episode,
-			dbserieepisode.Season,
-			dbserieepisode.Identifier,
-			dbserieepisode.Title,
-			dbserieepisode.FirstAired,
-			dbserieepisode.Overview,
-			dbserieepisode.Poster,
-			dbserieepisode.DbserieID,
+			&dbserieepisode.Episode,
+			&dbserieepisode.Season,
+			&dbserieepisode.Identifier,
+			&dbserieepisode.Title,
+			&dbserieepisode.FirstAired,
+			&dbserieepisode.Overview,
+			&dbserieepisode.Poster,
+			&dbserieepisode.DbserieID,
 		)
 	} else {
 		inres, inerr = database.UpdateArray(
@@ -690,15 +691,15 @@ func updateDBEpisode(c *gin.Context) {
 				"dbserie_id",
 			},
 			"id != 0 and id = ?",
-			dbserieepisode.Episode,
-			dbserieepisode.Season,
-			dbserieepisode.Identifier,
-			dbserieepisode.Title,
-			dbserieepisode.FirstAired,
-			dbserieepisode.Overview,
-			dbserieepisode.Poster,
-			dbserieepisode.DbserieID,
-			dbserieepisode.ID,
+			&dbserieepisode.Episode,
+			&dbserieepisode.Season,
+			&dbserieepisode.Identifier,
+			&dbserieepisode.Title,
+			&dbserieepisode.FirstAired,
+			&dbserieepisode.Overview,
+			&dbserieepisode.Poster,
+			&dbserieepisode.DbserieID,
+			&dbserieepisode.ID,
 		)
 	}
 
@@ -735,23 +736,23 @@ func updateSeries(c *gin.Context) {
 		inres, inerr = database.InsertArray(
 			logger.StrSeries,
 			[]string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
-			serie.DbserieID,
-			serie.Listname,
-			serie.Rootpath,
-			serie.DontUpgrade,
-			serie.DontSearch,
+			&serie.DbserieID,
+			&serie.Listname,
+			&serie.Rootpath,
+			&serie.DontUpgrade,
+			&serie.DontSearch,
 		)
 	} else {
 		inres, inerr = database.UpdateArray(
 			logger.StrSeries,
 			[]string{"dbserie_id", "listname", "rootpath", "dont_upgrade", "dont_search"},
 			"id != 0 and id = ?",
-			serie.DbserieID,
-			serie.Listname,
-			serie.Rootpath,
-			serie.DontUpgrade,
-			serie.DontSearch,
-			serie.ID,
+			&serie.DbserieID,
+			&serie.Listname,
+			&serie.Rootpath,
+			&serie.DontUpgrade,
+			&serie.DontSearch,
+			&serie.ID,
 		)
 	}
 
@@ -798,15 +799,15 @@ func updateEpisode(c *gin.Context) {
 				"dont_upgrade",
 				"dont_search",
 			},
-			serieepisode.DbserieID,
-			serieepisode.SerieID,
-			serieepisode.Missing,
-			serieepisode.QualityProfile,
-			serieepisode.DbserieEpisodeID,
-			serieepisode.Blacklisted,
-			serieepisode.QualityReached,
-			serieepisode.DontUpgrade,
-			serieepisode.DontSearch,
+			&serieepisode.DbserieID,
+			&serieepisode.SerieID,
+			&serieepisode.Missing,
+			&serieepisode.QualityProfile,
+			&serieepisode.DbserieEpisodeID,
+			&serieepisode.Blacklisted,
+			&serieepisode.QualityReached,
+			&serieepisode.DontUpgrade,
+			&serieepisode.DontSearch,
 		)
 	} else {
 		inres, inerr = database.UpdateArray(
@@ -823,16 +824,16 @@ func updateEpisode(c *gin.Context) {
 				"dont_search",
 			},
 			"id != 0 and id = ?",
-			serieepisode.DbserieID,
-			serieepisode.SerieID,
-			serieepisode.Missing,
-			serieepisode.QualityProfile,
-			serieepisode.DbserieEpisodeID,
-			serieepisode.Blacklisted,
-			serieepisode.QualityReached,
-			serieepisode.DontUpgrade,
-			serieepisode.DontSearch,
-			serieepisode.ID,
+			&serieepisode.DbserieID,
+			&serieepisode.SerieID,
+			&serieepisode.Missing,
+			&serieepisode.QualityProfile,
+			&serieepisode.DbserieEpisodeID,
+			&serieepisode.Blacklisted,
+			&serieepisode.QualityReached,
+			&serieepisode.DontUpgrade,
+			&serieepisode.DontSearch,
+			&serieepisode.ID,
 		)
 	}
 
@@ -936,6 +937,8 @@ func apirefreshSeriesInc(c *gin.Context) {
 // @Description  Queues a search of the indexers for every episode of one series list entry and downloads the best accepted release per episode. Returns immediately; the work runs in the job queue.
 // @Tags         series · search
 // @Param        id   path      int  true  "series (list entry) ID"
+// @Param        searchByTitle  query     string  false  "true (default): also search by title, not only by ID; false: by ID only"
+// @Param        download       query     bool    false  "true (default): download the best accepted release; false: search only"
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
 // @Success      200  {object}  Jsonstarted  "Queued as a background job"
 // @Success      204  "Nothing Done - no media group or nothing to search (no body)"
@@ -945,6 +948,7 @@ func apirefreshSeriesInc(c *gin.Context) {
 // @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/search/id/{id} [get].
 func apiSeriesSearch(c *gin.Context) {
+	titlesearch, download := queryFlag(c, "searchByTitle", true), queryFlag(c, "download", true)
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
@@ -980,7 +984,7 @@ func apiSeriesSearch(c *gin.Context) {
 							&serie.ID,
 						)
 
-						return searchEpisodesConcurrently(ctx, media, episodes)
+						return searchEpisodesConcurrently(ctx, media, episodes, titlesearch, download)
 					},
 					"Search",
 				); err != nil {
@@ -1008,6 +1012,8 @@ func apiSeriesSearch(c *gin.Context) {
 // @Tags         series · search
 // @Param        id   path      int  true  "series (list entry) ID"
 // @Param        season  path      string  true  "Season number as stored for the series, e.g. 1 (0 for specials)"
+// @Param        searchByTitle  query     string  false  "true (default): also search by title, not only by ID; false: by ID only"
+// @Param        download       query     bool    false  "true (default): download the best accepted release; false: search only"
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
 // @Success      200  {object}  Jsonstarted  "Queued as a background job"
 // @Success      204  "Nothing Done - no media group or nothing to search (no body)"
@@ -1017,6 +1023,7 @@ func apiSeriesSearch(c *gin.Context) {
 // @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/search/id/{id}/{season} [get].
 func apiSeriesSearchSeason(c *gin.Context) {
+	titlesearch, download := queryFlag(c, "searchByTitle", true), queryFlag(c, "download", true)
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
@@ -1051,11 +1058,11 @@ func apiSeriesSearchSeason(c *gin.Context) {
 								&season,
 							),
 							"select id from serie_episodes where serie_id = ? and dbserie_episode_id in (select id from dbserie_episodes where season = ?)",
-							serie.ID,
-							season,
+							&serie.ID,
+							&season,
 						)
 
-						return searchEpisodesConcurrently(ctx, media, episodes)
+						return searchEpisodesConcurrently(ctx, media, episodes, titlesearch, download)
 					},
 					"Search",
 				); err != nil {
@@ -1339,6 +1346,8 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 // @Description  Queues a search of the indexers for one episode (missing or upgrade) and downloads the best accepted release. Returns immediately; the work runs in the job queue.
 // @Tags         series · search
 // @Param        id   path      int  true  "serie_episodes (list entry) ID"
+// @Param        searchByTitle  query     string  false  "true (default): also search by title, not only by ID; false: by ID only"
+// @Param        download       query     bool    false  "true (default): download the best accepted release; false: search only"
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
 // @Success      200  {object}  Jsonstarted  "Queued as a background job"
 // @Success      204  "Nothing Done - no media group or nothing to search (no body)"
@@ -1348,11 +1357,12 @@ func apiSeriesSearchRSSSeason(c *gin.Context) {
 // @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/series/episodes/search/id/{id} [get].
 func apiSeriesEpisodeSearch(c *gin.Context) {
+	titlesearch, download := queryFlag(c, "searchByTitle", true), queryFlag(c, "download", true)
 	id, _ := strconv.Atoi(c.Param(logger.StrID))
 	uid := uint(id) //nolint:gosec // safe: value within target type range
 	dbid := c.Param(logger.StrID)
 	serieid := database.Getdatarow[uint](false, database.QuerySerieEpisodesGetSerieIDByID, &dbid)
-	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, serieid)
+	serie, _ := database.GetSeries(database.Querywithargs{Where: logger.FilterByID}, &serieid)
 	if serie == nil {
 		sendNotFound(c, "Series not found")
 		return
@@ -1373,7 +1383,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 					func(_ uint32, ctx context.Context) error {
 						results := searcher.NewSearcher(media, nil, "", nil)
 
-						err := results.MediaSearch(ctx, media, uid, true, false, false)
+						err := results.MediaSearch(ctx, media, uid, titlesearch, false, false)
 						if err != nil {
 							if !errors.Is(err, logger.ErrDisabled) {
 								logger.Logtype("error", 2).
@@ -1385,7 +1395,7 @@ func apiSeriesEpisodeSearch(c *gin.Context) {
 								return err
 							}
 						} else {
-							if len(results.Accepted) >= 1 {
+							if download && len(results.Accepted) >= 1 {
 								results.Download()
 							}
 						}
@@ -1441,7 +1451,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 
 	serie, _ := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
-		serieepi.SerieID,
+		&serieepi.SerieID,
 	)
 	if serie == nil {
 		sendNotFound(c, "Series not found")
@@ -1449,12 +1459,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 	}
 	// defer logger.ClearVar(&serie)
 
-	titlesearch := false
-	if queryParam, ok := c.GetQuery("searchByTitle"); ok {
-		if queryParam == "true" || queryParam == "yes" || queryParam == "on" {
-			titlesearch = true
-		}
-	}
+	titlesearch := queryFlag(c, "searchByTitle", false)
 
 	found := false
 
@@ -1478,7 +1483,7 @@ func apiSeriesEpisodeSearchList(c *gin.Context) {
 					return err
 				}
 
-				if val, ok := c.GetQuery("download"); ok && strings.EqualFold(val, "true") {
+				if queryFlag(c, "download", false) {
 					searchresults.Download()
 				}
 
@@ -1588,7 +1593,7 @@ func apiSeriesEpisodeSearchDownload(c *gin.Context) {
 
 	serie, err := database.GetSeries(
 		database.Querywithargs{Where: logger.FilterByID},
-		serieepi.SerieID,
+		&serieepi.SerieID,
 	)
 	if err != nil || serie == nil {
 		sendNotFound(c, "Series not found")
@@ -1670,7 +1675,7 @@ func apiSeriesClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	inres, inerr := database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", id)
+	inres, inerr := database.DeleteRow("serie_episode_histories", "serie_episode_id = ?", &id)
 	handleDBInsertOrUpdate(c, inres, inerr, false)
 }
 

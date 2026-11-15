@@ -621,3 +621,79 @@ func (p *Provider) AddNZBExtended(
 
 	return nzbID, nil
 }
+
+// DownloadDir is the folder NZBGet puts finished downloads of the category
+// in, as NZBGet sees it: the category's DestDir, else DestDir plus the
+// category name (AppendCategoryDir), else DestDir. ${Option} references
+// (DestDir=${MainDir}/dst) are resolved.
+func (p *Provider) DownloadDir(ctx context.Context, category string) (string, error) {
+	raw, err := p.makeJSONRPCCall(ctx, "config", []any{})
+	if err != nil {
+		return "", err
+	}
+
+	var entries []struct {
+		Name  string `json:"Name"`
+		Value string `json:"Value"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return "", errors.New(logger.JoinStrings("unexpected NZBGet config: ", err.Error()))
+	}
+
+	opts := make(map[string]string, len(entries))
+	for _, e := range entries {
+		opts[strings.ToLower(e.Name)] = e.Value
+	}
+
+	return nzbgetCategoryDir(opts, category), nil
+}
+
+// nzbgetCategoryDir resolves the folder from NZBGet's options (keys lower
+// case).
+func nzbgetCategoryDir(opts map[string]string, category string) string {
+	expand := func(v string) string {
+		for range 5 {
+			start := strings.Index(v, "${")
+			if start < 0 {
+				break
+			}
+
+			end := strings.Index(v[start:], "}")
+			if end < 0 {
+				break
+			}
+
+			v = v[:start] + opts[strings.ToLower(v[start+2:start+end])] + v[start+end+1:]
+		}
+
+		return v
+	}
+
+	dest := expand(opts["destdir"])
+	if category == "" {
+		return dest
+	}
+
+	for i := 1; ; i++ {
+		name, ok := opts["category"+strconv.Itoa(i)+".name"]
+		if !ok {
+			break
+		}
+
+		if !strings.EqualFold(name, category) {
+			continue
+		}
+
+		if dir := expand(opts["category"+strconv.Itoa(i)+".destdir"]); dir != "" {
+			return dir
+		}
+
+		break
+	}
+
+	if !strings.EqualFold(opts["appendcategorydir"], "no") {
+		return strings.TrimRight(dest, `/\`) + "/" + category
+	}
+
+	return dest
+}

@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"database/sql"
 	"fmt"
-	stdhtml "html"
 	"net/http"
 	"slices"
 	"sort"
@@ -36,10 +35,6 @@ const (
 	attrTypeButton = "button"
 	attrTitle      = "title"
 	keyOptions     = "options"
-
-	// Text limits and thresholds.
-	commentLengthLimit   = 80
-	commentTruncateLimit = 77
 
 	// Separators and delimiters.
 	separatorUnderscore = "_"
@@ -487,16 +482,17 @@ func scheduleActionButton(id any, job, action, label, icon, class string) gompon
 
 // renderSchedulerGrid creates a grid showing scheduler status.
 func renderSchedulerGrid(csrfToken string) gomponents.Node {
-	schedulerData := make([]map[string]any, 0, len(worker.GetSchedules()))
+	schedules := worker.GetSchedules()
+	schedulerData := make([]map[string]any, 0, len(schedules))
 
-	for i, value := range worker.GetSchedules() {
+	for i := range schedules {
 		schedulerData = append(schedulerData, map[string]any{
 			"id":        i,
-			"job":       value.JobName,
-			"lastrun":   value.LastRun.Format("2006-01-02 15:04:05"),
-			"nextrun":   value.NextRun.Format("2006-01-02 15:04:05"),
-			"isrunning": value.IsRunning,
-			"paused":    value.Paused,
+			"job":       schedules[i].JobName,
+			"lastrun":   schedules[i].LastRun.Format("2006-01-02 15:04:05"),
+			"nextrun":   schedules[i].NextRun.Format("2006-01-02 15:04:05"),
+			"isrunning": schedules[i].IsRunning,
+			"paused":    schedules[i].Paused,
 		})
 	}
 
@@ -1545,6 +1541,20 @@ func renderTable(tableInfo *TableInfo, csrfToken string) gomponents.Node {
 		})
 }
 
+// textFieldType is "textarea" for long text columns (plots, descriptions,
+// notes, error messages) and for any value too long or multi-line for one
+// input line, else "text".
+func textFieldType(col, value string) string {
+	switch {
+	case col == "overview", col == "description", col == "notes",
+		strings.HasSuffix(col, "_message"), strings.HasSuffix(col, "_errors"),
+		len(value) > 100, strings.Contains(value, "\n"):
+		return "textarea"
+	}
+
+	return fieldTypeText
+}
+
 // Helper function to generate form fields based on data type and column name.
 func generateFormField(col, fieldName, displayName string, fieldData any) gomponents.Node {
 	// Handle special config dropdown fields
@@ -1570,7 +1580,7 @@ func generateFormField(col, fieldName, displayName string, fieldData any) gompon
 	case string:
 		return RenderFormGroup("",
 			"",
-			displayName, fieldName, "text", val, nil)
+			displayName, fieldName, textFieldType(col, val), val, nil)
 
 	case int, int64, uint, uint8, uint16, uint32, uint64:
 		// Check if this should be a checkbox (boolean field stored as int)
@@ -1594,12 +1604,12 @@ func generateFormField(col, fieldName, displayName string, fieldData any) gompon
 		// modernc/sqlite can return BLOB-affinity columns as raw bytes.
 		return RenderFormGroup("",
 			"",
-			displayName, fieldName, "text", string(val), nil)
+			displayName, fieldName, textFieldType(col, string(val)), string(val), nil)
 
 	case nil:
 		return RenderFormGroup("",
 			"",
-			displayName, fieldName, "text", "", nil)
+			displayName, fieldName, textFieldType(col, ""), "", nil)
 
 	case time.Time:
 		valformat := val.Format("2006-01-02")
@@ -1840,64 +1850,9 @@ func AjaxSelectField(options AjaxSelectOptions) gomponents.Node {
 
 	input := html.Select(selectAttrs...)
 
-	// Create comment node if help text is provided
 	var commentNode gomponents.Node
 	if options.HelpText != "" {
-		if len(options.HelpText) > commentLengthLimit || strings.Contains(options.HelpText, "\n") {
-			// Long help text with collapsible section
-			shortComment := options.HelpText
-			if len(options.HelpText) > commentLengthLimit {
-				lines := strings.Split(options.HelpText, "\n")
-
-				shortComment = strings.TrimSpace(lines[0])
-				if len(shortComment) > commentLengthLimit {
-					shortComment = shortComment[:commentTruncateLimit] + "..."
-				}
-			}
-
-			commentNode = html.Div(
-				html.Div(
-					html.Class("d-flex align-items-center mt-1"),
-					html.Small(
-						html.Class("text-muted me-2"),
-						html.Style("font-size: 0.75em;"),
-						gomponents.Text(shortComment),
-					),
-					html.Button(
-						html.Type("button"),
-						html.Class("btn btn-outline-info btn-sm"),
-						html.Style(
-							"font-size: 0.85em; padding: 0.25rem 0.5rem; border-radius: 0.375rem;",
-						),
-						gomponents.Attr("data-bs-toggle", "collapse"),
-						gomponents.Attr("data-bs-target", "#help-"+options.ID),
-						gomponents.Attr("aria-expanded", "false"),
-						gomponents.Attr("title", "Show detailed help"),
-						html.I(html.Class("fas fa-info-circle")),
-					),
-				),
-				html.Div(
-					html.Class("collapse mt-2"),
-					html.ID("help-"+options.ID),
-					html.Div(
-						html.Class("card card-body bg-light border-0"),
-						html.Style("font-size: 0.875em; padding: 0.75rem;"),
-						html.Pre(
-							html.Class("mb-0 text-wrap"),
-							html.Style("white-space: pre-wrap; font-family: inherit;"),
-							gomponents.Text(options.HelpText),
-						),
-					),
-				),
-			)
-		} else {
-			// Short single line comment
-			commentNode = html.Small(
-				html.Class("form-text text-muted"),
-				html.Style("font-size: 0.75em; margin-top: 0.25rem;"),
-				gomponents.Text(options.HelpText),
-			)
-		}
+		commentNode = renderFieldHelp(options.ID, options.HelpText)
 	}
 
 	// Get display name, fallback to fieldNameToUserFriendly if not provided
@@ -2157,61 +2112,14 @@ func renderInput(
 	}
 }
 
-// createSelectArrayInput creates a multi-select dropdown.
+// createSelectArrayInput creates a multi-choice field as toggle chips.
 func createSelectArrayInput(
-	id, classelement string,
+	id, _ string,
 	value any,
 	options map[string][]string,
 ) gomponents.Node {
-	var optionElements []gomponents.Node
-	if opts, ok := options[keyOptions]; ok {
-		values, ok := value.([]string)
-		if !ok {
-			values = nil
-		}
-
-		labels, hasLabels := options["labels"]
-
-		if hasLabels && len(labels) == len(opts) {
-			for i, opt := range opts {
-				selected := slices.Contains(values, opt)
-				displayText := labels[i]
-
-				optionElements = append(optionElements, createOption(opt, displayText, selected))
-			}
-		} else {
-			opts2 := sort.StringSlice(opts)
-			opts2.Sort()
-
-			for i, opt := range opts2 {
-				selected := slices.Contains(values, opt)
-
-				displayText := opt
-				if hasLabels && i < len(labels) {
-					displayText = labels[i]
-				}
-
-				optionElements = append(optionElements, createOption(opt, displayText, selected))
-			}
-		}
-	}
-
-	return html.Select(
-		html.Class(classelement+" choices-multiple"),
-		html.Multiple(),
-		html.Data("live-search", "true"),
-		html.Data("choices", "multiple"),
-		html.Data("choices-multiple", "true"),
-		html.Data("choices-remove-item-button", "true"),
-		html.Data("choices-search-enabled", "true"),
-		html.Data("choices-search-placeholder", "Search options..."),
-		html.Data("choices-no-results-text", "No results found"),
-		html.Data("choices-no-choices-text", "No choices available"),
-		html.Data("choices-placeholder", "Select options..."),
-		html.ID(id),
-		html.Name(id),
-		gomponents.Group(optionElements),
-	)
+	values, _ := value.([]string)
+	return renderChoiceChips(id, choiceOptionsFrom(options, true), values)
 }
 
 // createSelectInput creates a single select dropdown.
@@ -2645,95 +2553,7 @@ func createCommentNode(comment, group, name string) gomponents.Node {
 		return nil
 	}
 
-	shortComment := comment
-	if len(comment) > commentLengthLimit {
-		lines := strings.Split(comment, "\n")
-
-		shortComment = strings.TrimSpace(lines[0])
-		if len(shortComment) > commentLengthLimit {
-			shortComment = shortComment[:commentTruncateLimit] + "..."
-		}
-	}
-
-	if len(comment) > commentLengthLimit || strings.Contains(comment, "\n") {
-		return createCollapsibleComment(shortComment, comment, group, name)
-	}
-
-	return html.Small(
-		html.Class("form-text text-muted"),
-		html.Style(
-			"font-size: 0.75em; margin-top: 0.25rem; word-wrap: break-word; overflow-wrap: anywhere;",
-		),
-		gomponents.Raw(formatCommentText(comment)),
-	)
-}
-
-// createCollapsibleComment creates collapsible comment with help button.
-func createCollapsibleComment(shortComment, comment, group, name string) gomponents.Node {
-	return html.Div(
-		html.Div(
-			html.Class("d-flex align-items-center mt-1"),
-			html.Small(
-				html.Class("text-muted me-2"),
-				html.Style("font-size: 0.75em; word-wrap: break-word; overflow-wrap: anywhere;"),
-				gomponents.Raw(formatCommentText(shortComment)),
-			),
-			html.Button(
-				html.Type(attrTypeButton),
-				html.Class("btn btn-outline-info btn-sm"),
-				html.Style("font-size: 0.85em; padding: 0.25rem 0.5rem; border-radius: 0.375rem;"),
-				gomponents.Attr("data-bs-toggle", "collapse"),
-				gomponents.Attr("data-bs-target", "#help-"+group+"-"+name),
-				gomponents.Attr("aria-expanded", "false"),
-				gomponents.Attr(attrTitle, "Show detailed help"),
-				html.I(html.Class("fas fa-info-circle")),
-			),
-		),
-		html.Div(
-			html.ID("help-"+group+"-"+name),
-			html.Class("collapse mt-2"),
-			html.Div(
-				html.Class("alert alert-info alert-outline"),
-				html.Role("alert"),
-				html.Div(
-					html.Class("alert-icon"),
-					html.I(html.Class("far fa-fw fa-bell")),
-				),
-				html.Div(
-					html.Class("alert-message"),
-					html.Style(
-						"font-size: 0.85em; padding: 0.75rem; margin: 0; border-radius: 0.375rem; word-wrap: break-word; overflow-wrap: anywhere;",
-					),
-					gomponents.Raw(formatCommentText(comment)),
-				),
-			),
-		),
-	)
-}
-
-// formatCommentText formats comment text by escaping HTML and converting line breaks to <br> tags.
-func formatCommentText(text string) string {
-	// First escape HTML to prevent XSS
-	escaped := stdhtml.EscapeString(text)
-
-	// Convert \n to <br> tags for proper line breaks in HTML
-	// Handle different line break formats
-	formatted := strings.ReplaceAll(escaped, "\r\n", "<br>") // Windows CRLF
-
-	formatted = strings.ReplaceAll(formatted, "\r", "<br>") // Mac CR
-	formatted = strings.ReplaceAll(formatted, "\n", "<br>") // Unix LF
-
-	// Also handle literal \n strings (in case they're stored as literal text)
-	formatted = strings.ReplaceAll(formatted, "\\n", "<br>")
-
-	// Handle multiple consecutive line breaks
-	formatted = strings.ReplaceAll(
-		formatted,
-		"<br><br><br>",
-		"<br><br>",
-	) // Reduce triple breaks to double
-
-	return formatted
+	return renderFieldHelp(group+"-"+name, comment)
 }
 
 // createFormLayout creates the final form layout.
@@ -2893,29 +2713,6 @@ func CreateFormSubmitGroup(
 type SelectOption struct {
 	Value any    `json:"value"`
 	Label string `json:"label"`
-}
-
-// CreateImdbConfigFields creates IMDB configuration fields.
-func CreateImdbConfigFields(configv *config.ImdbConfig) []FormFieldDefinition {
-	return []FormFieldDefinition{
-		{
-			Name:         "Indexedtypes",
-			Type:         "selectarray",
-			DefaultValue: configv.Indexedtypes,
-			Options: []SelectOption{
-				{Value: "movie", Label: "movie"},
-				{Value: "tvMovie", Label: "tvMovie"},
-				{Value: "tvmovie", Label: "tvmovie"},
-				{Value: "tvSeries", Label: "tvSeries"},
-				{Value: "tvseries", Label: "tvseries"},
-				{Value: "video", Label: "video"},
-			},
-		},
-		{Name: "Indexedlanguages", Type: "array", DefaultValue: configv.Indexedlanguages},
-		{Name: "Indexfull", Type: "checkbox", DefaultValue: configv.Indexfull},
-		{Name: "ImdbIDSize", Type: "number", DefaultValue: configv.ImdbIDSize},
-		{Name: "UseMemory", Type: "checkbox", DefaultValue: configv.UseMemory},
-	}
 }
 
 // RenderFormFields renders a list of form fields into gomponents nodes.

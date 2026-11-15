@@ -3,6 +3,7 @@ package importfeed
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -1118,7 +1119,7 @@ func jobImportDBSeries(
 	)
 
 	if strings.EqualFold(serieconfig.Source, "none") {
-		dbserie.ID = findDbserieByName(serieconfig.Name, serieconfig.TvdbID)
+		dbserie.ID = findDbserieByName(&serieconfig.Name, serieconfig.TvdbID)
 
 		if addnew {
 			if dbserie.ID == 0 {
@@ -1143,7 +1144,7 @@ func jobImportDBSeries(
 
 	if strings.EqualFold(serieconfig.Source, "scraper") {
 		// Look up existing series by name
-		dbserie.ID = findDbserieByName(serieconfig.Name, serieconfig.TvdbID)
+		dbserie.ID = findDbserieByName(&serieconfig.Name, serieconfig.TvdbID)
 
 		if addnew {
 			if dbserie.ID == 0 {
@@ -1208,7 +1209,7 @@ func jobImportDBSeries(
 				&count,
 				&serieconfig.TvdbID,
 			)
-		} else if dbserie.ID = findDbserieByName(serieconfig.Name, 0); dbserie.ID != 0 {
+		} else if dbserie.ID = findDbserieByName(&serieconfig.Name, 0); dbserie.ID != 0 {
 			count = 1
 		}
 
@@ -1248,7 +1249,10 @@ func jobImportDBSeries(
 				dbserie.Seriename = serieconfig.Name
 			}
 
-			if dbserie.Identifiedby == "" {
+			// A value the series file sets explicitly wins (e.g. switching
+			// a series to "title"); otherwise it only fills an empty one.
+			if dbserie.Identifiedby == "" ||
+				(serieconfig.Explicit.Has(config.ManualKeyIdentifiedby) && serieconfig.Identifiedby != "") {
 				dbserie.Identifiedby = serieconfig.Identifiedby
 			}
 
@@ -1414,9 +1418,12 @@ func jobImportDBSeries(
 						Int(logger.StrTvdb, serieconfig.TvdbID).
 						Msg("Get episodes for")
 
-					// Collect episodes from TVDB first (primary source)
+					// TVDB lists the episodes when it is a source; the other
+					// sources fill gaps in serie_meta_source_priority order.
+					priorities := config.GetSettingsGeneral().SerieMetaSourcePriority
+
 					var episodes map[string]*collectedEpisode
-					if dbserie.ThetvdbID != 0 {
+					if dbserie.ThetvdbID != 0 && slices.Contains(priorities, logger.StrTvdb) {
 						var err error
 
 						episodes, err = collectTvdbSeriesEpisodes(
@@ -1440,9 +1447,15 @@ func jobImportDBSeries(
 						episodes = make(map[string]*collectedEpisode)
 					}
 
-					// Merge Trakt data (fills gaps and adds missing episodes)
-					if config.GetSettingsGeneral().SerieMetaSourceTrakt && dbserie.ImdbID != "" {
-						mergeTraktIntoCollectedEpisodes(dbserie.ImdbID, episodes)
+					for _, source := range priorities {
+						switch source {
+						case "trakt":
+							if config.GetSettingsGeneral().SerieMetaSourceTrakt && dbserie.ImdbID != "" {
+								mergeTraktIntoCollectedEpisodes(dbserie.ImdbID, episodes)
+							}
+						case "plex", "jellyfin":
+							mergeMediaServerIntoCollectedEpisodes(source, dbserie.ImdbID, dbserie.ThetvdbID, episodes)
+						}
 					}
 
 					// Write all collected episodes to the database
@@ -1654,8 +1667,8 @@ func jobImportDBSeries(
 // findDbserieByName looks up a dbseries row by name. When tvdbID is set, rows
 // carrying a different TVDB id are excluded so remakes/same-named shows with
 // their own TVDB entry are not collapsed into one; a row with the same id wins.
-func findDbserieByName(name string, tvdbID int) uint {
-	if name == "" {
+func findDbserieByName(name *string, tvdbID int) uint {
+	if (*name) == "" {
 		return 0
 	}
 
@@ -1664,10 +1677,10 @@ func findDbserieByName(name string, tvdbID int) uint {
 		`select id from dbseries where seriename = ? COLLATE NOCASE
 		 and (? = 0 or thetvdb_id = 0 or thetvdb_id is null or thetvdb_id = ?)
 		 order by (thetvdb_id = ?) desc, id limit 1`,
-		&name,
-		&tvdbID,
-		&tvdbID,
-		&tvdbID,
+		name,
+		tvdbID,
+		tvdbID,
+		tvdbID,
 	)
 }
 
@@ -1687,7 +1700,7 @@ func insertdbserie(serieconfig *config.ManualConfig, dbserie *database.Dbserie) 
 	}
 
 	if dbserie.ID == 0 {
-		dbserie.ID = findDbserieByName(serieconfig.Name, serieconfig.TvdbID)
+		dbserie.ID = findDbserieByName(&serieconfig.Name, serieconfig.TvdbID)
 		if dbserie.ID != 0 && serieconfig.TvdbID != 0 {
 			// Claim a same-named row that had no TVDB id yet.
 			database.ExecN(

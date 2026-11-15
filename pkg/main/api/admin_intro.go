@@ -135,7 +135,7 @@ func dashboardSetupSteps() []setupStep {
 			done: hasPath,
 		},
 		{
-			title: "Add something to your library", href: "/api/admin/metadata-search/movies", linkText: "Add media",
+			title: "Add something to your library", href: "/api/admin/metadata-search?type=movies", linkText: "Add media",
 			help: "Search a movie, series, album or book by name and add it - or let a list fill the library for you.",
 			done: hasItems,
 		},
@@ -644,23 +644,23 @@ func addMediaGuideLinks() []guideLink {
 
 	var links []guideLink
 	if len(media.Movies) > 0 {
-		links = append(links, guideLink{"fas fa-film", "Movies", "Search TMDB/IMDB and add a movie", "/api/admin/metadata-search/movies"})
+		links = append(links, guideLink{"fas fa-film", "Movies", "Search TMDB/IMDB and add a movie", "/api/admin/metadata-search?type=movies"})
 	}
 
 	if len(media.Series) > 0 {
-		links = append(links, guideLink{"fas fa-tv", "Series", "Add a TV show with all its episodes", "/api/admin/metadata-search/series"})
+		links = append(links, guideLink{"fas fa-tv", "Series", "Add a TV show with all its episodes", "/api/admin/metadata-search?type=series"})
 	}
 
 	if len(media.Music) > 0 {
-		links = append(links, guideLink{"fas fa-compact-disc", "Music", "Add albums or whole artists", "/api/admin/metadata-search/music"})
+		links = append(links, guideLink{"fas fa-compact-disc", "Music", "Add albums or whole artists", "/api/admin/metadata-search?type=music"})
 	}
 
 	if len(media.Books) > 0 {
-		links = append(links, guideLink{"fas fa-book", "Books", "Add books by title or author", "/api/admin/metadata-search/books"})
+		links = append(links, guideLink{"fas fa-book", "Books", "Add books by title or author", "/api/admin/metadata-search?type=books"})
 	}
 
 	if len(media.AudioBooks) > 0 {
-		links = append(links, guideLink{"fas fa-headphones", "Audiobooks", "Add audiobooks by title, author or series", "/api/admin/metadata-search/audiobooks"})
+		links = append(links, guideLink{"fas fa-headphones", "Audiobooks", "Add audiobooks by title, author or series", "/api/admin/metadata-search?type=audiobooks"})
 	}
 
 	if len(media.Music) == 0 || len(media.Books) == 0 || len(media.AudioBooks) == 0 {

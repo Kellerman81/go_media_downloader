@@ -17,7 +17,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // handler implements mediatype.Handler for audiobooks.
@@ -85,9 +84,9 @@ var (
 		"DBQualityMediaByID":       "select quality_profile from audiobooks where id = ?",
 		"SearchGenSelect":          "select audiobooks.quality_profile, audiobooks.id ",
 		"SearchGenTable":           " from audiobooks inner join dbaudiobooks on dbaudiobooks.id=audiobooks.dbaudiobook_id where ",
-		"SearchGenMissing":         "audiobooks.missing = 1 and audiobooks.listname in (?",
+		"SearchGenMissing":         "audiobooks.dont_search = 0 and audiobooks.missing = 1 and audiobooks.listname in (?",
 		"SearchGenMissingEnd":      ")",
-		"SearchGenReached":         "quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenReached":         "audiobooks.dont_search = 0 and audiobooks.dont_upgrade = 0 and quality_reached = 0 and missing = 0 and listname in (?",
 		"SearchGenLastScan":        " and (audiobooks.lastscan is null or audiobooks.Lastscan < ?)",
 		"SearchGenDate":            " and (dbaudiobooks.release_date < ? or dbaudiobooks.release_date is null)",
 		"SearchGenOrder":           " order by audiobooks.Lastscan asc",
@@ -109,9 +108,9 @@ var (
 		"InsertFileOrganize":       "insert into audiobook_files (location, filename, extension, quality_profile, audiobook_id, dbaudiobook_id) values (?, ?, ?, ?, ?, ?)",
 		"UpdateMissingReached":     "update audiobooks SET missing = 0, quality_reached = ? where id = ?",
 		// Author-based search queries
-		"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.missing = 1 AND ab.listname IN (?",
+		"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.dont_search = 0 AND ab.missing = 1 AND ab.listname IN (?",
 		"SearchAuthorsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
-		"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.missing = 0 AND ab.quality_reached = 0 AND ab.listname IN (?",
+		"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN audiobooks ab ON ab.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND ab.dont_search = 0 AND ab.dont_upgrade = 0 AND ab.missing = 0 AND ab.quality_reached = 0 AND ab.listname IN (?",
 		"SearchAuthorsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
 	}
 )
@@ -450,17 +449,17 @@ func (*handler) SearchConfigByName(
 
 // loadAudiobookConfig loads audiobook configuration from a TOML file.
 func loadAudiobookConfig(file string) ([]config.ManualConfig, error) {
-	content, err := os.Open(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
-	defer content.Close()
 
-	var s config.MainManualConfig
+	s, err := config.DecodeManualConfig(data)
+	if err != nil {
+		return nil, err
+	}
 
-	err = toml.NewDecoder(content).Decode(&s)
-
-	return s.Config, err
+	return s.Config, nil
 }
 
 // RecordDownloadHistory records an audiobook download in the audiobook_histories table.
@@ -499,7 +498,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		"Insert into audiobook_histories (title, url, target, indexer, downloaded_at, audiobook_id, dbaudiobook_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
-		&targetPath,
+		targetPath,
 		&indexerName,
 		&audiobookID,
 		&dbaudiobookID,

@@ -216,12 +216,12 @@ func RetagAlbum(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint) er
 }
 
 // RetagArtistAlbums re-writes audio tags for all albums by a given dbartist ID.
-func RetagArtistAlbums(ctx context.Context, cfgp *config.MediaTypeConfig, artistID uint) error {
+func RetagArtistAlbums(ctx context.Context, cfgp *config.MediaTypeConfig, artistID *uint) error {
 	ids := database.Getrowssize[uint](
 		false,
 		"SELECT count(DISTINCT a.dbalbum_id) FROM albums a JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ?",
 		"SELECT DISTINCT a.dbalbum_id FROM albums a JOIN dbalbum_artists aa ON a.dbalbum_id = aa.dbalbum_id WHERE aa.dbartist_id = ?",
-		&artistID,
+		artistID,
 	)
 
 	var lastErr error

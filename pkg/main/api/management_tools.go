@@ -42,6 +42,8 @@ func renderMissingEpisodesFinderPage(csrfToken string) gomponents.Node {
 		html.Form(
 			html.Class("config-form"),
 			html.ID("missingEpisodesForm"),
+			// The shared Choices.js dropdown init reads its CSRF token from here.
+			html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
 
 			html.Div(
 				html.Class("row"),
@@ -52,11 +54,21 @@ func renderMissingEpisodesFinderPage(csrfToken string) gomponents.Node {
 						gomponents.Text("Search Configuration"),
 					),
 
-					renderFormGroup("missing", map[string]string{
-						"SeriesName": "Enter series name or leave empty to scan all series",
-					}, map[string]string{
-						"SeriesName": "Series Name",
-					}, "SeriesName", "text", "", nil),
+					html.Div(
+						html.Class("form-group mb-3"),
+						html.Label(html.Class("form-label"), html.For("missing_SerieID"), gomponents.Text("Series")),
+						html.Select(
+							html.ID("missing_SerieID"),
+							html.Name("missing_SerieID"),
+							html.Class("form-select choices-ajax"),
+							html.Data("ajax-url", "/api/admin/dropdown/series/id"),
+							html.Data("placeholder", "All series"),
+							html.Data("allow-clear", "true"),
+							html.Option(html.Value(""), gomponents.Text("All series")),
+						),
+						html.Small(html.Class("form-text text-muted"),
+							gomponents.Text("Type to search your tracked series (name - list); leave empty to scan all series")),
+					),
 
 					renderFormGroup("missing", map[string]string{
 						"SeasonNumber": "Specific season to check (0 = all seasons)",
@@ -205,19 +217,18 @@ func renderLogAnalysisDashboardPage(csrfToken string) gomponents.Node {
 					}),
 
 					renderFormGroup("analysis", map[string]string{
-						"MaxLines": "Maximum number of log lines to process",
+						"MaxLines": "Maximum number of log entries to analyze (the newest are kept)",
 					}, map[string]string{
 						"MaxLines": "Max Lines",
 					}, "MaxLines", "number", "10000", nil),
 
-					renderFormGroup("analysis",
-						map[string]string{
-							"IncludeStackTraces": "Analyze error stack traces for patterns",
-						},
-						map[string]string{
-							"IncludeStackTraces": "Include Stack Traces",
-						},
-						"IncludeStackTraces", "checkbox", false, nil),
+					renderFormGroup("analysis", map[string]string{
+						"LogFile": "downloader: all levels, rotates every few hours; errors: errors only, kept for days",
+					}, map[string]string{
+						"LogFile": "Log File",
+					}, "LogFile", "select", "downloader", map[string][]string{
+						"options": {"downloader", "errors"},
+					}),
 				),
 
 				html.Div(
@@ -226,7 +237,7 @@ func renderLogAnalysisDashboardPage(csrfToken string) gomponents.Node {
 
 					renderFormGroup("analysis",
 						map[string]string{
-							"ErrorPattern": "Find common error patterns and frequencies",
+							"ErrorPattern": "Most frequent warnings and errors, grouped by message",
 						},
 						map[string]string{
 							"ErrorPattern": "Error Pattern Analysis",
@@ -235,7 +246,7 @@ func renderLogAnalysisDashboardPage(csrfToken string) gomponents.Node {
 
 					renderFormGroup("analysis",
 						map[string]string{
-							"PerformanceMetrics": "Analyze response times and performance indicators",
+							"PerformanceMetrics": "Web request response times and slowest endpoints (from weblogs.log)",
 						},
 						map[string]string{
 							"PerformanceMetrics": "Performance Metrics",
@@ -244,7 +255,7 @@ func renderLogAnalysisDashboardPage(csrfToken string) gomponents.Node {
 
 					renderFormGroup("analysis",
 						map[string]string{
-							"AccessPattern": "Analyze API usage and access patterns",
+							"AccessPattern": "Most requested endpoints and HTTP error responses (from weblogs.log)",
 						},
 						map[string]string{
 							"AccessPattern": "Access Patterns",
@@ -253,7 +264,7 @@ func renderLogAnalysisDashboardPage(csrfToken string) gomponents.Node {
 
 					renderFormGroup("analysis",
 						map[string]string{
-							"SystemHealth": "Monitor system health indicators",
+							"SystemHealth": "Current queued/running jobs and open database connections",
 						},
 						map[string]string{
 							"SystemHealth": "System Health",
@@ -2293,7 +2304,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 		return
 	}
 
-	seriesName := c.PostForm("missing_SeriesName")
+	serieID, _ := strconv.Atoi(c.PostForm("missing_SerieID"))
 	seasonNumberStr := c.PostForm("missing_SeasonNumber")
 	status := c.PostForm("missing_Status")
 	includeSpecials := c.PostForm("missing_IncludeSpecials") == "on" ||
@@ -2328,10 +2339,19 @@ func HandleMissingEpisodes(c *gin.Context) {
 
 	queryWhere = "serie_episodes.missing = 1"
 
-	if seriesName != "" {
-		queryWhere += " AND dbseries.seriename LIKE ?"
+	seriesLabel := "All series"
+	if serieID > 0 {
+		queryWhere += " AND series.id = ?"
 
-		queryArgs = append(queryArgs, "%"+seriesName+"%")
+		queryArgs = append(queryArgs, serieID)
+
+		seriesLabel = database.Getdatarow[string](false,
+			"SELECT COALESCE(dbseries.seriename, '(missing #' || series.dbserie_id || ')') || ' - ' || series.listname "+
+				"FROM series LEFT JOIN dbseries ON dbseries.id = series.dbserie_id WHERE series.id = ?", &serieID)
+		if seriesLabel == "" {
+			c.String(http.StatusOK, renderAlert(fmt.Sprintf("Series %d not found", serieID), "warning"))
+			return
+		}
 	}
 
 	if seasonNumber > 0 {
@@ -2344,15 +2364,21 @@ func HandleMissingEpisodes(c *gin.Context) {
 		queryWhere += " AND dbserie_episodes.season != '0'"
 	}
 
-	// Episodes without a known air date are kept by both date filters.
+	// first_aired holds Go's time text ("2025-03-14 00:00:00 +0000 UTC"),
+	// which SQLite's DATE() can't parse; its first 10 characters are the date.
+	// Episodes without a known air date (NULL, '' or the zero time) are kept by
+	// both date filters.
+	const unknownAired = "(dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired = '' OR " +
+		"dbserie_episodes.first_aired LIKE '0001-01-01%')"
+
 	if onlyAired {
-		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired = '' OR DATE(dbserie_episodes.first_aired) <= ?)"
+		queryWhere += " AND (" + unknownAired + " OR substr(dbserie_episodes.first_aired, 1, 10) <= ?)"
 
 		queryArgs = append(queryArgs, time.Now().Format("2006-01-02"))
 	}
 
 	if dateRangeDays > 0 {
-		queryWhere += " AND (dbserie_episodes.first_aired IS NULL OR dbserie_episodes.first_aired = '' OR DATE(dbserie_episodes.first_aired) >= ?)"
+		queryWhere += " AND (" + unknownAired + " OR substr(dbserie_episodes.first_aired, 1, 10) >= ?)"
 
 		queryArgs = append(queryArgs, time.Now().AddDate(0, 0, -dateRangeDays).Format("2006-01-02"))
 	}
@@ -2369,7 +2395,8 @@ func HandleMissingEpisodes(c *gin.Context) {
 			"INNER JOIN series ON series.id = serie_episodes.serie_id "+
 			"INNER JOIN dbseries ON dbseries.id = series.dbserie_id "+
 			"INNER JOIN dbserie_episodes ON dbserie_episodes.id = serie_episodes.dbserie_episode_id "+
-			"WHERE "+queryWhere,
+			"WHERE "+queryWhere+
+			" ORDER BY dbseries.seriename, series.listname, CAST(dbserie_episodes.season AS INTEGER), CAST(dbserie_episodes.episode AS INTEGER)",
 		queryArgs...)
 
 	totalMissing := len(missingEpisodes)
@@ -2448,13 +2475,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 			html.Td(html.Strong(gomponents.Text("Search Configuration:"))),
 			html.Td(gomponents.Text("")),
 		),
-		html.Tr(html.Td(gomponents.Text("Series:")), html.Td(gomponents.Text(func() string {
-			if seriesName == "" {
-				return "All series"
-			}
-
-			return seriesName
-		}()))),
+		html.Tr(html.Td(gomponents.Text("Series:")), html.Td(gomponents.Text(seriesLabel))),
 		html.Tr(html.Td(gomponents.Text("Season:")), html.Td(gomponents.Text(func() string {
 			if seasonNumber == 0 {
 				return "All seasons"
@@ -2522,7 +2543,7 @@ func HandleMissingEpisodes(c *gin.Context) {
 				// Get episode details from database
 				episodeDetails := database.StructscanT[database.DbserieEpisode](false, 1,
 					"SELECT season, episode, title FROM dbserie_episodes WHERE id = ?",
-					missingEpisodes[i].DbserieEpisodeID)
+					&missingEpisodes[i].DbserieEpisodeID)
 
 				if len(episodeDetails) > 0 {
 					ep := episodeDetails[0]
@@ -2583,12 +2604,12 @@ func HandleMissingEpisodes(c *gin.Context) {
 			// Get episode details and series name
 			episodeDetails := database.StructscanT[database.DbserieEpisode](false, 1,
 				"SELECT season, episode, title FROM dbserie_episodes WHERE id = ?",
-				episode.DbserieEpisodeID)
+				&episode.DbserieEpisodeID)
 
 			var seriesLabel string
 			database.Scanrowsdyn(false,
 				"SELECT dbseries.seriename || ' (' || series.listname || ')' FROM series INNER JOIN dbseries ON dbseries.id = series.dbserie_id WHERE series.id = ?",
-				&seriesLabel, episode.SerieID)
+				&seriesLabel, &episode.SerieID)
 
 			if len(episodeDetails) > 0 && seriesLabel != "" {
 				ep := episodeDetails[0]
@@ -2766,138 +2787,136 @@ func HandleLogAnalysis(c *gin.Context) {
 		c.PostForm("analysis_AccessPattern") == "true"
 	systemHealth := c.PostForm("analysis_SystemHealth") == "on" ||
 		c.PostForm("analysis_SystemHealth") == "true"
-	includeStackTraces := c.PostForm("analysis_IncludeStackTraces") == "on" ||
-		c.PostForm("analysis_IncludeStackTraces") == "true"
+
+	logName := appLogName
+	if c.PostForm("analysis_LogFile") == errorLogName {
+		logName = errorLogName
+	}
 
 	maxLines, err := strconv.ParseInt(maxLinesStr, 10, 64)
-	if err != nil {
+	if err != nil || maxLines <= 0 {
 		maxLines = 10000
 	}
 
-	// Perform actual log analysis
 	startTime := time.Now()
 
-	// Get log file path from config or use default
-	logFile, err := getLogFilePath()
+	logDir, err := getLogDir()
 	if err != nil {
-		c.String(http.StatusOK, renderAlert("Failed to locate log file: "+err.Error(), "danger"))
+		c.String(http.StatusOK, renderAlert("Failed to locate log files: "+err.Error(), "danger"))
 		return
 	}
 
-	// Analyze log file
-	analysisResults, err := performLogAnalysis(
-		logFile,
-		timeRange,
-		logLevel,
-		maxLines,
-		errorPattern,
-		performanceMetrics,
-		accessPattern,
-		systemHealth,
-		includeStackTraces,
-	)
+	analysisResults, err := performLogAnalysis(logDir, logName, timeRange, logLevel, maxLines,
+		errorPattern, performanceMetrics, accessPattern, startTime)
 	if err != nil {
 		c.String(http.StatusOK, renderAlert("Failed to analyze logs: "+err.Error(), "danger"))
 		return
 	}
 
-	totalEntries := analysisResults.TotalEntries
 	errorCount := analysisResults.ErrorCount
-	warningCount := analysisResults.WarningCount
-	infoCount := analysisResults.InfoCount
 	analysisDuration := time.Since(startTime)
 
-	// Build results table
-	results := []gomponents.Node{
-		html.Tr(
-			html.Td(html.Strong(gomponents.Text("Analysis Configuration:"))),
-			html.Td(gomponents.Text("")),
-		),
-		html.Tr(html.Td(gomponents.Text("Time Range:")), html.Td(gomponents.Text(timeRange))),
-		html.Tr(html.Td(gomponents.Text("Log Level:")), html.Td(gomponents.Text(logLevel))),
-		html.Tr(html.Td(gomponents.Text("Max Lines:")), html.Td(gomponents.Text(maxLinesStr))),
-		html.Tr(
-			html.Td(gomponents.Text("Include Stack Traces:")),
-			html.Td(gomponents.Text(func() string {
-				if includeStackTraces {
-					return "Yes"
-				}
+	row := func(label, value string) gomponents.Node {
+		return html.Tr(html.Td(gomponents.Text(label)), html.Td(gomponents.Text(value)))
+	}
+	heading := func(label string) gomponents.Node {
+		return html.Tr(html.Td(html.Strong(gomponents.Text(label))), html.Td(gomponents.Text("")))
+	}
+	separator := html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr()))
+	itemList := func(items []CountedItem, format func(*CountedItem) string) gomponents.Node {
+		lis := make([]gomponents.Node, 0, len(items))
+		for i := range items {
+			lis = append(lis, html.Li(gomponents.Text(format(&items[i]))))
+		}
 
-				return "No"
-			}())),
-		),
-		html.Tr(
-			html.Td(gomponents.Text("Analysis Duration:")),
-			html.Td(gomponents.Text(analysisDuration.String())),
-		),
-		html.Tr(html.Td(gomponents.Attr("colspan", "2"), html.Hr())),
-		html.Tr(
-			html.Td(html.Strong(gomponents.Text("Analysis Results:"))),
-			html.Td(gomponents.Text("")),
-		),
-		html.Tr(
-			html.Td(gomponents.Text("Total Log Entries:")),
-			html.Td(gomponents.Text(fmt.Sprintf("%d", totalEntries))),
-		),
-		html.Tr(
-			html.Td(gomponents.Text("Error Count:")),
-			html.Td(gomponents.Text(fmt.Sprintf("%d", errorCount))),
-		),
-		html.Tr(
-			html.Td(gomponents.Text("Warning Count:")),
-			html.Td(gomponents.Text(fmt.Sprintf("%d", warningCount))),
-		),
-		html.Tr(
-			html.Td(gomponents.Text("Info Count:")),
-			html.Td(gomponents.Text(fmt.Sprintf("%d", infoCount))),
-		),
+		return html.Ol(html.Class("mb-0 ps-3 small"), gomponents.Group(lis))
+	}
+	fileNames := func(files []string) string {
+		names := make([]string, 0, len(files))
+		for _, f := range files {
+			names = append(names, filepath.Base(f))
+		}
+
+		return strings.Join(names, ", ")
+	}
+	timeLabel := func(t time.Time) string {
+		if t.IsZero() {
+			return "-"
+		}
+
+		return t.Local().Format("2006-01-02 15:04:05")
+	}
+
+	covered := timeLabel(analysisResults.First) + " to " + timeLabel(analysisResults.Last)
+	if analysisResults.Truncated {
+		covered += fmt.Sprintf(" (newest %d entries; raise Max Lines to look further back)", maxLines)
+	}
+
+	results := []gomponents.Node{
+		heading("Analysis Configuration:"),
+		row("Log File:", logName+".log"),
+		row("Time Range:", timeRange),
+		row("Minimum Log Level:", logLevel),
+		row("Max Lines:", strconv.FormatInt(maxLines, 10)),
+		row("Files Read:", fileNames(analysisResults.Files)),
+		row("Analysis Duration:", analysisDuration.Round(time.Millisecond).String()),
+		separator,
+		heading("Analysis Results:"),
+		row("Entries Analyzed:", strconv.FormatInt(analysisResults.TotalEntries, 10)),
+		row("Period Covered:", covered),
+		row("Errors:", strconv.FormatInt(analysisResults.ErrorCount, 10)),
+		row("Warnings:", strconv.FormatInt(analysisResults.WarningCount, 10)),
+		row("Info:", strconv.FormatInt(analysisResults.InfoCount, 10)),
+		row("Debug:", strconv.FormatInt(analysisResults.DebugCount, 10)),
+	}
+
+	if analysisResults.Unparsed > 0 {
+		results = append(results, row("Unreadable Lines:", strconv.FormatInt(analysisResults.Unparsed, 10)))
 	}
 
 	if errorPattern {
-		topError := analysisResults.TopErrorPattern
-		if topError == "" {
-			topError = "No error patterns found"
+		var top gomponents.Node = gomponents.Text("No warnings or errors")
+		if len(analysisResults.TopErrors) > 0 {
+			top = itemList(analysisResults.TopErrors, func(it *CountedItem) string {
+				return fmt.Sprintf("%d × %s", it.Count, it.Name)
+			})
 		}
 
-		results = append(
-			results,
-			html.Tr(
-				html.Td(gomponents.Text("Top Error Pattern:")),
-				html.Td(gomponents.Text(topError)),
-			),
+		results = append(results,
+			separator,
+			row("Distinct Warnings/Errors:", strconv.Itoa(analysisResults.DistinctErrors)),
+			html.Tr(html.Td(gomponents.Text("Most Frequent:")), html.Td(top)),
 		)
 	}
 
-	if performanceMetrics {
-		results = append(
-			results,
-			html.Tr(
-				html.Td(gomponents.Text("Avg Response Time:")),
-				html.Td(gomponents.Text(analysisResults.AvgResponseTime)),
-			),
-			html.Tr(
-				html.Td(gomponents.Text("Max Response Time:")),
-				html.Td(gomponents.Text(analysisResults.MaxResponseTime)),
-			),
-			html.Tr(
-				html.Td(gomponents.Text("Slowest Operation:")),
-				html.Td(gomponents.Text(analysisResults.SlowestOperation)),
-			),
+	if (performanceMetrics || accessPattern) && analysisResults.Requests == 0 {
+		results = append(results, separator, row("Web Requests:", "No requests in weblogs.log for this time range"))
+	} else if performanceMetrics || accessPattern {
+		results = append(results,
+			separator,
+			row("Web Log Files:", fileNames(analysisResults.WebFiles)),
+			row("Web Requests:", strconv.FormatInt(analysisResults.Requests, 10)),
 		)
 	}
 
-	if accessPattern {
-		topAccess := analysisResults.TopAccessPattern
-		if topAccess == "" {
-			topAccess = "No access patterns found"
-		}
+	if performanceMetrics && analysisResults.Requests > 0 {
+		results = append(results,
+			row("Avg Response Time:", fmt.Sprintf("%.1f ms", analysisResults.AvgResponseMs)),
+			row("Max Response Time:", fmt.Sprintf("%.1f ms (%s)", analysisResults.MaxResponseMs, analysisResults.SlowestRequest)),
+			row(fmt.Sprintf("Requests ≥ %d ms:", slowRequestMs), strconv.FormatInt(analysisResults.SlowRequests, 10)),
+			html.Tr(html.Td(gomponents.Text("Slowest Endpoints (avg):")), html.Td(itemList(analysisResults.SlowestEndpoints,
+				func(it *CountedItem) string {
+					return fmt.Sprintf("%s: %.0f ms avg, %.0f ms max, %d requests", it.Name, it.AvgMs, it.MaxMs, it.Count)
+				}))),
+		)
+	}
 
-		results = append(
-			results,
-			html.Tr(
-				html.Td(gomponents.Text("Most Accessed Endpoint:")),
-				html.Td(gomponents.Text(topAccess)),
-			),
+	if accessPattern && analysisResults.Requests > 0 {
+		results = append(results,
+			row("Client Errors (4xx):", strconv.FormatInt(analysisResults.ClientErrors, 10)),
+			row("Server Errors (5xx):", strconv.FormatInt(analysisResults.ServerErrors, 10)),
+			html.Tr(html.Td(gomponents.Text("Most Requested:")), html.Td(itemList(analysisResults.TopEndpoints,
+				func(it *CountedItem) string { return fmt.Sprintf("%d × %s", it.Count, it.Name) }))),
 		)
 	}
 

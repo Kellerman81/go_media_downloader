@@ -129,6 +129,11 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/wizard/step/:n", HandleWizardStepSave)
 	routerapi.POST("/admin/wizard/test/indexer", HandleWizardTestIndexer)
 	routerapi.POST("/admin/wizard/test/downloader", HandleWizardTestDownloader)
+	routerapi.POST("/admin/wizard/test/tools", HandleWizardCheckTools)
+	routerapi.POST("/admin/wizard/test/services", HandleWizardTestServices)
+	routerapi.POST("/admin/wizard/test/dlfolders", HandleWizardCheckDownloadFolders)
+	routerapi.POST("/admin/wizard/review", HandleWizardReview)
+	routerapi.POST("/admin/wizard/run", HandleWizardRunJob)
 	routerapi.GET("/admin/config/:configtype", adminPageConfig)
 	routerapi.POST("/admin/config/:configtype/update", HandleConfigUpdate)
 	routerapi.GET("/admin/seriesconfig", renderSeriesConfigPage)
@@ -136,6 +141,8 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.GET("/admin/seriesconfig/edit", handleSeriesConfigEdit)
 	routerapi.POST("/admin/seriesconfig/delete", handleSeriesConfigDelete)
 	routerapi.POST("/admin/seriesconfig/update", handleSeriesConfigUpdate)
+	routerapi.POST("/admin/seriesconfig/global", handleSeriesConfigGlobal)
+	routerapi.POST("/admin/seriesconfig/create", handleSeriesConfigCreate)
 	routerapi.GET("/admin/seriesconfig/helper", handleScraperHelper)
 	routerapi.GET("/admin/testparse", adminPageTestParse)
 	routerapi.POST("/admin/testparse", HandleTestParse)
@@ -177,6 +184,7 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	// New Management Tools Routes
 	routerapi.GET("/admin/media-cleanup", adminPageMediaCleanup)
 	routerapi.POST("/admin/cleanup", HandleMediaCleanup)
+	routerapi.POST("/admin/cleanup/database", HandleDatabaseChecks)
 	routerapi.GET("/admin/missing-episodes", adminPageMissingEpisodes)
 	routerapi.POST("/admin/missing-episodes", HandleMissingEpisodes)
 	routerapi.GET("/admin/log-analysis", adminPageLogAnalysis)
@@ -192,6 +200,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/api-testing/execute", HandleAPITesting)
 
 	routerapi.GET("/admin/quality-reorder", adminPageQualityReorder)
+	routerapi.GET("/admin/quality-priorities", adminPageQualityPriorities)
+	routerapi.GET("/admin/quality-priorities/editor", HandleQualityPrioritiesEditor)
+	routerapi.POST("/admin/quality-priorities/generate", HandleQualityPrioritiesGenerate)
+	routerapi.POST("/admin/quality-priorities/save", HandleQualityPrioritiesSave)
 	routerapi.POST("/admin/quality-reorder", HandleQualityReorder)
 	routerapi.GET("/admin/quality-reorder/rules", HandleQualityReorderRules)
 	routerapi.POST("/admin/quality-reorder/add-rule", HandleQualityReorderAddRule)
@@ -219,10 +231,10 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 	routerapi.GET("/admin/regex-tester", adminPageRegexTester)
 	routerapi.POST("/admin/regex-tester/test", HandleRegexTesting)
+	routerapi.POST("/admin/regex-tester/pattern", HandleRegexPattern)
 	routerapi.GET("/admin/naming-generator", adminPageNamingGenerator)
-	routerapi.GET("/admin/naming-generator/fields/:type", HandleNamingFieldsForType)
-	routerapi.POST("/admin/naming-generator/preview", HandleNamingPreview)
-	routerapi.POST("/admin/naming-generator/verify", HandleNamingVerify)
+	routerapi.GET("/admin/naming-generator/fields", HandleNamingFieldsForType)
+	routerapi.POST("/admin/naming-generator/check", HandleNamingCheck)
 
 	routerapi.GET("/admin/database/:tablename", adminPageDatabase)
 	routerapi.GET("/admin/grid/:grid", adminPageGrid)
@@ -234,18 +246,41 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 
 	// Calendar routes
 	routerapi.GET("/admin/calendar", CalendarPageHandler)
-	routerapi.GET("/admin/calendar/controls", CalendarControlsHandler)
+	routerapi.GET("/admin/library", LibraryPage)
+	routerapi.GET("/admin/users", UsersPage)
+	routerapi.GET("/admin/requests", RequestsPage)
+	routerapi.POST("/admin/requests/approve", HandleRequestApprove)
+	routerapi.POST("/admin/requests/reject", HandleRequestReject)
+	routerapi.POST("/admin/users/save", HandleUserSave)
+	routerapi.POST("/admin/users/delete", HandleUserDelete)
+	routerapi.POST("/admin/users/password", HandleUserPassword)
+	routerapi.GET("/admin/account", AccountPage)
+	routerapi.POST("/admin/account", HandleAccountPassword)
+	routerapi.GET("/admin/library/grid", HandleLibraryGrid)
+	routerapi.GET("/admin/library/item", HandleLibraryItem)
+	routerapi.GET("/admin/library/random", HandleLibraryRandom)
+	routerapi.GET("/admin/library/filters", HandleLibraryFilters)
+	routerapi.GET("/admin/library/links", HandleLibraryLinks)
+	routerapi.GET("/admin/library/playlist", HandleLibraryPlaylist)
+	routerapi.GET("/admin/library/playall", HandleLibraryPlayAll)
+	routerapi.GET("/admin/library/cover/:type/:id", HandleLibraryCover)
+	routerapi.GET("/admin/library/thumb/:kind/:id", HandleLibraryThumb)
+	routerapi.POST("/admin/library/delete", HandleLibraryDelete)
+	routerapi.POST("/admin/library/delete-part", HandleLibraryDeletePart)
+	routerapi.GET("/admin/library/play/speedtest", HandlePlayerSpeedTest)
+	routerapi.GET("/admin/library/play/book", HandlePlayerBook)
+	routerapi.GET("/admin/library/play/:kind/:id/info", HandlePlayerInfo)
+	routerapi.GET("/admin/library/play/:kind/:id/stream", HandlePlayerStream)
+	routerapi.GET("/admin/library/play/:kind/:id/hls", HandlePlayerHLSStart)
+	routerapi.GET("/admin/library/play/:kind/:id/sub/:sid", HandlePlayerSub)
+	routerapi.GET("/admin/library/play/hls/:sid/:file", HandlePlayerHLSFile)
 	routerapi.GET("/admin/calendar/content", CalendarContentHandler)
 	routerapi.GET("/admin/calendar/events", CalendarEventsHandler)
 	routerapi.GET("/admin/calendar/day-events", CalendarDayEventsHandler)
 	routerapi.GET("/admin/calendar/ical", CalendarICalHandler)
 
 	// Metadata search routes
-	routerapi.GET("/admin/metadata-search/movies", MovieMetadataSearchPage)
-	routerapi.GET("/admin/metadata-search/series", SeriesMetadataSearchPage)
-	routerapi.GET("/admin/metadata-search/books", BookMetadataSearchPage)
-	routerapi.GET("/admin/metadata-search/audiobooks", AudiobookMetadataSearchPage)
-	routerapi.GET("/admin/metadata-search/music", MusicMetadataSearchPage)
+	routerapi.GET("/admin/metadata-search", MetadataSearchPage)
 	routerapi.POST("/admin/search/movies", SearchMovieMetadata)
 	routerapi.POST("/admin/search/series", SearchSeriesMetadata)
 	routerapi.POST("/admin/search/books", SearchBookMetadata)
@@ -255,17 +290,17 @@ func AddWebRoutes(routerapi *gin.RouterGroup) {
 	routerapi.POST("/admin/search/music/artist", SearchMusicArtists)
 	routerapi.POST("/admin/search/music/artist-releases", ListArtistReleasesForSelection)
 	routerapi.POST("/admin/discover/series-albums", DiscoverSeriesAlbumsByName)
-	routerapi.POST("/admin/add/movie", AddMovieToDatabase)
-	routerapi.POST("/admin/add/series", AddSeriesToDatabase)
-	routerapi.POST("/admin/add/book", AddBookToDatabase)
-	routerapi.POST("/admin/add/audiobook", AddAudiobookToDatabase)
-	routerapi.POST("/admin/add/movie/manual", AddMovieManual)
-	routerapi.POST("/admin/add/series/manual", AddSeriesManual)
-	routerapi.POST("/admin/add/book/manual", AddBookManual)
-	routerapi.POST("/admin/add/audiobook/manual", AddAudiobookManual)
+	routerapi.POST("/admin/add/movie", requestable("movie", AddMovieToDatabase))
+	routerapi.POST("/admin/add/series", requestable("series", AddSeriesToDatabase))
+	routerapi.POST("/admin/add/book", requestable("book", AddBookToDatabase))
+	routerapi.POST("/admin/add/audiobook", requestable("audiobook", AddAudiobookToDatabase))
+	routerapi.POST("/admin/add/movie/manual", requestable("movie", AddMovieManual))
+	routerapi.POST("/admin/add/series/manual", requestable("series", AddSeriesManual))
+	routerapi.POST("/admin/add/book/manual", requestable("book", AddBookManual))
+	routerapi.POST("/admin/add/audiobook/manual", requestable("audiobook", AddAudiobookManual))
 	routerapi.POST("/admin/add/book/author", AddBooksByAuthor)
 	routerapi.POST("/admin/add/audiobook/author", AddAudiobooksByAuthor)
-	routerapi.POST("/admin/add/album", AddAlbumToDatabase)
+	routerapi.POST("/admin/add/album", requestable("album", AddAlbumToDatabase))
 	routerapi.POST("/admin/add/artist-albums", AddArtistAlbumsFiltered)
 	routerapi.POST("/admin/add/albums-selected", AddSelectedAlbums)
 
@@ -1053,7 +1088,7 @@ func apiDBDelete(ctx *gin.Context) {
 		return
 	}
 
-	err := database.ExecNErr("DELETE FROM "+tableName+" WHERE id = ?", id)
+	err := database.ExecNErr("DELETE FROM "+tableName+" WHERE id = ?", &id)
 	handleDBError(ctx, err, StrOK)
 }
 
@@ -1110,7 +1145,7 @@ func apiDBRemoveOldJobs(ctx *gin.Context) {
 	}
 
 	scantime := time.Now().AddDate(0, 0, 0-days)
-	_, err := database.DeleteRow("job_histories", "created_at < ?", scantime)
+	_, err := database.DeleteRow("job_histories", "created_at < ?", &scantime)
 	handleDBError(ctx, err, StrOK)
 }
 
@@ -1145,7 +1180,7 @@ func apiQualityDelete(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := database.DeleteRow("qualities", logger.FilterByID, id); err != nil {
+	if _, err := database.DeleteRow("qualities", logger.FilterByID, &id); err != nil {
 		sendBadRequest(ctx, "Failed to delete quality: "+err.Error())
 		return
 	}
@@ -1187,25 +1222,25 @@ func apiQualityUpdate(ctx *gin.Context) {
 		_, writeErr = database.InsertArray(
 			"qualities",
 			[]string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
-			quality.QualityType,
-			quality.Name,
-			quality.Regex,
-			quality.Strings,
-			quality.Priority,
-			quality.UseRegex,
+			&quality.QualityType,
+			&quality.Name,
+			&quality.Regex,
+			&quality.Strings,
+			&quality.Priority,
+			&quality.UseRegex,
 		)
 	} else {
 		_, writeErr = database.UpdateArray(
 			"qualities",
 			[]string{"Type", "Name", "Regex", "Strings", "Priority", "Use_Regex"},
 			"id != 0 and id = ?",
-			quality.QualityType,
-			quality.Name,
-			quality.Regex,
-			quality.Strings,
-			quality.Priority,
-			quality.UseRegex,
-			quality.ID,
+			&quality.QualityType,
+			&quality.Name,
+			&quality.Regex,
+			&quality.Strings,
+			&quality.Priority,
+			&quality.UseRegex,
+			&quality.ID,
 		)
 	}
 
@@ -1800,7 +1835,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 	if cfg.GroupType == logger.StrMovie {
 		movie, err := database.GetMovies(
 			database.Querywithargs{Where: logger.FilterByID},
-			cfg.MovieID,
+			&cfg.MovieID,
 		)
 		if err != nil || movie == nil {
 			sendBadRequest(ctx, "movie not found")
@@ -1856,7 +1891,7 @@ func apiNamingGenerate(ctx *gin.Context) {
 	} else {
 		series, err := database.GetSeries(
 			database.Querywithargs{Where: logger.FilterByID},
-			cfg.SerieID,
+			&cfg.SerieID,
 		)
 		if err != nil || series == nil {
 			sendBadRequest(ctx, "series not found")

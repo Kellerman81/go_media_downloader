@@ -2,327 +2,462 @@ package api
 
 import (
 	"bufio"
+	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 )
+
+// The log files the analysis reads, as written by the logger package:
+// zerolog JSON, one entry per line, rotated by lumberjack into
+// <name>-<timestamp>.log (or .log.gz with log_compress).
+const (
+	appLogName   = "downloader"
+	errorLogName = "errors"
+	webLogName   = "weblogs"
+)
+
+// maxAnalyzedEntries bounds the Max Lines input; the newest entries are kept
+// in memory until the scan ends.
+const maxAnalyzedEntries = 200000
+
+// slowRequestMs is the response time from which a web request counts as slow.
+const slowRequestMs = 1000
+
+// logTimeRanges maps the page's Time Range options to durations.
+var logTimeRanges = map[string]time.Duration{
+	"1h":  time.Hour,
+	"6h":  6 * time.Hour,
+	"12h": 12 * time.Hour,
+	"24h": 24 * time.Hour,
+	"3d":  3 * 24 * time.Hour,
+	"7d":  7 * 24 * time.Hour,
+	"30d": 30 * 24 * time.Hour,
+}
+
+// logLevelRank orders zerolog's level names; the page's Log Level is a minimum.
+var logLevelRank = map[string]int{
+	"trace": 0, "debug": 1, "info": 2, "warn": 3, "error": 4, "fatal": 5, "panic": 6,
+}
+
+// CountedItem is a grouped log entry (error message, endpoint) and how often it occurred.
+type CountedItem struct {
+	Name  string
+	Count int
+	AvgMs float64 // endpoints only
+	MaxMs float64 // endpoints only
+}
 
 // LogAnalysisResults holds the results of log file analysis.
 type LogAnalysisResults struct {
-	TotalEntries      int64
-	ErrorCount        int64
-	WarningCount      int64
-	InfoCount         int64
-	ErrorPatterns     map[string]int // pattern -> count
-	AccessPatterns    map[string]int // endpoint -> count
-	PerformanceIssues []string
-	TopErrorPattern   string // most common error
-	TopAccessPattern  string // most accessed endpoint
-	AvgResponseTime   string // calculated average response time
-	MaxResponseTime   string // maximum response time found
-	SlowestOperation  string // slowest operation found
+	Files          []string
+	First, Last    time.Time // time span of the analyzed entries
+	TotalEntries   int64
+	Unparsed       int64 // lines that aren't JSON log entries
+	Truncated      bool  // more entries matched than Max Lines; the newest were kept
+	ErrorCount     int64 // error, fatal and panic
+	WarningCount   int64
+	InfoCount      int64
+	DebugCount     int64
+	TopErrors      []CountedItem // warnings and errors grouped by message and error text
+	DistinctErrors int
+
+	// Web requests from weblogs.log (same time range and Max Lines).
+	WebFiles         []string
+	Requests         int64
+	AvgResponseMs    float64
+	MaxResponseMs    float64
+	SlowestRequest   string
+	SlowRequests     int64 // at least slowRequestMs
+	ClientErrors     int64 // 4xx
+	ServerErrors     int64 // 5xx
+	TopEndpoints     []CountedItem
+	SlowestEndpoints []CountedItem
 }
 
-// getLogFilePath returns the path to the application log file.
-func getLogFilePath() (string, error) {
-	// Try to get log file path from config or use default
-	logPaths := []string{
-		"logs/downloader.log",
-		"../logs/downloader.log",
-		"../../logs/downloader.log",
-		"/var/log/go_media_downloader.log",
-		"./downloader.log",
-	}
+// logEntry holds the fields of a log line that the analysis uses.
+type logEntry struct {
+	Level   string          `json:"level"`
+	Time    string          `json:"time"`
+	Message string          `json:"message"`
+	Error   json.RawMessage `json:"error"`
+	Method  string          `json:"method"`
+	Path    string          `json:"path"`
+	Elapsed float64         `json:"elapsed_ms"`
+	Status  int             `json:"status_code"`
+	at      time.Time
+}
 
-	for _, logPath := range logPaths {
-		if _, err := os.Stat(logPath); err == nil {
-			return filepath.Abs(logPath)
+// getLogDir returns the directory holding the application's log files.
+func getLogDir() (string, error) {
+	for _, dir := range []string{"logs", "../logs", "../../logs"} {
+		if _, err := os.Stat(filepath.Join(dir, appLogName+".log")); err == nil {
+			return filepath.Abs(dir)
 		}
 	}
 
-	return "", errors.New("no log file found in standard locations")
+	return "", errors.New("no logs/downloader.log found")
 }
 
-// performLogAnalysis analyzes the log file and returns results.
-func performLogAnalysis(
-	logFile, timeRange, logLevel string,
-	maxLines int64,
-	errorPattern, performanceMetrics, accessPattern bool, _, _ bool,
-) (*LogAnalysisResults, error) {
-	file, err := os.Open(logFile)
+// logFiles returns the current and rotated files of one log, oldest first.
+// Rotated files last written before since can't hold entries in range and
+// are skipped.
+func logFiles(dir, name string, since time.Time) []string {
+	rotated, _ := filepath.Glob(filepath.Join(dir, name+"-*.log"))
+	gz, _ := filepath.Glob(filepath.Join(dir, name+"-*.log.gz"))
+	rotated = append(rotated, gz...)
+
+	// lumberjack's backup names end in the rotation time, so they sort by age.
+	slices.Sort(rotated)
+
+	files := make([]string, 0, len(rotated)+1)
+	for _, f := range rotated {
+		if info, err := os.Stat(f); err == nil && !info.ModTime().Before(since) {
+			files = append(files, f)
+		}
+	}
+
+	if current := filepath.Join(dir, name+".log"); fileExists(current) {
+		files = append(files, current)
+	}
+
+	return files
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// parseLogTime parses a log entry's time with the logger's configured format.
+func parseLogTime(s string) (time.Time, bool) {
+	for _, layout := range []string{logger.GetTimeFormat(), time.RFC3339Nano} {
+		if layout == "" {
+			continue
+		}
+
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+
+	return time.Time{}, false
+}
+
+// readLogEntries reads the entries of files that are at or after since (a zero
+// since keeps all) and at or above minLevel. Only the newest maxEntries are
+// returned; truncated reports whether older ones were dropped. Entries without
+// a parsable time are kept, as they can't be placed outside the range.
+func readLogEntries(files []string, since time.Time, minLevel int, maxEntries int) (entries []logEntry, unparsed int64, truncated bool, err error) {
+	ring := make([]logEntry, 0, min(maxEntries, 4096))
+	next := 0 // ring write position once it is full
+
+	for _, file := range files {
+		if err := scanLogFile(file, func(line []byte) {
+			var e logEntry
+			if jerr := json.Unmarshal(line, &e); jerr != nil {
+				var syntaxErr *json.SyntaxError
+				if errors.As(jerr, &syntaxErr) || e.Level == "" {
+					unparsed++
+					return
+				}
+				// A field of an unexpected type; the other fields are filled.
+			}
+
+			if rank, ok := logLevelRank[e.Level]; ok && rank < minLevel {
+				return
+			}
+
+			if t, ok := parseLogTime(e.Time); ok {
+				if t.Before(since) {
+					return
+				}
+
+				e.at = t
+			}
+
+			if len(ring) < maxEntries {
+				ring = append(ring, e)
+				return
+			}
+
+			truncated = true
+			ring[next] = e
+			next = (next + 1) % maxEntries
+		}); err != nil {
+			return nil, unparsed, truncated, err
+		}
+	}
+
+	// Restore chronological order: the oldest kept entry is at next.
+	return append(ring[next:], ring[:next]...), unparsed, truncated, nil
+}
+
+func scanLogFile(path string, fn func([]byte)) error {
+	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open log file: %w", err)
+		return fmt.Errorf("open %s: %w", filepath.Base(path), err)
 	}
-	defer file.Close()
+	defer f.Close()
 
-	results := &LogAnalysisResults{
-		ErrorPatterns:     make(map[string]int),
-		AccessPatterns:    make(map[string]int),
-		PerformanceIssues: make([]string, 0),
-	}
-
-	// Compile regex patterns for log analysis
-	errorRegex := regexp.MustCompile(`(?i)\b(error|failed|exception|panic)\b`)
-	warningRegex := regexp.MustCompile(`(?i)\b(warning|warn)\b`)
-	infoRegex := regexp.MustCompile(`(?i)\b(info|debug|trace)\b`)
-	performanceRegex := regexp.MustCompile(
-		`(?i)(slow|timeout|took\s+(\d+(?:\.\d+)?)(\s*m?s)|response.*?time.*?(\d+(?:\.\d+)?)(\s*m?s))`,
-	)
-	timingRegex := regexp.MustCompile(`(?i)took\s+(\d+(?:\.\d+)?)\s*(ms|s)`)
-	operationRegex := regexp.MustCompile(`(?i)(\w+(?:_\w+)*)\s+took\s+(\d+(?:\.\d+)?)\s*(ms|s)`)
-	accessRegex := regexp.MustCompile(`\b(GET|POST|PUT|DELETE|PATCH)\s+(/\S*)`)
-
-	// More specific error pattern extraction
-	errorPatternRegex := regexp.MustCompile(
-		`(?i)(failed to connect|connection refused|timeout|database error|not found|permission denied|out of memory|disk full|network error)`,
-	)
-
-	// Variables to track performance metrics
-	var (
-		totalResponseTimeMs float64
-		responseTimeCount   int
-		maxResponseTimeMs   float64
-		maxResponseTimeStr  string
-		slowestOp           string
-		slowestOpTime       float64
-	)
-
-	// Calculate time range filter
-	var (
-		timeRangeStart time.Time
-		useTimeFilter  bool
-	)
-
-	if timeRange != "" && timeRange != "all" {
-		useTimeFilter = true
-
-		now := time.Now()
-		switch timeRange {
-		case "1hour":
-			timeRangeStart = now.Add(-1 * time.Hour)
-		case "6hours":
-			timeRangeStart = now.Add(-6 * time.Hour)
-		case "24hours":
-			timeRangeStart = now.Add(-24 * time.Hour)
-		case "7days":
-			timeRangeStart = now.Add(-7 * 24 * time.Hour)
-		case "30days":
-			timeRangeStart = now.Add(-30 * 24 * time.Hour)
-		default:
-			useTimeFilter = false
+	var r io.Reader = f
+	if strings.HasSuffix(path, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", filepath.Base(path), err)
 		}
+		defer gz.Close()
+
+		r = gz
 	}
 
-	// Compile log level regex for filtering
-	var logLevelRegex *regexp.Regexp
-	if logLevel != "" && logLevel != "all" {
-		switch strings.ToLower(logLevel) {
-		case "error":
-			logLevelRegex = regexp.MustCompile(`(?i)\b(error|failed|exception|panic)\b`)
-		case "warning":
-			logLevelRegex = regexp.MustCompile(`(?i)\b(warning|warn)\b`)
-		case "info":
-			logLevelRegex = regexp.MustCompile(`(?i)\b(info)\b`)
-		case "debug":
-			logLevelRegex = regexp.MustCompile(`(?i)\b(debug|trace)\b`)
-		}
-	}
-
-	// Common log timestamp patterns
-	timestampRegex := regexp.MustCompile(`(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})`)
-	timestampLayouts := []string{
-		"2006-01-02T15:04:05",
-		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05Z",
-		"2006-01-02 15:04:05.000",
-	}
-
-	scanner := bufio.NewScanner(file)
-	var matchedLines int64
+	scanner := bufio.NewScanner(r)
+	// Entries with long error texts (HTML error pages) exceed the 64 KB default.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
 	for scanner.Scan() {
-		line := scanner.Text()
-
-		// Apply time range filter if specified
-		if useTimeFilter {
-			if timestampMatches := timestampRegex.FindStringSubmatch(line); len(
-				timestampMatches,
-			) > 1 {
-				timestampStr := timestampMatches[1]
-				// Try multiple timestamp formats
-				var (
-					logTime time.Time
-					err     error
-				)
-
-				for _, layout := range timestampLayouts {
-					if logTime, err = time.Parse(layout, timestampStr); err == nil {
-						break
-					}
-				}
-
-				if err == nil && logTime.Before(timeRangeStart) {
-					continue // Skip this line as it's outside the time range
-				}
-			}
-		}
-
-		// Apply log level filter if specified
-		if logLevelRegex != nil && !logLevelRegex.MatchString(line) {
-			continue // Skip this line as it doesn't match the specified log level
-		}
-
-		// maxLines caps the number of *matching* entries, applied after the
-		// time-range/log-level filters above - capping raw physical lines
-		// scanned from the start of an append-ordered log file would stop
-		// before ever reaching recent entries in a large file.
-		matchedLines++
-		if matchedLines > maxLines {
-			break
-		}
-
-		results.TotalEntries++
-
-		// Count log levels
-		if errorRegex.MatchString(line) {
-			results.ErrorCount++
-			if errorPattern {
-				// Extract specific error patterns
-				matches := errorPatternRegex.FindAllString(line, -1)
-				for _, match := range matches {
-					results.ErrorPatterns[match]++
-				}
-			}
-		} else if warningRegex.MatchString(line) {
-			results.WarningCount++
-		} else if infoRegex.MatchString(line) {
-			results.InfoCount++
-		}
-
-		// Analyze performance metrics
-		if performanceMetrics {
-			// Extract timing information
-			if timingMatches := timingRegex.FindAllStringSubmatch(line, -1); len(
-				timingMatches,
-			) > 0 {
-				for _, match := range timingMatches {
-					if len(match) >= 3 {
-						timeValue, err := strconv.ParseFloat(match[1], 64)
-						if err != nil {
-							continue
-						}
-
-						timeUnit := strings.ToLower(match[2])
-
-						timeInMs := timeValue
-						if timeUnit == "s" {
-							timeInMs = timeValue * 1000
-						}
-
-						totalResponseTimeMs += timeInMs
-						responseTimeCount++
-
-						if timeInMs > maxResponseTimeMs {
-							maxResponseTimeMs = timeInMs
-							maxResponseTimeStr = fmt.Sprintf("%.2f%s", timeValue, timeUnit)
-						}
-					}
-				}
-			}
-
-			// Extract operation timing
-			if opMatches := operationRegex.FindAllStringSubmatch(line, -1); len(opMatches) > 0 {
-				for _, match := range opMatches {
-					if len(match) >= 4 {
-						operation := match[1]
-
-						timeValue, err := strconv.ParseFloat(match[2], 64)
-						if err != nil {
-							continue
-						}
-
-						timeUnit := strings.ToLower(match[3])
-
-						timeInMs := timeValue
-						if timeUnit == "s" {
-							timeInMs = timeValue * 1000
-						}
-
-						if timeInMs > slowestOpTime {
-							slowestOpTime = timeInMs
-							slowestOp = fmt.Sprintf("%s (%.2f%s)", operation, timeValue, timeUnit)
-						}
-					}
-				}
-			}
-
-			// Add to performance issues list for backward compatibility
-			if performanceRegex.MatchString(line) {
-				matches := performanceRegex.FindAllString(line, -1)
-
-				results.PerformanceIssues = append(results.PerformanceIssues, matches...)
-			}
-		}
-
-		// Analyze access patterns
-		if accessPattern && accessRegex.MatchString(line) {
-			matches := accessRegex.FindAllStringSubmatch(line, -1)
-			for _, match := range matches {
-				if len(match) > 2 {
-					endpoint := match[2] // The captured endpoint group
-					results.AccessPatterns[endpoint]++
-				}
-			}
-		}
+		fn(scanner.Bytes())
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading log file: %w", err)
+		return fmt.Errorf("read %s: %w", filepath.Base(path), err)
 	}
 
-	// Find the top error pattern
-	var maxErrorCount int
-	for pattern, count := range results.ErrorPatterns {
-		if count > maxErrorCount {
-			maxErrorCount = count
-			results.TopErrorPattern = fmt.Sprintf("%s (%d occurrences)", pattern, count)
+	return nil
+}
+
+var (
+	digitsRe     = regexp.MustCompile(`\d+`)
+	pathNumberRe = regexp.MustCompile(`/\d+(/|$)`)
+)
+
+// errorGroup is the key warnings and errors are grouped by: the message plus
+// the first line of the error text, with numbers masked so ids and counts
+// don't split one problem into many groups.
+func errorGroup(e *logEntry) string {
+	key := e.Message
+	if key == "" {
+		key = "(no message)"
+	}
+
+	if len(e.Error) == 0 || string(e.Error) == "null" {
+		return key
+	}
+
+	var text string
+	if json.Unmarshal(e.Error, &text) != nil {
+		text = string(e.Error)
+	}
+
+	text, _, _ = strings.Cut(text, "\n")
+	text = digitsRe.ReplaceAllString(strings.TrimSpace(text), "#")
+
+	if text == "" {
+		return key
+	}
+
+	if len(text) > 120 {
+		text = text[:120] + "…"
+	}
+
+	return key + ": " + text
+}
+
+// endpointGroup is a request's method and path with the query removed and
+// numeric path segments shown as :id.
+func endpointGroup(e *logEntry) string {
+	path, _, _ := strings.Cut(e.Path, "?")
+	for pathNumberRe.MatchString(path) {
+		path = pathNumberRe.ReplaceAllString(path, "/:id$1")
+	}
+
+	return strings.TrimSpace(e.Method + " " + path)
+}
+
+// topCounted returns up to n items with the highest count.
+func topCounted(counts map[string]*CountedItem, n int, less func(a, b *CountedItem) int) []CountedItem {
+	items := make([]*CountedItem, 0, len(counts))
+	for _, it := range counts {
+		items = append(items, it)
+	}
+
+	slices.SortFunc(items, less)
+
+	out := make([]CountedItem, 0, min(n, len(items)))
+	for _, it := range items[:min(n, len(items))] {
+		out = append(out, *it)
+	}
+
+	return out
+}
+
+func byCountDesc(a, b *CountedItem) int {
+	if a.Count != b.Count {
+		return b.Count - a.Count
+	}
+
+	return strings.Compare(a.Name, b.Name)
+}
+
+// performLogAnalysis analyzes the application log (logName "downloader" or
+// "errors") and, for performance metrics and access patterns, weblogs.log.
+func performLogAnalysis(
+	logDir, logName, timeRange, logLevel string,
+	maxLines int64,
+	errorPattern, performanceMetrics, accessPattern bool,
+	now time.Time,
+) (*LogAnalysisResults, error) {
+	var since time.Time
+	if d, ok := logTimeRanges[timeRange]; ok {
+		since = now.Add(-d)
+	}
+
+	minLevel := logLevelRank[strings.ToLower(logLevel)]
+	if strings.EqualFold(logLevel, "warning") {
+		minLevel = logLevelRank["warn"]
+	}
+
+	maxEntries := int(min(max(maxLines, 1), maxAnalyzedEntries))
+
+	results := &LogAnalysisResults{Files: logFiles(logDir, logName, since)}
+	if len(results.Files) == 0 {
+		return nil, fmt.Errorf("no %s log files in %s", logName, logDir)
+	}
+
+	entries, unparsed, truncated, err := readLogEntries(results.Files, since, minLevel, maxEntries)
+	if err != nil {
+		return nil, err
+	}
+
+	results.Unparsed = unparsed
+	results.Truncated = truncated
+	results.TotalEntries = int64(len(entries))
+
+	errorsByGroup := make(map[string]*CountedItem)
+
+	for i := range entries {
+		e := &entries[i]
+		if !e.at.IsZero() {
+			if results.First.IsZero() || e.at.Before(results.First) {
+				results.First = e.at
+			}
+
+			if e.at.After(results.Last) {
+				results.Last = e.at
+			}
+		}
+
+		switch e.Level {
+		case "error", "fatal", "panic":
+			results.ErrorCount++
+		case "warn":
+			results.WarningCount++
+		case "info":
+			results.InfoCount++
+		case "debug", "trace":
+			results.DebugCount++
+		}
+
+		if errorPattern && logLevelRank[e.Level] >= logLevelRank["warn"] {
+			key := errorGroup(e)
+			if it := errorsByGroup[key]; it != nil {
+				it.Count++
+			} else {
+				errorsByGroup[key] = &CountedItem{Name: key, Count: 1}
+			}
 		}
 	}
 
-	// Find the top access pattern
-	var maxAccessCount int
-	for endpoint, count := range results.AccessPatterns {
-		if count > maxAccessCount {
-			maxAccessCount = count
-			results.TopAccessPattern = fmt.Sprintf("%s (%d requests)", endpoint, count)
+	results.DistinctErrors = len(errorsByGroup)
+	results.TopErrors = topCounted(errorsByGroup, 10, byCountDesc)
+
+	if performanceMetrics || accessPattern {
+		if err := analyzeWebLog(results, logDir, since, maxEntries); err != nil {
+			return nil, err
 		}
-	}
-
-	// Calculate performance metrics
-	if responseTimeCount > 0 {
-		avgTimeMs := totalResponseTimeMs / float64(responseTimeCount)
-
-		results.AvgResponseTime = fmt.Sprintf("%.2fms", avgTimeMs)
-	} else {
-		results.AvgResponseTime = "No timing data found"
-	}
-
-	if maxResponseTimeStr != "" {
-		results.MaxResponseTime = maxResponseTimeStr
-	} else {
-		results.MaxResponseTime = "No timing data found"
-	}
-
-	if slowestOp != "" {
-		results.SlowestOperation = slowestOp
-	} else {
-		results.SlowestOperation = "No operation timing found"
 	}
 
 	return results, nil
+}
+
+// analyzeWebLog fills the request statistics from weblogs.log.
+func analyzeWebLog(results *LogAnalysisResults, logDir string, since time.Time, maxEntries int) error {
+	results.WebFiles = logFiles(logDir, webLogName, since)
+	if len(results.WebFiles) == 0 {
+		return nil
+	}
+
+	requests, _, _, err := readLogEntries(results.WebFiles, since, 0, maxEntries)
+	if err != nil {
+		return err
+	}
+
+	byEndpoint := make(map[string]*CountedItem)
+
+	var totalMs float64
+
+	for i := range requests {
+		e := &requests[i]
+		if e.Path == "" {
+			continue
+		}
+
+		results.Requests++
+		totalMs += e.Elapsed
+
+		if e.Elapsed > results.MaxResponseMs {
+			results.MaxResponseMs = e.Elapsed
+			results.SlowestRequest = e.Method + " " + e.Path
+		}
+
+		if e.Elapsed >= slowRequestMs {
+			results.SlowRequests++
+		}
+
+		switch {
+		case e.Status >= 500:
+			results.ServerErrors++
+		case e.Status >= 400:
+			results.ClientErrors++
+		}
+
+		key := endpointGroup(e)
+
+		it := byEndpoint[key]
+		if it == nil {
+			it = &CountedItem{Name: key}
+			byEndpoint[key] = it
+		}
+
+		it.AvgMs = (it.AvgMs*float64(it.Count) + e.Elapsed) / float64(it.Count+1)
+		it.Count++
+		it.MaxMs = max(it.MaxMs, e.Elapsed)
+	}
+
+	if results.Requests > 0 {
+		results.AvgResponseMs = totalMs / float64(results.Requests)
+	}
+
+	results.TopEndpoints = topCounted(byEndpoint, 10, byCountDesc)
+	results.SlowestEndpoints = topCounted(byEndpoint, 5, func(a, b *CountedItem) int {
+		switch {
+		case a.AvgMs > b.AvgMs:
+			return -1
+		case a.AvgMs < b.AvgMs:
+			return 1
+		}
+
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return nil
 }

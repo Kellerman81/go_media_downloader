@@ -805,22 +805,22 @@ func runBatchedInserts(batch []batchedInsert) {
 
 // getOrCreateAuthorID looks up an author by name or slug, creating the row
 // when missing. Returns 0 on failure.
-func getOrCreateAuthorID(authorName string) uint {
+func getOrCreateAuthorID(authorName *string) uint {
 	var dbauthorID uint
 
-	authorSlug := logger.StringToSlugCached(authorName)
+	authorSlug := logger.StringToSlugCached(*authorName)
 	database.Scanrowsdyn(
 		false,
 		"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ?",
 		&dbauthorID,
-		&authorName,
+		authorName,
 		&authorSlug,
 	)
 
 	if dbauthorID == 0 {
 		result, err := database.ExecNid(
 			"INSERT INTO dbauthors (name, slug) VALUES (?, ?)",
-			&authorName,
+			authorName,
 			&authorSlug,
 		)
 		if err == nil {
@@ -833,7 +833,7 @@ func getOrCreateAuthorID(authorName string) uint {
 
 // getOrCreateNarratorID looks up a narrator by name, creating the row when
 // missing. Returns 0 on failure.
-func getOrCreateNarratorID(narratorName string) uint {
+func getOrCreateNarratorID(narratorName *string) uint {
 	var dbnarratorID uint
 	// COLLATE NOCASE matches getOrCreateAuthorID/getOrCreateArtistID -
 	// AudiobookGetMetadata tries Audible then falls back to Audnex for the
@@ -845,13 +845,13 @@ func getOrCreateNarratorID(narratorName string) uint {
 		false,
 		"SELECT id FROM dbnarrators WHERE name = ? COLLATE NOCASE",
 		&dbnarratorID,
-		&narratorName,
+		narratorName,
 	)
 
 	if dbnarratorID == 0 {
 		result, err := database.ExecNid(
 			"INSERT INTO dbnarrators (name) VALUES (?)",
-			&narratorName,
+			narratorName,
 		)
 		if err == nil {
 			dbnarratorID = logger.Int64ToUint(result)
@@ -910,12 +910,12 @@ func applyAudiobookDetails(
 			linked[id] = struct{}{}
 		}
 
-		for idx, authorName := range details.Authors {
-			if authorName == "" {
+		for idx := range details.Authors {
+			if details.Authors[idx] == "" {
 				continue
 			}
 
-			dbauthorID := getOrCreateAuthorID(authorName)
+			dbauthorID := getOrCreateAuthorID(&details.Authors[idx])
 			if dbauthorID == 0 {
 				continue
 			}
@@ -942,12 +942,12 @@ func applyAudiobookDetails(
 			linked[id] = struct{}{}
 		}
 
-		for idx, narratorName := range details.Narrators {
-			if narratorName == "" {
+		for idx := range details.Narrators {
+			if details.Narrators[idx] == "" {
 				continue
 			}
 
-			dbnarratorID := getOrCreateNarratorID(narratorName)
+			dbnarratorID := getOrCreateNarratorID(&details.Narrators[idx])
 			if dbnarratorID == 0 {
 				continue
 			}
@@ -1357,19 +1357,19 @@ func applyAlbumDetails(
 			linked[id] = struct{}{}
 		}
 
-		for idx, artistRef := range details.Artists {
-			if artistRef.Name == "" {
+		for idx := range details.Artists {
+			if details.Artists[idx].Name == "" {
 				continue
 			}
 
-			dbartistID, created := getOrCreateArtistID(artistRef.Name, artistRef.ID, artistCache)
+			dbartistID, created := getOrCreateArtistID(&details.Artists[idx].Name, &details.Artists[idx].ID, artistCache)
 			if dbartistID == 0 {
 				continue
 			}
 
 			// Newly created artist with a MusicBrainz id: fetch full metadata
 			// (including aliases) and persist it.
-			if created && artistRef.ID != "" {
+			if created && details.Artists[idx].ID != "" {
 				enrichNewArtist(ctx, dbartistID)
 			}
 
@@ -1417,9 +1417,9 @@ func applyAlbumDetails(
 	// Resolve all referenced track artists up front - no database reads may
 	// happen inside the transaction below.
 	for i := range details.Tracks {
-		for _, artistRef := range details.Tracks[i].Artists {
-			if artistRef.Name != "" {
-				_, _ = getOrCreateArtistID(artistRef.Name, artistRef.ID, artistCache)
+		for idx := range details.Tracks[i].Artists {
+			if details.Tracks[i].Artists[idx].Name != "" {
+				_, _ = getOrCreateArtistID(&details.Tracks[i].Artists[idx].Name, &details.Tracks[i].Artists[idx].ID, artistCache)
 			}
 		}
 	}
@@ -1451,13 +1451,13 @@ func applyAlbumDetails(
 			if !ok {
 				newid, err := exec(
 					"INSERT INTO dbtracks (dbalbum_id, title, track_number, disc_number, runtime_ms, acoustid, musicbrainz_recording_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-					album.ID,
-					details.Tracks[i].Title,
-					trackNum,
-					details.Tracks[i].DiscNumber,
+					&album.ID,
+					&details.Tracks[i].Title,
+					&trackNum,
+					&details.Tracks[i].DiscNumber,
 					details.Tracks[i].Duration.Milliseconds(),
-					details.Tracks[i].AcoustID,
-					details.Tracks[i].MusicBrainzID,
+					&details.Tracks[i].AcoustID,
+					&details.Tracks[i].MusicBrainzID,
 				)
 				if err != nil || newid == 0 {
 					continue
@@ -1486,9 +1486,9 @@ func applyAlbumDetails(
 
 				_, _ = exec(
 					"INSERT INTO dbtrack_artists (dbtrack_id, dbartist_id, position) VALUES (?, ?, ?)",
-					dbtrackID,
-					artistID,
-					idx,
+					&dbtrackID,
+					&artistID,
+					&idx,
 				)
 			}
 		}
@@ -1501,20 +1501,20 @@ func applyAlbumDetails(
 // when missing and backfilling a missing MusicBrainz id on existing rows.
 // The cache avoids repeated lookups for the same name within one apply run.
 // Returns the id (0 on failure) and whether the row was just created.
-func getOrCreateArtistID(name, mbid string, cache map[string]uint) (uint, bool) {
-	key := strings.ToLower(name)
+func getOrCreateArtistID(name, mbid *string, cache map[string]uint) (uint, bool) {
+	key := strings.ToLower(*name)
 	if id, ok := cache[key]; ok {
 		return id, false
 	}
 
 	var artistID uint
 
-	artistSlug := logger.StringToSlugCached(name)
+	artistSlug := logger.StringToSlugCached(*name)
 	database.Scanrowsdyn(
 		false,
 		"SELECT id FROM dbartists WHERE name = ? COLLATE NOCASE OR slug = ?",
 		&artistID,
-		&name,
+		name,
 		&artistSlug,
 	)
 
@@ -1523,16 +1523,16 @@ func getOrCreateArtistID(name, mbid string, cache map[string]uint) (uint, bool) 
 	if artistID == 0 {
 		result, err := database.ExecNid(
 			"INSERT INTO dbartists (name, slug, musicbrainz_id) VALUES (?, ?, ?)",
-			&name, &artistSlug, &mbid,
+			name, &artistSlug, mbid,
 		)
 		if err == nil {
 			artistID = logger.Int64ToUint(result)
 			created = true
 		}
-	} else if mbid != "" {
+	} else if mbid != nil && *mbid != "" {
 		_, _ = database.ExecNid(
 			`UPDATE dbartists SET musicbrainz_id = ? WHERE id = ? AND (musicbrainz_id IS NULL OR musicbrainz_id = "")`,
-			&mbid,
+			mbid,
 			&artistID,
 		)
 	}

@@ -33,22 +33,6 @@ var musicFormatOptions = []string{
 // musicFormatDefaults are the formats checked by default.
 var musicFormatDefaults = map[string]bool{"CD": true, "Digital Media": true}
 
-// MusicMetadataSearchPage renders the music metadata search page.
-func MusicMetadataSearchPage(c *gin.Context) {
-	musicLists := getMediaListsByType("music")
-	csrfToken := getCSRFToken(c)
-
-	content := musicMetadataSearchContent(musicLists, csrfToken)
-
-	pageNode := page("Music Metadata Search", false, false, true, content)
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-	c.String(http.StatusOK, buf.String())
-}
-
 // ---------------------------------------------------------------------------
 // Page layout
 // ---------------------------------------------------------------------------
@@ -472,7 +456,7 @@ func releaseArtistLine(r *apiexternal_v2.ReleaseSearchResult) string {
 
 // createMusicResultCard renders a single album result with an Add button that
 // carries the full release as JSON (works for any provider).
-func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult) gomponents.Node {
+func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult, have bool) gomponents.Node {
 	artistStr := releaseArtistLine(release)
 
 	return html.Div(
@@ -480,7 +464,8 @@ func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult) gomponen
 		html.Div(
 			html.Class("card-body py-2"),
 			html.Div(
-				html.Class("d-flex justify-content-between align-items-start"),
+				html.Class("d-flex justify-content-between align-items-start gap-3"),
+				metaCover(release.CoverURL, true),
 				html.Div(
 					html.Class("flex-grow-1"),
 					html.H6(
@@ -508,10 +493,9 @@ func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult) gomponen
 
 						return nil
 					}(),
+					metaLinks(releaseResultLinks(release)),
 				),
-				html.Button(
-					html.Type("button"),
-					html.Class("btn btn-success btn-sm add-album-btn ms-3"),
+				metaAddButton(have, "btn btn-success btn-sm add-album-btn ms-3",
 					html.Data("release", releaseJSON(release)),
 					html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
 					gomponents.Text("Add Album"),
@@ -578,8 +562,10 @@ func SearchMusicMetadata(c *gin.Context) {
 		html.H6(html.Class("mb-2"), gomponents.Textf("%d albums found", len(results))),
 	)
 
+	lists := haveLists(c, "music")
+
 	for i := range results {
-		nodes = append(nodes, createMusicResultCard(&results[i]))
+		nodes = append(nodes, createMusicResultCard(&results[i], haveAlbum(lists, &results[i])))
 	}
 
 	renderMusicHTML(c, html.Div(nodes...))
@@ -1139,8 +1125,10 @@ func SearchMusicSeriesMetadata(c *gin.Context) {
 		),
 	}
 
+	lists := haveLists(c, "music")
+
 	for i := range results {
-		nodes = append(nodes, createMusicResultCard(&results[i]))
+		nodes = append(nodes, createMusicResultCard(&results[i], haveAlbum(lists, &results[i])))
 	}
 
 	renderMusicHTML(c, html.Div(nodes...))
@@ -1263,6 +1251,7 @@ function musicSearchAlbum() {
 	p.append('m1_provider', musicVal('m1_provider'));
 	p.append('m1_title', title);
 	p.append('m1_artist', artist);
+	p.append('have_list', musicVal('m1_list') || '');
 	musicPost('/api/admin/search/music', p).then(function(r){return r.text();})
 		.then(function(html){ box.innerHTML = html; })
 		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">Search failed.</div>'; });

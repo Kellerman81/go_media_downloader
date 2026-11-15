@@ -328,7 +328,7 @@ func apiMusicClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	inres, inerr := database.DeleteRow("album_histories", "album_id = ?", id)
+	inres, inerr := database.DeleteRow("album_histories", "album_id = ?", &id)
 	handleDBInsertOrUpdate(c, inres, inerr, false)
 }
 
@@ -464,7 +464,7 @@ func apiRetagArtistAlbums(c *gin.Context) {
 		"music",
 		"Retag Artist Albums_"+c.Param(logger.StrID),
 		func(ctx context.Context, cfgp *config.MediaTypeConfig) error {
-			return utils.RetagArtistAlbums(ctx, cfgp, artistID)
+			return utils.RetagArtistAlbums(ctx, cfgp, &artistID)
 		},
 	)
 }

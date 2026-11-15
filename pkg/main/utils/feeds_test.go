@@ -3,10 +3,13 @@ package utils
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"golang.org/x/net/html"
 )
 
 // TestGetBookBestsellers_SpiegelHardcoverBelletristik exercises getbookbestsellers
@@ -38,7 +41,7 @@ func TestGetBookBestsellers_SpiegelHardcoverBelletristik(t *testing.T) {
 		Books: make([]config.ManualConfig, 0, 100),
 	}
 
-	if err := d.getbookbestsellers(context.Background(), list); err != nil {
+	if err := d.getbookbestsellers(context.Background(), nil, list); err != nil {
 		t.Fatalf("getbookbestsellers returned error: %v", err)
 	}
 
@@ -49,6 +52,66 @@ func TestGetBookBestsellers_SpiegelHardcoverBelletristik(t *testing.T) {
 	t.Logf("scraped %d bestseller entries", len(d.Books))
 	for i, b := range d.Books {
 		t.Logf("  [%2d] title=%q  author=%q", i+1, b.Name, b.AuthorName)
+	}
+}
+
+// TestGetBookBestsellersAudiobookConfig checks that a bestseller list under an
+// audiobook config fills Audiobooks (the only feed the audiobook import reads)
+// with single-title entries, so the author doesn't pull in a whole catalogue.
+func TestGetBookBestsellersAudiobookConfig(t *testing.T) {
+	// Trimmed from bestsellerliste.de, 2026-11-12.
+	const page = `<html><body><ol class="list" data-type="Buch">` +
+		`<li data-ean="9783426281765"><div class="position">1</div><div class="description">` +
+		`<span class="author">Sebastian Fitzek</span> <span class="title"><cite>Der Nachtzug</cite></span></div></li>` +
+		`<li data-ean="9783423285858"><div class="position">2</div><div class="description">` +
+		`<span class="author">Sarah J. Maas</span> <span class="title"><cite>A Court of Splintered Harmony</cite></span></div></li>` +
+		`</ol></body></html>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(page))
+	}))
+	defer srv.Close()
+
+	list := &config.MediaListsConfig{
+		Name: "spiegel-hardcover-belletristik",
+		CfgList: &config.ListsConfig{
+			ListType:            "bookbestsellers",
+			URL:                 srv.URL,
+			ChartEntryNodeXPath: "//ol[contains(@class,'list')]/li",
+			ChartTitleXPath:     ".//span[@class='title']",
+			ChartArtistXPath:    ".//span[@class='author']",
+		},
+	}
+
+	want := []config.ManualConfig{
+		{Name: "Der Nachtzug", AuthorName: "Sebastian Fitzek", SingleTitle: true},
+		{Name: "A Court of Splintered Harmony", AuthorName: "Sarah J. Maas", SingleTitle: true},
+	}
+
+	for _, tc := range []struct {
+		isType            uint
+		audiobooks, books int
+	}{
+		{config.MediaTypeAudiobook, 2, 0},
+		{config.MediaTypeBook, 0, 2},
+	} {
+		d := &feedResults{}
+		if err := d.getbookbestsellers(context.Background(), &config.MediaTypeConfig{IsType: tc.isType}, list); err != nil {
+			t.Fatalf("type %d: %v", tc.isType, err)
+		}
+
+		if len(d.Audiobooks) != tc.audiobooks || len(d.Books) != tc.books {
+			t.Fatalf("type %d: got %d audiobooks, %d books; want %d, %d",
+				tc.isType, len(d.Audiobooks), len(d.Books), tc.audiobooks, tc.books)
+		}
+
+		got := append(d.Audiobooks, d.Books...)
+		for i := range want {
+			if got[i].Name != want[i].Name || got[i].AuthorName != want[i].AuthorName || !got[i].SingleTitle {
+				t.Errorf("type %d entry %d = %+v, want %+v", tc.isType, i,
+					config.ManualConfig{Name: got[i].Name, AuthorName: got[i].AuthorName, SingleTitle: got[i].SingleTitle}, want[i])
+			}
+		}
 	}
 }
 
@@ -153,5 +216,18 @@ func TestChartPageRequest(t *testing.T) {
 	if req.Method != http.MethodGet || req.URL.String() != page || req.Header.Get("User-Agent") == "" {
 		t.Errorf("direct request = %s %s UA=%q, want GET %s with a user agent",
 			req.Method, req.URL, req.Header.Get("User-Agent"), page)
+	}
+}
+
+func TestFetchAndParseChartPageErrorBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "TimeoutError: Navigation timeout of 60000 ms exceeded", http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	err := fetchAndParseChartPage(context.Background(), srv.URL, func(*html.Node) {})
+	if err == nil || !strings.Contains(err.Error(), "status 400") ||
+		!strings.Contains(err.Error(), "Navigation timeout of 60000 ms exceeded") {
+		t.Fatalf("error = %v, want status and body", err)
 	}
 }

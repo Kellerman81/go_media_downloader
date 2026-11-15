@@ -37,6 +37,8 @@ func TestAudiobookSortWithRuntimeVerification(t *testing.T) {
 	}
 
 	folder := `V:\completed\Audiobook\David Baldacci - Die Sammler`
+	requireDir(t, folder)
+
 	asin := "B004UW5QSK"
 	region := "de" // German audiobook
 
@@ -119,6 +121,16 @@ func TestAudiobookSortWithRuntimeVerification(t *testing.T) {
 		t.Errorf("FAILED:\n  %s", strings.Join(errors, "\n  "))
 	} else {
 		t.Logf("\nSUCCESS: all %d chapters matched in disc-sequential order", len(result))
+	}
+}
+
+// requireDir skips a manual test whose local fixture folder isn't on this
+// machine.
+func requireDir(t *testing.T, dir string) {
+	t.Helper()
+
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		t.Skipf("fixture folder %s not available on this machine", dir)
 	}
 }
 

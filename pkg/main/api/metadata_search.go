@@ -22,16 +22,94 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// MovieMetadataSearchPage renders the movie metadata search page.
-func MovieMetadataSearchPage(c *gin.Context) {
-	movieLists := getMediaListsByType("movie")
-	qualityProfiles := getQualityProfileNames()
-	csrfToken := getCSRFToken(c)
+// metadataSearchTab is one media type of the Add Media page.
+type metadataSearchTab struct {
+	Key, Label, Icon string
+	configured       func(*config.MediaConfig) bool
+	content          func(csrfToken string, acc *userAccess) gomponents.Node
+	kind             string // getMediaListsByType's media type
+}
 
-	content := movieMetadataSearchContent(movieLists, qualityProfiles, csrfToken)
+var metadataSearchTabs = []metadataSearchTab{
+	{"movies", "Movies", "fa-film", func(m *config.MediaConfig) bool { return len(m.Movies) > 0 },
+		func(csrf string, acc *userAccess) gomponents.Node {
+			return movieMetadataSearchContent(getMediaListsByType(acc, "movie"), getQualityProfileNames(), csrf)
+		}, "movie"},
+	{"series", "Series", "fa-tv", func(m *config.MediaConfig) bool { return len(m.Series) > 0 },
+		func(csrf string, acc *userAccess) gomponents.Node {
+			return seriesMetadataSearchContent(getMediaListsByType(acc, "series"), getQualityProfileNames(), csrf)
+		}, "series"},
+	{"books", "Books", "fa-book", func(m *config.MediaConfig) bool { return len(m.Books) > 0 },
+		func(csrf string, acc *userAccess) gomponents.Node {
+			return bookMetadataSearchContent(getMediaListsByType(acc, "book"), getQualityProfileNames(), csrf)
+		}, "book"},
+	{"audiobooks", "Audiobooks", "fa-headphones", func(m *config.MediaConfig) bool { return len(m.AudioBooks) > 0 },
+		func(csrf string, acc *userAccess) gomponents.Node {
+			return audiobookMetadataSearchContent(getMediaListsByType(acc, "audiobook"), getQualityProfileNames(), csrf)
+		}, "audiobook"},
+	{"music", "Music", "fa-music", func(m *config.MediaConfig) bool { return len(m.Music) > 0 },
+		func(csrf string, acc *userAccess) gomponents.Node {
+			return musicMetadataSearchContent(getMediaListsByType(acc, "music"), csrf)
+		}, "music"},
+}
 
-	pageNode := page(
-		"Movie Metadata Search",
+// MetadataSearchPage renders the Add Media page: a tab per configured media
+// type and the search form of the selected one (?type=movies|series|books|
+// audiobooks|music). Only one form is on the page at a time, as the forms
+// share element ids and scripts.
+func MetadataSearchPage(c *gin.Context) {
+	var tabs []metadataSearchTab
+
+	acc := accessOf(c)
+
+	if media := config.GetSettingsMediaAll(); media != nil {
+		for _, t := range metadataSearchTabs {
+			if t.configured(media) && len(getMediaListsByType(acc, t.kind)) > 0 {
+				tabs = append(tabs, t)
+			}
+		}
+	}
+
+	var content gomponents.Node = gomponents.Raw(renderAlert("No media configuration yet - add one under Configuration → Media first.", "info"))
+
+	if len(tabs) > 0 {
+		active := tabs[0]
+		for _, t := range tabs {
+			if t.Key == c.Query("type") {
+				active = t
+			}
+		}
+
+		items := make([]gomponents.Node, 0, len(tabs))
+		for _, t := range tabs {
+			class := "nav-link"
+			if t.Key == active.Key {
+				class += " active"
+			}
+
+			items = append(items, html.Li(html.Class("nav-item"),
+				html.A(html.Class(class), html.Href("/api/admin/metadata-search?type="+t.Key),
+					html.I(html.Class("fa-solid "+t.Icon+" me-1")), gomponents.Text(t.Label)),
+			))
+		}
+
+		content = html.Div(
+			html.Ul(html.Class("nav nav-tabs mb-4"), gomponents.Group(items)),
+			active.content(getCSRFToken(c), acc),
+			// Manual entries (movies, series cards; book and audiobook tabs)
+			// are for admins: a request needs a search result.
+			gomponents.If(!acc.Admin(), html.StyleEl(gomponents.Raw(
+				".meta-manual, #bk4-tab, #ab4-tab, #bk4-pane, #ab4-pane { display: none !important; }"))),
+			// Non-admins get their groups' default lists; one is chosen for them.
+			gomponents.If(!acc.Admin(), html.Script(gomponents.Raw(`document.querySelectorAll('select[name$="_list"]').forEach(function (s) {
+	var opts = [].filter.call(s.options, function (o) { return o.value !== ''; });
+	if (opts.length === 1 && !s.value) { s.value = opts[0].value; s.dispatchEvent(new Event('change', {bubbles: true})); }
+});`))),
+		)
+	}
+
+	pageNode := pageAs(acc,
+		"Add Media",
 		false, // activeConfig
 		false, // activeDatabase
 		true,  // activeManagement
@@ -45,72 +123,61 @@ func MovieMetadataSearchPage(c *gin.Context) {
 	c.String(http.StatusOK, buf.String())
 }
 
-// SeriesMetadataSearchPage renders the series metadata search page.
-func SeriesMetadataSearchPage(c *gin.Context) {
-	seriesLists := getMediaListsByType("series")
-	qualityProfiles := getQualityProfileNames()
-	csrfToken := getCSRFToken(c)
-
-	content := seriesMetadataSearchContent(seriesLists, qualityProfiles, csrfToken)
-
-	pageNode := page(
-		"Series Metadata Search",
-		false, // activeConfig
-		false, // activeDatabase
-		true,  // activeManagement
-		content,
-	)
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-	c.String(http.StatusOK, buf.String())
+// metadataSearchPrefixes are the media config name prefixes of the Add
+// Media types.
+var metadataSearchPrefixes = map[string]string{
+	"movie": "movie_", "series": "serie_", "book": "book_", "audiobook": "audiobook_", "music": "music_",
 }
 
-// getMediaListsByType returns media list names filtered by type (movie, series, book, audiobook, music).
-func getMediaListsByType(mediaType string) []string {
-	allMedia := config.GetSettingsMediaAll()
-	if allMedia == nil {
-		return []string{}
+// defaultRequestList is the list media requested for a group goes to: its
+// add_found_list, else its first list ("" without lists).
+func defaultRequestList(media *config.MediaTypeConfig) string {
+	for _, d := range media.Data {
+		if d.AddFoundList == "" {
+			continue
+		}
+
+		for i := range media.Lists {
+			if strings.EqualFold(media.Lists[i].Name, d.AddFoundList) {
+				return media.Lists[i].Name
+			}
+		}
+	}
+
+	if len(media.Lists) > 0 {
+		return media.Lists[0].Name
+	}
+
+	return ""
+}
+
+// getMediaListsByType returns the list names of one media type (movie,
+// series, book, audiobook, music) the account may add to (acc nil: all).
+// Non-admins get only the default list of each of their groups: they don't
+// know the lists.
+func getMediaListsByType(acc *userAccess, mediaType string) []string {
+	kind := map[string]string{"series": "serie"}[mediaType]
+	if kind == "" {
+		kind = mediaType
 	}
 
 	lists := make([]string, 0)
 
-	switch mediaType {
-	case "movie":
-		for _, media := range allMedia.Movies {
-			for _, list := range media.Lists {
-				lists = append(lists, list.Name)
-			}
+	for _, media := range mediaEntriesForKind(kind) {
+		if acc != nil && !acc.AllowsGroup(metadataSearchPrefixes[mediaType]+media.Name) {
+			continue
 		}
 
-	case "series":
-		for _, media := range allMedia.Series {
-			for _, list := range media.Lists {
-				lists = append(lists, list.Name)
+		if acc != nil && !acc.Admin() {
+			if l := defaultRequestList(&media); l != "" {
+				lists = append(lists, l)
 			}
+
+			continue
 		}
 
-	case "book":
-		for _, media := range allMedia.Books {
-			for _, list := range media.Lists {
-				lists = append(lists, list.Name)
-			}
-		}
-
-	case "audiobook":
-		for _, media := range allMedia.AudioBooks {
-			for _, list := range media.Lists {
-				lists = append(lists, list.Name)
-			}
-		}
-
-	case "music":
-		for _, media := range allMedia.Music {
-			for _, list := range media.Lists {
-				lists = append(lists, list.Name)
-			}
+		for _, list := range media.Lists {
+			lists = append(lists, list.Name)
 		}
 	}
 
@@ -182,8 +249,9 @@ func configuredListQuality(c *gin.Context, listName, kind, quality string) bool 
 
 // listQualityScript narrows each quality select to the profiles configured for
 // the list chosen in its paired list select and preselects the list's default.
-// pairs maps list select id to quality select id.
-func listQualityScript(kind string, pairs map[string]string) gomponents.Node {
+// pairs maps list select id to quality select id; only the offered lists
+// (the account's) are included.
+func listQualityScript(kind string, lists []string, pairs map[string]string) gomponents.Node {
 	byList := make(map[string]selectQuality)
 
 	for _, media := range mediaEntriesForKind(kind) {
@@ -193,7 +261,7 @@ func listQualityScript(kind string, pairs map[string]string) gomponents.Node {
 		}
 
 		for i := range cfgp.Lists {
-			if _, ok := byList[cfgp.Lists[i].Name]; ok {
+			if _, ok := byList[cfgp.Lists[i].Name]; ok || !slices.Contains(lists, cfgp.Lists[i].Name) {
 				continue
 			}
 
@@ -379,9 +447,9 @@ func movieMetadataSearchContent(
 					),
 				),
 
-				// Manual Entry Card
+				// Manual Entry Card (admins only: meta-manual)
 				html.Div(
-					html.Class("col-lg-6"),
+					html.Class("col-lg-6 meta-manual"),
 					html.Div(
 						html.Class("card shadow-sm"),
 						html.Div(
@@ -530,7 +598,7 @@ func movieMetadataSearchContent(
 			),
 
 			movieSearchScript(csrfToken),
-			listQualityScript("movie", map[string]string{
+			listQualityScript("movie", mediaConfigs, map[string]string{
 				"movie_list":       "movie_quality_profile",
 				"manualMovie_list": "manualMovie_quality_profile",
 			}),
@@ -663,9 +731,9 @@ func seriesMetadataSearchContent(
 					),
 				),
 
-				// Manual Entry Card
+				// Manual Entry Card (admins only: meta-manual)
 				html.Div(
-					html.Class("col-lg-6"),
+					html.Class("col-lg-6 meta-manual"),
 					html.Div(
 						html.Class("card shadow-sm"),
 						html.Div(
@@ -808,7 +876,7 @@ func seriesMetadataSearchContent(
 			),
 
 			seriesSearchScript(csrfToken),
-			listQualityScript("serie", map[string]string{"series_list": "series_quality_profile"}),
+			listQualityScript("serie", mediaConfigs, map[string]string{"series_list": "series_quality_profile"}),
 		),
 	)
 }
@@ -886,8 +954,9 @@ func SearchMovieMetadata(c *gin.Context) {
 		gomponents.Text(fmt.Sprintf("Search Results (%d movies found)", len(results))),
 	))
 
-	for _, movie := range results {
-		resultNodes = append(resultNodes, createMovieResultCard(movie))
+	lists := haveLists(c, "movie")
+	for i := range results {
+		resultNodes = append(resultNodes, createMovieResultCard(results[i], haveMovie(lists, &results[i])))
 	}
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
@@ -946,8 +1015,9 @@ func SearchSeriesMetadata(c *gin.Context) {
 		gomponents.Text(fmt.Sprintf("Search Results (%d series found)", len(results))),
 	))
 
-	for _, series := range results {
-		resultNodes = append(resultNodes, createSeriesResultCard(series))
+	lists := haveLists(c, "serie")
+	for i := range results {
+		resultNodes = append(resultNodes, createSeriesResultCard(results[i], haveSeries(lists, &results[i])))
 	}
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
@@ -957,7 +1027,7 @@ func SearchSeriesMetadata(c *gin.Context) {
 	c.String(http.StatusOK, buf.String())
 }
 
-func createMovieResultCard(movie apiexternal_v2.MovieSearchResult) gomponents.Node {
+func createMovieResultCard(movie apiexternal_v2.MovieSearchResult, have bool) gomponents.Node {
 	year := ""
 	if movie.Year > 0 {
 		year = fmt.Sprintf(" (%d)", movie.Year)
@@ -978,8 +1048,10 @@ func createMovieResultCard(movie apiexternal_v2.MovieSearchResult) gomponents.No
 		html.Div(
 			html.Class("card-body"),
 			html.Div(
-				html.Class("d-flex justify-content-between align-items-start"),
+				html.Class("d-flex justify-content-between align-items-start gap-3"),
+				metaCover(metaPosterURL(movie.PosterPath, movie.ProviderName), false),
 				html.Div(
+					html.Class("flex-grow-1"),
 					html.H5(
 						html.Class("card-title mb-1"),
 						gomponents.Text(movie.Title+year),
@@ -1009,9 +1081,9 @@ func createMovieResultCard(movie apiexternal_v2.MovieSearchResult) gomponents.No
 
 						return nil
 					}(),
+					metaLinks(movieResultLinks(&movie)),
 				),
-				html.Button(
-					html.Class("btn btn-success add-movie-btn"),
+				metaAddButton(have, "btn btn-success add-movie-btn",
 					gomponents.Attr("data-tmdb-id", strconv.Itoa(movie.ID)),
 					gomponents.Attr("data-title", movie.Title),
 					html.I(html.Class("fas fa-plus me-1")),
@@ -1022,7 +1094,7 @@ func createMovieResultCard(movie apiexternal_v2.MovieSearchResult) gomponents.No
 	)
 }
 
-func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult) gomponents.Node {
+func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult, have bool) gomponents.Node {
 	year := ""
 	if !series.FirstAirDate.IsZero() {
 		year = fmt.Sprintf(" (%d)", series.FirstAirDate.Year())
@@ -1043,8 +1115,10 @@ func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult) gomponents
 		html.Div(
 			html.Class("card-body"),
 			html.Div(
-				html.Class("d-flex justify-content-between align-items-start"),
+				html.Class("d-flex justify-content-between align-items-start gap-3"),
+				metaCover(metaPosterURL(series.PosterPath, series.ProviderName), false),
 				html.Div(
+					html.Class("flex-grow-1"),
 					html.H5(
 						html.Class("card-title mb-1"),
 						gomponents.Text(series.Name+year),
@@ -1074,9 +1148,9 @@ func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult) gomponents
 
 						return nil
 					}(),
+					metaLinks(seriesResultLinks(&series)),
 				),
-				html.Button(
-					html.Class("btn btn-success add-series-btn"),
+				metaAddButton(have, "btn btn-success add-series-btn",
 					gomponents.Attr("data-tmdb-id", strconv.Itoa(series.ID)),
 					gomponents.Attr("data-title", series.Name),
 					html.I(html.Class("fas fa-plus me-1")),
@@ -1142,7 +1216,7 @@ func AddMovieToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT id FROM dbmovies WHERE moviedb_id = ?",
-		tmdbID,
+		&tmdbID,
 	)
 
 	var dbMovieID int
@@ -1152,37 +1226,37 @@ func AddMovieToDatabase(c *gin.Context) {
 	if len(movieExists) == 0 {
 		newID, err := database.ExecNid(
 			"INSERT INTO dbmovies (title, release_date, year, adult, budget, genres, original_language, original_title, overview, popularity, revenue, runtime, spoken_languages, status, tagline, vote_average, vote_count, moviedb_id, imdb_id, freebase_m_id, freebase_id, facebook_id, instagram_id, twitter_id, url, backdrop, poster, slug, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			movieDetails.Title,
-			movieDetails.ReleaseDate,
+			&movieDetails.Title,
+			&movieDetails.ReleaseDate,
 			getYearFromDate(movieDetails.ReleaseDate),
-			movieDetails.Adult,
-			movieDetails.Budget,
+			&movieDetails.Adult,
+			&movieDetails.Budget,
 			genresToString(movieDetails.Genres),
-			movieDetails.OriginalLanguage,
-			movieDetails.OriginalTitle,
-			movieDetails.Overview,
-			movieDetails.Popularity,
-			movieDetails.Revenue,
-			movieDetails.Runtime,
+			&movieDetails.OriginalLanguage,
+			&movieDetails.OriginalTitle,
+			&movieDetails.Overview,
+			&movieDetails.Popularity,
+			&movieDetails.Revenue,
+			&movieDetails.Runtime,
 			spokenLanguagesToString(movieDetails.SpokenLanguages),
-			movieDetails.Status,
-			movieDetails.Tagline,
-			movieDetails.VoteAverage,
-			movieDetails.VoteCount,
-			tmdbID,
-			movieDetails.IMDbID,
+			&movieDetails.Status,
+			&movieDetails.Tagline,
+			&movieDetails.VoteAverage,
+			&movieDetails.VoteCount,
+			&tmdbID,
+			&movieDetails.IMDbID,
 			"",
 			"",
 			"",
 			"",
 			"",
 			"",
-			movieDetails.BackdropPath,
-			movieDetails.PosterPath,
+			&movieDetails.BackdropPath,
+			&movieDetails.PosterPath,
 			"",
 			0,
-			nowTime,
-			nowTime,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert movie")
@@ -1204,8 +1278,8 @@ func AddMovieToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ? COLLATE NOCASE",
-		dbMovieID,
-		listName,
+		&dbMovieID,
+		&listName,
 	)
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
@@ -1219,11 +1293,11 @@ func AddMovieToDatabase(c *gin.Context) {
 	// Add to movies table
 	if err := database.ExecNErr(
 		"INSERT INTO movies (dbmovie_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		dbMovieID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbMovieID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		// ExecN (the fire-and-forget variant previously used here) has no
 		// return value at all - a write failure here (lock contention,
@@ -1295,7 +1369,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT id FROM dbseries WHERE thetvdb_id = ?",
-		tvdbID,
+		&tvdbID,
 	)
 
 	var dbSeriesID int
@@ -1305,21 +1379,21 @@ func AddSeriesToDatabase(c *gin.Context) {
 	if len(seriesExists) == 0 {
 		newID, err := database.ExecNid(
 			"INSERT INTO dbseries (seriename, season, status, firstaired, network, runtime, language, genre, overview, rating, siterating, siterating_count, slug, imdb_id, thetvdb_id, freebase_m_id, freebase_id, tvrage_id, facebook, instagram, twitter, banner, fanart, poster, identifiedby, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			series.Name,
+			&series.Name,
 			"",
-			series.Status,
-			series.FirstAirDate,
+			&series.Status,
+			&series.FirstAirDate,
 			getNetworkString(series.Networks),
 			getRuntimeFromEpisodeRuntime(series.EpisodeRunTime),
-			series.OriginalLanguage,
+			&series.OriginalLanguage,
 			genresToString(series.Genres),
-			series.Overview,
+			&series.Overview,
 			"",
 			fmt.Sprintf("%.1f", series.VoteAverage),
 			fmt.Sprintf("%d", series.VoteCount),
 			"",
-			series.IMDbID,
-			tvdbID,
+			&series.IMDbID,
+			&tvdbID,
 			"",
 			"",
 			0,
@@ -1331,8 +1405,8 @@ func AddSeriesToDatabase(c *gin.Context) {
 			"",
 			"",
 			0,
-			nowTime,
-			nowTime,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert series")
@@ -1354,8 +1428,8 @@ func AddSeriesToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ? COLLATE NOCASE",
-		dbSeriesID,
-		listName,
+		&dbSeriesID,
+		&listName,
 	)
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
@@ -1383,11 +1457,11 @@ func AddSeriesToDatabase(c *gin.Context) {
 	// Add to series table
 	if err := database.ExecNErr(
 		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
-		dbSeriesID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbSeriesID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		// ExecN (the fire-and-forget variant previously used here) has no
 		// return value - a write failure here was reported to the user as
@@ -1478,11 +1552,11 @@ func AddMovieManual(c *gin.Context) {
 
 	switch {
 	case imdbID != "":
-		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE imdb_id = ? ORDER BY id LIMIT 1", imdbID)
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE imdb_id = ? ORDER BY id LIMIT 1", &imdbID)
 	case year > 0:
-		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE title = ? COLLATE NOCASE AND year = ? ORDER BY id LIMIT 1", title, year)
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE title = ? COLLATE NOCASE AND year = ? ORDER BY id LIMIT 1", &title, &year)
 	default:
-		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE title = ? COLLATE NOCASE ORDER BY id LIMIT 1", title)
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbmovies WHERE title = ? COLLATE NOCASE ORDER BY id LIMIT 1", &title)
 	}
 
 	nowTime := time.Now()
@@ -1493,7 +1567,7 @@ func AddMovieManual(c *gin.Context) {
 		dbMovieID = existing[0]
 
 		inList := database.GetrowsN[int](false, 1,
-			"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ? COLLATE NOCASE", dbMovieID, listName)
+			"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ? COLLATE NOCASE", &dbMovieID, &listName)
 		if len(inList) > 0 && inList[0] > 0 {
 			c.JSON(http.StatusConflict, gin.H{"error": "Movie already exists in list '" + listName + "'"})
 			return
@@ -1501,15 +1575,15 @@ func AddMovieManual(c *gin.Context) {
 	} else {
 		newID, err := database.ExecNid(
 			"INSERT INTO dbmovies (title, release_date, year, adult, budget, genres, original_language, original_title, overview, popularity, revenue, runtime, spoken_languages, status, tagline, vote_average, vote_count, moviedb_id, imdb_id, freebase_m_id, freebase_id, facebook_id, instagram_id, twitter_id, url, backdrop, poster, slug, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			title,
+			&title,
 			"",
-			year,
+			&year,
 			false,
 			0,
 			"",
 			"",
-			title,
-			overview,
+			&title,
+			&overview,
 			0.0,
 			0,
 			0,
@@ -1519,7 +1593,7 @@ func AddMovieManual(c *gin.Context) {
 			0.0,
 			0,
 			0,
-			imdbID,
+			&imdbID,
 			"",
 			"",
 			"",
@@ -1530,8 +1604,8 @@ func AddMovieManual(c *gin.Context) {
 			"",
 			"",
 			0,
-			nowTime,
-			nowTime,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual movie")
@@ -1544,11 +1618,11 @@ func AddMovieManual(c *gin.Context) {
 
 	if err := database.ExecNErr(
 		"INSERT INTO movies (dbmovie_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		dbMovieID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbMovieID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie: " + err.Error()})
 		return
@@ -1598,12 +1672,12 @@ func AddSeriesManual(c *gin.Context) {
 	// the row has none.
 	var existing []int
 	if tvdbID > 0 {
-		existing = database.GetrowsN[int](false, 1, manualSerieByTvdbQuery, tvdbID)
+		existing = database.GetrowsN[int](false, 1, manualSerieByTvdbQuery, &tvdbID)
 	}
 
 	if len(existing) == 0 {
 		existing = database.GetrowsN[int](false, 1,
-			manualSerieByNameQuery, seriename, tvdbID)
+			manualSerieByNameQuery, &seriename, &tvdbID)
 	}
 
 	nowTime := time.Now()
@@ -1614,7 +1688,7 @@ func AddSeriesManual(c *gin.Context) {
 		dbSerieID = existing[0]
 
 		inList := database.GetrowsN[int](false, 1,
-			"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ? COLLATE NOCASE", dbSerieID, listName)
+			"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ? COLLATE NOCASE", &dbSerieID, &listName)
 		if len(inList) > 0 && inList[0] > 0 {
 			c.JSON(http.StatusConflict, gin.H{"error": "Series already exists in list '" + listName + "'"})
 			return
@@ -1622,34 +1696,34 @@ func AddSeriesManual(c *gin.Context) {
 	} else {
 		newID, err := database.ExecNid(
 			"INSERT INTO dbseries (seriename, season, status, firstaired, network, runtime, language, genre, overview, rating, siterating, siterating_count, slug, imdb_id, thetvdb_id, freebase_m_id, freebase_id, tvrage_id, facebook, instagram, twitter, banner, fanart, poster, identifiedby, trakt_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			seriename,
+			&seriename,
 			"",
 			"",
-			firstaired,
-			network,
-			"",
-			"",
-			"",
-			overview,
+			&firstaired,
+			&network,
 			"",
 			"",
 			"",
-			"",
-			"",
-			tvdbID,
-			"",
-			"",
-			0,
+			&overview,
 			"",
 			"",
 			"",
 			"",
 			"",
+			&tvdbID,
 			"",
 			"",
 			0,
-			nowTime,
-			nowTime,
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			0,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual series")
@@ -1670,11 +1744,11 @@ func AddSeriesManual(c *gin.Context) {
 
 	if err := database.ExecNErr(
 		"INSERT INTO series (dbserie_id, listname, rootpath, quality_profile, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', ?, 0, 0, ?, ?)",
-		dbSerieID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbSerieID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series: " + err.Error()})
 		return
@@ -1775,7 +1849,7 @@ document.getElementById('movieSearchForm').addEventListener('submit', function(e
 			'Content-Type': 'application/x-www-form-urlencoded',
 			'X-CSRF-Token': '` + csrfToken + `',
 		},
-		body: 'movie_title=' + encodeURIComponent(title)
+		body: 'movie_title=' + encodeURIComponent(title) + '&have_list=' + encodeURIComponent(list)
 	})
 	.then(response => response.text())
 	.then(data => {
@@ -1921,7 +1995,7 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 			'Content-Type': 'application/x-www-form-urlencoded',
 			'X-CSRF-Token': '` + csrfToken + `',
 		},
-		body: 'series_title=' + encodeURIComponent(title)
+		body: 'series_title=' + encodeURIComponent(title) + '&have_list=' + encodeURIComponent(list)
 	})
 	.then(response => response.text())
 	.then(data => {

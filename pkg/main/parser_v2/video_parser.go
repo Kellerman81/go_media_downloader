@@ -98,7 +98,7 @@ const (
 	// The optional second episode (group 3) must carry its own "e" marker so a
 	// trailing "-720p" is not read as an episode range; extractEpisodeInfo
 	// additionally checks that it ends on a token boundary.
-	reVideoSeasonEpisode     = `(?i)(?:s|season\s?)(\d{1,2})[\s._-]*(?:e|episode\s?|x)(\d{1,3})(?:-?e(\d{1,3}))?|(?:^|[^0-9])(\d{1,2})x(\d{2,3})`
+	reVideoSeasonEpisode     = `(?i)(?:s|season\s?)(\d{1,2}|(?:19|20)\d{2})[\s._-]*(?:e|episode\s?|x)(\d{1,3})(?:-?e(\d{1,3}))?|(?:^|[^0-9])(\d{1,2})x(\d{2,3})`
 	reVideoSeasonEpisodeAlt  = `(?i)season\s*(\d{1,2})\s*episode\s*(\d{1,3})`
 	reVideoSeasonEpisodeDate = `(\d{2,4})[\s._-](\d{2})[\s._-](\d{2})`
 	// Both need token boundaries: unanchored, "Se7en" yielded episode 7 and the

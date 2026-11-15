@@ -555,7 +555,7 @@ func parseFreeform(body []byte, tags *AudioTags) {
 // chapter list); the original is atomically replaced on success. Requires
 // ffmpeg to be available.
 func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTags) error {
-	ffmpeg, err := resolveFFmpeg()
+	ffmpeg, err := ResolveFFmpeg()
 	if err != nil {
 		return &ErrWriteFailed{Path: filepath, Reason: err.Error()}
 	}
@@ -714,11 +714,11 @@ func (*MP4Handler) WriteTags(ctx context.Context, filepath string, tags *AudioTa
 	return nil
 }
 
-// resolveFFmpeg locates an ffmpeg binary: first next to the configured
+// ResolveFFmpeg locates an ffmpeg binary: first next to the configured
 // ffprobe, then from PATH. ffprobe_path is the folder holding ffprobe (the
 // parser joins the executable name onto it), but a path to the ffprobe binary
 // itself is accepted as well.
-func resolveFFmpeg() (string, error) {
+func ResolveFFmpeg() (string, error) {
 	if cfg := config.GetSettingsGeneral(); cfg != nil && cfg.FfprobePath != "" {
 		if cand := ffmpegBesideFfprobe(cfg.FfprobePath, runtime.GOOS == "windows"); cand != "" {
 			if _, err := exec.LookPath(cand); err == nil {
@@ -732,7 +732,7 @@ func resolveFFmpeg() (string, error) {
 	}
 
 	return "", errors.New(
-		"ffmpeg not found in PATH - install FFmpeg to enable MP4/M4A/M4B tagging",
+		"ffmpeg not found next to ffprobe_path or in PATH - install FFmpeg (needed for MP4/M4A/M4B tagging and the player)",
 	)
 }
 

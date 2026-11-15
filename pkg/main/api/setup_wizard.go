@@ -1,10 +1,12 @@
 // Package api - setup_wizard.go implements an in-app guided setup flow that
-// walks a user through the same Media-groups -> Paths -> Indexer -> Downloader
-// -> Lists -> Finalize chain that would otherwise require hand-editing
-// config.toml. Every step is optional/skippable.
+// walks a user through the same Media-groups -> Tools -> Paths -> Services ->
+// Indexer -> Downloader -> Lists -> Finalize chain that would otherwise
+// require hand-editing config.toml. Every step is optional/skippable. The
+// Tools step is in setup_wizard_tools.go, Services in setup_wizard_services.go.
 //
-// The flow deliberately asks "which media groups?" first (step 1), so the
-// Paths step (step 2) already knows how many paths to ask for per group
+// The flow deliberately asks "which media groups?" first, so the Tools,
+// Paths and Services steps already know what to check, how many paths to ask
+// for per group
 // (a Library path and an optional Import path) and which file extensions to
 // apply automatically - the user never has to pick a "kind" separately.
 // Indexer/Downloader stay single-item wizard forms with a live Test
@@ -35,22 +37,38 @@ import (
 
 const (
 	wizardTestTimeout = 10 * time.Second
-	wizardDefaultName = "Wizard-Default"
-	wizardLastStep    = 7
+	wizardLastStep    = wizStepFinish
+)
+
+// The wizard's steps, in order.
+const (
+	wizStepGroups = iota + 1
+	wizStepTools
+	wizStepPaths
+	wizStepServices
+	wizStepIndexer
+	wizStepDownloader
+	wizStepLists
+	wizStepNotifications
+	wizStepFinalize
+	wizStepFinish
 )
 
 var wizardStepLabels = []string{
 	"Media Groups",
+	"System Tools",
 	"Storage Paths",
+	"Services & API Keys",
 	"Indexer",
 	"Download Client",
 	"Lists",
+	"Notifications",
 	"Finalize",
 	"Finish",
 }
 
-// wizardGroupState is what step 1 (selection) and step 2 (paths) accumulate
-// per media group before step 6 (finalize) turns it into a real
+// wizardGroupState is what the Media Groups and Paths steps accumulate per
+// media group before the Finalize step turns it into a real
 // MediaTypeConfig.
 type wizardGroupState struct {
 	Enabled     bool
@@ -88,7 +106,7 @@ func renderSetupWizardShell(csrfToken string) gomponents.Node {
 			renderEnhancedPageHeader(
 				"fa-solid fa-wand-magic-sparkles",
 				"Setup Wizard",
-				"Walks you through the basic configuration (media groups, storage paths, an indexer, a download client, and lists) that would otherwise need hand-editing config.toml. Every step is optional - skip anything you'd rather configure later under Settings.",
+				"Walks you through the basic configuration (media groups, the tools it needs, storage paths, web password and API keys, an indexer, a download client, and lists) that would otherwise need hand-editing config.toml. Every step is optional - skip anything you'd rather configure later under Settings.",
 			),
 			html.A(
 				html.Class("btn btn-sm btn-outline-secondary ms-3 flex-shrink-0"),
@@ -167,7 +185,7 @@ func HandleWizardStepGet(c *gin.Context) {
 }
 
 // HandleWizardStepSave saves step n's own contribution and returns the
-// rendered fragment for step n+1. Steps 5 (Lists) has no case here - it saves
+// rendered fragment for step n+1. The Lists step has no case here - it saves
 // via the embedded Settings section's own endpoint instead.
 func HandleWizardStepSave(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
@@ -184,26 +202,42 @@ func HandleWizardStepSave(c *gin.Context) {
 	var alert string
 
 	switch n {
-	case 1:
+	case wizStepGroups:
 		alert, state.Groups = wizardSaveGroupsStep(c, state)
-	case 2:
+	case wizStepTools:
+		alert = wizardSaveToolsStep(c)
+	case wizStepPaths:
 		alert, state.Groups = wizardSavePathsStep(c, state)
-	case 3:
+	case wizStepServices:
+		alert = wizardSaveServicesStep(c)
+	case wizStepIndexer:
 		var name string
 
 		alert, name = wizardSaveIndexerStep(c)
 		if name != "" {
 			state.Indexer = name
 		}
-	case 4:
+	case wizStepDownloader:
 		var name string
 
 		alert, name = wizardSaveDownloaderStep(c)
 		if name != "" {
 			state.Downloader = name
 		}
-	case 6:
+	case wizStepFinalize:
 		alert = wizardSaveFinalizeStep(c, state)
+	}
+
+	c.Header("Content-Type", "text/html")
+
+	// A failed save stays on its step with the form as the user left it:
+	// only the error is shown, above the form.
+	if strings.Contains(alert, "alert-danger") {
+		c.Header("HX-Retarget", "#wizardStepAlert")
+		c.Header("HX-Reswap", "innerHTML")
+		c.String(http.StatusOK, alert+"<script>document.getElementById('wizardStepAlert').scrollIntoView({behavior: 'smooth'})</script>")
+
+		return
 	}
 
 	next := n + 1
@@ -211,7 +245,6 @@ func HandleWizardStepSave(c *gin.Context) {
 		next = wizardLastStep
 	}
 
-	c.Header("Content-Type", "text/html")
 	c.String(http.StatusOK, alert+renderComponentToString(renderWizardFragment(next, csrfToken, state)))
 }
 
@@ -308,29 +341,36 @@ func renderWizardFragment(step int, csrfToken string, state wizardState) gompone
 	var body gomponents.Node
 
 	switch step {
-	case 1:
+	case wizStepGroups:
 		body = renderWizardStepGroups(csrfToken, state)
-	case 2:
+	case wizStepTools:
+		body = renderWizardStepTools(csrfToken, state, nil)
+	case wizStepPaths:
 		body = renderWizardStepPaths(csrfToken, state)
-	case 3:
+	case wizStepServices:
+		body = renderWizardStepServices(csrfToken, state)
+	case wizStepIndexer:
 		body = renderWizardStepIndexer(csrfToken)
-	case 4:
+	case wizStepDownloader:
 		body = renderWizardStepDownloader(csrfToken)
-	case 5:
+	case wizStepLists:
 		body = renderWizardStepLists(csrfToken)
-	case 6:
+	case wizStepNotifications:
+		body = renderWizardStepNotifications(csrfToken)
+	case wizStepFinalize:
 		body = renderWizardStepFinalize(csrfToken, state)
 	default:
-		body = renderWizardStepFinish()
+		body = renderWizardStepFinish(state, csrfToken)
 	}
 
 	// wizardCarry holds the hidden state fields outside any particular step's
 	// own <form>, so every nav/save button (whose hx-include lists this div)
 	// keeps forwarding the accumulated selections regardless of whether the
-	// current step has its own form (step 5 doesn't).
+	// current step has its own form (the Lists step doesn't).
 	return html.Div(
 		wizardProgressBar(step),
 		html.Div(html.ID("wizardCarry"), wizardHiddenState(state)),
+		html.Div(html.ID("wizardStepAlert")),
 		body,
 	)
 }
@@ -437,7 +477,7 @@ func wizardNonEmpty(values []string) []string {
 	return out
 }
 
-// ---- Media group definitions (shared by steps 1, 2 and 6) ----
+// ---- Media group definitions (shared by the steps that depend on the groups) ----
 
 // wizardMediaGroupDef describes one of the five fixed media-type groups the
 // wizard can create, including which per-type quality/extension defaults to
@@ -524,86 +564,13 @@ func wizardExtensionHint(kind string) string {
 	}
 }
 
-// wizardQualityDefaults returns media-kind-appropriate starting values for a
-// per-group quality profile, so e.g. Movies doesn't end up reusing a Music
-// profile's audio-format settings and vice versa. Values mirror the examples
-// in config.example.toml where applicable.
-func wizardQualityDefaults(kind string) config.QualityConfig {
-	switch kind {
-	case "video":
-		return config.QualityConfig{
-			WantedResolution:            []string{"480p", "720p", "1080p"},
-			WantedQuality:               []string{"sdtv", "hdtv", "webdl", "webrip", "dvdrip", "bluray"},
-			CutoffResolution:            "1080p",
-			CutoffQuality:               "bluray",
-			UseForPriorityResolution:    true,
-			UseForPriorityQuality:       true,
-			UseForPriorityMinDifference: 10,
-		}
-	case "music":
-		return config.QualityConfig{
-			WantedAudioFormats:         []string{"flac", "mp3", "aac", "ogg", "alac", "wma"},
-			PreferLossless:             true,
-			UseForPriorityAudioFormat:  true,
-			UseForPriorityAudioBitrate: true,
-		}
-	case "audiobook":
-		return config.QualityConfig{
-			WantedAudioFormats:         []string{"m4b", "mp3", "flac", "aac"},
-			UseForPriorityAudioFormat:  true,
-			UseForPriorityAudioBitrate: true,
-		}
-	default: // "book" and anything else: accept everything, no special priority
-		return config.QualityConfig{}
-	}
-}
-
-// wizardRegexDefaults returns a light, generic junk filter for a per-group
-// regex - just enough to skip obvious non-releases. Deliberately does not
-// attempt language filtering or other highly personal preferences; those are
-// easy to add later under Settings -> Regex once the group is working.
-func wizardRegexDefaults(kind string) config.RegexConfig {
-	switch kind {
-	case "video":
-		return config.RegexConfig{
-			Rejected: []string{`(?i)(\b|_)(sample|trailer|extras?)(\b|_)`},
-		}
-	default:
-		return config.RegexConfig{
-			Rejected: []string{`(?i)(\b|_)(sample|trailer)(\b|_)`},
-		}
-	}
-}
-
-// wizardNamingDefault returns a starting file/folder naming template for a
-// media group, keyed by wizardMediaGroupDef.key (movies and series need
-// different templates despite sharing qualityKind "video"). Field names
-// mirror structure.parsertype, the actual struct the template executes
-// against (see structure/structure.go), so these render correctly out of the
-// box instead of erroring on an unknown field.
-func wizardNamingDefault(key string) string {
-	switch key {
-	case "movies":
-		return `{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}{{if eq .Source.Extended true}} extended{{end}}] ({{.Source.Imdb}})`
-	case "series":
-		return `{{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}/{{.Dbserie.Seriename}} - S{{printf "%02s" .DbserieEpisode.Season}}{{range .Episodes}}E{{printf "%02d" . }}{{end}} - {{.DbserieEpisode.Title}} [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}] ({{.Source.Tvdb}})`
-	case "music":
-		return `{{.AlbumArtist.Name}}/{{.Dbalbum.Title}} ({{.Dbalbum.Year}})/{{printf "%02d" .Track}} - {{.Title}}`
-	case "audiobooks":
-		return `{{.Author.Name}}/{{.Dbaudiobook.Title}}/{{printf "%02d" .Track}} - {{.Title}}`
-	case "books":
-		return `{{.Author.Name}}/{{.Dbbook.Title}} ({{.Dbbook.Year}})/{{.Dbbook.Title}}`
-	default:
-		return ""
-	}
-}
-
 // wizardConflicts lists the config entries the finalize step would overwrite
 // for the given groups: an existing media group of the same name (its data,
 // import, notification and list settings would be lost) or an existing
 // "<name>-Quality" / "<name>-Regex" profile.
 func wizardConflicts(mc *config.MediaConfig, groups []wizardMediaGroupDef, state wizardState) []string {
 	regexNames := wizardNames(config.GetSettingsRegexAll(), func(r config.RegexConfig) string { return r.Name })
+	schedulerNames := wizardNames(config.GetSettingsSchedulerAll(), func(s config.SchedulerConfig) string { return s.Name })
 
 	var conflicts []string
 
@@ -624,43 +591,16 @@ func wizardConflicts(mc *config.MediaConfig, groups []wizardMediaGroupDef, state
 		if wizardNameExists(regexNames, name+"-Regex") {
 			conflicts = append(conflicts, "regex profile \""+name+"-Regex\"")
 		}
+
+		if wizardNameExists(schedulerNames, name+"-Schedule") {
+			conflicts = append(conflicts, "schedule \""+name+"-Schedule\"")
+		}
 	}
 
 	return conflicts
 }
 
-// wizardEnsureDefaultScheduler creates a single shared "Wizard-Default"
-// scheduler the first time it's needed (only if missing, so re-running the
-// wizard never resets timing the user tweaked by hand). Unlike quality/regex,
-// scheduling cadence doesn't need to differ per media type.
-func wizardEnsureDefaultScheduler() {
-	names := wizardNames(
-		config.GetSettingsSchedulerAll(),
-		func(s config.SchedulerConfig) string { return s.Name },
-	)
-	if wizardNameExists(names, wizardDefaultName) {
-		return
-	}
-
-	_ = config.UpdateCfgEntry(config.Conf{
-		Name: "scheduler_" + wizardDefaultName,
-		Data: config.SchedulerConfig{
-			Name:                       wizardDefaultName,
-			IntervalImdb:               "3d",
-			IntervalFeeds:              "1d",
-			IntervalFeedsRefreshSeries: "1d",
-			IntervalFeedsRefreshMovies: "1d",
-			IntervalIndexerMissing:     "40m",
-			IntervalIndexerUpgrade:     "60m",
-			IntervalIndexerRss:         "15m",
-			IntervalScanData:           "1h",
-			IntervalScanDataMissing:    "1d",
-			IntervalScanDataimport:     "60m",
-		},
-	})
-}
-
-// ---- Step 1: Media groups (selection only - no config.toml writes yet) ----
+// ---- Media groups step (selection only - no config.toml writes yet) ----
 
 func renderWizardStepGroups(csrfToken string, state wizardState) gomponents.Node {
 	rows := make([]gomponents.Node, 0, len(wizardMediaGroupDefs))
@@ -694,7 +634,7 @@ func renderWizardStepGroups(csrfToken string, state wizardState) gomponents.Node
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fa-solid fa-layer-group",
-			"Step 1: Media Groups",
+			fmt.Sprintf("Step %d: Media Groups", wizStepGroups),
 			"Pick which media types this instance should manage. This decides what the next steps ask for - e.g. how many storage paths to create and which file extensions they should accept.",
 		),
 		html.Form(
@@ -703,8 +643,8 @@ func renderWizardStepGroups(csrfToken string, state wizardState) gomponents.Node
 			html.Div(html.Class("row"), gomponents.Group(rows)),
 			html.Div(
 				html.Class("form-group submit-group mt-3"),
-				wizardSaveButton(1, csrfToken),
-				wizardNextButton(1, "Skip"),
+				wizardSaveButton(wizStepGroups, csrfToken),
+				wizardNextButton(wizStepGroups, "Skip"),
 			),
 		),
 	)
@@ -745,7 +685,7 @@ func wizardSaveGroupsStep(
 	return renderAlert("Selected: "+strings.Join(enabledNames, ", "), "success"), groups
 }
 
-// ---- Step 2: Storage paths (templated per group selected in step 1) ----
+// ---- Storage paths step (templated per group selected in the first step) ----
 
 func renderWizardStepPaths(csrfToken string, state wizardState) gomponents.Node {
 	enabled := wizardEnabledGroups(state)
@@ -754,10 +694,10 @@ func renderWizardStepPaths(csrfToken string, state wizardState) gomponents.Node 
 			html.Class("config-section-enhanced"),
 			renderEnhancedPageHeader(
 				"fa-solid fa-folder-tree",
-				"Step 2: Storage Paths",
-				"No media groups were selected in step 1, so there's nothing to create paths for here. Go back to step 1 to pick some, or continue and add paths later under Settings -> Paths.",
+				fmt.Sprintf("Step %d: Storage Paths", wizStepPaths),
+				"No media groups were selected in the first step, so there's nothing to create paths for here. Go back to it to pick some, or continue and add paths later under Settings -> Paths.",
 			),
-			html.Div(html.Class("mt-3"), wizardNextButton(2, "Continue ->")),
+			html.Div(html.Class("mt-3"), wizardNextButton(wizStepPaths, "Continue ->")),
 		)
 	}
 
@@ -785,9 +725,9 @@ func renderWizardStepPaths(csrfToken string, state wizardState) gomponents.Node 
 			renderFormGroup(
 				"wizard_path",
 				map[string]string{
-					"Import" + d.label: "Optional: existing folder to scan/import - leave empty to skip",
+					"Import" + d.label: "Where the download client puts this group's finished downloads, as this app sees the folder (e.g. /downloads/completed/" + d.label + "). The organizer moves them from here into the library. Leave empty if this group doesn't download.",
 				},
-				map[string]string{"Import" + d.label: "Import Path (optional)"},
+				map[string]string{"Import" + d.label: "Download / Import Path"},
 				"Import"+d.label, "text", "", nil,
 			),
 			renderPathCheckControl(csrfToken, "wizard_path_Import"+d.label),
@@ -798,17 +738,22 @@ func renderWizardStepPaths(csrfToken string, state wizardState) gomponents.Node 
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fa-solid fa-folder-tree",
-			"Step 2: Storage Paths",
-			"One section per media group you enabled - file extensions are set automatically based on that group's type. A Library path is what new downloads land in; an Import path (optional) is for scanning in files you already have.",
+			fmt.Sprintf("Step %d: Storage Paths", wizStepPaths),
+			"One section per media group you enabled - file extensions are set automatically based on that group's type. The Library path is where organized files are kept; the Download / Import path is where finished downloads arrive before they are organized. Both are checked when you save.",
 		),
 		html.Form(
 			html.Class("config-form"),
 			html.ID("wizardStepForm"),
 			html.Div(html.Class("row"), gomponents.Group(rows)),
+			html.Div(html.Class("form-check mt-2"),
+				html.Input(html.Type("checkbox"), html.Class("form-check-input"), html.ID("wizPathCreate"),
+					html.Name("wizard_path_create"), html.Value("1"), html.Checked()),
+				html.Label(html.Class("form-check-label"), html.For("wizPathCreate"),
+					gomponents.Text("Create folders that don't exist yet"))),
 			html.Div(
 				html.Class("form-group submit-group mt-3"),
-				wizardSaveButton(2, csrfToken),
-				wizardNextButton(2, "Skip"),
+				wizardSaveButton(wizStepPaths, csrfToken),
+				wizardNextButton(wizStepPaths, "Skip"),
 			),
 		),
 	)
@@ -821,6 +766,19 @@ func wizardSavePathsStep(
 	groups = state.Groups
 	if groups == nil {
 		groups = map[string]wizardGroupState{}
+	}
+
+	var folders []wizardFolder
+
+	for _, d := range wizardEnabledGroups(state) {
+		name := groups[d.key].Name
+		folders = append(folders,
+			wizardFolder{group: name, kind: "library", path: strings.TrimSpace(c.PostForm("wizard_path_Library" + d.label))},
+			wizardFolder{group: name, kind: "import", path: strings.TrimSpace(c.PostForm("wizard_path_Import" + d.label))})
+	}
+
+	if problems := wizardCheckFolders(folders, c.PostForm("wizard_path_create") != ""); len(problems) > 0 {
+		return renderAlert("Nothing was saved, please correct: "+strings.Join(problems, "; "), "danger"), groups
 	}
 
 	var created, failed []string
@@ -866,14 +824,14 @@ func wizardSavePathsStep(
 	return renderAlert("Path(s) saved: "+strings.Join(created, ", "), "success"), groups
 }
 
-// ---- Step 3: Indexer ----
+// ---- Indexer step ----
 
 func renderWizardStepIndexer(csrfToken string) gomponents.Node {
 	return html.Div(
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fa-solid fa-server",
-			"Step 3: Indexer",
+			fmt.Sprintf("Step %d: Indexer", wizStepIndexer),
 			"Add a Newznab or Torznab indexer to search for releases.",
 		),
 		html.Form(
@@ -914,11 +872,28 @@ func renderWizardStepIndexer(csrfToken string) gomponents.Node {
 					),
 				),
 			),
+			// Request limits: too many calls get an account blocked.
+			html.H6(html.Class("mt-3 mb-1"), gomponents.Text("Request limits")),
+			html.P(html.Class("small text-muted mb-2"), gomponents.Text(
+				"Too many requests can get your indexer account blocked. 5 calls per 20 seconds is safe for most indexers; "+
+					"choosing a known indexer above fills in its limits. Free accounts often have a daily API limit (e.g. 25 or 100): enter it, 0 means none.")),
+			html.Div(
+				html.Class("row"),
+				html.Div(html.Class("col-md-4"), renderFormGroup("wizard_indexer",
+					map[string]string{"Limitercalls": "Requests allowed per time window"},
+					map[string]string{"Limitercalls": "Calls"}, "Limitercalls", "number", 5, nil)),
+				html.Div(html.Class("col-md-4"), renderFormGroup("wizard_indexer",
+					map[string]string{"Limiterseconds": "Length of the time window"},
+					map[string]string{"Limiterseconds": "Per seconds"}, "Limiterseconds", "number", 20, nil)),
+				html.Div(html.Class("col-md-4"), renderFormGroup("wizard_indexer",
+					map[string]string{"LimitercallsDaily": "API calls per day your account allows (0: no limit)"},
+					map[string]string{"LimitercallsDaily": "Daily limit"}, "LimitercallsDaily", "number", 0, nil)),
+			),
 			html.Div(
 				html.Class("form-group submit-group mt-3"),
 				wizardTestButton("/api/admin/wizard/test/indexer", csrfToken),
-				wizardSaveButton(3, csrfToken),
-				wizardNextButton(3, "Skip"),
+				wizardSaveButton(wizStepIndexer, csrfToken),
+				wizardNextButton(wizStepIndexer, "Skip"),
 			),
 			html.Div(html.ID("wizardTestResult"), html.Class("mt-2")),
 		),
@@ -946,16 +921,26 @@ func wizardSaveIndexerStep(c *gin.Context) (alert, name string) {
 		indexerType = "newznab"
 	}
 
+	// The limits as entered; 5 per 20 s when left empty.
+	atoi := func(field string, def int) int {
+		if n, err := strconv.Atoi(strings.TrimSpace(c.PostForm("wizard_indexer_" + field))); err == nil && n >= 0 {
+			return n
+		}
+
+		return def
+	}
+
 	cfg := config.IndexersConfig{
-		Name:           nm,
-		IndexerType:    indexerType,
-		URL:            rawURL,
-		Apikey:         apikey,
-		Enabled:        true,
-		Limitercalls:   5,
-		Limiterseconds: 20,
-		MaxEntries:     100,
-		RssEntriesloop: 2,
+		Name:              nm,
+		IndexerType:       indexerType,
+		URL:               rawURL,
+		Apikey:            apikey,
+		Enabled:           true,
+		Limitercalls:      max(atoi("Limitercalls", 5), 1),
+		Limiterseconds:    uint8(min(max(atoi("Limiterseconds", 20), 1), 255)),
+		LimitercallsDaily: atoi("LimitercallsDaily", 0),
+		MaxEntries:        100,
+		RssEntriesloop:    2,
 	}
 
 	if err := config.UpdateCfgEntry(config.Conf{Name: "indexer_" + nm, Data: cfg}); err != nil {
@@ -1005,14 +990,14 @@ func HandleWizardTestIndexer(c *gin.Context) {
 	c.String(http.StatusOK, renderAlert("Connection succeeded.", "success"))
 }
 
-// ---- Step 4: Download client ----
+// ---- Download client step ----
 
 func renderWizardStepDownloader(csrfToken string) gomponents.Node {
 	return html.Div(
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fa-solid fa-download",
-			"Step 4: Download Client",
+			fmt.Sprintf("Step %d: Download Client", wizStepDownloader),
 			"Where should indexer results be sent? Choose 'drone' to just save files to disk without a download client.",
 		),
 		html.Form(
@@ -1070,8 +1055,8 @@ func renderWizardStepDownloader(csrfToken string) gomponents.Node {
 			html.Div(
 				html.Class("form-group submit-group mt-3"),
 				wizardTestButton("/api/admin/wizard/test/downloader", csrfToken),
-				wizardSaveButton(4, csrfToken),
-				wizardNextButton(4, "Skip"),
+				wizardSaveButton(wizStepDownloader, csrfToken),
+				wizardNextButton(wizStepDownloader, "Skip"),
 			),
 			html.Div(html.ID("wizardTestResult"), html.Class("mt-2")),
 		),
@@ -1149,7 +1134,19 @@ func HandleWizardTestDownloader(c *gin.Context) {
 		return
 	}
 
-	c.String(http.StatusOK, renderAlert("Connection succeeded.", "success"))
+	// Where finished downloads go: the groups' import folders must be that
+	// folder as this app sees it.
+	result := renderAlert("Connection succeeded.", "success")
+
+	dir, err := wizardClientDir(ctx, &config.DownloaderConfig{
+		Name: "wizard-test", DlType: dlType, Hostname: hostname, Port: port, Username: username, Password: password,
+	}, "")
+	if err == nil && dir != "" {
+		msg, level := wizardDirVerdict(dir, "")
+		result += renderAlert("Finished downloads go to "+dir+" (per-category folders are checked in the Finalize step). "+msg, level)
+	}
+
+	c.String(http.StatusOK, result)
 }
 
 func wizardTestDownloaderConnection(
@@ -1180,7 +1177,7 @@ func wizardTestDownloaderConnection(
 	return tester.TestConnection(ctx)
 }
 
-// ---- Step 5: Lists ----
+// ---- Lists step ----
 //
 // Embeds the real Lists Settings section (renderListsConfig), which already
 // covers every ListType the app supports and unlimited "Add List", instead of
@@ -1191,15 +1188,33 @@ func renderWizardStepLists(csrfToken string) gomponents.Node {
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fa-solid fa-list-check",
-			"Step 5: Lists",
-			"Add one or more lists - every list type is available here (Trakt, TMDB, Plex/Jellyfin watchlists, scrapers, IRC, and the manual *config file types). Save, then Continue - you'll attach these to media groups in step 6.",
+			fmt.Sprintf("Step %d: Lists", wizStepLists),
+			"Add one or more lists - every list type is available here (Trakt, TMDB, Plex/Jellyfin watchlists, scrapers, IRC, and the manual *config file types). Save, then Continue - you'll attach these to media groups in the Finalize step.",
 		),
 		renderListsConfig(config.GetSettingsListAll(), csrfToken),
-		html.Div(html.Class("mt-3"), wizardNextButton(5, "Continue ->")),
+		html.Div(html.Class("mt-3"), wizardNextButton(wizStepLists, "Continue ->")),
 	)
 }
 
-// ---- Step 6: Finalize (attach lists, create per-group quality/regex, save) ----
+// ---- Notifications step ----
+//
+// Embeds the Notifications settings section like the Lists step; each group
+// picks its targets and events in the Finalize step.
+
+func renderWizardStepNotifications(csrfToken string) gomponents.Node {
+	return html.Div(
+		html.Class("config-section-enhanced"),
+		renderEnhancedPageHeader(
+			"fa-solid fa-bell",
+			fmt.Sprintf("Step %d: Notifications (optional)", wizStepNotifications),
+			"Add where messages go when something is downloaded or added to the library: Pushover, Gotify, ntfy, Telegram, Discord, Apprise, e-mail, a CSV log file and more. Each entry has a Test button. Save, then Continue - you choose per group and event in the Finalize step.",
+		),
+		renderNotificationConfig(config.GetSettingsNotificationAll(), csrfToken),
+		html.Div(html.Class("mt-3"), wizardNextButton(wizStepNotifications, "Continue ->")),
+	)
+}
+
+// ---- Finalize step (attach lists, create per-group quality/regex, save) ----
 
 func renderWizardStepFinalize(csrfToken string, state wizardState) gomponents.Node {
 	enabled := wizardEnabledGroups(state)
@@ -1208,16 +1223,16 @@ func renderWizardStepFinalize(csrfToken string, state wizardState) gomponents.No
 			html.Class("config-section-enhanced"),
 			renderEnhancedPageHeader(
 				"fa-solid fa-check-double",
-				"Step 6: Finalize Groups",
-				"No media groups were selected in step 1, so there's nothing to finalize.",
+				fmt.Sprintf("Step %d: Finalize Groups", wizStepFinalize),
+				"No media groups were selected in the first step, so there's nothing to finalize.",
 			),
-			html.Div(html.Class("mt-3"), wizardNextButton(6, "Finish")),
+			html.Div(html.Class("mt-3"), wizardNextButton(wizStepFinalize, "Finish")),
 		)
 	}
 
 	warn := ""
 	if state.Indexer == "" || state.Downloader == "" {
-		warn = " Note: no indexer/download client was configured in this run, so each group's quality profile will be created with an empty indexer/downloader - add one under Settings -> Quality (or go back to steps 3/4) before expecting searches to actually run."
+		warn = " Note: no indexer/download client was configured in this run, so each group's quality profile will be created with an empty indexer/downloader - add one under Settings -> Quality (or go back to the Indexer and Download Client steps) before expecting searches to actually run."
 	}
 
 	listNames := wizardNames(config.GetSettingsListAll(), func(l config.ListsConfig) string { return l.Name })
@@ -1236,7 +1251,7 @@ func renderWizardStepFinalize(csrfToken string, state wizardState) gomponents.No
 		}
 
 		rows = append(rows, html.Div(
-			html.Class("col-md-6 mb-4 p-2 border rounded"),
+			html.Class("col-12 mb-4 p-3 border rounded"),
 			html.H5(gomponents.Text(g.Name)),
 			html.P(html.Class("text-muted small"), gomponents.Text(pathSummary)),
 			renderFormGroup(
@@ -1246,6 +1261,7 @@ func renderWizardStepFinalize(csrfToken string, state wizardState) gomponents.No
 				"Lists"+d.label, "selectarray", []string{},
 				map[string][]string{"options": listNames},
 			),
+			renderWizardGroupRecommend(d, g),
 		))
 	}
 
@@ -1253,106 +1269,111 @@ func renderWizardStepFinalize(csrfToken string, state wizardState) gomponents.No
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fa-solid fa-check-double",
-			"Step 6: Finalize Groups",
-			"Attach lists to each group, then Finish. A dedicated quality profile and regex filter are created per group, tailored to that media kind."+warn,
+			fmt.Sprintf("Step %d: Finalize Groups", wizStepFinalize),
+			"Attach lists to each group and check the recommended naming, release filters, categories and schedule, then Review what will be written. Each group gets its own quality profile, regex filter and schedule, tailored to its media kind."+warn,
 		),
+		wizardRecommendScriptNode(),
 		html.Form(
 			html.Class("config-form"),
 			html.ID("wizardStepForm"),
 			html.Div(html.Class("row"), gomponents.Group(rows)),
 			html.Div(
 				html.Class("form-group submit-group mt-3"),
-				wizardSaveButton(6, csrfToken),
-				wizardNextButton(6, "Skip & Finish"),
+				html.Button(html.Class("btn btn-primary me-2"), html.Type("button"),
+					html.I(html.Class("fa-solid fa-list-check me-1")), gomponents.Text("Review"),
+					hx.Post("/api/admin/wizard/review"), hx.Target("#wizardReview"), hx.Swap("innerHTML"),
+					hx.Include("#wizardStepForm, #wizardCarry"), hx.Headers(wizardCSRFHeader(csrfToken))),
+				gomponents.If(state.Downloader != "", html.Button(html.Class("btn btn-outline-info me-2"), html.Type("button"),
+					html.I(html.Class("fa-solid fa-folder-open me-1")), gomponents.Text("Check download folders"),
+					hx.Post("/api/admin/wizard/test/dlfolders"), hx.Target("#wizardDlFolders"), hx.Swap("innerHTML"),
+					hx.Include("#wizardStepForm, #wizardCarry"), hx.Headers(wizardCSRFHeader(csrfToken)))),
+				wizardNextButton(wizStepFinalize, "Skip & Finish"),
 			),
 		),
+		html.Div(html.ID("wizardDlFolders"), html.Class("mt-3")),
+		html.Div(html.ID("wizardReview")),
 	)
 }
 
-func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
+// wizardPlannedGroup is one group the Finalize step creates, with the
+// entries made for it.
+type wizardPlannedGroup struct {
+	def       wizardMediaGroupDef
+	settings  wizardGroupSettings
+	media     config.MediaTypeConfig
+	quality   config.QualityConfig
+	regex     config.RegexConfig
+	scheduler config.SchedulerConfig
+}
+
+// wizardPlanFinalize builds everything the Finalize step writes from the
+// form, without writing. On invalid input or a name conflict it returns an
+// error alert and no plan; with no groups, neither.
+func wizardPlanFinalize(c *gin.Context, state wizardState) ([]wizardPlannedGroup, string) {
 	live := config.GetSettingsMediaAll()
 	if live == nil {
-		return renderAlert("Configuration not loaded.", "danger")
+		return nil, renderAlert("Configuration not loaded.", "danger")
 	}
 
-	// Deep-copy the slices - GetSettingsMediaAll returns a pointer straight into
-	// the live snapshot, so mutating it in place would race with readers.
-	mc := config.MediaConfig{
-		Movies:     append([]config.MediaTypeConfig(nil), live.Movies...),
-		Series:     append([]config.MediaTypeConfig(nil), live.Series...),
-		Books:      append([]config.MediaTypeConfig(nil), live.Books...),
-		AudioBooks: append([]config.MediaTypeConfig(nil), live.AudioBooks...),
-		Music:      append([]config.MediaTypeConfig(nil), live.Music...),
-	}
-
-	if conflicts := wizardConflicts(&mc, wizardEnabledGroups(state), state); len(conflicts) > 0 {
-		return renderAlert(
+	if conflicts := wizardConflicts(live, wizardEnabledGroups(state), state); len(conflicts) > 0 {
+		return nil, renderAlert(
 			"Nothing was saved: these already exist and the wizard would overwrite them: "+
 				strings.Join(conflicts, ", ")+
-				". Choose different group names in step 1, or edit the existing entries under Settings.",
+				". Choose different group names in the first step, or edit the existing entries under Settings.",
 			"danger",
 		)
 	}
 
-	// A quality/regex/scheduler profile is created for every enabled group
-	// regardless of whether an indexer/downloader were configured in steps 3/4
-	// - otherwise TemplateQuality/TemplateScheduler are left blank and the
-	// group is unusable even after the user adds an indexer later. Only the
-	// actual indexer/downloader wiring inside the quality's Indexer entry
-	// depends on state.Indexer/state.Downloader (left blank if missing, ready
-	// to fill in under Settings -> Quality).
-	wizardEnsureDefaultScheduler()
-
-	schedulerName := wizardDefaultName
-
-	var created []string
+	var (
+		plan    []wizardPlannedGroup
+		invalid []string
+	)
 
 	for _, d := range wizardEnabledGroups(state) {
 		g := state.Groups[d.key]
 
-		mtc := config.MediaTypeConfig{
-			Name:              g.Name,
-			Naming:            wizardNamingDefault(d.key),
-			TemplateScheduler: schedulerName,
-			AudibleRegion:     d.audibleRegion,
-		}
+		gs, bad := wizardReadGroupSettings(c, d, g)
+		invalid = append(invalid, bad...)
 
-		if g.LibraryPath != "" {
-			mtc.Data = []config.MediaDataConfig{{TemplatePath: g.LibraryPath}}
-		}
-
-		if g.ImportPath != "" {
-			mtc.DataImport = []config.MediaDataImportConfig{{TemplatePath: g.ImportPath}}
-		}
-
+		schedulerName := g.Name + "-Schedule"
 		qualityName := g.Name + "-Quality"
 		regexName := g.Name + "-Regex"
 
-		regexCfg := wizardRegexDefaults(d.qualityKind)
-		regexCfg.Name = regexName
-		if err := config.UpdateCfgEntry(config.Conf{Name: "regex_" + regexName, Data: regexCfg}); err != nil {
-			return renderAlert("Failed to save regex "+regexName+": "+err.Error(), "danger")
+		mtc := config.MediaTypeConfig{
+			Name:              g.Name,
+			Naming:            gs.naming,
+			TemplateQuality:   qualityName,
+			TemplateScheduler: schedulerName,
+			AudibleRegion:     d.audibleRegion,
+			// Downloads are organized into the library; without it the
+			// organizer refuses the group ("structure not allowed").
+			Structure:                true,
+			SearchmissingIncremental: 100,
+			SearchupgradeIncremental: 20,
+			Notification:             gs.notify,
 		}
 
-		quality := wizardQualityDefaults(d.qualityKind)
-		quality.Name = qualityName
-		quality.Indexer = []config.QualityIndexerConfig{{
-			TemplateIndexer:    state.Indexer,    // may be "" if step 3 was skipped
-			TemplateDownloader: state.Downloader, // may be "" if step 4 was skipped
-			TemplateRegex:      regexName,
-			// The client's save location: downloads land in the import
-			// folder so the organizer can move them into the library.
-			TemplatePathNzb: g.ImportPath,
-		}}
-
-		if err := config.UpdateCfgEntry(config.Conf{Name: "quality_" + qualityName, Data: quality}); err != nil {
-			return renderAlert("Failed to save quality "+qualityName+": "+err.Error(), "danger")
+		if d.qualityKind != "video" {
+			mtc.SearchmissingIncremental, mtc.SearchupgradeIncremental = 50, 10
 		}
 
-		mtc.TemplateQuality = qualityName
+		if gs.lang == "de" || gs.lang == "en" {
+			mtc.MetadataLanguage = gs.lang
+		}
 
-		lists := wizardNonEmpty(c.PostFormArray("wizard_finalize_Lists" + d.label))
-		for _, l := range lists {
+		if g.LibraryPath != "" {
+			data := config.MediaDataConfig{TemplatePath: g.LibraryPath}
+			wizardApplyMediaDefaults(d.key, gs.audio, &data, nil)
+			mtc.Data = []config.MediaDataConfig{data}
+		}
+
+		if g.ImportPath != "" {
+			imp := config.MediaDataImportConfig{TemplatePath: g.ImportPath}
+			wizardApplyMediaDefaults(d.key, gs.audio, nil, &imp)
+			mtc.DataImport = []config.MediaDataImportConfig{imp}
+		}
+
+		for _, l := range wizardNonEmpty(c.PostFormArray("wizard_finalize_Lists" + d.label)) {
 			mtc.Lists = append(mtc.Lists, config.MediaListsConfig{
 				Name:              g.Name + "-" + l,
 				TemplateList:      l,
@@ -1362,28 +1383,191 @@ func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
 			})
 		}
 
-		*d.target(&mc) = append(*d.target(&mc), mtc)
-		created = append(created, g.Name)
+		// A quality/regex/scheduler profile is created even without an
+		// indexer or download client, so the group is usable once they are
+		// added under Settings -> Quality.
+		quality := wizardRecommendedQuality(d.key, gs.lang)
+		quality.Name = qualityName
+		quality.Indexer = []config.QualityIndexerConfig{{
+			TemplateIndexer:    state.Indexer,
+			TemplateDownloader: state.Downloader,
+			TemplateRegex:      regexName,
+			// The client's save location: downloads land in the import
+			// folder so the organizer can move them into the library.
+			TemplatePathNzb:    g.ImportPath,
+			CategoriesIndexer:  gs.cats,
+			CategoryDownloader: gs.dlcat,
+		}}
+
+		plan = append(plan, wizardPlannedGroup{
+			def:       d,
+			settings:  gs,
+			media:     mtc,
+			quality:   quality,
+			regex:     config.RegexConfig{Name: regexName, Required: gs.required, Rejected: gs.rejected},
+			scheduler: wizardBuildScheduler(d.key, schedulerName, gs.schedule),
+		})
 	}
 
-	if len(created) == 0 {
-		return ""
+	if len(invalid) > 0 {
+		return nil, renderAlert("Nothing was saved, please correct: "+strings.Join(invalid, "; "), "danger")
+	}
+
+	return plan, ""
+}
+
+func wizardSaveFinalizeStep(c *gin.Context, state wizardState) string {
+	plan, alert := wizardPlanFinalize(c, state)
+	if len(plan) == 0 {
+		return alert
+	}
+
+	backup, err := config.BackupConfig()
+	if err != nil {
+		return renderAlert("Nothing was saved: the backup of config.toml failed: "+err.Error(), "danger")
+	}
+
+	// Deep-copy the slices - GetSettingsMediaAll returns a pointer straight into
+	// the live snapshot, so mutating it in place would race with readers.
+	live := config.GetSettingsMediaAll()
+	mc := config.MediaConfig{
+		Movies:     append([]config.MediaTypeConfig(nil), live.Movies...),
+		Series:     append([]config.MediaTypeConfig(nil), live.Series...),
+		Books:      append([]config.MediaTypeConfig(nil), live.Books...),
+		AudioBooks: append([]config.MediaTypeConfig(nil), live.AudioBooks...),
+		Music:      append([]config.MediaTypeConfig(nil), live.Music...),
+	}
+
+	created := make([]string, 0, len(plan))
+
+	for _, p := range plan {
+		for _, e := range []config.Conf{
+			{Name: "scheduler_" + p.scheduler.Name, Data: p.scheduler},
+			{Name: "regex_" + p.regex.Name, Data: p.regex},
+			{Name: "quality_" + p.quality.Name, Data: p.quality},
+		} {
+			if err := config.UpdateCfgEntry(e); err != nil {
+				return renderAlert("Failed to save "+e.Name+": "+err.Error()+". The previous configuration is in "+backup+".", "danger")
+			}
+		}
+
+		*p.def.target(&mc) = append(*p.def.target(&mc), p.media)
+		created = append(created, p.media.Name)
 	}
 
 	if err := config.UpdateCfgEntryAny(&mc); err != nil {
-		return renderAlert("Failed to save media groups: "+err.Error(), "danger")
+		return renderAlert("Failed to save media groups: "+err.Error()+". The previous configuration is in "+backup+".", "danger")
 	}
 
 	wizardEnableScheduler()
 	scheduler.Reload()
 
 	return renderAlert(
-		"Media group(s) saved: "+strings.Join(
-			created,
-			", ",
-		)+". Schedules and download clients have been updated - no restart needed.",
+		"Media group(s) saved: "+strings.Join(created, ", ")+
+			". Schedules and download clients have been updated - no restart needed. The previous configuration was backed up to "+backup+".",
 		"success",
 	)
+}
+
+// HandleWizardReview shows what the Finalize step would write, without
+// writing (/admin/wizard/review).
+func HandleWizardReview(c *gin.Context) {
+	_ = c.Request.ParseForm()
+	state := readWizardState(c)
+
+	c.Header("Content-Type", "text/html")
+
+	plan, alert := wizardPlanFinalize(c, state)
+	if len(plan) == 0 {
+		c.String(http.StatusOK, alert)
+		return
+	}
+
+	c.String(http.StatusOK, renderComponentToString(renderWizardReview(plan, getCSRFToken(c))))
+}
+
+func renderWizardReview(plan []wizardPlannedGroup, csrfToken string) gomponents.Node {
+	pathOf := func(name string) string {
+		if p := config.GetSettingsPath(name); p != nil {
+			return p.Path
+		}
+
+		return name + " (not found)"
+	}
+	orNone := func(v, none string) string {
+		if v == "" {
+			return none
+		}
+
+		return v
+	}
+
+	cards := make([]gomponents.Node, 0, len(plan))
+
+	for _, p := range plan {
+		qi := p.quality.Indexer[0]
+		item := func(label string, value ...gomponents.Node) gomponents.Node {
+			return html.Li(html.Class("mb-1"), html.Strong(gomponents.Text(label+": ")), gomponents.Group(value))
+		}
+		code := func(v string) gomponents.Node { return html.Code(gomponents.Text(v)) }
+
+		library, imp := "not set", "not set"
+		if len(p.media.Data) > 0 {
+			library = pathOf(p.media.Data[0].TemplatePath)
+		}
+
+		if len(p.media.DataImport) > 0 {
+			imp = pathOf(p.media.DataImport[0].TemplatePath)
+		}
+
+		sched := p.settings.schedule
+		lists := make([]string, 0, len(p.media.Lists))
+		for _, l := range p.media.Lists {
+			lists = append(lists, l.TemplateList)
+		}
+
+		notify := make([]string, 0, len(p.media.Notification))
+		for _, n := range p.media.Notification {
+			notify = append(notify, n.MapNotification+" ("+n.Event+")")
+		}
+
+		cards = append(cards, html.Div(html.Class("border rounded p-3 mb-3"),
+			html.H6(gomponents.Text(p.def.label+" group "+p.media.Name)),
+			html.Ul(html.Class("small mb-0 ps-3"),
+				item("Folders", gomponents.Text("library "), code(library), gomponents.Text(", downloads/import "), code(imp)),
+				item("Naming", code(p.media.Naming)),
+				item("Quality profile "+p.quality.Name,
+					gomponents.Text("indexer "+orNone(qi.TemplateIndexer, "none yet")+" in categories "+orNone(qi.CategoriesIndexer, "all")+
+						"; download client "+orNone(qi.TemplateDownloader, "none yet")+" with category "+orNone(qi.CategoryDownloader, "none"))),
+				item("Release filter "+p.regex.Name,
+					gomponents.Textf("%d required, %d rejected pattern(s)", len(p.regex.Required), len(p.regex.Rejected))),
+				item("Schedule "+p.scheduler.Name,
+					gomponents.Text("new releases "+orNone(sched.RSS, "off")+", missing "+orNone(sched.Missing, "off")+
+						", upgrades "+orNone(sched.Upgrade, "off")+", library scan "+orNone(sched.Scan, "off"))),
+				item("Lists", gomponents.Text(orNone(strings.Join(lists, ", "), "none"))),
+				item("Notifications", gomponents.Text(orNone(strings.Join(notify, ", "), "none"))),
+				item("Options", gomponents.Textf("organize into the library, search batches %d missing / %d upgrades, metadata language %s",
+					p.media.SearchmissingIncremental, p.media.SearchupgradeIncremental, orNone(p.media.MetadataLanguage, "default"))),
+			)))
+	}
+
+	return html.Div(html.Class("card border-primary mt-3"), html.Div(html.Class("card-body"),
+		html.H5(html.Class("card-title"), gomponents.Text("Review")),
+		html.P(html.Class("small text-muted"), gomponents.Text(
+			"This is what will be written. config.toml is copied to the backup folder first. Change anything above and Review again, or write it.")),
+		gomponents.Group(cards),
+		html.Button(
+			html.Class("btn btn-primary me-2"),
+			html.Type("button"),
+			html.I(html.Class("fa-solid fa-floppy-disk me-1")),
+			gomponents.Text("Write configuration"),
+			hx.Target("#wizard-step-content"),
+			hx.Swap("innerHTML"),
+			hx.Post(fmt.Sprintf("/api/admin/wizard/step/%d", wizStepFinalize)),
+			hx.Include("#wizardStepForm, #wizardCarry"),
+			hx.Headers(wizardCSRFHeader(csrfToken)),
+		),
+	))
 }
 
 // wizardEnableScheduler flips General.SchedulerDisabled off if it's still the
@@ -1402,9 +1586,9 @@ func wizardEnableScheduler() {
 	_ = config.UpdateCfgEntryAny(&updated)
 }
 
-// ---- Step 7: Finish ----
+// ---- Finish step ----
 
-func renderWizardStepFinish() gomponents.Node {
+func renderWizardStepFinish(state wizardState, csrfToken string) gomponents.Node {
 	paths := config.GetSettingsPathAll()
 	lists := config.GetSettingsListAll()
 	media := config.GetSettingsMediaAll()
@@ -1428,7 +1612,32 @@ func renderWizardStepFinish() gomponents.Node {
 		),
 	}
 
-	body = append(body, html.Div(
+	// The quality profiles this run created: their priorities can be tuned
+	// right away in the priority editor.
+	var profiles []gomponents.Node
+
+	for _, d := range wizardEnabledGroups(state) {
+		name := state.Groups[d.key].Name + "-Quality"
+		if _, ok := config.GetSettingsQualityOk(name); !ok {
+			continue
+		}
+
+		profiles = append(profiles, html.Li(html.Class("list-group-item d-flex align-items-center gap-2"),
+			html.Span(html.Class("flex-grow-1"), gomponents.Text(name)),
+			html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-primary"),
+				gomponents.Attr("onclick", "openPriorityEditor("+jsString(name)+")"),
+				html.I(html.Class("fa-solid fa-arrow-down-wide-short me-1")), gomponents.Text("Priority editor"))))
+	}
+
+	if len(profiles) > 0 {
+		body = append(body,
+			html.H6(html.Class("mt-3"), gomponents.Text("Quality priorities")),
+			html.P(html.Class("small text-muted mb-2"), gomponents.Text(
+				"Which release wins when several are found: drag resolutions, sources, codecs and audio into the order you prefer.")),
+			html.Ul(html.Class("list-group mb-2"), gomponents.Group(profiles)))
+	}
+
+	body = append(body, renderWizardNextSteps(state, csrfToken), html.Div(
 		html.Class("mt-3"),
 		html.A(
 			html.Class("btn btn-primary me-2"),

@@ -357,7 +357,10 @@ func TestInputnotifier(parsestring string) (string, error) {
 	return outstr, err
 }
 
-func TestParsertype(parsestring string) (string, error) {
+// TestParsertype renders a naming template with sample data. mediaType
+// ("movie", "series", "music", "book", "audiobook") picks sample values for the
+// generic Title/Track fields, which each media type fills differently.
+func TestParsertype(parsestring, mediaType string) (string, error) {
 	forparser := parsertype{
 		Dbmovie: database.Dbmovie{
 			Title:            "Inception",
@@ -492,6 +495,23 @@ func TestParsertype(parsestring string) (string, error) {
 		Identifier:         "S01E01",
 		Episodes:           []int{1},
 	}
+
+	switch mediaType {
+	case "movie":
+		forparser.Title = "Inception"
+		forparser.TitleSource = "Inception.2010.1080p.BluRay.x264-SPARKS"
+		forparser.Identifier = ""
+	case "music":
+		forparser.Title = "Time"
+		forparser.TitleSource = ""
+	case "audiobook":
+		forparser.Title = "An Unexpected Party"
+		forparser.Track = 1
+		forparser.TitleSource = ""
+	case "book":
+		forparser.TitleSource = ""
+	}
+
 	_, outstr, err := logger.ParseStringTemplate(parsestring, &forparser)
 
 	return outstr, err
@@ -878,16 +898,23 @@ func (s *Organizer) languageOrNameAllowed(m *database.ParseInfo, names []string)
 
 // validateAudiobookLanguage checks the spoken language of a matched audiobook
 // against the target path's allowed_languages, as validateLanguage does for a
-// video file: only with delete_wrong_language, and with detect_audio_language
-// Whisper listens when the files carry no language tag
-// (parser.DetectBookLanguages). A book in a wrong language has its audio
-// files deleted and returns errWrongLanguage; the rest of the folder then goes
-// to move_unprocessed as wrong_language. Unlike a video file, a book whose
+// video file, with detect_audio_language letting Whisper listen when the
+// files carry no language tag (parser.DetectBookLanguages). It runs with
+// delete_wrong_language, or without it when the folder can go to
+// move_unprocessed (moveUnprocessed). A book in a wrong language returns
+// errWrongLanguage, so the folder goes to move_unprocessed as wrong_language;
+// with delete_wrong_language its audio files are deleted first, otherwise the
+// whole book is moved there for a manual check. Unlike a video file, a book whose
 // language stays unknown passes: audio files rarely carry a language tag, so
 // counting unknown as wrong would delete every book whenever Whisper is
 // unavailable or unsure.
-func (s *Organizer) validateAudiobookLanguage(ctx context.Context, album *parser_v2.AlbumInfo) error {
-	if !s.deletewronglanguage || s.targetpathCfg.AllowedLanguagesLen == 0 || len(album.Tracks) == 0 {
+func (s *Organizer) validateAudiobookLanguage(
+	ctx context.Context,
+	album *parser_v2.AlbumInfo,
+	moveUnprocessed bool,
+) error {
+	if (!s.deletewronglanguage && !moveUnprocessed) ||
+		s.targetpathCfg.AllowedLanguagesLen == 0 || len(album.Tracks) == 0 {
 		return nil
 	}
 
@@ -918,12 +945,14 @@ func (s *Organizer) validateAudiobookLanguage(ctx context.Context, album *parser
 		return nil
 	}
 
-	for i := range files {
-		if _, err := scanner.RemoveFile(files[i]); err != nil {
-			logger.Logtype("error", 1).
-				Str(logger.StrFile, files[i]).
-				Err(err).
-				Msg("failed to delete wrong language audiobook file")
+	if s.deletewronglanguage {
+		for i := range files {
+			if _, err := scanner.RemoveFile(files[i]); err != nil {
+				logger.Logtype("error", 1).
+					Str(logger.StrFile, files[i]).
+					Err(err).
+					Msg("failed to delete wrong language audiobook file")
+			}
 		}
 	}
 
@@ -932,6 +961,7 @@ func (s *Organizer) validateAudiobookLanguage(ctx context.Context, album *parser
 		Str(logger.StrFound, languages[0]).
 		Str(logger.StrWanted, s.targetpathCfg.AllowedLanguages[0]).
 		Int("files", len(files)).
+		Bool("deleted", s.deletewronglanguage).
 		Msg("wrong language")
 
 	return errWrongLanguage
@@ -1883,7 +1913,7 @@ func (s *Organizer) Organize(
 				&m.Height, &m.Width,
 				&fileSize, &m.Runtime, &bitrate, &languages,
 			)
-			database.ExecN(updateQuery, reached, m.Episodes[idx].Num1)
+			database.ExecN(updateQuery, &reached, &m.Episodes[idx].Num1)
 		}
 
 	case config.MediaTypeBook:
@@ -2527,7 +2557,7 @@ func (s *Organizer) walkorganizefolder(
 
 	var err error
 	if s.manualID != 0 {
-		_, err = forceMediaIDs(m, cfgp, s.manualID)
+		_, err = forceMediaIDs(m, cfgp, &s.manualID)
 	} else {
 		err = parser.GetDBIDs(m, cfgp, true, addFound)
 	}
@@ -3138,7 +3168,7 @@ func PreviewOrganizeFile(
 	defer m.Close()
 
 	if s.manualID != 0 {
-		if _, err := forceMediaIDs(m, cfgp, s.manualID); err != nil {
+		if _, err := forceMediaIDs(m, cfgp, &s.manualID); err != nil {
 			return nil, err
 		}
 	} else if err := parser.GetDBIDs(m, cfgp, true, false); err != nil {

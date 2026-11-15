@@ -133,7 +133,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbseries WHERE seriename = ? LIMIT 1",
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 
 	if existingID > 0 {
@@ -153,7 +153,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 		INSERT INTO dbseries (
 			seriename, created_at, updated_at
 		) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
@@ -241,8 +241,21 @@ func (s *Scraper) buildURL(page int) string {
 //   - []SceneRelease: Array of scene releases
 //   - error: Any errors during fetch
 func (s *Scraper) fetchPage(ctx context.Context, page int) ([]SceneRelease, error) {
-	apiURL := s.buildURL(page)
+	data, err := s.get(ctx, s.buildURL(page))
+	if err != nil {
+		return nil, fmt.Errorf("page %d: %w", page, err)
+	}
 
+	var apiResp APIResponse
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return apiResp.Result, nil
+}
+
+// get fetches one API URL with the instance token.
+func (s *Scraper) get(ctx context.Context, apiURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -255,12 +268,12 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]SceneRelease, erro
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch page %d: %w", page, err)
+		return nil, fmt.Errorf("failed to fetch: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d for page %d", resp.StatusCode, page)
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
 	data, readErr := io.ReadAll(resp.Body)
@@ -268,12 +281,76 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]SceneRelease, erro
 		return nil, fmt.Errorf("failed to read response: %w", readErr)
 	}
 
-	var apiResp APIResponse
-	if err := json.Unmarshal(data, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	return data, nil
+}
+
+// plotBackfillBatch is how many episodes without a plot one run looks up.
+// Runs only scrape the newest page, so episodes created before descriptions
+// were saved are otherwise never revisited. One request per release, so the
+// batch is small.
+const plotBackfillBatch = 20
+
+// releaseURL is the API URL of one release.
+func releaseURL(id string) string {
+	return "https://site-api.project1service.com/v2/releases/" + url.PathEscape(id)
+}
+
+// backfillPlots fills the overview of up to plotBackfillBatch episodes of
+// this series that have none, fetching their releases by the stored
+// scraper_id. Failures are logged; they never fail the run.
+func (s *Scraper) backfillPlots(ctx context.Context) {
+	ids := database.GetrowsN[string](false, plotBackfillBatch,
+		`SELECT scraper_id FROM dbserie_episodes
+		WHERE dbserie_id = ? AND COALESCE(overview, '') = '' AND COALESCE(scraper_id, '') <> ''
+		ORDER BY id DESC LIMIT `+strconv.Itoa(plotBackfillBatch), &s.dbserieID)
+
+	filled := 0
+
+	for i, id := range ids {
+		if _, err := strconv.Atoi(id); err != nil {
+			continue
+		}
+
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+		}
+
+		data, err := s.get(ctx, releaseURL(id))
+		if err != nil {
+			logger.Logtype(logger.StatusWarning, 0).Err(err).Str("site", s.config.SiteName).Str("release", id).
+				Msg("Plot backfill failed")
+
+			return
+		}
+
+		var single struct {
+			Result SceneRelease `json:"result"`
+		}
+
+		if json.Unmarshal(data, &single) != nil || single.Result.Description == "" {
+			continue
+		}
+
+		if database.ExecNErr(
+			`UPDATE dbserie_episodes SET overview = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE dbserie_id = ? AND scraper_id = ? AND COALESCE(overview, '') = ''`,
+			&single.Result.Description, &s.dbserieID, &id,
+		) == nil {
+			filled++
+		}
 	}
 
-	return apiResp.Result, nil
+	if len(ids) > 0 {
+		logger.Logtype(logger.StatusInfo, 0).
+			Str("site", s.config.SiteName).
+			Int("looked_up", len(ids)).
+			Int("filled", filled).
+			Msg("Plot backfill")
+	}
 }
 
 // cleanTitle cleans the title for URL generation.
@@ -363,24 +440,25 @@ func (s *Scraper) createEpisode(_ context.Context, release *SceneRelease) error 
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbserie_episodes WHERE dbserie_id = ? AND identifier = ? AND title = ? LIMIT 1",
-		s.dbserieID,
-		identifier,
-		release.Title,
+		&s.dbserieID,
+		&identifier,
+		&release.Title,
 	)
 
 	if existingID > 0 {
 		// Episode exists, update it. Backfill scraper fields only when empty.
 		err := database.ExecNErr(`
 			UPDATE dbserie_episodes SET
-				overview = ?,
+				overview = CASE WHEN ? <> '' THEN ? ELSE overview END,
 				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
 				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL THEN ? ELSE scraper_url END,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
-			episode.Overview,
-			episode.ScraperID,
-			episode.ScraperURL,
-			existingID,
+			&episode.Overview,
+			&episode.Overview,
+			&episode.ScraperID,
+			&episode.ScraperURL,
+			&existingID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update episode '%s': %w", release.Title, err)
@@ -396,13 +474,13 @@ func (s *Scraper) createEpisode(_ context.Context, release *SceneRelease) error 
 			INSERT INTO dbserie_episodes (
 				identifier, title, first_aired, dbserie_id, overview, scraper_id, scraper_url, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-			episode.Identifier,
-			episode.Title,
-			episode.FirstAired,
-			episode.DbserieID,
-			episode.Overview,
-			episode.ScraperID,
-			episode.ScraperURL,
+			&episode.Identifier,
+			&episode.Title,
+			&episode.FirstAired,
+			&episode.DbserieID,
+			&episode.Overview,
+			&episode.ScraperID,
+			&episode.ScraperURL,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert episode '%s': %w", release.Title, err)
@@ -491,6 +569,8 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			}
 		}
 	}
+
+	s.backfillPlots(ctx)
 
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("site", s.config.SiteName).

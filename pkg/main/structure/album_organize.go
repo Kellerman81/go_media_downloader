@@ -618,7 +618,7 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	}
 
 	if cfgp.IsType == config.MediaTypeAudiobook {
-		if err := s.validateAudiobookLanguage(ctx, album); err != nil {
+		if err := s.validateAudiobookLanguage(ctx, album, data.MoveUnprocessed != ""); err != nil {
 			um := database.ParseInfo{TempTitle: folder}
 			um.AddUnmatched(cfgp, &logger.StrStructure, err)
 
@@ -642,13 +642,13 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	case config.MediaTypeAudiobook:
 		database.GetdatarowArgs(
 			"SELECT listname, rootpath FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
-			album.DatabaseID,
+			&album.DatabaseID,
 			&listname, &rootpath)
 
 	case config.MediaTypeMusic:
 		database.GetdatarowArgs(
 			"SELECT listname, rootpath FROM albums WHERE dbalbum_id = ? LIMIT 1",
-			album.DatabaseID,
+			&album.DatabaseID,
 			&listname, &rootpath)
 	}
 
@@ -695,7 +695,7 @@ func (s *Organizer) organizeAlbumFolderViaAPI(
 	// Step 3: Only replace what is already in the library when the new files
 	// are an upgrade. Nothing is touched yet - tagging comes later, and old
 	// files are only retired after the new ones are in place.
-	oldFiles := oldAlbumFiles(cfgp.IsType, album.DatabaseID)
+	oldFiles := oldAlbumFiles(cfgp.IsType, &album.DatabaseID)
 	if !albumUpgradeCheck(cfgp, listid, album, oldFiles).Allowed {
 		logger.Logtype("info", 1).
 			Str("folder", folder).
@@ -900,7 +900,7 @@ func (s *Organizer) organizeEpisodeFile(
 	var listname, rootpath string
 	database.GetdatarowArgs(
 		"SELECT listname, rootpath FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
-		album.DatabaseID,
+		&album.DatabaseID,
 		&listname, &rootpath)
 
 	listid := cfgp.GetMediaListsEntryListID(listname)
@@ -923,7 +923,7 @@ func (s *Organizer) organizeEpisodeFile(
 	}
 
 	// Only replace existing library files with an upgrade.
-	oldFiles := oldAlbumFiles(cfgp.IsType, album.DatabaseID)
+	oldFiles := oldAlbumFiles(cfgp.IsType, &album.DatabaseID)
 	if !albumUpgradeCheck(cfgp, listid, album, oldFiles).Allowed {
 		logger.Logtype("info", 1).
 			Str("file", file).
@@ -1280,13 +1280,14 @@ func unlistedEntry(
 	cfgp *config.MediaTypeConfig,
 	dataCfg *config.MediaDataConfig,
 	dbid *uint,
-) (listid int, listEntryID uint) {
-	listid = -1
+) (int, uint) {
+	listid := -1
 	if dataCfg != nil && dataCfg.AddFound {
 		listid = cfgp.GetMediaListsEntryListID(dataCfg.AddFoundList)
 	}
 
 	table := "albums"
+	var listEntryID uint
 
 	switch cfgp.IsType {
 	case config.MediaTypeMusic:
@@ -1326,8 +1327,8 @@ func albumListEntryID(cfgp *config.MediaTypeConfig, listid int, dbid *uint) uint
 // oldAlbumFiles returns the files the database already holds for the album /
 // audiobook (dbalbum_id / dbaudiobook_id, across all lists), with the columns
 // the audio priority scorer needs.
-func oldAlbumFiles(mediaType, dbid uint) []database.AudioFilePrio {
-	if dbid == 0 {
+func oldAlbumFiles(mediaType uint, dbid *uint) []database.AudioFilePrio {
+	if dbid == nil || *dbid == 0 {
 		return nil
 	}
 
@@ -2073,17 +2074,17 @@ func addAudiobookFilesToDatabase(
 		// Insert file record (audiobookListID = audiobooks.id, album.DatabaseID = dbaudiobook_id)
 		if err := database.InsertAudiobookFile(
 			audiobookListID,
-			album.Tracks[i].Filepath,
-			album.Tracks[i].Filename,
-			album.Tracks[i].Extension,
-			album.Tracks[i].Format,
-			album.Tracks[i].QualityProfile,
-			album.Tracks[i].FileSize,
-			album.Tracks[i].Bitrate,
-			album.Tracks[i].RuntimeMS,
-			album.Tracks[i].TrackNumber,
-			album.Tracks[i].DiscNumber,
-			album.DatabaseID,
+			&album.Tracks[i].Filepath,
+			&album.Tracks[i].Filename,
+			&album.Tracks[i].Extension,
+			&album.Tracks[i].Format,
+			&album.Tracks[i].QualityProfile,
+			&album.Tracks[i].FileSize,
+			&album.Tracks[i].Bitrate,
+			&album.Tracks[i].RuntimeMS,
+			&album.Tracks[i].TrackNumber,
+			&album.Tracks[i].DiscNumber,
+			&album.DatabaseID,
 		); err != nil {
 			logger.Logtype("error", 1).
 				Str("file", album.Tracks[i].Filepath).
@@ -2584,12 +2585,12 @@ func (s *Organizer) ForceMatchAlbumFolder(
 	case config.MediaTypeAudiobook:
 		database.GetdatarowArgs(
 			"SELECT listname, rootpath FROM audiobooks WHERE dbaudiobook_id = ? LIMIT 1",
-			album.DatabaseID, &listname, &rootpath)
+			&album.DatabaseID, &listname, &rootpath)
 
 	case config.MediaTypeMusic:
 		database.GetdatarowArgs(
 			"SELECT listname, rootpath FROM albums WHERE dbalbum_id = ? LIMIT 1",
-			album.DatabaseID, &listname, &rootpath)
+			&album.DatabaseID, &listname, &rootpath)
 	}
 
 	listid := cfgp.GetMediaListsEntryListID(listname)
@@ -2658,7 +2659,7 @@ func (s *Organizer) ForceMatchAlbumFolder(
 			Year:         album.Year,
 			Tracks:       make([]AlbumForceMatchTrack, 0, len(album.Tracks)),
 			Upgrade: albumUpgradeCheck(cfgp, checkList, album,
-				oldAlbumFiles(cfgp.IsType, album.DatabaseID)),
+				oldAlbumFiles(cfgp.IsType, &album.DatabaseID)),
 		}
 		for idx, track := range album.Tracks {
 			targetName := ""

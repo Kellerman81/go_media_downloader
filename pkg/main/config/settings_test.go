@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -135,5 +137,27 @@ func TestSettingsRangesAndLists(t *testing.T) {
 
 	if got := (&IndexersConfig{Name: "jazz"}).Getlistbyindexer(); got != nil {
 		t.Errorf("Getlistbyindexer(missing) = %+v", got)
+	}
+}
+
+func TestFfprobeExecutable(t *testing.T) {
+	dir := t.TempDir()
+	prog := filepath.Join(dir, "ffprobe-7")
+
+	if err := os.WriteFile(prog, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	name := "ffprobe"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+
+	for setting, want := range map[string]string{"": name, dir: filepath.Join(dir, name), prog: prog} {
+		useSnapshot(t, &ConfigSnapshot{General: &GeneralConfig{FfprobePath: setting}})
+
+		if got := FfprobeExecutable(); got != want {
+			t.Errorf("%q: got %q, want %q", setting, got, want)
+		}
 	}
 }

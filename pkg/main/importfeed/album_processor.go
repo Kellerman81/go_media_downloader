@@ -1450,7 +1450,7 @@ func matchMusicFolder(
 	// Deferred artist/series discovery from addFound - only runs after track/runtime verification succeeds
 	if addFoundMusicEntry != nil && data.AddFound {
 		discoverAddFoundArtistAlbums(
-			ctx, album.Title, &artist, album.DatabaseID, cfgp, listid, data, folder,
+			ctx, album.Title, &artist, &album.DatabaseID, cfgp, listid, data, folder,
 		)
 	}
 
@@ -1657,7 +1657,7 @@ func searchAndImportAlternativeRelease(
 						dbID, replaceOk := replaceExistingRelease(
 							ctx,
 							existingCandidates[0].ID,
-							releases[i].MusicBrainzID,
+							&releases[i].MusicBrainzID,
 							cfgp,
 							listid,
 						)
@@ -1990,7 +1990,7 @@ func searchAndImportAlternativeRelease(
 						&slug,
 						&release.ReleaseYear,
 						&release.Label,
-						&fileCount,
+						fileCount,
 						&dzTotalMs,
 						&release.CoverURL,
 						&deezerIDStr,
@@ -2047,7 +2047,7 @@ func searchAndImportAlternativeRelease(
 func replaceExistingRelease(
 	ctx context.Context,
 	existingDBID uint,
-	newMusicBrainzID string,
+	newMusicBrainzID *string,
 	cfgp *config.MediaTypeConfig,
 	listid int,
 ) (uint, bool) {
@@ -2059,7 +2059,7 @@ func replaceExistingRelease(
 	// Update the existing dbalbum's musicbrainz_release_id
 	database.ExecN(
 		"UPDATE dbalbums SET musicbrainz_release_id = ? WHERE id = ?",
-		&newMusicBrainzID,
+		newMusicBrainzID,
 		&existingDBID,
 	)
 
@@ -2073,10 +2073,10 @@ func replaceExistingRelease(
 	// would skip it: with addnew=true it only refreshes freshly inserted rows,
 	// and with addnew=false the UPDATE above has just bumped updated_at via
 	// trigger, so shouldUpdateMetadata would say "recently updated".
-	if !startJobIfAbsent(newMusicBrainzID) {
+	if !startJobIfAbsent(*newMusicBrainzID) {
 		return existingDBID, true
 	}
-	defer endJob(newMusicBrainzID)
+	defer endJob(*newMusicBrainzID)
 
 	var dbalbum database.Dbalbum
 	if err := dbalbum.GetDbalbumByIDP(&existingDBID); err != nil {
@@ -2088,7 +2088,7 @@ func replaceExistingRelease(
 		return existingDBID, true
 	}
 
-	dbalbum.MusicbrainzReleaseID = newMusicBrainzID
+	dbalbum.MusicbrainzReleaseID = *newMusicBrainzID
 	if err := metadata.AlbumGetMetadata(ctx, &dbalbum, true); err != nil {
 		logger.Logtype("debug", 0).
 			Uint("existingDBID", existingDBID).
@@ -2099,7 +2099,7 @@ func replaceExistingRelease(
 	updateDbalbum(&dbalbum)
 
 	if listid >= 0 && listid < len(cfgp.Lists) {
-		if err := CheckaddAlbumEntry(&existingDBID, cfgp, &cfgp.Lists[listid], newMusicBrainzID); err != nil {
+		if err := CheckaddAlbumEntry(&existingDBID, cfgp, &cfgp.Lists[listid], *newMusicBrainzID); err != nil {
 			logger.Logtype("debug", 0).
 				Uint("existingDBID", existingDBID).
 				Err(err).
@@ -2121,7 +2121,7 @@ func replaceExistingAudiobookRelease(
 	listid int,
 ) (uint, bool) {
 	// Update the ASIN on the existing row
-	database.ExecN("UPDATE dbaudiobooks SET asin = ? WHERE id = ?", &newASIN, &existingDBID)
+	database.ExecN("UPDATE dbaudiobooks SET asin = ? WHERE id = ?", newASIN, &existingDBID)
 
 	// Clear child tables so they can be re-populated by the import
 	database.ExecN("DELETE FROM dbaudiobook_chapters WHERE dbaudiobook_id = ?", &existingDBID)

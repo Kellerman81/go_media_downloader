@@ -2,6 +2,7 @@ package providers_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func loadPushoverConfig(t *testing.T) (apiToken, userKey string) {
 	// Read config file
 	cfg, err := config.Readconfigtoml()
 	if err != nil {
-		t.Fatalf("Failed to read config.toml: %v", err)
+		t.Skipf("config.toml not available at %s (%v) - skipping test", config.Configfile, err)
 	}
 
 	// Find Pushover notification configuration
@@ -66,6 +67,10 @@ func TestGotifyNotification(t *testing.T) {
 	token := ""
 	useSSL := false
 	// ========================================
+
+	if token == "" {
+		t.Skip("Gotify token not set - edit the parameters above to run this test")
+	}
 
 	config := base.ClientConfig{
 		Timeout:                 30 * time.Second,
@@ -248,6 +253,10 @@ func TestAppriseNotification(t *testing.T) {
 	}
 	// ========================================
 
+	if slices.Contains(urls, "pover://user@key") {
+		t.Skip("Apprise urls still hold the placeholder - edit the parameters above to run this test")
+	}
+
 	provider := apprise.NewProvider(host, port, token, urls, useSSL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -293,6 +302,10 @@ func TestSendmailNotification(t *testing.T) {
 	username := "@gmail.com"
 	password := "" // For Gmail, use an app-specific password
 	// ========================================
+
+	if password == "" {
+		t.Skip("SMTP password not set - edit the parameters above to run this test")
+	}
 
 	provider := sendmail.NewProvider(smtpHost, smtpPort, from, to, username, password)
 

@@ -6,6 +6,7 @@ Main goal of project: Support multiple configurations for Series/Movies in one. 
 Inspirations: Radarr/Sonarr and Flexget and beets
 
 ## Table of Contents
+* [Screenshots](#screenshots)
 * [Features](#features)
   * [Supported](#supported)
     * [Feed Sources](#feed-sources)
@@ -23,6 +24,17 @@ Inspirations: Radarr/Sonarr and Flexget and beets
 * [Examples](#examples)
 * [History](#history)
 * [References](#references)
+
+## Screenshots
+
+The web interface with demo data (more in the [Wiki](https://github.com/Kellerman81/go_media_downloader/wiki/Web)).
+
+| | |
+|---|---|
+| ![Library](docs/screenshots/library-movies.png) | ![Player](docs/screenshots/library-music-player.png) |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Calendar](docs/screenshots/calendar.png) |
+| ![Series details](docs/screenshots/library-series-detail.png) | ![Requests](docs/screenshots/requests.png) |
+| ![Quality priorities](docs/screenshots/quality-priorities.png) | ![Setup wizard](docs/screenshots/setup-wizard.png) |
 
 ## Features
 
@@ -210,7 +222,7 @@ Swap Memory: Default ~300-600MB - on a file move action the swap memory will gro
 - it will first build the imdb cache and then start importing your feeds, get metadata and scan/match the data - depending on your media repository size it might take several hours
 - after the initial scan is finished the API and the scheduler will be started
 - the scheduler will then scan for new releases and new/missing data in your folders and refresh your feeds
-- You have to configure the templates and Media Groups - also if you want to use trakt, tmdb or omdb you have to get API Keys from them and enter them in the config
+- You have to configure the templates and Media Groups - also if you want to use trakt, tmdb or omdb you have to get API Keys from them and enter them in the config (note: Trakt currently requires a paid account (Trakt VIP) for API access)
 
 Find the API Documentation after start at:
 http://{server}:{port}/swagger/index.html
@@ -220,7 +232,8 @@ https://go-media-downloader.readme.io/
 
 ## After first Start - Trakt Authorize
 
-- (This part is optional and only needed if you want to get private trakt lists if you have a premium account)
+- (This part is optional and only needed for private trakt lists)
+- Note: Trakt currently requires a paid account (Trakt VIP) for API access - every Trakt feature (lists, trending/popular/anticipated, metadata) needs one
 - Create a Application within Trakt: https://trakt.tv/oauth/applications - redirect url needs to be: http://localhost:9090
 - Write down ClientID and Secret
 - Put ClientID and Secret into the config.toml
@@ -274,7 +287,6 @@ Music
 - [Deezer](https://developers.deezer.com/api)
 - [TheAudioDB](https://www.theaudiodb.com/api.php)
 - [iTunes](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI)
-- [Spotify](https://developer.spotify.com/documentation/web-api)
 - [Lyrics.ovh](https://lyrics.ovh/)
 - [LRCLib](https://lrclib.net/)
 

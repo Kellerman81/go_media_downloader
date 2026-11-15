@@ -21,18 +21,18 @@ jobs:
       GITHASH: ${{ steps.version.outputs.GITHASH }}
       DATE: ${{ steps.version.outputs.DATE }}
 
-    # Builds inside the Docker builder image so the binaries link against the
-    # same glibc as the runtime image (bookworm), which then uses them as-is.
-    container: golang:1.26.10-bookworm
+    # Same Go image as the Dockerfile.trixie builder. The binaries are pure Go
+    # (CGO_ENABLED=0 in the Makefile), so they don't depend on its C library.
+    container: golang:trixie
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install cross-compilation tools
+    - name: Install packaging tools
       run: |
         apt-get update
-        apt-get install -y zip gcc-aarch64-linux-gnu gcc-mingw-w64 gcc-arm-linux-gnueabihf
+        apt-get install -y zip
 
     # Only a pushed tag is a release version; everything else is a dev build.
     # (git describe would name it after the previous tag, e.g. v1.4.0-12-gabc.)

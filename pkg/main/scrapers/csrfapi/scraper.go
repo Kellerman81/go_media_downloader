@@ -203,7 +203,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbseries WHERE seriename = ? LIMIT 1",
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 
 	if existingID > 0 {
@@ -223,7 +223,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 		INSERT INTO dbseries (
 			seriename, created_at, updated_at
 		) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
@@ -594,8 +594,8 @@ func (s *Scraper) createEpisode(
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbserie_episodes WHERE dbserie_id = ? AND identifier = ? AND title = ? LIMIT 1",
-		s.dbserieID,
-		identifier,
+		&s.dbserieID,
+		&identifier,
 		title,
 	)
 
@@ -603,16 +603,17 @@ func (s *Scraper) createEpisode(
 		// Episode exists, update it. Backfill scraper fields only when empty.
 		err := database.ExecNErr(`
 			UPDATE dbserie_episodes
-			SET first_aired = ?, overview = ?,
+			SET first_aired = ?, overview = CASE WHEN ? <> '' THEN ? ELSE overview END,
 				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
 				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL OR scraper_url NOT LIKE 'http%' THEN ? ELSE scraper_url END,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
-			episode.FirstAired,
-			episode.Overview,
-			episode.ScraperID,
-			episode.ScraperURL,
-			existingID,
+			&episode.FirstAired,
+			&episode.Overview,
+			&episode.Overview,
+			&episode.ScraperID,
+			&episode.ScraperURL,
+			&existingID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update episode: %w: %w", errDBWrite, err)
@@ -632,13 +633,13 @@ func (s *Scraper) createEpisode(
 		INSERT INTO dbserie_episodes (
 			dbserie_id, identifier, title, first_aired, overview, scraper_id, scraper_url, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		episode.DbserieID,
-		episode.Identifier,
-		episode.Title,
-		episode.FirstAired,
-		episode.Overview,
-		episode.ScraperID,
-		episode.ScraperURL,
+		&episode.DbserieID,
+		&episode.Identifier,
+		&episode.Title,
+		&episode.FirstAired,
+		&episode.Overview,
+		&episode.ScraperID,
+		&episode.ScraperURL,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create episode: %w: %w", errDBWrite, err)

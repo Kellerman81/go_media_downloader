@@ -17,7 +17,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scanner"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // handler implements mediatype.Handler for music/albums.
@@ -85,9 +84,9 @@ var (
 		"DBQualityMediaByID":       "select quality_profile from albums where id = ?",
 		"SearchGenSelect":          "select albums.quality_profile, albums.id ",
 		"SearchGenTable":           " from albums inner join dbalbums on dbalbums.id=albums.dbalbum_id where ",
-		"SearchGenMissing":         "dbalbums.year != 0 and albums.missing = 1 and albums.listname in (?",
+		"SearchGenMissing":         "dbalbums.year != 0 and albums.dont_search = 0 and albums.missing = 1 and albums.listname in (?",
 		"SearchGenMissingEnd":      ")",
-		"SearchGenReached":         "dbalbums.year != 0 and quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenReached":         "dbalbums.year != 0 and albums.dont_search = 0 and albums.dont_upgrade = 0 and quality_reached = 0 and missing = 0 and listname in (?",
 		"SearchGenLastScan":        " and (albums.lastscan is null or albums.Lastscan < ?)",
 		"SearchGenDate":            " and (dbalbums.release_date < ? or dbalbums.release_date is null)",
 		"SearchGenOrder":           " order by albums.Lastscan asc",
@@ -109,9 +108,9 @@ var (
 		"InsertFileOrganize":       "insert into album_files (location, filename, extension, quality_profile, album_id, dbalbum_id, dbtrack_id) values (?, ?, ?, ?, ?, ?, ?)",
 		"UpdateMissingReached":     "update albums SET missing = 0, quality_reached = ? where id = ?",
 		// Artist-based search queries
-		"SearchArtistsMissing":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.missing = 1 AND a.listname IN (?",
+		"SearchArtistsMissing":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.dont_search = 0 AND a.missing = 1 AND a.listname IN (?",
 		"SearchArtistsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
-		"SearchArtistsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.missing = 0 AND a.quality_reached = 0 AND a.listname IN (?",
+		"SearchArtistsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbartists da JOIN artists art ON da.id = art.dbartist_id JOIN albums a ON a.artist_id = art.id WHERE art.track_mode != 'none' AND art.dont_search = 0 AND a.dont_search = 0 AND a.dont_upgrade = 0 AND a.missing = 0 AND a.quality_reached = 0 AND a.listname IN (?",
 		"SearchArtistsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
 	}
 )
@@ -472,17 +471,17 @@ func (*handler) SearchConfigByName(
 
 // loadMusicConfig loads music configuration from a TOML file.
 func loadMusicConfig(file string) ([]config.ManualConfig, error) {
-	content, err := os.Open(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
-	defer content.Close()
 
-	var s config.MainManualConfig
+	s, err := config.DecodeManualConfig(data)
+	if err != nil {
+		return nil, err
+	}
 
-	err = toml.NewDecoder(content).Decode(&s)
-
-	return s.Config, err
+	return s.Config, nil
 }
 
 // RecordDownloadHistory records an album download in the album_histories table.
@@ -521,7 +520,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		"Insert into album_histories (title, url, target, indexer, downloaded_at, album_id, dbalbum_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
-		&targetPath,
+		targetPath,
 		&indexerName,
 		&albumID,
 		&dbalbumID,
@@ -715,7 +714,7 @@ func (*handler) FillNamingData(
 	var artistID uint
 	database.GetdatarowArgs(
 		"select dbartist_id from dbalbum_artists where dbalbum_id = ? order by position limit 1",
-		*dbid,
+		&*dbid,
 		&artistID,
 	)
 
@@ -728,7 +727,7 @@ func (*handler) FillNamingData(
 	var artistCount int
 	database.GetdatarowArgs(
 		"select count() from dbalbum_artists where dbalbum_id = ?",
-		*dbid,
+		&*dbid,
 		&artistCount,
 	)
 
@@ -744,7 +743,7 @@ func (*handler) FillNamingData(
 		maxDisc := database.Getdatarow[uint16](
 			false,
 			"select COALESCE(max(disc_number), 0) from dbtracks where dbalbum_id = ?",
-			*dbid,
+			&*dbid,
 		)
 
 		m.Season = int(maxDisc) // Store total disc count in Season field for template access

@@ -18,7 +18,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scheduler"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
-	"maragu.dev/gomponents/html"
 )
 
 // Constants for common strings and values.
@@ -668,24 +667,6 @@ func fieldNameToUserFriendly(fieldName string) string {
 	}
 
 	return result
-}
-
-// createCommentLines splits comment text into formatted lines.
-func createCommentLines(comment string) []gomponents.Node {
-	var lineNodes []gomponents.Node
-
-	lines := strings.SplitSeq(comment, "\n")
-	for line := range lines {
-		trimmedLine := strings.TrimSpace(line)
-		if trimmedLine != "" {
-			lineNodes = append(lineNodes, html.Div(
-				html.Style("margin-bottom: 0.25rem;"),
-				gomponents.Text(trimmedLine),
-			))
-		}
-	}
-
-	return lineNodes
 }
 
 // Save function (implement according to your storage method).
@@ -1421,20 +1402,23 @@ func (cb *ConfigBuilder) SetIntArray(target *[]int, fieldName string) *ConfigBui
 	return cb
 }
 
+// imdbTitleTypeOptions offers IMDb's title types, in imdbTitleTypes order.
+func imdbTitleTypeOptions() []SelectOption {
+	out := make([]SelectOption, 0, len(imdbTitleTypes))
+	for _, t := range imdbTitleTypes {
+		out = append(out, SelectOption{Value: t.Value, Label: t.Label})
+	}
+
+	return out
+}
+
 func createImdbConfigFields(configv *config.ImdbConfig) []FormFieldDefinition {
 	return []FormFieldDefinition{
 		{
-			Name:  "Indexedtypes",
-			Type:  "selectarray",
-			Value: configv.Indexedtypes,
-			Options: []SelectOption{
-				{Value: "movie", Label: "movie"},
-				{Value: "tvMovie", Label: "tvMovie"},
-				{Value: "tvmovie", Label: "tvmovie"},
-				{Value: "tvSeries", Label: "tvSeries"},
-				{Value: "tvseries", Label: "tvseries"},
-				{Value: "video", Label: "video"},
-			},
+			Name:    "Indexedtypes",
+			Type:    "selectarray",
+			Value:   configv.Indexedtypes,
+			Options: imdbTitleTypeOptions(),
 		},
 		{Name: "Indexedlanguages", Type: "array", Value: configv.Indexedlanguages},
 		{Name: "Indexfull", Type: "checkbox", Value: configv.Indexfull},

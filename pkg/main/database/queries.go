@@ -899,7 +899,9 @@ func GetTableDefaults(table string) QueryParams {
 		q.DefaultColumns = "id,created_at,updated_at,config,list,indexer,last_id"
 		q.DefaultQuery = " where id like ? or config like ? or list like ? or indexer like ?"
 		q.DefaultQueryParamCount = 4
-		q.DefaultOrderBy = " order by id desc"
+		// Rows are updated in place on every RSS run, so the id (creation
+		// order) says nothing about whether a feed is still being read.
+		q.DefaultOrderBy = " order by updated_at desc"
 		q.Object = RSSHistory{}
 	}
 
@@ -913,7 +915,7 @@ func GetAllTableNames() []string {
 	return GetrowsN[string](
 		false,
 		0,
-		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name",
+		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations', 'users') ORDER BY name",
 	)
 }
 

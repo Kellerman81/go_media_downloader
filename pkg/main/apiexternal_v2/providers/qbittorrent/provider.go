@@ -660,3 +660,48 @@ func convertTorrentInfo(qbt *qbtTorrent) *apiexternal_v2.TorrentInfo {
 		Provider:      "qbittorrent",
 	}
 }
+
+// DownloadDir is the folder qBittorrent saves torrents of the category in, as
+// qBittorrent sees it: the category's save path, else the default one.
+func (p *Provider) DownloadDir(ctx context.Context, category string) (string, error) {
+	if err := p.ensureAuthenticated(ctx); err != nil {
+		return "", err
+	}
+
+	if category != "" {
+		resp, err := p.makeRequest(ctx, http.MethodGet, "/torrents/categories")
+		if err != nil {
+			return "", err
+		}
+
+		var cats map[string]struct {
+			SavePath string `json:"savePath"`
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(&cats)
+		resp.Body.Close()
+
+		if err == nil {
+			for name, c := range cats {
+				if strings.EqualFold(name, category) && c.SavePath != "" {
+					return c.SavePath, nil
+				}
+			}
+		}
+	}
+
+	resp, err := p.makeRequest(ctx, http.MethodGet, "/app/preferences")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var prefs struct {
+		SavePath string `json:"save_path"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prefs); err != nil {
+		return "", errors.New(logger.JoinStrings("unexpected qBittorrent preferences: ", err.Error()))
+	}
+
+	return prefs.SavePath, nil
+}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -50,6 +51,64 @@ func buildDatabaseTableSelect() gomponents.Node {
 				`})();`,
 		)),
 	})
+}
+
+// createNavbarFor is the sidebar of an account: the full one for admins
+// (nil: an admin page), else only the pages of its role.
+func createNavbarFor(acc *userAccess, activeConfig, activeDatabase, activeManagement bool) gomponents.Node {
+	if acc == nil || acc.Admin() {
+		return createNavbar(activeConfig, activeDatabase, activeManagement)
+	}
+
+	link := func(href, icon, label string) gomponents.Node {
+		return html.Li(html.Class("sidebar-item"),
+			html.A(html.Class("sidebar-link"), html.Href(href),
+				html.I(html.Class("align-middle fa-solid "+icon)),
+				html.Span(html.Class("align-middle"), gomponents.Text(label))))
+	}
+
+	return html.Nav(html.ID("sidebar"), html.Class("sidebar js-sidebar"), gomponents.Attr("aria-label", "Main navigation"),
+		html.Div(html.Class("sidebar-content js-simplebar"),
+			html.A(html.Class("sidebar-brand"), html.Href("/api/admin/library"),
+				html.Span(html.Class("sidebar-brand-text align-middle"), gomponents.Text("Go Media"))),
+			html.Ul(html.Class("sidebar-nav"),
+				html.Li(html.Class("sidebar-header"), gomponents.Text("Pages")),
+				link("/api/admin/library", "fa-photo-film", "Library"),
+				link("/api/admin/calendar", "fa-calendar-alt", "Calendar"),
+				gomponents.If(acc.CanRequest(), link("/api/admin/metadata-search", "fa-plus", "Add Media")),
+				link("/api/admin/account", "fa-user", "My Account"),
+				link("/api/logout", "fa-right-from-bracket", "Log out"),
+			)))
+}
+
+// requestsBadge is the number of open media requests, when there are any.
+func requestsBadge() gomponents.Node {
+	n := database.CountMediaRequests()
+	if n == 0 {
+		return nil
+	}
+
+	return html.Span(html.Class("badge bg-warning text-dark ms-2"), gomponents.Text(strconv.FormatUint(uint64(n), 10)))
+}
+
+// accountMenu is the top bar's account menu: the name, the own account page
+// and logging out.
+func accountMenu(acc *userAccess) gomponents.Node {
+	name := DefaultUsername
+	if acc != nil && acc.Name != "" {
+		name = acc.Name
+	}
+
+	return html.Div(html.Class("navbar-collapse collapse"),
+		html.Ul(html.Class("navbar-nav navbar-align ms-auto"),
+			html.Li(html.Class("nav-item dropdown"),
+				html.A(html.Class("nav-link dropdown-toggle"), html.Href("#"), html.Data("bs-toggle", "dropdown"),
+					html.I(html.Class("fa-solid fa-user me-1")), gomponents.Text(name)),
+				html.Div(html.Class("dropdown-menu dropdown-menu-end"),
+					html.A(html.Class("dropdown-item"), html.Href("/api/admin/account"),
+						html.I(html.Class("fa-solid fa-key me-2")), gomponents.Text("My Account")),
+					html.A(html.Class("dropdown-item"), html.Href("/api/logout"),
+						html.I(html.Class("fa-solid fa-right-from-bracket me-2")), gomponents.Text("Log out"))))))
 }
 
 func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool) gomponents.Node {
@@ -104,6 +163,18 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 			),
 			html.Ul(html.Class("sidebar-nav "),
 				html.Li(html.Class("sidebar-header"), gomponents.Text("Pages")),
+				html.Li(html.Class("sidebar-item"),
+					html.A(html.Class("sidebar-link"), html.Href("/api/admin/library"),
+						html.I(html.Class("align-middle fa-solid fa-photo-film")),
+						html.Span(html.Class("align-middle"), gomponents.Text("Library")),
+					),
+				),
+				html.Li(html.Class("sidebar-item"),
+					html.A(html.Class("sidebar-link"), html.Href("/api/admin/calendar"),
+						html.I(html.Class("align-middle fa-solid fa-calendar-alt")),
+						html.Span(html.Class("align-middle"), gomponents.Text("Calendar")),
+					),
+				),
 				html.Li(
 					html.Class("sidebar-item"),
 					html.A(
@@ -124,6 +195,15 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Href("/api/admin/wizard"),
 								html.I(html.Class("align-middle fa-solid fa-wand-magic-sparkles")),
 								html.Span(html.Class("align-middle"), gomponents.Text("Setup Wizard")),
+							),
+						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/users"),
+								html.I(html.Class("align-middle fa-solid fa-users")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Users")),
 							),
 						),
 						html.Li(
@@ -295,82 +375,31 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 						html.Li(html.Class("sidebar-item"),
 							html.A(
 								html.Class("sidebar-link"),
+								html.Href("/api/admin/requests"),
+								html.I(html.Class("align-middle fa-solid fa-inbox")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Requests")),
+								requestsBadge(),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
 								html.Href("/api/admin/wanted"),
 								html.I(html.Class("align-middle fa-solid fa-bullseye")),
 								html.Span(
 									html.Class("align-middle"),
 									gomponents.Text("Wanted"),
 								),
-								html.Span(
-									html.Class("badge bg-success ms-1"),
-									html.Style("font-size: 0.6rem;"),
-									gomponents.Text("NEW"),
-								),
 							),
 						),
 						html.Li(html.Class("sidebar-item"),
 							html.A(
 								html.Class("sidebar-link"),
-								html.Href("/api/admin/calendar"),
-								html.I(html.Class("align-middle fa-solid fa-calendar-alt")),
+								html.Href("/api/admin/metadata-search"),
+								html.I(html.Class("align-middle fa-solid fa-plus")),
 								html.Span(
 									html.Class("align-middle"),
-									gomponents.Text("Calendar"),
-								),
-							),
-						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/metadata-search/movies"),
-								html.I(html.Class("align-middle fa-solid fa-film")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Add Movies"),
-								),
-							),
-						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/metadata-search/series"),
-								html.I(html.Class("align-middle fa-solid fa-tv")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Add Series"),
-								),
-							),
-						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/metadata-search/books"),
-								html.I(html.Class("align-middle fa-solid fa-book")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Add Books"),
-								),
-							),
-						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/metadata-search/audiobooks"),
-								html.I(html.Class("align-middle fa-solid fa-headphones")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Add Audiobooks"),
-								),
-							),
-						),
-						html.Li(html.Class("sidebar-item"),
-							html.A(
-								html.Class("sidebar-link"),
-								html.Href("/api/admin/metadata-search/music"),
-								html.I(html.Class("align-middle fa-solid fa-music")),
-								html.Span(
-									html.Class("align-middle"),
-									gomponents.Text("Add Music"),
+									gomponents.Text("Add Media"),
 								),
 							),
 						),
@@ -423,11 +452,6 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 									html.Class("align-middle"),
 									gomponents.Text("Search & Download"),
 								),
-								html.Span(
-									html.Class("badge bg-success ms-1"),
-									html.Style("font-size: 0.6rem;"),
-									gomponents.Text("NEW"),
-								),
 							),
 						),
 						html.Li(html.Class("sidebar-item"),
@@ -461,31 +485,19 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 									html.Class("align-middle"),
 									gomponents.Text("Feed Parser"),
 								),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/matchtester"),
+								html.I(html.Class("align-middle fa-solid fa-flask")),
 								html.Span(
-									html.Class("badge bg-info ms-1"),
-									html.Style("font-size: 0.6rem;"),
-									gomponents.Text("BETA"),
+									html.Class("align-middle"),
+									gomponents.Text("Match Tester"),
 								),
 							),
 						),
-						gomponents.Group(func() []gomponents.Node {
-							links := make([]gomponents.Node, 0, len(mtKinds))
-							for _, k := range mtKinds {
-								links = append(links, html.Li(html.Class("sidebar-item"),
-									html.A(
-										html.Class("sidebar-link"),
-										html.Href("/api/admin/matchtester?kind="+k.Key),
-										html.I(html.Class("align-middle fa-solid "+k.Icon)),
-										html.Span(
-											html.Class("align-middle"),
-											gomponents.Text(k.Title),
-										),
-									),
-								))
-							}
-
-							return links
-						}()),
 						// html.Li(html.Class("sidebar-item"),
 						// 	html.A(html.Class("sidebar-link"), html.Href("/api/admin/folderstructure"),
 						// 		html.Span(html.Class("align-middle"), gomponents.Text("Folder Organizer")),
@@ -634,6 +646,18 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								),
 							),
 						),
+						html.Li(
+							html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/quality-priorities"),
+								html.I(html.Class("align-middle fas fa-arrow-down-wide-short")),
+								html.Span(
+									html.Class("align-middle"),
+									gomponents.Text("Quality Priorities"),
+								),
+							),
+						),
 						html.Li(html.Class("sidebar-item"),
 							html.A(
 								html.Class("sidebar-link"),
@@ -642,11 +666,6 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Span(
 									html.Class("align-middle"),
 									gomponents.Text("Regex Tester"),
-								),
-								html.Span(
-									html.Class("badge bg-info ms-1"),
-									html.Style("font-size: 0.6rem;"),
-									gomponents.Text("NEW"),
 								),
 							),
 						),
@@ -659,11 +678,6 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.Span(
 									html.Class("align-middle"),
 									gomponents.Text("Naming Generator"),
-								),
-								html.Span(
-									html.Class("badge bg-success ms-1"),
-									html.Style("font-size: 0.6rem;"),
-									gomponents.Text("NEW"),
 								),
 							),
 						),
@@ -1098,7 +1112,8 @@ func adminJavaScript() gomponents.Node {
 				style.textContent = '.choices { position: relative; } ' +
 					'.choices[data-type*="select-one"] .choices__inner { cursor: pointer; } ' +
 					'.choices__list--dropdown.is-active { transform: none !important; } ' +
-					'.form-card, .form-cards-grid, .modal-body, .card-body, .edit-form-container, .edit-form-fields, .config-section-enhanced { overflow: visible !important; } ' +
+					// Not in scrollable dialogs: their body must scroll (Library, Calendar).
+					'.form-card, .form-cards-grid, .modal-dialog:not(.modal-dialog-scrollable) .modal-body, .card-body, .edit-form-container, .edit-form-fields, .config-section-enhanced { overflow: visible !important; } ' +
 					'.choices.is-open .choices__list--dropdown { visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; } ' +
 					'.form-group-enhanced .form-check-input-modern:checked + label::after { content: "✓"; position: absolute; right: 10px; color: #28a745; font-weight: bold; } ' +
 					'.form-group-enhanced { position: relative; } ' +
@@ -1414,7 +1429,7 @@ func adminJavaScript() gomponents.Node {
 }
 
 // getDropdownOptionByID retrieves a single dropdown option by ID for preselection.
-func getDropdownOptionByID(tableName, fieldName string, id int) *map[string]any {
+func getDropdownOptionByID(tableName, fieldName string, id *int) *map[string]any {
 	switch tableName {
 	case "dbmovies":
 		if movie, err := database.Structscan[database.Dbmovie](

@@ -402,7 +402,7 @@ func previewMusicBrainz(
 
 	existing := func(id string) func() uint {
 		return func() uint {
-			return database.Getdatarow[uint](false, "SELECT id FROM dbalbums WHERE musicbrainz_release_id = ?", &id)
+			return database.Getdatarow[uint](false, "SELECT id FROM dbalbums WHERE musicbrainz_release_id = ?", id)
 		}
 	}
 
@@ -464,7 +464,7 @@ func previewMusicProvider(
 				return 0
 			}
 
-			return database.Getdatarow[uint](false, "SELECT id FROM dbalbums WHERE "+column+" = ? LIMIT 1", &value)
+			return database.Getdatarow[uint](false, "SELECT id FROM dbalbums WHERE "+column+" = ? LIMIT 1", value)
 		}
 	}
 

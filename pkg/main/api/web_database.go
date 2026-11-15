@@ -20,7 +20,7 @@ func getAdminTableColumns(tableName string) []ColumnInfo {
 	// Try to get column information using string queries
 	const nameQuery = "SELECT name, type FROM pragma_table_info(?)"
 
-	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, &tableName)
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, tableName)
 
 	columnsIn := strings.Split(tableDefault.DefaultColumns, ",")
 
@@ -74,7 +74,7 @@ func getAdminTableColumns(tableName string) []ColumnInfo {
 func getAdminFormColumns(tableName string) []ColumnInfo {
 	// For forms, we only want the actual table columns, not joined columns
 	const nameQuery = "SELECT name, type FROM pragma_table_info(?)"
-	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, &tableName)
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, tableName)
 
 	// Get the struct type for reflection
 	tableDefault := database.GetTableDefaults(tableName)
@@ -525,7 +525,7 @@ func getDescriptiveFieldName(fieldName string) string {
 // getColumnTypes returns a map of column names to their SQLite types for a table.
 func getColumnTypes(tableName string) map[string]string {
 	const nameQuery = "SELECT name, type FROM pragma_table_info(?)"
-	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, &tableName)
+	columnNames := database.GetrowsN[database.DbstaticTwoString](false, 100, nameQuery, tableName)
 
 	columnTypes := make(map[string]string, len(columnNames))
 	for _, col := range columnNames {
@@ -677,7 +677,7 @@ func insertAdminRecord(tableName string, data map[string]any) error {
 	return err
 }
 
-func updateAdminRecord(tableName string, id int, data map[string]any) error {
+func updateAdminRecord(tableName string, id *int, data map[string]any) error {
 	if len(data) == 0 {
 		return errors.New("table name and data are required")
 	}
@@ -718,7 +718,7 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 	}
 
 	// Add id as the where condition
-	values = append(values, id)
+	values = append(values, *id)
 
 	whereClause := "id = ?"
 
@@ -732,7 +732,7 @@ func updateAdminRecord(tableName string, id int, data map[string]any) error {
 // foreign_keys is not enforced on data.db and CleanupOrphans later deletes
 // rows whose parent is gone, so deleting a referenced parent here would
 // silently cascade into its children.
-func adminRecordReferences(tableName string, id int) []string {
+func adminRecordReferences(tableName string, id *int) []string {
 	var refs []string
 
 	for _, child := range database.GetAllTableNames() {
@@ -762,7 +762,7 @@ func adminRecordReferences(tableName string, id int) []string {
 	return refs
 }
 
-func deleteAdminRecord(tableName string, id int) error {
+func deleteAdminRecord(tableName string, id *int) error {
 	if _, err := adminTableColumnTypes(tableName); err != nil {
 		return err
 	}

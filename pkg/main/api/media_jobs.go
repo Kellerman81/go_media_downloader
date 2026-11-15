@@ -469,11 +469,7 @@ func searchListEntry(c *gin.Context, prefix, table string) {
 		return
 	}
 
-	titlesearch := false
-	switch c.Query("searchByTitle") {
-	case "true", "yes", "on":
-		titlesearch = true
-	}
+	titlesearch := queryFlag(c, "searchByTitle", false)
 
 	results := searcher.NewSearcher(media, nil, "", nil)
 	defer results.Close()
@@ -483,7 +479,7 @@ func searchListEntry(c *gin.Context, prefix, table string) {
 		return
 	}
 
-	if strings.EqualFold(c.Query("download"), "true") {
+	if queryFlag(c, "download", false) {
 		results.Download()
 	}
 
@@ -509,4 +505,17 @@ func rssPreviewGroup(c *gin.Context, prefix string) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"accepted": results.Accepted, "denied": results.Denied})
+}
+
+// queryFlag reads an on/off query parameter (true/yes/on/1, false/no/off/0);
+// def when it is missing or not one of those.
+func queryFlag(c *gin.Context, name string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(c.Query(name))) {
+	case "true", "yes", "on", "1":
+		return true
+	case "false", "no", "off", "0":
+		return false
+	}
+
+	return def
 }

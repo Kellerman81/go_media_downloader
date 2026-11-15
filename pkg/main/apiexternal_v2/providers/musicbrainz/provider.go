@@ -57,6 +57,18 @@ func NewProviderWithConfig(cfg base.ClientConfig) *Provider {
 		cfg.RateLimitSeconds = 4
 	}
 
+	// MusicBrainz answers 503 "server is currently busy" when it throttles a
+	// client IP. Without retries every such search failed outright (450 in
+	// production between 2026-11-03 and 2026-11-09). GET requests retry on
+	// 5xx after 2 s, then 4 s.
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 2
+	}
+
+	if cfg.RetryBackoff == 0 {
+		cfg.RetryBackoff = 2 * time.Second
+	}
+
 	// MusicBrainz requires a descriptive User-Agent
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = config.GetSettingsGeneral().UserAgent

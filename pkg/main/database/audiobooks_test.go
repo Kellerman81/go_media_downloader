@@ -45,7 +45,9 @@ func TestAudiobookFileAndRootpathHelpers(t *testing.T) {
 		t.Error("audiobook without files reported as existing")
 	}
 
-	if err := InsertAudiobookFile(100, file, "Mythos.m4b", ".m4b", "m4b", "m4b", 500<<20, 64, 54_000_000, 1, 1, 10); err != nil {
+	name, ext, format := "Mythos.m4b", ".m4b", "m4b"
+	size, runtime, bitrate, track, disc, dbID := int64(500<<20), int64(54_000_000), 64, 1, 1, uint(10)
+	if err := InsertAudiobookFile(100, &file, &name, &ext, &format, &format, &size, &bitrate, &runtime, &track, &disc, &dbID); err != nil {
 		t.Fatal(err)
 	}
 

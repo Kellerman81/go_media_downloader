@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/jmoiron/sqlx"
@@ -177,4 +178,31 @@ func deref(s *string) string {
 	}
 
 	return *s
+}
+
+func TestGetrowsTypeAndGetrowsN(t *testing.T) {
+	db := useMigratedMainDB(t)
+
+	mustExec(t, db, "insert into dbseries (id, seriename) values (7, 'Dark'), (8, 'Lost')")
+	mustExec(t, db, "insert into series (id, listname, dbserie_id) values (1, 'EN', 7), (2, 'EN', 8)")
+
+	rows := GetrowsType(Serie{}, false, 1000, "select * from series order by id")
+	if len(rows) != 2 {
+		t.Fatalf("GetrowsType: %d rows, want 2", len(rows))
+	}
+
+	if rows[0]["listname"] != "EN" || rows[1]["id"] != int64(2) || rows[1]["dbserie_id"] != int64(8) {
+		t.Errorf("GetrowsType rows = %v", rows)
+	}
+
+	pairs := GetrowsN[DbstaticTwoUint](false, 10, "select id, dbserie_id from series order by id")
+
+	want := []DbstaticTwoUint{{Num1: 1, Num2: 7}, {Num1: 2, Num2: 8}}
+	if !slices.Equal(pairs, want) {
+		t.Errorf("GetrowsN = %v, want %v", pairs, want)
+	}
+
+	if ids := GetrowsN[uint](false, 10, "select id from series order by id"); !slices.Equal(ids, []uint{1, 2}) {
+		t.Errorf("GetrowsN[uint] = %v, want [1 2]", ids)
+	}
 }

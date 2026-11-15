@@ -39,7 +39,7 @@ var (
 // series.id, books.id) instead of what the parser identified: the database
 // row, the list and, for an episode file, the episode ids all come from that
 // entry. It returns the entry's rootpath.
-func forceMediaIDs(m *database.ParseInfo, cfgp *config.MediaTypeConfig, mediaID uint) (string, error) {
+func forceMediaIDs(m *database.ParseInfo, cfgp *config.MediaTypeConfig, mediaID *uint) (string, error) {
 	handler := mediatype.Get(cfgp.IsType)
 	if handler == nil {
 		return "", errNoValidIDs
@@ -52,7 +52,7 @@ func forceMediaIDs(m *database.ParseInfo, cfgp *config.MediaTypeConfig, mediaID 
 
 	database.GetdatarowArgs(
 		mtstrings.GetStringsMap(cfgp.IsType, "GetOrganizeData"),
-		&mediaID,
+		mediaID,
 		&dbid,
 		&rootpath,
 		&listname,
@@ -67,7 +67,7 @@ func forceMediaIDs(m *database.ParseInfo, cfgp *config.MediaTypeConfig, mediaID 
 		return "", errNoListIDFound
 	}
 
-	handler.SetMediaID(m, mediaID)
+	handler.SetMediaID(m, *mediaID)
 	handler.SetDBID(m, dbid)
 
 	if cfgp.IsType != config.MediaTypeSeries {
@@ -297,11 +297,11 @@ func PlanMediaFile(
 	cfgp *config.MediaTypeConfig,
 	data *config.MediaDataImportConfig,
 	targetTemplate string,
-	mediaID, dbID uint,
+	mediaID *uint, dbID uint,
 	listid int,
 ) (*MediaFilePlan, error) {
 	s := NewStructure(cfgp, data.TemplatePath, targetTemplate,
-		data.CfgPath.CheckRuntime, data.CfgPath.DeleteWrongLanguage, mediaID)
+		data.CfgPath.CheckRuntime, data.CfgPath.DeleteWrongLanguage, *mediaID)
 	if s == nil {
 		return nil, logger.ErrNotFound
 	}
@@ -321,7 +321,7 @@ func PlanMediaFile(
 	)
 
 	switch {
-	case mediaID != 0:
+	case *mediaID != 0:
 		rootpath, err = forceMediaIDs(m, cfgp, mediaID)
 		if err != nil {
 			return nil, err

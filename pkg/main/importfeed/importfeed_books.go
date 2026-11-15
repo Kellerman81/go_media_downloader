@@ -38,7 +38,10 @@ func JobImportDBBook(
 		importName string
 	)
 
-	if book.AuthorName != "" || book.AuthorID != "" {
+	if book.SingleTitle {
+		importMode = "single"
+		importName = book.Name
+	} else if book.AuthorName != "" || book.AuthorID != "" {
 		importMode = "author"
 
 		importName = book.AuthorName
@@ -654,7 +657,7 @@ func addBookToDatabase(
 // It supports three import modes based on which fields are set in the config:
 //   - Full author: AuthorName/AuthorID set - imports all audiobooks by this author
 //   - Book series: BookSeriesName/BookSeriesID set - imports all audiobooks in the series
-//   - Single audiobook: Only Name set - imports a single audiobook
+//   - Single audiobook: Only Name set, or SingleTitle - imports a single audiobook
 func JobImportDBAudiobook(
 	ctx context.Context, audiobook *config.ManualConfig,
 	idx int,
@@ -671,7 +674,10 @@ func JobImportDBAudiobook(
 		importName string
 	)
 
-	if audiobook.AuthorName != "" || audiobook.AuthorID != "" {
+	if audiobook.SingleTitle {
+		importMode = "single"
+		importName = audiobook.Name
+	} else if audiobook.AuthorName != "" || audiobook.AuthorID != "" {
 		importMode = "author"
 
 		importName = audiobook.AuthorName
@@ -1279,7 +1285,7 @@ func AddOrGetAuthor(authorName string) uint {
 		false,
 		"SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE OR slug = ?",
 		&authorID,
-		&authorName,
+		authorName,
 		&authorSlug,
 	)
 
@@ -1290,7 +1296,7 @@ func AddOrGetAuthor(authorName string) uint {
 	// Insert new author
 	result, err := database.ExecNid(
 		`INSERT INTO dbauthors (name, slug) VALUES (?, ?)`,
-		&authorName,
+		authorName,
 		&authorSlug,
 	)
 	if err != nil {
@@ -1314,7 +1320,7 @@ func AddOrGetNarrator(narratorName string) uint {
 		false,
 		"SELECT id FROM dbnarrators WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT 1",
 		&narratorID,
-		&narratorName,
+		narratorName,
 	)
 
 	if narratorID > 0 {
@@ -1324,7 +1330,7 @@ func AddOrGetNarrator(narratorName string) uint {
 	// Insert new narrator
 	result, err := database.ExecNid(
 		`INSERT INTO dbnarrators (name) VALUES (?)`,
-		&narratorName,
+		narratorName,
 	)
 	if err != nil {
 		logger.Logtype("error", 1).
@@ -1770,7 +1776,7 @@ func addAudiobookFromBookToDatabase(
 	}
 
 	if existingID == 0 {
-		existingID = findAudiobookByTitleAuthor(book.Title, book.Authors)
+		existingID = findAudiobookByTitleAuthor(&book.Title, book.Authors)
 	}
 
 	// Don't check book.ID for audible_id since it's not an actual Audible ASIN (it's an OpenLibrary work ID)
@@ -1902,8 +1908,8 @@ func addAudiobookFromBookToDatabase(
 // findAudiobookByTitleAuthor finds a dbaudiobooks row by case-insensitive
 // title plus one of the given authors. Without authors it only matches rows
 // that have no author either, so unrelated same-titled books are not merged.
-func findAudiobookByTitleAuthor(title string, authors []string) uint {
-	if title == "" {
+func findAudiobookByTitleAuthor(title *string, authors []string) uint {
+	if (*title) == "" {
 		return 0
 	}
 
@@ -1919,7 +1925,7 @@ func findAudiobookByTitleAuthor(title string, authors []string) uint {
 			 AND EXISTS (SELECT 1 FROM dbaudiobook_authors da JOIN dbauthors au ON au.id = da.dbauthor_id
 			             WHERE da.dbaudiobook_id = a.id AND au.name = ? COLLATE NOCASE)
 			 ORDER BY a.id LIMIT 1`,
-			&id, &title, &authors[i])
+			&id, title, &authors[i])
 
 		if id != 0 {
 			return id
@@ -1931,7 +1937,7 @@ func findAudiobookByTitleAuthor(title string, authors []string) uint {
 			`SELECT a.id FROM dbaudiobooks a WHERE a.title = ? COLLATE NOCASE
 			 AND NOT EXISTS (SELECT 1 FROM dbaudiobook_authors da WHERE da.dbaudiobook_id = a.id)
 			 ORDER BY a.id LIMIT 1`,
-			&id, &title)
+			&id, title)
 	}
 
 	return id

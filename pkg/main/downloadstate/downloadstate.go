@@ -76,9 +76,9 @@ type Pending struct {
 // PendingFor returns the pending downloads of the list entry mediaID (movie,
 // episode, book, audiobook or album id): rows the client reports as
 // downloading, and added or completed rows from the last pendingHours.
-func PendingFor(isType uint, mediaID uint) []Pending {
+func PendingFor(isType uint, mediaID *uint) []Pending {
 	k := kindOf(isType)
-	if k == nil || mediaID == 0 {
+	if k == nil || (*mediaID) == 0 {
 		return nil
 	}
 
@@ -108,18 +108,18 @@ func kindOf(isType uint) *kind {
 // Started marks the history row historyID of media type isType as sent to
 // the downloader config client, under the client's downloadID ("" when the
 // client returned none).
-func Started(isType uint, historyID uint, client, downloadID string) {
+func Started(isType uint, historyID *uint, client *string, downloadID string) {
 	k := kindOf(isType)
-	if k == nil || historyID == 0 {
+	if k == nil || (*historyID) == 0 {
 		return
 	}
 
 	err := database.ExecNErr(
 		"update "+k.history+" set download_client = ?, download_id = ?, download_state = ?, download_progress = 0, "+
 			"download_message = '', state_changed_at = datetime('now','localtime') where id = ?",
-		&client, &downloadID, Added, &historyID)
+		client, downloadID, Added, historyID)
 	if err != nil {
-		logger.Logtype("error", 0).Err(err).Uint("history_id", historyID).Msg("Recording download state failed")
+		logger.Logtype("error", 0).Err(err).Uint("history_id", *historyID).Msg("Recording download state failed")
 	}
 }
 
@@ -155,7 +155,7 @@ func (k *kind) set(r *row, state string, progress float64, message string) {
 		query += ", state_changed_at = datetime('now','localtime')"
 	}
 
-	if err := database.ExecNErr(query+" where id = ?", state, progress, message, r.ID); err != nil {
+	if err := database.ExecNErr(query+" where id = ?", state, progress, message, &r.ID); err != nil {
 		logger.Logtype("error", 0).Err(err).Uint("history_id", r.ID).Msg("Updating download state failed")
 		return
 	}
@@ -174,12 +174,12 @@ func (k *kind) set(r *row, state string, progress float64, message string) {
 }
 
 // resetLastscan makes the item due for the next missing/upgrade search.
-func (k *kind) resetLastscan(mediaID uint) {
-	if mediaID == 0 {
+func (k *kind) resetLastscan(mediaID *uint) {
+	if (*mediaID) == 0 {
 		return
 	}
 
-	database.ExecN("update "+k.mediaTable+" set lastscan = null where id = ?", &mediaID)
+	database.ExecN("update "+k.mediaTable+" set lastscan = null where id = ?", mediaID)
 }
 
 // normName compares release names regardless of separators and case.
@@ -265,7 +265,7 @@ func checkRow(
 	switch st.State {
 	case apiexternal_v2.DownloadFailed:
 		k.set(r, Failed, st.Progress, st.Message)
-		k.resetLastscan(r.MediaID)
+		k.resetLastscan(&r.MediaID)
 
 		if dlCfg != nil && dlCfg.RemoveFailed {
 			remover, ok := providers.GetDownloadClient(client).(apiexternal_v2.DownloadRemover)
@@ -346,12 +346,12 @@ func Organized(isType uint, mediaIDs []uint, folder, file, reason, detail string
 		names = append(names, importNames(strings.TrimSuffix(filepath.Base(file), filepath.Ext(file)))...)
 	}
 
-	for _, id := range mediaIDs {
-		if id == 0 {
+	for i := range mediaIDs {
+		if mediaIDs[i] == 0 {
 			continue
 		}
 
-		rows := k.rows(k.mediaCol+" = ? and download_state in (?, ?, ?)", id, Added, Downloading, Completed)
+		rows := k.rows(k.mediaCol+" = ? and download_state in (?, ?, ?)", &mediaIDs[i], Added, Downloading, Completed)
 		if len(rows) == 0 {
 			continue
 		}
@@ -378,7 +378,7 @@ func Organized(isType uint, mediaIDs []uint, folder, file, reason, detail string
 		k.set(r, Rejected, r.Progress, message)
 
 		if reason != "lower_quality" {
-			k.resetLastscan(id)
+			k.resetLastscan(&mediaIDs[i])
 		}
 	}
 }

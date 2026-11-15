@@ -60,7 +60,10 @@ func loadMusicTestConfig(
 	}
 	cfg, err := config.Readconfigtoml()
 	if err != nil {
-		t.Fatalf("Failed to read config.toml: %v", err)
+		// Without the file every key is empty and the keyed tests skip;
+		// the keyless ones (MusicBrainz, Deezer, iTunes, ...) still run.
+		t.Logf("config.toml not available at %s (%v)", config.Configfile, err)
+		return "", "", ""
 	}
 	return cfg.General.AcoustIDAPIKey,
 		cfg.General.LastFMAPIKey,
@@ -242,12 +245,14 @@ func TestLastFMReturnsData(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Discogs — works without auth (lower rate limit), token optional
+// Discogs — search needs a personal access token (discogs_token)
 // ---------------------------------------------------------------------------
 
 func TestDiscogsReturnsData(t *testing.T) {
 	_, _, discogsToken := loadMusicTestConfig(t)
-	// Discogs works without a token; token just raises the rate limit.
+	if discogsToken == "" {
+		t.Skip("Discogs token not configured — skipping")
+	}
 
 	p := discogs.NewProviderWithConfig(base.ClientConfig{
 		UserAgent:        "go_media_downloader/test (github.com/Kellerman81/go_media_downloader)",

@@ -1095,7 +1095,7 @@ func addOrGetArtist(artistName, mbid *string) uint {
 		if mbid != nil && *mbid != "" {
 			_, _ = database.ExecNid(
 				`UPDATE dbartists SET musicbrainz_id = ? WHERE id = ? AND (musicbrainz_id IS NULL OR musicbrainz_id = "")`,
-				&mbid,
+				mbid,
 				&artistID,
 			)
 		}
@@ -1106,9 +1106,9 @@ func addOrGetArtist(artistName, mbid *string) uint {
 	// Insert new artist
 	result, err := database.ExecNid(
 		`INSERT INTO dbartists (name, slug, musicbrainz_id) VALUES (?, ?, ?)`,
-		&artistName,
+		artistName,
 		&artistSlug,
-		&mbid,
+		mbid,
 	)
 	if err != nil {
 		logger.Logtype("error", 1).

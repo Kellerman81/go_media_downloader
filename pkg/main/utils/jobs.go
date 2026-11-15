@@ -154,9 +154,9 @@ func insertjobhistory(jobtype string, cfgp *config.MediaTypeConfig) int64 {
 }
 
 // closejobhistory sets the end time of a job_histories row; 0 (insert failed) is a no-op.
-func closejobhistory(id int64) {
-	if id != 0 {
-		database.ExecN(database.QueryUpdateHistory, &id)
+func closejobhistory(id *int64) {
+	if id != nil && *id != 0 {
+		database.ExecN(database.QueryUpdateHistory, id)
 	}
 }
 
@@ -195,7 +195,7 @@ func InitialFill(mediaType uint) {
 		}
 
 		dbid := insertjobhistory(logger.StrFeeds, media)
-		defer closejobhistory(dbid)
+		defer closejobhistory(&dbid)
 
 		for idx2 := range media.Lists {
 			if idx2 > 127 {
@@ -221,7 +221,7 @@ func InitialFill(mediaType uint) {
 		}
 
 		dbid := insertjobhistory(logger.StrDataFull, media)
-		defer closejobhistory(dbid)
+		defer closejobhistory(&dbid)
 
 		for idxi := range media.Data {
 			newfilesloop(ctx, media, &media.Data[idxi])
@@ -242,7 +242,7 @@ func FillImdb() {
 		&logger.StrData,
 		&logger.StrMovie,
 	)
-	defer closejobhistory(dbinsert)
+	defer closejobhistory(&dbinsert)
 
 	data, err := parser.ExecCmdString[[]byte](context.Background(), "", logger.StrImdb)
 	if err == nil {
@@ -1760,17 +1760,17 @@ func addAudiobookFilesToDatabase(
 		// Insert file record (audiobookListID = audiobooks.id, album.DatabaseID = dbaudiobook_id)
 		if err := database.InsertAudiobookFile(
 			audiobookListID,
-			album.Tracks[i].Filepath,
-			album.Tracks[i].Filename,
-			album.Tracks[i].Extension,
-			album.Tracks[i].Format,
-			album.Tracks[i].QualityProfile,
-			album.Tracks[i].FileSize,
-			album.Tracks[i].Bitrate,
-			album.Tracks[i].RuntimeMS,
-			album.Tracks[i].TrackNumber,
-			album.Tracks[i].DiscNumber,
-			album.DatabaseID,
+			&album.Tracks[i].Filepath,
+			&album.Tracks[i].Filename,
+			&album.Tracks[i].Extension,
+			&album.Tracks[i].Format,
+			&album.Tracks[i].QualityProfile,
+			&album.Tracks[i].FileSize,
+			&album.Tracks[i].Bitrate,
+			&album.Tracks[i].RuntimeMS,
+			&album.Tracks[i].TrackNumber,
+			&album.Tracks[i].DiscNumber,
+			&album.DatabaseID,
 		); err != nil {
 			logger.Logtype("error", 1).
 				Str("file", album.Tracks[i].Filepath).
@@ -2342,8 +2342,8 @@ func runjoblistfunc(
 // getSearchQueryForMedia returns the search query string for a media item.
 // For music, this is "Title Artist". For audiobooks, this is "Title Author".
 // Used to identify duplicate searches for different releases of the same album.
-func getSearchQueryForMedia(mediaType uint, mediaid uint) string {
-	if mediaid == 0 {
+func getSearchQueryForMedia(mediaType uint, mediaid *uint) string {
+	if mediaid == nil || *mediaid == 0 {
 		return ""
 	}
 
@@ -2354,12 +2354,12 @@ func getSearchQueryForMedia(mediaType uint, mediaid uint) string {
 		// Get album title and artist name
 		database.GetdatarowArgs(
 			"SELECT dbalbums.title FROM albums INNER JOIN dbalbums ON dbalbums.id=albums.dbalbum_id WHERE albums.id = ?",
-			&mediaid,
+			mediaid,
 			&title,
 		)
 		database.GetdatarowArgs(
 			"SELECT dbartists.name FROM dbalbum_artists INNER JOIN dbartists ON dbartists.id=dbalbum_artists.dbartist_id INNER JOIN albums ON albums.dbalbum_id=dbalbum_artists.dbalbum_id WHERE albums.id = ? ORDER BY dbalbum_artists.position LIMIT 1",
-			&mediaid,
+			mediaid,
 			&artistAuthor,
 		)
 
@@ -2367,12 +2367,12 @@ func getSearchQueryForMedia(mediaType uint, mediaid uint) string {
 		// Get audiobook title and author name
 		database.GetdatarowArgs(
 			"SELECT dbaudiobooks.title FROM audiobooks INNER JOIN dbaudiobooks ON dbaudiobooks.id=audiobooks.dbaudiobook_id WHERE audiobooks.id = ?",
-			&mediaid,
+			mediaid,
 			&title,
 		)
 		database.GetdatarowArgs(
 			"SELECT dbauthors.name FROM dbaudiobook_authors INNER JOIN dbauthors ON dbauthors.id=dbaudiobook_authors.dbauthor_id INNER JOIN audiobooks ON audiobooks.dbaudiobook_id=dbaudiobook_authors.dbaudiobook_id WHERE audiobooks.id = ? ORDER BY dbaudiobook_authors.position LIMIT 1",
-			&mediaid,
+			mediaid,
 			&artistAuthor,
 		)
 
@@ -2491,7 +2491,7 @@ func jobsearchmedia(
 		// For music and audiobooks, check if we've already searched for this title+artist
 		// to avoid redundant searches for different releases of the same album
 		if cfgp.IsType == config.MediaTypeMusic || cfgp.IsType == config.MediaTypeAudiobook {
-			searchQuery := getSearchQueryForMedia(cfgp.IsType, arr[i].Num)
+			searchQuery := getSearchQueryForMedia(cfgp.IsType, &arr[i].Num)
 			if searchQuery != "" {
 				queryLower := strings.ToLower(searchQuery)
 				if _, exists := searchedQueries[queryLower]; exists {

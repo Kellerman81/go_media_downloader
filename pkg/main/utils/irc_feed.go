@@ -263,7 +263,7 @@ func (d *feedResults) addIRCMatch(
 			return
 		}
 
-		d.Audiobooks = append(d.Audiobooks, config.ManualConfig{Name: title, AuthorName: author})
+		d.Audiobooks = append(d.Audiobooks, config.ManualConfig{Name: title, AuthorName: author, SingleTitle: true})
 
 	case config.MediaTypeBook:
 		author := strings.TrimSpace(m["author"])
@@ -271,7 +271,7 @@ func (d *feedResults) addIRCMatch(
 			return
 		}
 
-		d.Books = append(d.Books, config.ManualConfig{Name: title, AuthorName: author})
+		d.Books = append(d.Books, config.ManualConfig{Name: title, AuthorName: author, SingleTitle: true})
 	}
 }
 

@@ -233,7 +233,7 @@ func getDownloadActivity(rng activityRange) downloadActivity {
 	for mi, m := range a.Media {
 		byBucket := countsByStr(database.GetrowsN[database.DbstaticOneStringOneInt](false, uint(rng.buckets),
 			"SELECT "+rng.sqlKey+", COUNT(*) FROM "+m.hist+
-				" WHERE downloaded_at >= ? GROUP BY 1", since))
+				" WHERE downloaded_at >= ? GROUP BY 1", &since))
 
 		row := make([]int, rng.buckets)
 		total := 0
@@ -248,20 +248,20 @@ func getDownloadActivity(rng activityRange) downloadActivity {
 		a.Repeat = append(a.Repeat, database.Getdatarow[int](false,
 			"SELECT COUNT(*) FROM "+m.hist+" h WHERE h.downloaded_at >= ? AND EXISTS (SELECT 1 FROM "+
 				m.hist+" p WHERE p."+m.histKey+" = h."+m.histKey+" AND p.downloaded_at < h.downloaded_at)",
-			since))
+			&since))
 
 		for _, r := range database.StructscanT[repeatedItem](false, 10,
 			"SELECT "+m.titleExpr+" AS title, COUNT(*) AS downloads, COUNT(DISTINCT h.title) AS releases,"+
 				" MAX(h.downloaded_at) AS last FROM "+m.hist+" h, "+m.from+" "+m.titleFrom+
 				" WHERE i.id = h."+m.histKey+" AND h.downloaded_at >= ? GROUP BY h."+m.histKey+
-				" HAVING COUNT(*) >= 3 ORDER BY downloads DESC LIMIT 10", since) {
+				" HAVING COUNT(*) >= 3 ORDER BY downloads DESC LIMIT 10", &since) {
 			r.Type = m.label
 			a.Looping = append(a.Looping, r)
 		}
 
 		for _, r := range database.GetrowsN[database.DbstaticOneStringOneInt](false, 0,
 			"SELECT COALESCE(NULLIF(indexer, ''), '(unknown)'), COUNT(*) FROM "+m.hist+
-				" WHERE downloaded_at >= ? GROUP BY 1", since) {
+				" WHERE downloaded_at >= ? GROUP BY 1", &since) {
 			s := indexers[r.Str]
 			if s == nil {
 				s = &indexerShare{Name: r.Str, PerType: make([]int, len(a.Media))}
@@ -519,7 +519,7 @@ func getBacklogStats() backlogStats {
 		days := slices.DeleteFunc(database.GetrowsN[float64](false, 0,
 			"SELECT julianday(h.d) - julianday(i.created_at) FROM "+m.from+
 				" JOIN (SELECT "+m.histKey+" AS k, MIN(downloaded_at) AS d FROM "+m.hist+
-				" GROUP BY k) h ON h.k = i.id WHERE i.created_at >= ?", since365),
+				" GROUP BY k) h ON h.k = i.id WHERE i.created_at >= ?", &since365),
 			func(d float64) bool { return d < 0 })
 		slices.Sort(days)
 
@@ -531,7 +531,7 @@ func getBacklogStats() backlogStats {
 
 		downloads := countsByStr(database.GetrowsN[database.DbstaticOneStringOneInt](false, 0,
 			"SELECT "+m.listCol+", COUNT(*) FROM "+m.hist+" h, "+m.from+
-				" WHERE i.id = h."+m.histKey+" AND h.downloaded_at >= ? GROUP BY 1", since90))
+				" WHERE i.id = h."+m.histKey+" AND h.downloaded_at >= ? GROUP BY 1", &since90))
 
 		for _, r := range database.GetrowsN[syncops.DbstaticOneStringTwoInt](false, 0,
 			"SELECT "+m.listCol+", COUNT(*), SUM(i.missing) FROM "+m.from+" GROUP BY 1") {

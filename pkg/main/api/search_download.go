@@ -734,10 +734,10 @@ func HandleSearchDownload(c *gin.Context) {
 	results, err := performSearch(
 		searchType,
 		mediaConfig,
-		movieID,
-		serieID,
+		&movieID,
+		&serieID,
 		seasonNum,
-		episodeID,
+		&episodeID,
 		itemID,
 		limit,
 		titleSearch,
@@ -803,7 +803,7 @@ func formatFileSize(bytes int64) string {
 // performSearch executes real search calls based on the specified type and parameters.
 func performSearch(
 	searchType, mediaConfig string,
-	movieID, serieID, seasonNum, episodeID, itemID, limit int,
+	movieID *int, serieID *int, seasonNum int, episodeID *int, itemID int, limit int,
 	titleSearch bool,
 ) (*SearchResults, error) {
 	var searchResults *searcher.ConfigSearcher
@@ -847,7 +847,7 @@ func performSearch(
 
 	case "movies_search":
 		// logger.Logtype("info", 1).Any("id", movieID).Msg("movie search")
-		if movieID <= 0 {
+		if (*movieID) <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
 
@@ -858,7 +858,7 @@ func performSearch(
 		)
 		if movie == nil || movie.ID == 0 {
 			// logger.Logtype("error", 1).Any("id", movieID).Msg("movie db search")
-			return nil, fmt.Errorf("movie with ID %d not found", movieID)
+			return nil, fmt.Errorf("movie with ID %d not found", *movieID)
 		}
 
 		// Find the appropriate list config
@@ -884,7 +884,7 @@ func performSearch(
 		err = searchResults.MediaSearch(ctx, mediaTypeConfig, movie.ID, titleSearch, false, false)
 
 	case "series_rss":
-		if serieID <= 0 {
+		if (*serieID) <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
 
@@ -894,7 +894,7 @@ func performSearch(
 			serieID,
 		)
 		if serie == nil || serie.ID == 0 {
-			return nil, fmt.Errorf("series with ID %d not found", serieID)
+			return nil, fmt.Errorf("series with ID %d not found", *serieID)
 		}
 
 		// Use season if provided, otherwise search all seasons
@@ -913,7 +913,7 @@ func performSearch(
 		)
 
 	case "series_search":
-		if serieID <= 0 {
+		if (*serieID) <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
 
@@ -923,7 +923,7 @@ func performSearch(
 			serieID,
 		)
 		if serie == nil || serie.ID == 0 {
-			return nil, fmt.Errorf("series with ID %d not found", serieID)
+			return nil, fmt.Errorf("series with ID %d not found", *serieID)
 		}
 
 		// Find the appropriate list config
@@ -955,16 +955,16 @@ func performSearch(
 			false,
 			uint(episodeLimit),
 			"select id from serie_episodes where serie_id = ? and missing = 1 order by id limit ?",
-			serie.ID,
-			episodeLimit,
+			&serie.ID,
+			&episodeLimit,
 		)
 		if len(episodeIDs) == 0 {
 			episodeIDs = database.GetrowsN[uint](
 				false,
 				uint(episodeLimit),
 				"select id from serie_episodes where serie_id = ? order by id limit ?",
-				serie.ID,
-				episodeLimit,
+				&serie.ID,
+				&episodeLimit,
 			)
 		}
 
@@ -1016,7 +1016,7 @@ func performSearch(
 		return &SearchResults{Accepted: seriesAccepted, Denied: seriesDenied}, nil
 
 	case "series_episode_search":
-		if episodeID <= 0 {
+		if (*episodeID) <= 0 {
 			return &SearchResults{Accepted: []SearchResult{}, Denied: []SearchResult{}}, nil
 		}
 
@@ -1029,13 +1029,13 @@ func performSearch(
 			episodeID,
 		)
 		if episode == nil || episode.ID == 0 {
-			return nil, fmt.Errorf("episode with ID %d not found", episodeID)
+			return nil, fmt.Errorf("episode with ID %d not found", *episodeID)
 		}
 
 		// Get series from database to get list config
 		serie, _ := database.GetSeries(
 			database.Querywithargs{Select: "id, listname", Where: "id = ?"},
-			episode.SerieID,
+			&episode.SerieID,
 		)
 		if serie == nil || serie.ID == 0 {
 			return nil, fmt.Errorf("series with ID %d not found", episode.SerieID)

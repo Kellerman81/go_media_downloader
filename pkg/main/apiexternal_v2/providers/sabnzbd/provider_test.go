@@ -109,3 +109,19 @@ func TestParseTimeLeft(t *testing.T) {
 		}
 	}
 }
+
+func TestSabCategoryDir(t *testing.T) {
+	cats := []sabCategory{{Name: "movies", Dir: "Movies"}, {Name: "tv", Dir: "/mnt/tv"}, {Name: "music"}}
+
+	for _, tc := range []struct{ category, want string }{
+		{"Movies", "/data/complete/Movies"}, // relative: below the completed folder
+		{"tv", "/mnt/tv"},                   // absolute
+		{"music", "/data/complete"},         // no folder of its own
+		{"unknown", "/data/complete"},
+		{"", "/data/complete"},
+	} {
+		if got := sabCategoryDir("/data/complete/", tc.category, cats); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.category, got, tc.want)
+		}
+	}
+}

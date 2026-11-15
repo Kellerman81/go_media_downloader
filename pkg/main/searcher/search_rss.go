@@ -3,7 +3,12 @@ package searcher
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
+	"slices"
+	"strconv"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -205,7 +210,7 @@ func (s *ConfigSearcher) getRSSFeed(
 		return errRegexEmpty
 	}
 
-	if s.isIndexerBlocked(listentry.CfgList.URL) {
+	if s.isIndexerBlocked(&listentry.CfgList.URL) {
 		logger.Logtype("debug", 2).
 			Str(logger.StrListname, listentry.TemplateList).
 			Int(strMinutes, -1*config.GetSettingsGeneral().FailedIndexerBlockTime).
@@ -313,10 +318,66 @@ func (s *ConfigSearcher) searchSeriesRSSSeason(
 	return nil
 }
 
-// SearchSeriesRSSSeasons searches the RSS feeds for missing episodes for
-// random series. It selects up to 20 random series that have missing
-// episodes, gets the distinct seasons with missing episodes for each,
-// and searches the RSS feeds for those seasons.
+// rssSeasonsPerRun is how many series one SearchSeriesRSSSeasons run searches.
+const rssSeasonsPerRun = 20
+
+// rssSeasonsSearched is when each series was last searched by
+// SearchSeriesRSSSeasons, per media config. In memory only: after a restart
+// all series are due again, in random order.
+var rssSeasonsSearched struct {
+	sync.Mutex
+	at map[string]map[uint]time.Time
+}
+
+// pickRSSSeasonSeries returns the n series (id, dbserie_id) of cfg searched
+// longest ago, never searched ones first in random order, and marks them as
+// searched now. Unlike ORDER BY RANDOM() it gets through all series before
+// one comes up again.
+func pickRSSSeasonSeries(cfg string, rows []database.DbstaticTwoUint, n int) []database.DbstaticTwoUint {
+	rand.Shuffle(len(rows), func(i, j int) { rows[i], rows[j] = rows[j], rows[i] })
+
+	rssSeasonsSearched.Lock()
+	defer rssSeasonsSearched.Unlock()
+
+	if rssSeasonsSearched.at == nil {
+		rssSeasonsSearched.at = make(map[string]map[uint]time.Time)
+	}
+
+	last := rssSeasonsSearched.at[cfg]
+	if last == nil {
+		last = make(map[uint]time.Time)
+		rssSeasonsSearched.at[cfg] = last
+	}
+
+	slices.SortStableFunc(rows, func(a, b database.DbstaticTwoUint) int {
+		return last[a.Num1].Compare(last[b.Num1])
+	})
+
+	rows = rows[:min(n, len(rows))]
+
+	now := time.Now()
+	for i := range rows {
+		last[rows[i].Num1] = now
+	}
+
+	return rows
+}
+
+// rssAiredBefore limits missing episodes to those aired before today plus
+// the media config's missing_scan_release_date_pre days, as the missing
+// search does (unset: no limit). Episodes without an air date count.
+func rssAiredBefore(cfgp *config.MediaTypeConfig) string {
+	if len(cfgp.Data) == 0 || cfgp.Data[0].CfgPath == nil || cfgp.Data[0].CfgPath.MissingScanReleaseDatePre == 0 {
+		return ""
+	}
+
+	return " and (dbserie_episodes.first_aired < date('now','localtime','" +
+		strconv.Itoa(cfgp.Data[0].CfgPath.MissingScanReleaseDatePre) + " days') or dbserie_episodes.first_aired is null)"
+}
+
+// SearchSeriesRSSSeasons searches the RSS feeds for the seasons with missing
+// episodes of up to 20 series that have missing episodes, taking the series
+// searched longest ago, so every series gets its turn.
 func SearchSeriesRSSSeasons(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 	args := logger.PLArrAny.Get()
 	defer logger.PLArrAny.Put(args)
@@ -325,18 +386,26 @@ func SearchSeriesRSSSeasons(ctx context.Context, cfgp *config.MediaTypeConfig) e
 		args.Arr = append(args.Arr, &lst.Name)
 	}
 
-	return searchseasons(
+	aired := rssAiredBefore(cfgp)
+
+	rows := database.GetrowsN[database.DbstaticTwoUint](
+		false,
+		0,
+		logger.JoinStrings(
+			"select id as num1, dbserie_id as num2 from series where series.dont_search = 0 and listname in (?",
+			cfgp.ListsQu,
+			") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where serie_episodes.dont_search = 0 and ((serie_episodes.missing=1 and series.search_specials=1) or (serie_episodes.missing=1 and dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id",
+			aired,
+			") >= 1",
+		),
+		args.Arr...)
+
+	return searchseasonRows(
 		ctx,
 		cfgp,
-		logger.JoinStrings(
-			"select id, dbserie_id from series where listname in (?",
-			cfgp.ListsQu,
-			") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where ((serie_episodes.missing=1 and series.search_specials=1) or (serie_episodes.missing=1 and dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1 ORDER BY RANDOM() limit 20",
-		),
-		20,
-		"select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dbserie_id = ? )",
-		"select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dbserie_id = ? )",
-		args,
+		pickRSSSeasonSeries(cfgp.NamePrefix, rows, rssSeasonsPerRun),
+		"select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0'))"+aired+" and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dont_search = 0 and dbserie_id = ? )",
+		"select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0'))"+aired+" and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where missing=1 and dont_search = 0 and dbserie_id = ? )",
 	)
 }
 
@@ -355,9 +424,9 @@ func SearchSeriesRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig
 		ctx,
 		cfgp,
 		logger.JoinStrings(
-			"select id, dbserie_id from series where listname in (?",
+			"select id, dbserie_id from series where series.dont_search = 0 and listname in (?",
 			cfgp.ListsQu,
-			") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1",
+			") and (select count() from serie_episodes inner join dbserie_episodes on dbserie_episodes.id = serie_episodes.dbserie_episode_id and serie_episodes.dbserie_id=series.dbserie_id where serie_episodes.dont_search = 0 and (series.search_specials=1 or (dbserie_episodes.season != '0' and series.search_specials=0)) and serie_episodes.serie_id = series.id) >= 1",
 		),
 		database.Getdatarow[uint](false, "select count() from series"),
 		queryAllSeasons,
@@ -367,11 +436,12 @@ func SearchSeriesRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig
 }
 
 // queryAllSeasons and queryCountAllSeasons select every season of a series
-// (specials only when the series searches them), missing episodes or not.
+// (specials only when the series searches them), missing episodes or not,
+// leaving out episodes held back from searching (dont_search).
 // Args: dbserie_id, serie_id, serie_id, dbserie_id.
 const (
-	queryAllSeasons      = "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )"
-	queryCountAllSeasons = "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dbserie_id = ? )"
+	queryAllSeasons      = "select distinct season from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dont_search = 0 and dbserie_id = ? )"
+	queryCountAllSeasons = "select count(distinct season) from dbserie_episodes where dbserie_id = ? and season != '' and ((Select search_specials from series where id =?)=1 OR ((Select search_specials from series where id =?)=0 and season != '0')) and dbserie_episodes.id in ( Select distinct dbserie_episode_id from serie_episodes where dont_search = 0 and dbserie_id = ? )"
 )
 
 // SearchSerieRSSSeasonsAll runs one RSS season search per season of a single
@@ -379,16 +449,20 @@ const (
 // Date-identified series get one name search instead.
 func SearchSerieRSSSeasonsAll(ctx context.Context, cfgp *config.MediaTypeConfig, serieid uint) error {
 	row := database.DbstaticTwoUint{Num1: serieid}
-	database.Scanrowsdyn(false, "select dbserie_id from series where id = ?", &row.Num2, &serieid)
+	database.Scanrowsdyn(false, "select dbserie_id from series where id = ?", &row.Num2, serieid)
 
 	if row.Num2 == 0 {
 		return logger.ErrNotFound
 	}
 
+	if database.Getdatarow[bool](false, "select dont_search from series where id = ?", &serieid) {
+		return logger.ErrDisabled
+	}
+
 	return searchseason(ctx, cfgp, &row, queryAllSeasons, queryCountAllSeasons)
 }
 
-// handleSeasonDateSearch performs a name-only RSS search for date-identified series.
+// handleSeasonDateSearch performs a name-only RSS search for series identified by date or title.
 // Instead of querying by TVDB ID + season, it searches by series name so that all
 // recent releases are returned and matched against episodes we don't have yet.
 func (s *ConfigSearcher) handleSeasonDateSearch(
@@ -431,7 +505,7 @@ func (s *ConfigSearcher) handleSeasonDateSearch(
 	return err
 }
 
-// searchSeriesRSSByName searches a date-identified series by name only (no season filter).
+// searchSeriesRSSByName searches a series identified by date or title by name only (no season filter).
 // This finds all recent releases from the indexer and lets the normal match logic
 // determine which episodes are still missing.
 func (s *ConfigSearcher) searchSeriesRSSByName(
@@ -480,7 +554,7 @@ func (s *ConfigSearcher) searchSeriesRSSByName(
 // searchseason searches for missing episodes for a specific series and season.
 // It retrieves the distinct seasons with missing episodes for the given series,
 // and then searches the RSS feeds of the enabled indexers for those seasons.
-// For date-identified series it performs a single name-only search instead.
+// For series identified by date or title it performs a single name-only search instead.
 func searchseason(
 	ctx context.Context,
 	cfgp *config.MediaTypeConfig,
@@ -493,12 +567,13 @@ func searchseason(
 		return errListNotFound
 	}
 
-	// Date-identified series: search by name only, no season iteration
-	if database.Getdatarow[string](
+	// Series identified by date or by title: search by name only, no season
+	// iteration; the date or episode title in the release names the episode.
+	if by := database.Getdatarow[string](
 		false,
 		"select lower(identifiedby) from dbseries where id = ?",
 		&row.Num2,
-	) == logger.StrDate {
+	); by == logger.StrDate || by == logger.StrByTitle {
 		seriename := database.Getdatarow[string](
 			false,
 			"select seriename from dbseries where id = ?",
@@ -705,12 +780,20 @@ func searchseasons(
 	queryseason, queryseasoncount string,
 	args *logger.Arrany,
 ) error {
-	tbl := database.GetrowsN[database.DbstaticTwoUint](
+	return searchseasonRows(ctx, cfgp, database.GetrowsN[database.DbstaticTwoUint](
 		false,
 		queryrangecount,
 		queryrange,
-		args.Arr...)
+		args.Arr...), queryseason, queryseasoncount)
+}
 
+// searchseasonRows runs searchseason for each series (id, dbserie_id).
+func searchseasonRows(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	tbl []database.DbstaticTwoUint,
+	queryseason, queryseasoncount string,
+) error {
 	var err error
 	for idx := range tbl {
 		if errctx := logger.CheckContextEnded(ctx); errctx != nil {

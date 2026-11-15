@@ -48,6 +48,7 @@ const (
 	FilterByID                 = "id = ?"
 	StrDebug                   = "debug"
 	StrDate                    = "date"
+	StrByTitle                 = "title" // dbseries.identifiedby: episodes are named by title only
 	StrSearchMissingInc        = "searchmissinginc"
 	StrSearchMissingFull       = "searchmissingfull"
 	StrSearchMissingIncTitle   = "searchmissinginctitle"

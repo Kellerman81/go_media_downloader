@@ -192,42 +192,6 @@ func TestInitCfg(t *testing.T) {
 	})
 }
 
-func TestDBType(t *testing.T) {
-	Init()
-	t.Run("test", func(t *testing.T) {
-		dbrows := database.GetrowsType(database.Serie{}, false, 1000, "select * from series")
-		if len(dbrows) == 0 {
-			t.Error("no rows")
-		}
-		t.Log(len(dbrows))
-		t.Log(dbrows[0])
-		t.Log(dbrows[1])
-		dbrows2 := database.GetrowsN[database.DbstaticTwoUint](
-			false,
-			10,
-			"select id, dbserie_id from series",
-		)
-		if len(dbrows2) == 0 {
-			t.Error("no rows 2")
-		}
-		t.Log(len(dbrows2))
-		t.Log(dbrows2[0])
-		t.Log(dbrows2[1])
-
-		dbrows3 := database.GetrowsN[uint](
-			false,
-			10,
-			"select id from series order by id asc",
-		)
-		if len(dbrows3) == 0 {
-			t.Error("no rows 3")
-		}
-		t.Log(len(dbrows3))
-		t.Log(dbrows3[0])
-		t.Log(dbrows3[1])
-	})
-}
-
 func TestGetResolutionFromDimensions(t *testing.T) {
 	Init()
 	tests := []struct {

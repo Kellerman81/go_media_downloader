@@ -79,9 +79,9 @@ var (
 		"DBQualityMediaByID":       "select quality_profile from books where id = ?",
 		"SearchGenSelect":          "select books.quality_profile, books.id ",
 		"SearchGenTable":           " from books inner join dbbooks on dbbooks.id=books.dbbook_id where ",
-		"SearchGenMissing":         "books.missing = 1 and books.listname in (?",
+		"SearchGenMissing":         "books.dont_search = 0 and books.missing = 1 and books.listname in (?",
 		"SearchGenMissingEnd":      ")",
-		"SearchGenReached":         "quality_reached = 0 and missing = 0 and listname in (?",
+		"SearchGenReached":         "books.dont_search = 0 and books.dont_upgrade = 0 and quality_reached = 0 and missing = 0 and listname in (?",
 		"SearchGenLastScan":        " and (books.lastscan is null or books.Lastscan < ?)",
 		"SearchGenDate":            " and (dbbooks.publish_date < ? or dbbooks.publish_date is null)",
 		"SearchGenOrder":           " order by books.Lastscan asc",
@@ -103,9 +103,9 @@ var (
 		"InsertFileOrganize":       "insert into book_files (location, filename, extension, quality_profile, book_id, dbbook_id) values (?, ?, ?, ?, ?, ?)",
 		"UpdateMissingReached":     "update books SET missing = 0, quality_reached = ? where id = ?",
 		// Author-based search queries
-		"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.missing = 1 AND b.listname IN (?",
+		"SearchAuthorsMissing":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.dont_search = 0 AND b.missing = 1 AND b.listname IN (?",
 		"SearchAuthorsMissingEnd": ") ORDER BY RANDOM() LIMIT 20",
-		"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.missing = 0 AND b.quality_reached = 0 AND b.listname IN (?",
+		"SearchAuthorsUpgrade":    "SELECT DISTINCT da.name, da.id FROM dbauthors da JOIN authors auth ON da.id = auth.dbauthor_id JOIN books b ON b.author_id = auth.id WHERE auth.track_mode != 'none' AND auth.dont_search = 0 AND b.dont_search = 0 AND b.dont_upgrade = 0 AND b.missing = 0 AND b.quality_reached = 0 AND b.listname IN (?",
 		"SearchAuthorsUpgradeEnd": ") ORDER BY RANDOM() LIMIT 20",
 	}
 )
@@ -436,7 +436,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		"Insert into book_histories (title, url, target, indexer, downloaded_at, book_id, dbbook_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
-		&targetPath,
+		targetPath,
 		&indexerName,
 		&bookID,
 		&dbbookID,

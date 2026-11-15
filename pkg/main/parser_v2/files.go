@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/pool"
@@ -844,7 +845,7 @@ func parseFFProbeTags(info *TrackInfo, tagMap map[string]string) {
 
 // runFFProbeAudio runs ffprobe on an audio file and returns parsed JSON.
 func runFFProbeAudio(ctx context.Context, filePath string) (*ffprobeAudioResult, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
+	cmd := exec.CommandContext(ctx, config.FfprobeExecutable(),
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_format",
@@ -885,7 +886,7 @@ func ReadEmbeddedChapters(ctx context.Context, filePath string) ([]tags.Chapter,
 
 // ffprobeChapters reads the chapter list of filePath with ffprobe.
 func ffprobeChapters(ctx context.Context, filePath string) ([]tags.Chapter, error) {
-	out, err := exec.CommandContext(ctx, "ffprobe",
+	out, err := exec.CommandContext(ctx, config.FfprobeExecutable(),
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_chapters",

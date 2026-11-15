@@ -181,6 +181,19 @@ func TestSortAcceptedByPriority(t *testing.T) {
 			t.Fatalf("index %d: got %q, want %q", i, accepted[i].NZB.Title, w)
 		}
 	}
+
+	// A release matched by episode title comes after ones naming the episode
+	// number, whatever its priority.
+	byTitle := mk("by-title", 90)
+	byTitle.Info.TitleMatched = true
+	accepted = []apiexternal_v2.Nzbwithprio{byTitle, mk("s2026e39-low", 10), mk("s2026e39-high", 40)}
+	sortAcceptedByPriority(accepted)
+
+	for i, w := range []string{"s2026e39-high", "s2026e39-low", "by-title"} {
+		if accepted[i].NZB.Title != w {
+			t.Fatalf("title matched, index %d: got %q, want %q", i, accepted[i].NZB.Title, w)
+		}
+	}
 }
 
 func TestAcceptedMediaID(t *testing.T) {

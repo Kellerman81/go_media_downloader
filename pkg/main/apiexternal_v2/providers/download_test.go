@@ -3,6 +3,9 @@ package providers
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +28,19 @@ import (
 //   go test -v -run TestQBittorrentDownload ./pkg/main/apiexternal_v2/providers
 //
 
+// requireReachable skips a manual test when its download client isn't
+// listening, so the suite passes away from the LAN these tests were written for.
+func requireReachable(t *testing.T, host string, port int) {
+	t.Helper()
+
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 2*time.Second)
+	if err != nil {
+		t.Skipf("%s:%d not reachable (%v) - skipping", host, port, err)
+	}
+
+	conn.Close()
+}
+
 // TestQBittorrentDownload tests qBittorrent download submission
 func TestQBittorrentDownload(t *testing.T) {
 	if testing.Short() {
@@ -45,6 +61,8 @@ func TestQBittorrentDownload(t *testing.T) {
 	savePath := "/downloads/test"
 	category := "test"
 	// ========================================
+
+	requireReachable(t, host, port)
 
 	provider, err := qbittorrent.NewProvider(host, port, username, password, useSSL, "")
 	if err != nil {
@@ -137,6 +155,8 @@ func TestDelugeDownload(t *testing.T) {
 	}
 	baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
 
+	requireReachable(t, host, port)
+
 	provider := deluge.NewProvider(baseURL, "", password)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -221,6 +241,8 @@ func TestTransmissionDownload(t *testing.T) {
 		scheme = "https"
 	}
 	baseURL := fmt.Sprintf("%s://%s:%d/transmission/rpc", scheme, host, port)
+
+	requireReachable(t, host, port)
 
 	provider := transmission.NewProvider(baseURL, username, password)
 
@@ -369,6 +391,10 @@ func TestSABnzbdDownload(t *testing.T) {
 	category := "test"
 	// ========================================
 
+	if apiKey == "" {
+		t.Skip("SABnzbd apiKey not set - edit the parameters above to run this test")
+	}
+
 	provider, err := sabnzbd.NewProvider(host, port, apiKey, useSSL, "")
 	if err != nil {
 		t.Fatalf("Failed to create SABnzbd provider: %v", err)
@@ -449,6 +475,11 @@ func TestNZBGetDownload(t *testing.T) {
 	nzbURL := "https://api.nzbplanet.net/api?t=get&id=b28e773c6d8b68714e4e960906b0d2bd&apikey="
 	category := "test"
 	// ========================================
+
+	// It submits a real download, so only run once the URL carries a key.
+	if strings.HasSuffix(nzbURL, "apikey=") {
+		t.Skip("nzbURL has no API key - edit the parameters above to run this test")
+	}
 
 	provider, err := nzbget.NewProvider(host, port, username, password, useSSL, "")
 	if err != nil {

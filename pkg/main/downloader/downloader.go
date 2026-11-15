@@ -291,7 +291,7 @@ func (d *downloadertype) downloadNzbType(isType uint, savePath, downloadID strin
 			return
 		}
 
-		downloadstate.Started(isType, historyID, d.DownloaderCfg.Name, downloadID)
+		downloadstate.Started(isType, &historyID, &d.DownloaderCfg.Name, downloadID)
 	}
 }
 

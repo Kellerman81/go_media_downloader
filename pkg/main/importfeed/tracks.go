@@ -266,11 +266,11 @@ func resolveChaptersForMatching(
 			database.Getdatarow[uint](
 				false,
 				"SELECT count() FROM dbaudiobook_chapters WHERE dbaudiobook_id = ?",
-				&audiobookID,
+				audiobookID,
 			),
 			`SELECT title, chapter_number, runtime_ms FROM dbaudiobook_chapters
 			  WHERE dbaudiobook_id = ? ORDER BY position, chapter_number`,
-			&audiobookID,
+			audiobookID,
 		)
 
 		// Rows without runtimes can't verify anything; Audnex may have them.
@@ -327,7 +327,7 @@ func GetExpectedTrackRuntimes(databaseID uint, isAudiobook bool) []int64 {
 		query = "SELECT runtime_ms FROM dbtracks WHERE dbalbum_id = ? ORDER BY disc_number, track_number"
 	}
 
-	return database.Getrowssize[int64](false, countQuery, query, &databaseID)
+	return database.Getrowssize[int64](false, countQuery, query, databaseID)
 }
 
 // allRuntimesZero returns true if the slice is non-empty and every element is 0.
@@ -623,17 +623,17 @@ func addAudiobookFilesToDatabase(
 		// Insert file record (audiobookListID = audiobooks.id, album.DatabaseID = dbaudiobook_id)
 		if err := database.InsertAudiobookFile(
 			audiobookListID,
-			album.Tracks[i].Filepath,
-			album.Tracks[i].Filename,
-			album.Tracks[i].Extension,
-			album.Tracks[i].Format,
-			album.Tracks[i].QualityProfile,
-			album.Tracks[i].FileSize,
-			album.Tracks[i].Bitrate,
-			album.Tracks[i].RuntimeMS,
-			album.Tracks[i].TrackNumber,
-			album.Tracks[i].DiscNumber,
-			album.DatabaseID,
+			&album.Tracks[i].Filepath,
+			&album.Tracks[i].Filename,
+			&album.Tracks[i].Extension,
+			&album.Tracks[i].Format,
+			&album.Tracks[i].QualityProfile,
+			&album.Tracks[i].FileSize,
+			&album.Tracks[i].Bitrate,
+			&album.Tracks[i].RuntimeMS,
+			&album.Tracks[i].TrackNumber,
+			&album.Tracks[i].DiscNumber,
+			&album.DatabaseID,
 		); err != nil {
 			logger.Logtype("error", 1).
 				Str("file", album.Tracks[i].Filepath).

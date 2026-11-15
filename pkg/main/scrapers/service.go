@@ -15,7 +15,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/csrfapi"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/htmlxpath"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/scrapers/project1service"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // ScraperType represents the type of scraper.
@@ -280,8 +279,8 @@ func (*Service) findSeriesConfig(serieName string) (*config.ManualConfig, error)
 			continue
 		}
 
-		var seriesConfig config.MainManualConfig
-		if err := toml.Unmarshal(content, &seriesConfig); err != nil {
+		seriesConfig, err := config.DecodeManualConfig(content)
+		if err != nil {
 			logger.Logtype(logger.StatusWarning, 0).
 				Err(err).
 				Str("file", files[i]).
@@ -411,6 +410,8 @@ func (*Service) createHTMLXPathScraperFromSerie(
 		URLXPath:       cfg.URLXPath,
 		DateXPath:      cfg.DateXPath,
 		ActorsXPath:    cfg.ActorsXPath,
+		PlotXPath:      cfg.PlotXPath,
+		ScenePlotXPath: cfg.ScenePlotXPath,
 		TitleAttribute: cfg.TitleAttribute,
 		URLAttribute:   cfg.URLAttribute,
 

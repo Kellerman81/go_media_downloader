@@ -353,7 +353,7 @@ func namingTestByDBID(c *gin.Context, cfg apiNameInput, idStr, perListTable, fkC
 
 	database.GetdatarowArgs(
 		"SELECT "+fkColumn+", rootpath, listname FROM "+perListTable+" WHERE id = ? LIMIT 1",
-		id, &dbid, &rootpath, &listname,
+		&id, &dbid, &rootpath, &listname,
 	)
 
 	if dbid == 0 {
@@ -513,7 +513,7 @@ func HandleNamingTest(c *gin.Context) {
 	if cfg.GroupType == "movie" {
 		movie, _ := database.GetMovies(
 			database.Querywithargs{Where: logger.FilterByID},
-			cfg.MovieID,
+			&cfg.MovieID,
 		)
 		if movie == nil {
 			c.String(200, renderAlert("Movie not found", "danger"))
@@ -590,7 +590,7 @@ func HandleNamingTest(c *gin.Context) {
 	} else {
 		series, _ := database.GetSeries(
 			database.Querywithargs{Where: logger.FilterByID},
-			cfg.SerieID,
+			&cfg.SerieID,
 		)
 		if series == nil {
 			c.String(200, renderAlert("Series not found", "danger"))

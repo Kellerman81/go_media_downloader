@@ -668,7 +668,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 		// Title starts with our search term; closest (shortest) titles first.
 		ids := GetrowsN[uint](false, limit,
 			"SELECT id FROM dbalbums WHERE title LIKE ? ORDER BY length(title), id LIMIT ?",
-			&likeTitle, limit)
+			&likeTitle, &limit)
 
 		addIDs(ids)
 
@@ -680,7 +680,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 				limit,
 				`SELECT id FROM dbalbums WHERE ? LIKE title || '%' AND length(title) > 5 ORDER BY length(title) DESC, id LIMIT ?`,
 				title,
-				limit,
+				&limit,
 			)
 
 			addIDs(ids)
@@ -692,7 +692,7 @@ func FindAlbumsByArtistTitle(artist, title *string, maxResults int) ([]*AlbumSea
 
 			ids = GetrowsN[uint](false, limit,
 				"SELECT id FROM dbalbums WHERE title LIKE ? ORDER BY length(title), id LIMIT ?",
-				&likeStripped, limit)
+				&likeStripped, &limit)
 
 			addIDs(ids)
 		}
@@ -845,7 +845,7 @@ func GetAlbumByRootpath(rootpath string) (*Album, error) {
 	var ab Album
 	GetdatarowArgs(
 		"SELECT id, dbalbum_id, listname, rootpath, quality_profile FROM albums WHERE rootpath = ? LIMIT 1",
-		&rootpath,
+		rootpath,
 		&ab.ID,
 		&ab.DbalbumID,
 		&ab.Listname,
@@ -866,7 +866,7 @@ func UpdateAlbumRootpath(albumID uint, rootpath string) error {
 		return nil
 	}
 
-	ExecN("UPDATE albums SET rootpath = ? WHERE id = ?", &rootpath, &albumID)
+	ExecN("UPDATE albums SET rootpath = ? WHERE id = ?", rootpath, albumID)
 
 	return nil
 }
@@ -902,7 +902,7 @@ func GetAlbumListEntryID(dbalbumID *uint, listname *string) uint {
 // FindAlbumByID returns the dbalbums row id as a search result, or nil when
 // it does not exist.
 func FindAlbumByID(id uint) *AlbumSearchResult {
-	if id == 0 || Getdatarow[uint](false, "SELECT count() FROM dbalbums WHERE id = ?", &id) == 0 {
+	if id == 0 || Getdatarow[uint](false, "SELECT count() FROM dbalbums WHERE id = ?", id) == 0 {
 		return nil
 	}
 

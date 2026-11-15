@@ -1724,7 +1724,7 @@ func performRemoveOldJobs(c *gin.Context) (string, string) {
 	// Call the actual remove old jobs function (same logic as apiDBRemoveOldJobs)
 	scantime := time.Now().AddDate(0, 0, 0-daysInt)
 
-	res, err := database.DeleteRow("job_histories", "created_at < ?", scantime)
+	res, err := database.DeleteRow("job_histories", "created_at < ?", &scantime)
 	if err != nil {
 		return fmt.Sprintf("❌ Failed to remove old jobs: %s", err.Error()), "danger"
 	}
@@ -1790,7 +1790,7 @@ func performDeleteRecord(c *gin.Context) (string, string) {
 	}
 
 	// Call the actual delete record function (same as apiDBDelete)
-	err := database.ExecNErr("DELETE FROM "+tableName+" WHERE id = ?", recordID)
+	err := database.ExecNErr("DELETE FROM "+tableName+" WHERE id = ?", &recordID)
 	if err != nil {
 		return fmt.Sprintf(
 			"❌ Failed to delete record %s from table '%s': %s",
@@ -2588,7 +2588,7 @@ func renderMediaCleanupWizardPage(csrfToken string) gomponents.Node {
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Find and remove orphaned files, duplicates, or broken links in your media library. Keep your collection clean and organized.",
+							"Find orphaned files, duplicates and broken links in your media library, and check and repair the database rows behind it.",
 						),
 					),
 				),
@@ -2616,7 +2616,7 @@ func renderMediaCleanupWizardPage(csrfToken string) gomponents.Node {
 
 					renderFormGroup("cleanup",
 						map[string]string{
-							"FindDuplicates": "Files with identical names or sizes",
+							"FindDuplicates": "Files with the same size (contents are not compared)",
 						},
 						map[string]string{
 							"FindDuplicates": "Find Duplicate Files",
@@ -2700,6 +2700,8 @@ func renderMediaCleanupWizardPage(csrfToken string) gomponents.Node {
 			html.Class("mt-4"),
 			html.Style("min-height: 50px;"),
 		),
+
+		renderDatabaseChecksSection(csrfToken),
 	)
 }
 
@@ -2708,7 +2710,9 @@ func renderMediaCleanupWizardPage(csrfToken string) gomponents.Node {
 // ================================================================================
 
 // renderCronGeneratorPage renders the cron expression generator page.
-func renderCronGeneratorPage(csrfToken string) gomponents.Node {
+// renderCronGeneratorPage renders the cron generator, starting from value
+// when set (a config field opening it in the overlay).
+func renderCronGeneratorPage(csrfToken, value string) gomponents.Node {
 	return html.Div(
 		html.Class("container-fluid"),
 
@@ -2990,6 +2994,7 @@ func renderCronGeneratorPage(csrfToken string) gomponents.Node {
 										html.Class("form-control font-monospace"),
 										html.ID("cronExpression"),
 										html.Placeholder("0 12 * * 1"),
+										gomponents.If(value != "", html.Value(value)),
 										gomponents.Attr("data-toggle", "tooltip"),
 										gomponents.Attr(
 											"title",
@@ -3232,8 +3237,12 @@ func renderCronGeneratorPage(csrfToken string) gomponents.Node {
 					});
 				}
 
-				// Initialize with default expression
-				updateExpression();
+				// Start from a passed expression, else from the dropdown defaults.
+				if ($('#cronExpression').val()) {
+					$('#cronExpression').trigger('input');
+				} else {
+					updateExpression();
+				}
 			});
 		`)),
 	)

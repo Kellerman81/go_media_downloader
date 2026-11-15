@@ -114,7 +114,7 @@ func checkaddTrackerEntry(
 	cfgplist *config.MediaListsConfig,
 	table, idCol string,
 	trackMode string,
-	dontSearch bool,
+	dontSearch *bool,
 ) error {
 	if cfgplist == nil || cfgplist.Name == "" {
 		return logger.ErrListnameEmpty
@@ -133,8 +133,8 @@ func checkaddTrackerEntry(
 		"Insert into "+table+" (listname, "+idCol+", track_mode, dont_search) values (?, ?, ?, ?)",
 		&cfgplist.Name,
 		dbid,
-		&trackMode,
-		&dontSearch,
+		trackMode,
+		dontSearch,
 	); err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func checkaddMediaEntry(
 					"INSERT INTO "+s.parentTable+" ("+s.parentIDCol+", listname, track_mode, dont_search) VALUES (?, ?, ?, 0)",
 					&parentID,
 					&cfgplist.Name,
-					&s.parentTrackMode,
+					s.parentTrackMode,
 				)
 				if err == nil {
 					trackedParentID = logger.Int64ToUint(result)
@@ -593,7 +593,7 @@ func CheckaddAuthorEntry(
 	authorConfig *AuthorConfig,
 ) error {
 	return checkaddTrackerEntry(dbid, cfgp, cfgplist, "authors", "dbauthor_id",
-		authorConfig.TrackMode, authorConfig.DontSearch)
+		authorConfig.TrackMode, &authorConfig.DontSearch)
 }
 
 // updateDbauthor updates the dbauthor record in the database.
@@ -1353,7 +1353,7 @@ func CheckaddArtistEntry(
 	artistConfig *ArtistConfig,
 ) error {
 	return checkaddTrackerEntry(dbid, cfgp, cfgplist, "artists", "dbartist_id",
-		artistConfig.TrackMode, artistConfig.DontSearch)
+		artistConfig.TrackMode, &artistConfig.DontSearch)
 }
 
 // updateDbartist updates the dbartist record in the database.

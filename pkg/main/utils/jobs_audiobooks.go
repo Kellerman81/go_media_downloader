@@ -234,12 +234,12 @@ func RetagAudiobook(ctx context.Context, cfgp *config.MediaTypeConfig, dbID uint
 }
 
 // RetagAuthorAudiobooks re-writes audio tags for all audiobooks by a given dbauthor ID.
-func RetagAuthorAudiobooks(ctx context.Context, cfgp *config.MediaTypeConfig, authorID uint) error {
+func RetagAuthorAudiobooks(ctx context.Context, cfgp *config.MediaTypeConfig, authorID *uint) error {
 	ids := database.Getrowssize[uint](
 		false,
 		"SELECT count(DISTINCT ab.dbaudiobook_id) FROM audiobooks ab JOIN dbaudiobook_authors aba ON ab.dbaudiobook_id = aba.dbaudiobook_id WHERE aba.dbauthor_id = ?",
 		"SELECT DISTINCT ab.dbaudiobook_id FROM audiobooks ab JOIN dbaudiobook_authors aba ON ab.dbaudiobook_id = aba.dbaudiobook_id WHERE aba.dbauthor_id = ?",
-		&authorID,
+		authorID,
 	)
 
 	var lastErr error

@@ -207,12 +207,12 @@ var downloaderTemplates = []providerTemplate{
 var indexerTemplates = []providerTemplate{
 	{
 		Label:    "Newznab (Generic)",
-		Fields:   map[string]string{"IndexerType": "newznab"},
+		Fields:   indexerLimits(map[string]string{"IndexerType": "newznab"}, "5", "20", ""),
 		Required: []string{"URL", "Apikey"},
 	},
 	{
 		Label:    "Torznab (Generic)",
-		Fields:   map[string]string{"IndexerType": "newznab"},
+		Fields:   indexerLimits(map[string]string{"IndexerType": "newznab"}, "5", "20", ""),
 		Required: []string{"URL", "Apikey"},
 	},
 
@@ -223,11 +223,11 @@ var indexerTemplates = []providerTemplate{
 	indexerPreset("Digital Carnage", "https://digitalcarnage.info"),
 	{
 		Label: "DogNZB",
-		Fields: map[string]string{
+		Fields: indexerLimits(map[string]string{
 			"IndexerType":  "newznab",
 			"URL":          "https://api.dognzb.cr",
 			"Customrssurl": "https://dognzb.cr/rss?r={your_api_token}&i=0",
-		},
+		}, "2", "1", "100"),
 		Required: []string{"URL", "Apikey", "Customrssurl"},
 	},
 	indexerPreset("Drunken Slug", "https://api.drunkenslug.com"),
@@ -240,12 +240,12 @@ var indexerTemplates = []providerTemplate{
 	indexerPreset("NZBGeek", "https://api.nzbgeek.info"),
 	{
 		Label: "NZBFinder",
-		Fields: map[string]string{
+		Fields: indexerLimits(map[string]string{
 			"IndexerType":       "newznab",
 			"URL":               "https://nzbfinder.ws/api/v1",
 			"Customrssurl":      "https://nzbfinder.ws/rss/category?api_token={your_api_token}",
 			"Customrsscategory": "id",
-		},
+		}, "5", "20", "25"),
 		Required: []string{"URL", "Apikey", "Customrssurl"},
 	},
 	indexerPreset("NzbNdx", "https://www.nzbndx.com"),
@@ -292,9 +292,23 @@ var indexerTemplates = []providerTemplate{
 func indexerPreset(label, url string) providerTemplate {
 	return providerTemplate{
 		Label:    label,
-		Fields:   map[string]string{"IndexerType": "newznab", "URL": url},
+		Fields:   indexerLimits(map[string]string{"IndexerType": "newznab", "URL": url}, "5", "20", ""),
 		Required: []string{"URL", "Apikey"},
 	}
+}
+
+// indexerLimits adds request limits to an indexer template: calls per
+// seconds, and a daily cap ("" for none). 5 per 20 s is what long-running
+// setups use for most indexers without getting blocked; known stricter or
+// laxer ones get their own (DogNZB, NZBFinder's free tier). The daily cap
+// depends on the account, so it's a starting point to check.
+func indexerLimits(fields map[string]string, calls, seconds, daily string) map[string]string {
+	fields["Limitercalls"], fields["Limiterseconds"] = calls, seconds
+	if daily != "" {
+		fields["LimitercallsDaily"] = daily
+	}
+
+	return fields
 }
 
 // ---- Notification templates ----

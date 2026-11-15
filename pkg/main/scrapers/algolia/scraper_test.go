@@ -2,6 +2,9 @@ package algolia
 
 import (
 	"context"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -552,5 +555,74 @@ func TestBuildRequestBodyHitsPerPage(t *testing.T) {
 	body := s.buildRequestBody(3)
 	if !strings.Contains(body, "hitsPerPage=100&") || !strings.Contains(body, "page=3") {
 		t.Errorf("unexpected request body: %s", body)
+	}
+}
+
+// fakeTransport answers every request with handle and records the URLs.
+type fakeTransport struct {
+	urls   []string
+	bodies []string
+	handle func(r *http.Request) string
+}
+
+func (f *fakeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	f.urls = append(f.urls, r.URL.String())
+
+	if r.Body != nil {
+		b, _ := io.ReadAll(r.Body)
+		f.bodies = append(f.bodies, string(b))
+	}
+
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(f.handle(r))), Header: http.Header{}}, nil
+}
+
+func plotTestDB(t *testing.T) {
+	t.Helper()
+
+	restore, err := database.UseMigratedTestDB("../../schema/db")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(restore)
+
+	for _, q := range []string{
+		"insert into dbseries (id, seriename) values (1, 'site')",
+		"insert into dbserie_episodes (dbserie_id, identifier, title, overview, scraper_id) values " +
+			"(1, 'a', 'A', '', '101'), (1, 'b', 'B', 'kept', '102'), (1, 'c', 'C', '', '103'), (1, 'd', 'D', '', 'x')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func overviews() string {
+	return strings.Join(database.GetrowsN[string](false, 4,
+		"select title || '=' || overview from dbserie_episodes order by title"), ",")
+}
+
+func TestBackfillPlots(t *testing.T) {
+	plotTestDB(t)
+
+	ft := &fakeTransport{handle: func(*http.Request) string {
+		return `{"results":[{"nbHits":2,"hits":[{"clip_id":101,"description":"Plot A"},{"clip_id":103,"description":""}]}]}`
+	}}
+	s := &Scraper{config: &Config{SiteName: "site"}, client: &http.Client{Transport: ft}, dbserieID: 1}
+
+	s.backfillPlots(context.Background())
+
+	// One request for the episodes without a plot and a numeric id.
+	if len(ft.bodies) != 1 || !strings.Contains(ft.bodies[0], url.QueryEscape("clip_id=103 OR clip_id=101")) ||
+		!strings.Contains(ft.bodies[0], "hitsPerPage=2") {
+		t.Errorf("requests = %q", ft.bodies)
+	}
+
+	if got := overviews(); got != "A=Plot A,B=kept,C=,D=" {
+		t.Errorf("overviews = %s", got)
+	}
+
+	if plotBackfillRequestBody([]string{"x", ""}) != "" {
+		t.Error("request without numeric ids")
 	}
 }

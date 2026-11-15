@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +11,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,44 +30,32 @@ import (
 
 // renderSeriesConfigPage renders the series configuration file editor page.
 func renderSeriesConfigPage(ctx *gin.Context) {
-	// Get selected file from query param
-	selectedFile := ctx.Query("file")
-
-	// Get list of series config files
 	files, err := getSeriesConfigFiles()
 	if err != nil {
-		sendJSONError(
-			ctx,
-			http.StatusInternalServerError,
-			"Error listing config files: "+err.Error(),
-		)
-
+		sendJSONError(ctx, http.StatusInternalServerError, "Error listing config files: "+err.Error())
 		return
 	}
 
-	// Load the selected file's config if specified
+	selectedFile := ctx.Query("file")
+	if selectedFile == "" && len(files) > 0 {
+		selectedFile = files[0].Name
+	}
+
 	var seriesConfig *config.MainManualConfig
 	if selectedFile != "" {
 		seriesConfig, err = loadSeriesConfigFile(selectedFile)
 		if err != nil {
-			sendJSONError(
-				ctx,
-				http.StatusInternalServerError,
-				"Error loading config file: "+err.Error(),
-			)
-
+			sendJSONError(ctx, http.StatusInternalServerError, "Error loading config file: "+err.Error())
 			return
 		}
 	}
 
-	csrfToken := getCSRFToken(ctx)
-
 	pageNode := page(
-		"Series Configuration Files",
+		"Series Configuration",
 		true,
 		false,
 		false,
-		renderSeriesConfigContent(files, selectedFile, seriesConfig, csrfToken),
+		renderSeriesConfigContent(files, selectedFile, seriesConfig, getCSRFToken(ctx)),
 	)
 
 	var buf strings.Builder
@@ -73,32 +65,121 @@ func renderSeriesConfigPage(ctx *gin.Context) {
 	ctx.String(http.StatusOK, buf.String())
 }
 
-// getSeriesConfigFiles returns a list of series config .toml files.
-func getSeriesConfigFiles() ([]string, error) {
-	configDir := config.GetConfigDir()
+// seriesConfigFile is a manual config file of the config directory.
+type seriesConfigFile struct {
+	Name  string
+	Kind  string   // series, audiobook, music or book (from the list type)
+	Count int      // entries
+	Lists []string // lists that import it
+}
 
-	entries, err := os.ReadDir(configDir)
+// manualConfigKinds maps the list types that import a manual config file to
+// the kind of entries in it.
+var manualConfigKinds = map[string]string{
+	"seriesconfig":    "series",
+	"audiobookconfig": "audiobook",
+	"musicconfig":     "music",
+	"bookconfig":      "book",
+}
+
+// manualKindMarker is the first line of a file created on the page. It keeps
+// the kind of a file that no list imports yet, and lists the file while it
+// has no entries.
+const manualKindMarker = "# manual config kind: "
+
+var manualKindMarkerRe = regexp.MustCompile(`(?m)^# manual config kind: ([a-z]+)\s*$`)
+
+// markedKind returns the kind a file's marker line names, or "".
+func markedKind(raw []byte) string {
+	if m := manualKindMarkerRe.FindSubmatch(raw); m != nil {
+		if _, ok := manualKindInfo[string(m[1])]; ok {
+			return string(m[1])
+		}
+	}
+
+	return ""
+}
+
+// listTypeFor returns the list type that imports files of a kind.
+func listTypeFor(kind string) string {
+	for listType, k := range manualConfigKinds {
+		if k == kind {
+			return listType
+		}
+	}
+
+	return ""
+}
+
+// getSeriesConfigFiles returns the manual config files (series, audiobooks,
+// music, books): the ones a list imports first, then other *.toml files with
+// [[config]] entries or a kind marker (manualKindMarker); without a marker
+// they are taken as series files. Files without entries (e.g. copies of
+// config.toml) are left out.
+func getSeriesConfigFiles() ([]seriesConfigFile, error) {
+	used := map[string][]string{}
+	kinds := map[string]string{}
+
+	config.RangeSettingsList(func(_ string, l *config.ListsConfig) {
+		kind, ok := manualConfigKinds[strings.ToLower(l.ListType)]
+		if l.ManualConfigFile == "" || !ok {
+			return
+		}
+
+		name := filepath.Base(l.ManualConfigFile)
+		used[name] = append(used[name], l.Name)
+		kinds[name] = kind
+	})
+
+	entries, err := os.ReadDir(config.GetConfigDir())
 	if err != nil {
 		return nil, err
 	}
 
-	var files []string
+	var files []seriesConfigFile
+
 	for _, entry := range entries {
-		if entry.IsDir() {
+		name := entry.Name()
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(name), ".toml") || strings.EqualFold(name, "config.toml") {
 			continue
 		}
 
-		name := entry.Name()
-		// Look for series config files - files ending in .toml but exclude the main config
-		// Common patterns: series.toml, series_*.toml, etc.
-		if strings.HasSuffix(name, ".toml") && name != "config.toml" {
-			// Try to validate it's actually a series config by attempting to load it
-			_, err := loadSeriesConfigFile(name)
-			if err == nil {
-				files = append(files, name)
-			}
+		path, err := seriesConfigPath(name)
+		if err != nil {
+			continue
 		}
+
+		// Cheap check before decoding: copies of config.toml are large and
+		// have no series entries.
+		raw, err := os.ReadFile(path)
+		marked := markedKind(raw)
+
+		if err != nil || (used[name] == nil && marked == "" && !strings.Contains(string(raw), "[[config]]")) {
+			continue
+		}
+
+		cfg, err := loadSeriesConfigFile(name)
+		if err != nil || (used[name] == nil && marked == "" && len(cfg.Config) == 0) {
+			continue
+		}
+
+		slices.Sort(used[name])
+		files = append(files, seriesConfigFile{
+			Name: name, Kind: cmp.Or(kinds[name], marked, "series"), Count: len(cfg.Config), Lists: used[name],
+		})
 	}
+
+	slices.SortStableFunc(files, func(a, b seriesConfigFile) int {
+		if (len(a.Lists) > 0) != (len(b.Lists) > 0) {
+			if len(a.Lists) > 0 {
+				return -1
+			}
+
+			return 1
+		}
+
+		return strings.Compare(a.Name, b.Name)
+	})
 
 	return files, nil
 }
@@ -140,12 +221,7 @@ func loadSeriesConfigFile(filename string) (*config.MainManualConfig, error) {
 		return nil, err
 	}
 
-	var cfg config.MainManualConfig
-	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
+	return config.DecodeManualConfig(data)
 }
 
 // saveSeriesConfigFile saves a MainSerieConfig to the specified file.
@@ -155,224 +231,556 @@ func saveSeriesConfigFile(filename string, cfg *config.MainManualConfig) error {
 		return err
 	}
 
-	data, err := toml.Marshal(cfg)
+	// Keep other top-level sections and unknown [global] keys as they are;
+	// the known [global] keys come from cfg.Global.
+	other := map[string]any{}
+	marker := ""
+
+	if raw, err := os.ReadFile(filePath); err == nil {
+		if kind := markedKind(raw); kind != "" {
+			marker = manualKindMarker + kind + "\n"
+		}
+
+		if err := toml.Unmarshal(raw, &other); err != nil {
+			return fmt.Errorf("read %s: %w", filename, err)
+		}
+
+		delete(other, "config")
+	}
+
+	global, _ := other["global"].(map[string]any)
+	if global == nil {
+		global = map[string]any{}
+	}
+
+	setOrDelete := func(key string, value any, set bool) {
+		if set {
+			global[key] = value
+		} else {
+			delete(global, key)
+		}
+	}
+
+	setOrDelete("identifiedby", cfg.Global.Identifiedby, cfg.Global.Identifiedby != "")
+	setOrDelete("search", ptrValue(cfg.Global.Search), cfg.Global.Search != nil)
+	setOrDelete("upgrade", ptrValue(cfg.Global.Upgrade), cfg.Global.Upgrade != nil)
+
+	if len(global) > 0 {
+		other["global"] = global
+	} else {
+		delete(other, "global")
+	}
+
+	data, err := marshalSeriesConfig(cfg, other)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filePath, data, 0o644)
+	return os.WriteFile(filePath, append([]byte(marker), data...), 0o644)
 }
 
-// renderSeriesConfigContent renders the main content for series config page.
+// manualConfigFileSuggestions returns the manual config files as paths for
+// a list's manual_config_file.
+func manualConfigFileSuggestions() []string {
+	files, err := getSeriesConfigFiles()
+	if err != nil {
+		return nil
+	}
+
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		paths = append(paths, "./config/"+f.Name)
+	}
+
+	return paths
+}
+
+// handleSeriesConfigCreate creates an empty manual config file of a kind.
+func handleSeriesConfigCreate(ctx *gin.Context) {
+	name := strings.TrimSpace(ctx.PostForm("name"))
+	if !strings.EqualFold(filepath.Ext(name), ".toml") {
+		name += ".toml"
+	}
+
+	kind := ctx.PostForm("kind")
+	if _, ok := manualKindInfo[kind]; !ok {
+		sendBadRequest(ctx, "unknown kind "+kind)
+		return
+	}
+
+	path, err := seriesConfigPath(name)
+	if err != nil {
+		sendBadRequest(ctx, "Use a plain file name like series_new.toml (not config.toml, no folders)")
+		return
+	}
+
+	// O_EXCL: never overwrite an existing file.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			sendBadRequest(ctx, name+" already exists")
+		} else {
+			sendJSONError(ctx, http.StatusInternalServerError, "Error creating file: "+err.Error())
+		}
+
+		return
+	}
+
+	_, err = f.WriteString(manualKindMarker + kind + "\n")
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+
+	if err != nil {
+		sendJSONError(ctx, http.StatusInternalServerError, "Error writing file: "+err.Error())
+		return
+	}
+
+	ctx.Redirect(http.StatusSeeOther, "/api/admin/seriesconfig?file="+url.QueryEscape(name))
+}
+
+// renderSeriesNewFileForm renders the form that creates a manual config file.
+func renderSeriesNewFileForm(csrfToken string) gomponents.Node {
+	kinds := make([]gomponents.Node, 0, len(manualKindInfo))
+	for _, k := range []string{"series", "audiobook", "music", "book"} {
+		kinds = append(kinds, html.Option(html.Value(k), gomponents.Text(manualKindInfo[k].Type+" ("+listTypeFor(k)+" list)")))
+	}
+
+	return html.Div(
+		html.Class("collapse mt-3"), html.ID("scNewFile"),
+		html.Form(
+			html.Class("row g-2 align-items-end border-top pt-3"),
+			html.Method("POST"),
+			html.Action("/api/admin/seriesconfig/create"),
+			html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+			html.Div(html.Class("col-sm-5"),
+				html.Label(html.Class("form-label small mb-1"), html.For("scNewName"), gomponents.Text("File name")),
+				html.Div(html.Class("input-group input-group-sm"),
+					html.Input(html.Class("form-control"), html.ID("scNewName"), html.Name("name"), html.Required(),
+						html.Pattern(`[A-Za-z0-9._\-]+`), html.Placeholder("series_kids")),
+					html.Span(html.Class("input-group-text"), gomponents.Text(".toml")),
+				),
+			),
+			html.Div(html.Class("col-sm-4"),
+				html.Label(html.Class("form-label small mb-1"), html.For("scNewKind"), gomponents.Text("Contains")),
+				html.Select(html.Class("form-select form-select-sm"), html.ID("scNewKind"), html.Name("kind"), gomponents.Group(kinds)),
+			),
+			html.Div(html.Class("col-sm-3"),
+				html.Button(html.Type("submit"), html.Class("btn btn-sm btn-primary w-100"),
+					html.I(html.Class("fa-solid fa-file-circle-plus me-1")), gomponents.Text("Create file")),
+			),
+		),
+	)
+}
+
+// renderSeriesImportHint tells how to import a file that no list imports yet.
+func renderSeriesImportHint(f seriesConfigFile) gomponents.Node {
+	return html.Div(
+		html.Class("alert alert-info d-flex align-items-start gap-2 p-3 mb-4"),
+		html.I(html.Class("fa-solid fa-circle-info mt-1")),
+		html.Div(
+			html.Strong(gomponents.Text("No list imports this file yet. ")),
+			gomponents.Text("Add a list of type "),
+			html.Code(gomponents.Text(listTypeFor(f.Kind))),
+			gomponents.Text(" with Manual Config File Path "),
+			html.Code(gomponents.Text("./config/"+f.Name)),
+			gomponents.Text(" (or pick the file there), and add the list to a "+manualKindInfo[f.Kind].Type+" media group. "),
+			html.A(html.Href("/api/admin/config/lists"), gomponents.Text("Open the lists config")),
+		),
+	)
+}
+
+func ptrValue(b *bool) bool { return b != nil && *b }
+
+// handleSeriesConfigGlobal saves a file's defaults ([global]).
+func handleSeriesConfigGlobal(ctx *gin.Context) {
+	filename := ctx.PostForm("file")
+
+	cfg, err := loadSeriesConfigFile(filename)
+	if err != nil {
+		sendJSONError(ctx, http.StatusInternalServerError, "Error loading config: "+err.Error())
+		return
+	}
+
+	onOff := func(v string) *bool {
+		switch v {
+		case "on":
+			return new(true)
+		case "off":
+			return new(false)
+		}
+
+		return nil
+	}
+
+	identifiedby := ctx.PostForm("identifiedby")
+	if identifiedby != "" && identifiedby != "ep" && identifiedby != "date" && identifiedby != "title" {
+		sendBadRequest(ctx, "identifiedby must be ep, date, title or empty")
+		return
+	}
+
+	// Fields a series doesn't set only hold the old defaults; clear them so
+	// the save doesn't write the old default into every series.
+	for i := range cfg.Config {
+		e := &cfg.Config[i]
+		if !e.Explicit.Has("identifiedby") {
+			e.Identifiedby = ""
+		}
+
+		if !e.Explicit.Has("dont_search") {
+			e.DontSearch = false
+		}
+
+		if !e.Explicit.Has("dont_upgrade") {
+			e.DontUpgrade = false
+		}
+	}
+
+	cfg.Global = config.ManualGlobalConfig{
+		Identifiedby: identifiedby,
+		Search:       onOff(ctx.PostForm("search")),
+		Upgrade:      onOff(ctx.PostForm("upgrade")),
+	}
+
+	if err := saveSeriesConfigFile(filename, cfg); err != nil {
+		sendJSONError(ctx, http.StatusInternalServerError, "Error saving config: "+err.Error())
+		return
+	}
+
+	ctx.Redirect(http.StatusSeeOther, "/api/admin/seriesconfig?file="+url.QueryEscape(filename))
+}
+
+// renderSeriesGlobalForm renders the file defaults ([global]) form.
+func renderSeriesGlobalForm(filename, kind string, g *config.ManualGlobalConfig, csrfToken string) gomponents.Node {
+	selectField := func(name, label, current string, options [][2]string) gomponents.Node {
+		opts := []gomponents.Node{html.Option(html.Value(""), gomponents.If(current == "", html.Selected()), gomponents.Text("— not set —"))}
+		for _, o := range options {
+			opts = append(opts, html.Option(html.Value(o[0]), gomponents.If(current == o[0], html.Selected()), gomponents.Text(o[1])))
+		}
+
+		return html.Div(html.Class("col-sm-6 col-lg-3"),
+			html.Label(html.Class("form-label small mb-1"), html.For("global-"+name), gomponents.Text(label)),
+			html.Select(html.Class("form-select form-select-sm"), html.ID("global-"+name), html.Name(name), gomponents.Group(opts)),
+		)
+	}
+
+	onOff := func(b *bool) string {
+		switch {
+		case b == nil:
+			return ""
+		case *b:
+			return "on"
+		default:
+			return "off"
+		}
+	}
+
+	return html.Form(
+		html.Class("px-3 py-3 border-bottom bg-light"),
+		html.Method("POST"),
+		html.Action("/api/admin/seriesconfig/global"),
+		html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+		html.Input(html.Type("hidden"), html.Name("file"), html.Value(filename)),
+		html.Div(html.Class("small fw-semibold mb-2"),
+			gomponents.Text("File defaults"),
+			html.Span(html.Class("text-muted fw-normal ms-2"),
+				gomponents.Text("([global]: used by every entry of this file that doesn't set the value itself)")),
+		),
+		html.Div(
+			html.Class("row g-2 align-items-end"),
+			gomponents.If(kind == "series" || g.Identifiedby != "",
+				selectField("identifiedby", "Identified by", g.Identifiedby, [][2]string{{"ep", "ep (S01E01)"}, {"date", "date (daily shows)"}, {"title", "title (episode title in the release name)"}})),
+			selectField("search", "Search", onOff(g.Search), [][2]string{{"on", "on"}, {"off", "off (dont_search)"}}),
+			selectField("upgrade", "Upgrades", onOff(g.Upgrade), [][2]string{{"on", "on"}, {"off", "off (dont_upgrade)"}}),
+			html.Div(html.Class("col-sm-6 col-lg-3"),
+				html.Button(html.Type("submit"), html.Class("btn btn-sm btn-outline-primary w-100"),
+					html.I(html.Class("fa-solid fa-save me-1")), gomponents.Text("Save defaults")),
+			),
+		),
+	)
+}
+
+// marshalSeriesConfig writes a series config file compactly: per series only
+// the fields that are set, in field order, without comments - the format the
+// files are written in by hand. A full struct marshal writes all ~50 fields
+// with their help text for every series (16 KB -> 1.3 MB for 248 series).
+// ManualConfig holds only scalars and string lists, so each field is one line.
+// Fields the entry set in the file (Explicit) are kept even when empty.
+func marshalSeriesConfig(cfg *config.MainManualConfig, other map[string]any) ([]byte, error) {
+	var b bytes.Buffer
+
+	if len(other) > 0 {
+		head, err := toml.Marshal(other)
+		if err != nil {
+			return nil, err
+		}
+
+		b.Write(head)
+	}
+
+	for i := range cfg.Config {
+		b.WriteString("[[config]]\n")
+
+		v := reflect.ValueOf(cfg.Config[i])
+		t := v.Type()
+
+		for f := range t.NumField() {
+			field := t.Field(f)
+
+			key, _, _ := strings.Cut(field.Tag.Get("toml"), ",")
+			if !field.IsExported() || key == "" || key == "-" {
+				continue
+			}
+
+			value := v.Field(f)
+			empty := value.IsZero() || (value.Kind() == reflect.Slice && value.Len() == 0)
+
+			// Unset fields stay unset, also those DecodeManualConfig filled
+			// from [global], so the default keeps applying; explicit ones are
+			// kept, also when false or empty.
+			if !cfg.Config[i].Explicit.Has(key) {
+				if def, ok := cfg.Global.DefaultFor(key); empty || (ok && value.Interface() == def) {
+					continue
+				}
+			}
+
+			line, err := toml.Marshal(map[string]any{key: value.Interface()})
+			if err != nil {
+				return nil, fmt.Errorf("series %q, %s: %w", cfg.Config[i].Name, key, err)
+			}
+
+			b.Write(line)
+		}
+	}
+
+	return b.Bytes(), nil
+}
+
+// manualKindInfo describes a kind of manual config file for the page.
+var manualKindInfo = map[string]struct{ Icon, Noun, Type string }{
+	"series":    {"fa-tv", "series", "series"},
+	"audiobook": {"fa-headphones", "entries", "audiobooks"},
+	"music":     {"fa-music", "entries", "music"},
+	"book":      {"fa-book", "entries", "books"},
+}
+
+// renderSeriesConfigContent renders the file selection and the entries of
+// the selected file.
 func renderSeriesConfigContent(
-	files []string,
+	files []seriesConfigFile,
 	selectedFile string,
 	seriesConfig *config.MainManualConfig,
 	csrfToken string,
 ) gomponents.Node {
-	return html.Div(
-		html.Class("container-fluid p-4"),
+	var selected seriesConfigFile
 
-		// Header
-		html.Div(
-			html.Class("row mb-4"),
-			html.Div(
-				html.Class("col-12"),
-				html.H1(html.Class("h3 mb-3"), gomponents.Text("Series Configuration Files")),
-				html.P(
-					html.Class("text-muted"),
-					gomponents.Text(
-						"Select a series configuration file to view and edit TV series settings.",
-					),
-				),
+	pills := make([]gomponents.Node, 0, len(files))
+	for _, f := range files {
+		if f.Name == selectedFile {
+			selected = f
+		}
+
+		class := "nav-link d-flex flex-column align-items-start py-2"
+		if f.Name == selectedFile {
+			class += " active"
+		}
+
+		usedBy := "not imported by a list"
+		if len(f.Lists) > 0 {
+			usedBy = "list " + strings.Join(f.Lists, ", ") + " · " + manualKindInfo[f.Kind].Type
+		}
+
+		pills = append(pills, html.Li(html.Class("nav-item"),
+			html.A(html.Class(class), html.Href("/api/admin/seriesconfig?file="+url.QueryEscape(f.Name)),
+				html.Span(html.Class("fw-semibold"), html.I(html.Class("fa-solid "+manualKindInfo[f.Kind].Icon+" me-1")), gomponents.Text(f.Name),
+					html.Span(html.Class("badge bg-secondary ms-2"), gomponents.Text(strconv.Itoa(f.Count)))),
+				html.Small(html.Class("opacity-75"), gomponents.Text(usedBy)),
 			),
-		),
-
-		// File selector
-		html.Div(
-			html.Class("row mb-4"),
-			html.Div(
-				html.Class("col-md-6"),
-				html.Div(
-					html.Class("card"),
-					html.Div(
-						html.Class("card-body"),
-						html.H5(
-							html.Class("card-title"),
-							gomponents.Text("Select Configuration File"),
-						),
-						html.Form(
-							html.Method("GET"),
-							html.Action("/api/admin/seriesconfig"),
-							html.Div(
-								html.Class("mb-3"),
-								html.Label(
-									html.Class("form-label"),
-									html.For("file-select"),
-									gomponents.Text("Configuration File"),
-								),
-								html.Select(
-									html.Class("form-select"),
-									html.ID("file-select"),
-									html.Name("file"),
-									gomponents.Attr("onchange", "this.form.submit()"),
-									html.Option(
-										html.Value(""),
-										gomponents.Text("-- Select a file --"),
-									),
-									renderFileOptions(files, selectedFile),
-								),
-							),
-						),
-					),
-				),
-			),
-		),
-
-		// Series config editor (shown if file is selected)
-		gomponents.If(selectedFile != "" && seriesConfig != nil,
-			renderSeriesConfigEditor(selectedFile, seriesConfig, csrfToken),
-		),
-	)
-}
-
-// renderFileOptions renders option elements for file select dropdown.
-func renderFileOptions(files []string, selectedFile string) gomponents.Node {
-	options := make([]gomponents.Node, 0, len(files))
-	for _, file := range files {
-		options = append(options, html.Option(
-			html.Value(file),
-			gomponents.If(file == selectedFile, html.Selected()),
-			gomponents.Text(file),
 		))
 	}
 
-	return gomponents.Group(options)
-}
-
-// renderSeriesConfigEditor renders the editor for series entries.
-func renderSeriesConfigEditor(
-	filename string,
-	cfg *config.MainManualConfig,
-	csrfToken string,
-) gomponents.Node {
-	// Safety check for nil config
-	if cfg == nil {
-		return html.Div(
-			html.Class("alert alert-warning"),
-			gomponents.Text("Error: Could not load configuration file."),
-		)
+	var fileSection gomponents.Node = html.P(html.Class("text-muted mb-0"), gomponents.Text(
+		"No config files found. Create one, then import it with a list of type seriesconfig, audiobookconfig, musicconfig or bookconfig (manual_config_file)."))
+	if len(pills) > 0 {
+		fileSection = html.Ul(html.Class("nav nav-pills gap-2"), gomponents.Group(pills))
 	}
 
 	return html.Div(
-		html.Class("row"),
+		html.Class("config-section-enhanced"),
+		renderEnhancedPageHeader(
+			"fa-solid fa-tv",
+			"Series Configuration",
+			"The config files your seriesconfig, audiobookconfig, musicconfig and bookconfig lists import: which series, authors, artists and books are tracked and how they are searched and organized.",
+		),
 		html.Div(
-			html.Class("col-12"),
-			html.Div(
-				html.Class("card"),
-				html.Div(
-					html.Class("card-header"),
-					html.H5(html.Class("card-title mb-0"),
-						html.I(html.Class("fa-solid fa-tv me-2")),
-						gomponents.Textf("Editing: %s", filename),
-					),
+			html.Class("card border-0 shadow-sm mb-4"),
+			html.Div(html.Class("card-body"),
+				html.Div(html.Class("d-flex align-items-center mb-3"),
+					html.H6(html.Class("text-muted text-uppercase small mb-0 me-auto"), gomponents.Text("Configuration file")),
+					html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-primary"),
+						gomponents.Attr("data-bs-toggle", "collapse"), gomponents.Attr("data-bs-target", "#scNewFile"),
+						gomponents.Attr("aria-expanded", "false"), gomponents.Attr("aria-controls", "scNewFile"),
+						html.I(html.Class("fa-solid fa-file-circle-plus me-1")), gomponents.Text("New file")),
 				),
-				html.Div(
-					html.Class("card-body"),
-					html.P(
-						html.Class("text-muted mb-3"),
-						gomponents.Textf(
-							"This file contains %d TV series configuration(s).",
-							len(cfg.Config),
-						),
-					),
-
-					// Add new series button
-					html.Div(
-						html.Class("mb-3"),
-						html.Button(
-							html.Class("btn btn-primary"),
-							html.Type("button"),
-							gomponents.Attr(
-								"onclick",
-								fmt.Sprintf(
-									"window.location.href='/api/admin/seriesconfig/add?file=%s'",
-									url.QueryEscape(filename),
-								),
-							),
-							html.I(html.Class("fa-solid fa-plus me-2")),
-							gomponents.Text("Add New Series"),
-						),
-					),
-
-					// Series list
-					gomponents.If(len(cfg.Config) > 0,
-						renderSeriesList(filename, cfg.Config, csrfToken),
-					),
-				),
+				fileSection,
+				renderSeriesNewFileForm(csrfToken),
 			),
+		),
+		gomponents.If(selected.Name != "" && len(selected.Lists) == 0, renderSeriesImportHint(selected)),
+		gomponents.If(selectedFile != "" && seriesConfig != nil,
+			renderSeriesConfigEditor(selectedFile, fileKind(files, selectedFile), seriesConfig, csrfToken),
 		),
 	)
 }
 
-// renderSeriesList renders the list of series configurations.
+// fileKind returns the kind of a listed file; series for an unlisted one.
+func fileKind(files []seriesConfigFile, name string) string {
+	for _, f := range files {
+		if f.Name == name {
+			return f.Kind
+		}
+	}
+
+	return "series"
+}
+
+// renderSeriesConfigEditor renders the entries of a file with search and actions.
+func renderSeriesConfigEditor(
+	filename, kind string,
+	cfg *config.MainManualConfig,
+	csrfToken string,
+) gomponents.Node {
+	if cfg == nil {
+		return html.Div(html.Class("alert alert-warning"), gomponents.Text("Error: Could not load configuration file."))
+	}
+
+	info := manualKindInfo[kind]
+
+	var body gomponents.Node = html.P(html.Class("text-muted text-center py-4 mb-0"), gomponents.Text("This file has no entries yet."))
+	if len(cfg.Config) > 0 {
+		body = renderSeriesList(filename, kind, cfg.Config, csrfToken)
+	}
+
+	addLabel := "Add Series"
+	if kind != "series" {
+		addLabel = "Add Entry"
+	}
+
+	return html.Div(
+		html.Class("card border-0 shadow-sm"),
+		html.Div(
+			html.Class("card-header bg-transparent d-flex flex-wrap align-items-center gap-2"),
+			html.H5(html.Class("mb-0 me-auto"),
+				html.I(html.Class("fa-solid "+info.Icon+" me-2 text-primary")),
+				gomponents.Text(filename),
+				html.Span(html.Class("text-muted fw-normal fs-6 ms-2"), gomponents.Textf("%d %s", len(cfg.Config), info.Noun)),
+			),
+			gomponents.If(len(cfg.Config) > 0, html.Input(
+				html.Type("search"), html.Class("form-control form-control-sm"), html.Style("max-width: 260px;"),
+				html.ID("scSearch"), html.Placeholder("Filter…"), gomponents.Attr("aria-label", "Filter entries"),
+				gomponents.Attr("oninput", `var q=this.value.toLowerCase();document.querySelectorAll('#scTable tbody tr').forEach(function(r){r.classList.toggle('d-none',q&&r.dataset.name.indexOf(q)<0);});`),
+			)),
+			html.A(
+				html.Class("btn btn-primary btn-sm"),
+				html.Href("/api/admin/seriesconfig/add?file="+url.QueryEscape(filename)),
+				html.I(html.Class("fa-solid fa-plus me-1")),
+				gomponents.Text(addLabel),
+			),
+		),
+		html.Div(html.Class("card-body p-0"), renderSeriesGlobalForm(filename, kind, &cfg.Global, csrfToken), body),
+	)
+}
+
+// renderSeriesList renders the entries of a file as a table.
 func renderSeriesList(
-	filename string,
+	filename, kind string,
 	series []config.ManualConfig,
 	csrfToken string,
 ) gomponents.Node {
 	return html.Div(
 		html.Class("table-responsive"),
 		html.Table(
-			html.Class("table table-hover"),
-			html.THead(
+			html.ID("scTable"),
+			html.Class("table table-hover align-middle mb-0"),
+			html.THead(html.Class("table-light"),
 				html.Tr(
-					html.Th(gomponents.Text("Name")),
-					html.Th(gomponents.Text("TVDB ID")),
+					html.Th(html.Class("ps-3"), gomponents.Text(map[string]string{
+						"series": "Series", "audiobook": "Name", "music": "Name", "book": "Name",
+					}[kind])),
+					html.Th(gomponents.Text(map[string]string{
+						"series": "TVDB ID", "audiobook": "Author / series", "music": "Artist / album series", "book": "Author / series",
+					}[kind])),
 					html.Th(gomponents.Text("Source")),
-					html.Th(gomponents.Text("Identified By")),
+					gomponents.If(kind == "series", html.Th(gomponents.Text("Identified by"))),
 					html.Th(gomponents.Text("Search")),
-					html.Th(gomponents.Text("Actions")),
+					html.Th(html.Class("text-end pe-3"), gomponents.Text("Actions")),
 				),
 			),
-			html.TBody(
-				renderSeriesRows(filename, series, csrfToken),
-			),
+			html.TBody(renderSeriesRows(filename, kind, series, csrfToken)),
 		),
 	)
 }
 
+// seriesDefault shows a series setting: its own value, else the file default
+// ([global], already applied by DecodeManualConfig) or the built-in default,
+// marked as such.
+func seriesDefault(s *config.ManualConfig, key, value, def string) gomponents.Node {
+	if s.Explicit.Has(key) && value != "" {
+		return gomponents.Text(value)
+	}
+
+	note := "default"
+	if value != "" {
+		note = "file default"
+	}
+
+	return gomponents.Group([]gomponents.Node{
+		gomponents.Text(cmp.Or(value, def)),
+		html.Small(html.Class("text-muted ms-1"), gomponents.Text(note)),
+	})
+}
+
 // renderSeriesRows renders table rows for each series.
 func renderSeriesRows(
-	filename string,
+	filename, kind string,
 	series []config.ManualConfig,
 	csrfToken string,
 ) gomponents.Node {
 	rows := make([]gomponents.Node, 0, len(series))
 	for i, s := range series {
-		searchStatus := "Enabled"
+		search := html.Span(html.Class("badge bg-success"), gomponents.Text("On"))
 		if s.DontSearch {
-			searchStatus = "Disabled"
+			search = html.Span(html.Class("badge bg-secondary"), gomponents.Text("Off"))
 		}
 
+		tvdb := gomponents.Node(html.Span(html.Class("text-muted"), gomponents.Text("–")))
+		if who := cmp.Or(s.AuthorName, s.BookSeriesName); kind == "audiobook" || kind == "book" {
+			tvdb = gomponents.Text(cmp.Or(who, "–"))
+		} else if who := cmp.Or(s.ArtistName, s.AlbumSeriesName); kind == "music" {
+			tvdb = gomponents.Text(cmp.Or(who, "–"))
+		} else if s.TvdbID > 0 {
+			tvdb = html.A(html.Href(fmt.Sprintf("https://thetvdb.com/dereferrer/series/%d", s.TvdbID)),
+				html.Target("_blank"), html.Rel("noopener"), gomponents.Text(strconv.Itoa(s.TvdbID)))
+		}
+
+		editURL := fmt.Sprintf("/api/admin/seriesconfig/edit?file=%s&index=%d", url.QueryEscape(filename), i)
+
 		rows = append(rows, html.Tr(
-			html.Td(gomponents.Text(s.Name)),
-			html.Td(gomponents.Textf("%d", s.TvdbID)),
-			html.Td(gomponents.Text(s.Source)),
-			html.Td(gomponents.Text(s.Identifiedby)),
-			html.Td(gomponents.Text(searchStatus)),
-			html.Td(
-				html.A(
-					html.Class("btn btn-sm btn-primary me-2"),
-					html.Href(
-						fmt.Sprintf(
-							"/api/admin/seriesconfig/edit?file=%s&index=%d",
-							url.QueryEscape(filename),
-							i,
-						),
-					),
-					html.I(html.Class("fa-solid fa-edit")),
-				),
+			html.Data("name", strings.ToLower(strings.Join(append([]string{s.Name, s.AuthorName, s.ArtistName,
+				s.BookSeriesName, s.AlbumSeriesName}, s.AlternateName...), " "))),
+			html.Td(html.Class("ps-3"),
+				html.A(html.Class("fw-semibold text-body text-decoration-none"), html.Href(editURL), gomponents.Text(s.Name)),
+				gomponents.If(len(s.AlternateName) > 0, html.Div(html.Class("small text-muted text-truncate"), html.Style("max-width: 420px;"),
+					gomponents.Text(strings.Join(s.AlternateName, ", ")))),
+				gomponents.If(s.DontUpgrade, html.Span(html.Class("badge bg-light text-dark border ms-0 mt-1"), gomponents.Text("no upgrades"))),
+			),
+			html.Td(tvdb),
+			html.Td(seriesDefault(&series[i], "source", s.Source, "tvdb")),
+			gomponents.If(kind == "series", html.Td(seriesDefault(&series[i], "identifiedby", s.Identifiedby, "ep"))),
+			html.Td(search),
+			html.Td(html.Class("text-end pe-3 text-nowrap"),
+				html.A(html.Class("btn btn-sm btn-outline-primary me-1"), html.Href(editURL), html.Title("Edit"),
+					gomponents.Attr("aria-label", "Edit "+s.Name), html.I(html.Class("fa-solid fa-pen"))),
 				html.Form(
 					html.Class("d-inline"),
 					html.Method("POST"),
@@ -382,10 +790,12 @@ func renderSeriesRows(
 					html.Input(html.Type("hidden"), html.Name("index"), html.Value(strconv.Itoa(i))),
 					html.Button(
 						html.Type("button"),
-						html.Class("btn btn-sm btn-danger"),
+						html.Class("btn btn-sm btn-outline-danger"),
+						html.Title("Delete"),
+						gomponents.Attr("aria-label", "Delete "+s.Name),
 						gomponents.Attr(
 							"onclick",
-							"var f=this.form; confirmAction('Delete series configuration', 'Delete this series configuration? This cannot be undone.', function(){ f.submit(); });",
+							"var f=this.form; confirmAction('Delete series', 'Remove "+escapeJSString(s.Name)+" from "+escapeJSString(filename)+"? This cannot be undone.', function(){ f.submit(); });",
 						),
 						html.I(html.Class("fa-solid fa-trash")),
 					),
@@ -498,10 +908,23 @@ func handleSeriesConfigAdd(ctx *gin.Context) {
 
 	csrfToken := getCSRFToken(ctx)
 
-	// Create empty serie config
+	cfg, err := loadSeriesConfigFile(filename)
+	if err != nil {
+		sendJSONError(ctx, http.StatusInternalServerError, "Error loading config: "+err.Error())
+		return
+	}
+
+	// A new series starts with the file's defaults ([global]).
 	emptySerie := &config.ManualConfig{
-		Identifiedby: "ep",
+		Identifiedby: cmp.Or(cfg.Global.Identifiedby, "ep"),
 		Source:       "tvdb",
+	}
+	if cfg.Global.Upgrade != nil {
+		emptySerie.DontUpgrade = !*cfg.Global.Upgrade
+	}
+
+	if cfg.Global.Search != nil {
+		emptySerie.DontSearch = !*cfg.Global.Search
 	}
 
 	pageNode := page(
@@ -537,72 +960,37 @@ func renderSeriesConfigForm(
 	comments, displayNames := getSerieConfigMetadata()
 	group := "serie"
 
+	backURL := "/api/admin/seriesconfig?file=" + url.QueryEscape(filename)
+
 	return html.Div(
-		html.Class("container-fluid p-4"),
-		html.Div(
-			html.Class("row"),
+		html.Class("config-section-enhanced"),
+		renderEnhancedPageHeader("fa-solid fa-tv", title, "Series config file "+filename),
+		html.A(html.Class("btn btn-link px-0 mb-3"), html.Href(backURL),
+			html.I(html.Class("fa-solid fa-arrow-left me-1")), gomponents.Text("Back to "+filename)),
+		html.Form(
+			html.Class("config-form"),
+			html.Method("POST"),
+			html.Action("/api/admin/seriesconfig/update"),
+			html.Input(html.Type("hidden"), html.Name("csrf_token"), html.Value(csrfToken)),
+			html.Input(html.Type("hidden"), html.Name("file"), html.Value(filename)),
+			gomponents.If(isEdit, html.Input(html.Type("hidden"), html.Name("index"), html.Value(strconv.Itoa(index)))),
+			renderSeriesConfigSections(serie, group, comments, displayNames),
 			html.Div(
-				html.Class("col-12"),
-				html.H1(html.Class("h3 mb-3"), gomponents.Text(title)),
-				html.Div(
-					html.Class("card"),
-					html.Div(
-						html.Class("card-body"),
-						html.Form(
-							html.Method("POST"),
-							html.Action("/api/admin/seriesconfig/update"),
-							html.Input(
-								html.Type("hidden"),
-								html.Name("csrf_token"),
-								html.Value(csrfToken),
-							),
-							html.Input(
-								html.Type("hidden"),
-								html.Name("file"),
-								html.Value(filename),
-							),
-							gomponents.If(
-								isEdit,
-								html.Input(
-									html.Type("hidden"),
-									html.Name("index"),
-									html.Value(fmt.Sprintf("%d", index)),
-								),
-							),
-
-							// Render form sections
-							renderSeriesConfigSections(serie, group, comments, displayNames),
-
-							// Submit buttons
-							html.Div(
-								html.Class("mt-4"),
-								html.Button(
-									html.Class("btn btn-primary me-2"),
-									html.Type("submit"),
-									html.I(html.Class("fa-solid fa-save me-2")),
-									gomponents.Text("Save"),
-								),
-								html.A(
-									html.Class("btn btn-info me-2"),
-									html.Href(
-										fmt.Sprintf(
-											"/api/admin/seriesconfig/helper?file=%s&index=%d",
-											url.QueryEscape(filename),
-											index,
-										),
-									),
-									html.I(html.Class("fa-solid fa-question-circle me-2")),
-									gomponents.Text("Scraper Helper"),
-								),
-								html.A(
-									html.Class("btn btn-secondary"),
-									html.Href("/api/admin/seriesconfig?file="+filename),
-									gomponents.Text("Cancel"),
-								),
-							),
-						),
-					),
+				html.Class("form-group submit-group-enhanced mt-4 p-4 rounded-3 d-flex flex-wrap gap-2 justify-content-center"),
+				html.Style("background: #f8f9fa; border: 1px solid #dee2e6;"),
+				html.Button(
+					html.Class("btn btn-primary"),
+					html.Type("submit"),
+					html.I(html.Class("fa-solid fa-save me-2")),
+					gomponents.Text("Save Series"),
 				),
+				html.A(
+					html.Class("btn btn-outline-info"),
+					html.Href(fmt.Sprintf("/api/admin/seriesconfig/helper?file=%s&index=%d", url.QueryEscape(filename), index)),
+					html.I(html.Class("fa-solid fa-wand-magic-sparkles me-2")),
+					gomponents.Text("Scraper Helper"),
+				),
+				html.A(html.Class("btn btn-outline-secondary"), html.Href(backURL), gomponents.Text("Cancel")),
 			),
 		),
 	)
@@ -640,18 +1028,21 @@ func renderSeriesConfigSections(
 				{Name: "TvdbID", Type: "number", Value: serie.TvdbID, Options: nil},
 				{Name: "AlternateName", Type: "array", Value: serie.AlternateName, Options: nil},
 				{Name: "DisallowedName", Type: "array", Value: serie.DisallowedName, Options: nil},
+				// Unset means "ep" and "tvdb" to the importer; show those instead
+				// of letting the browser preselect the first option, which a
+				// save would then write.
 				{
 					Name:  "Identifiedby",
 					Type:  "select",
-					Value: serie.Identifiedby,
+					Value: cmp.Or(serie.Identifiedby, "ep"),
 					Options: convertMapToSelectOptions(map[string][]string{
-						"options": {"ep", "date"},
+						"options": {"ep", "date", "title"},
 					}),
 				},
 				{
 					Name:  "Source",
 					Type:  "select",
-					Value: serie.Source,
+					Value: cmp.Or(serie.Source, "tvdb"),
 					Options: convertMapToSelectOptions(map[string][]string{
 						"options": {"tvdb", "scraper", "none"},
 					}),
@@ -749,6 +1140,8 @@ func renderSeriesConfigSections(
 				{Name: "URLXPath", Type: "text", Value: serie.URLXPath, Options: nil},
 				{Name: "DateXPath", Type: "text", Value: serie.DateXPath, Options: nil},
 				{Name: "ActorsXPath", Type: "text", Value: serie.ActorsXPath, Options: nil},
+				{Name: "PlotXPath", Type: "text", Value: serie.PlotXPath, Options: nil},
+				{Name: "ScenePlotXPath", Type: "text", Value: serie.ScenePlotXPath, Options: nil},
 				{Name: "TitleAttribute", Type: "text", Value: serie.TitleAttribute, Options: nil},
 				{Name: "URLAttribute", Type: "text", Value: serie.URLAttribute, Options: nil},
 			},
@@ -896,9 +1289,13 @@ func handleSeriesConfigUpdate(ctx *gin.Context) {
 			return
 		}
 
+		serie.Explicit = cfg.Config[idx].Explicit
+
+		markSeriesOverrides(&serie, &cfg.Global)
 		cfg.Config[idx] = serie
 	} else {
 		// Add new entry
+		markSeriesOverrides(&serie, &cfg.Global)
 		cfg.Config = append(cfg.Config, serie)
 	}
 
@@ -910,6 +1307,33 @@ func handleSeriesConfigUpdate(ctx *gin.Context) {
 
 	// Redirect back to main page
 	ctx.Redirect(http.StatusFound, "/api/admin/seriesconfig?file="+filename)
+}
+
+// markSeriesOverrides marks the fields [global] defaults as explicit where the
+// series' value differs from that default, so the save keeps the override; a
+// value equal to the default stays unset and keeps following [global].
+func markSeriesOverrides(serie *config.ManualConfig, global *config.ManualGlobalConfig) {
+	values := map[string]any{
+		"identifiedby": serie.Identifiedby,
+		"dont_upgrade": serie.DontUpgrade,
+		"dont_search":  serie.DontSearch,
+	}
+
+	for key, value := range values {
+		if def, ok := global.DefaultFor(key); ok && def != value {
+			serie.Explicit.Set(key)
+		}
+	}
+
+	// The form shows unset source/identifiedby as their built-in defaults;
+	// posting those back unchanged leaves the field unset.
+	if !serie.Explicit.Has("source") && serie.Source == "tvdb" {
+		serie.Source = ""
+	}
+
+	if _, ok := global.DefaultFor("identifiedby"); !ok && !serie.Explicit.Has("identifiedby") && serie.Identifiedby == "ep" {
+		serie.Identifiedby = ""
+	}
 }
 
 // parseSerieConfigForm parses form data into a SerieConfig struct.
@@ -969,6 +1393,8 @@ func parseSerieConfigForm(ctx *gin.Context) config.ManualConfig {
 	serie.URLXPath = ctx.PostForm("serie_URLXPath")
 	serie.DateXPath = ctx.PostForm("serie_DateXPath")
 	serie.ActorsXPath = ctx.PostForm("serie_ActorsXPath")
+	serie.PlotXPath = ctx.PostForm("serie_PlotXPath")
+	serie.ScenePlotXPath = ctx.PostForm("serie_ScenePlotXPath")
 	serie.TitleAttribute = ctx.PostForm("serie_TitleAttribute")
 	serie.URLAttribute = ctx.PostForm("serie_URLAttribute")
 

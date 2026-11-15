@@ -286,11 +286,13 @@ type mtSource struct {
 }
 
 // mtSources lists the data_import paths of cfgp and the reason folders below
-// their move_unprocessed paths.
-func mtSources(cfgp *config.MediaTypeConfig) []mtSource {
+// their move_unprocessed paths. With counts, each reason folder's label shows
+// how many folders it holds.
+func mtSources(cfgp *config.MediaTypeConfig, counts bool) []mtSource {
 	var out []mtSource
 
 	seen := make(map[string]bool)
+	seenUnprocessed := make(map[string]bool)
 
 	for i := range cfgp.DataImport {
 		imp := &cfgp.DataImport[i]
@@ -302,9 +304,12 @@ func mtSources(cfgp *config.MediaTypeConfig) []mtSource {
 			})
 		}
 
-		if imp.MoveUnprocessed == "" {
+		// Import paths often share one move_unprocessed path.
+		if imp.MoveUnprocessed == "" || seenUnprocessed[imp.MoveUnprocessed] {
 			continue
 		}
+
+		seenUnprocessed[imp.MoveUnprocessed] = true
 
 		reasons, err := os.ReadDir(imp.MoveUnprocessed)
 		if err != nil {
@@ -319,29 +324,49 @@ func mtSources(cfgp *config.MediaTypeConfig) []mtSource {
 
 			seen[p] = true
 
-			n := 0
-			if sub, err := os.ReadDir(p); err == nil {
-				for _, e := range sub {
-					if e.IsDir() {
-						n++
-					}
-				}
+			label := "Unprocessed: " + r.Name()
+			if counts {
+				label += fmt.Sprintf(" (%d folders)", mtCountEntries(p))
 			}
 
-			out = append(out, mtSource{
-				Value: strconv.Itoa(i) + "|" + p,
-				Label: fmt.Sprintf("Unprocessed: %s (%d folders)", r.Name(), n),
-			})
+			out = append(out, mtSource{Value: strconv.Itoa(i) + "|" + p, Label: label})
 		}
 	}
 
 	return out
 }
 
+// mtCountEntries counts the entries of dir (move_unprocessed only moves
+// folders there). It reads names only: os.ReadDir also stats every entry when
+// the file system does not report entry types (Unraid's /mnt/user FUSE
+// layer), which made the source list take 25 s for a few thousand folders.
+func mtCountEntries(dir string) int {
+	f, err := os.Open(dir)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	n := 0
+
+	for {
+		names, err := f.Readdirnames(1024)
+		for _, name := range names {
+			if !strings.HasPrefix(name, ".") {
+				n++
+			}
+		}
+
+		if err != nil {
+			return n
+		}
+	}
+}
+
 // mtResolveSource checks value against the sources of cfgp, so only
 // configured paths can be scanned.
 func mtResolveSource(cfgp *config.MediaTypeConfig, value string) (int, string, string, bool) {
-	for _, src := range mtSources(cfgp) {
+	for _, src := range mtSources(cfgp, false) {
 		if src.Value != value {
 			continue
 		}
@@ -398,8 +423,7 @@ func mtCollectFolders(
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 func adminPageMatchTester(ctx *gin.Context) {
-	kind := mtKindByKey(ctx.Query("kind"))
-	pageNode := page(kind.Title, false, false, true, renderMatchTesterPage(getCSRFToken(ctx), kind))
+	pageNode := page("Match Tester", false, false, true, renderMatchTesterPage(getCSRFToken(ctx)))
 
 	var buf strings.Builder
 	pageNode.Render(&buf)
@@ -430,7 +454,7 @@ func HandleMatchTesterSources(ctx *gin.Context) {
 		return
 	}
 
-	sources := mtSources(cfgp)
+	sources := mtSources(cfgp, true)
 	if len(sources) == 0 {
 		mtRender(ctx, html.Option(html.Value(""), gomponents.Text("-- no import or unprocessed paths --")))
 		return
@@ -451,9 +475,14 @@ func HandleMatchTesterStart(ctx *gin.Context) {
 
 	cfgp := config.GetSettingsMedia(cfgName)
 
-	kind := mtKindByKey(ctx.PostForm("kind"))
-	if cfgp == nil || mtKindOf(cfgp.IsType) != kind {
-		mtRender(ctx, mtAlert("danger", "Select a "+kind.ConfigNoun+" media config."))
+	if cfgp == nil {
+		mtRender(ctx, mtAlert("danger", "Select a media config."))
+		return
+	}
+
+	kind := mtKindOf(cfgp.IsType)
+	if kind == nil {
+		mtRender(ctx, mtAlert("danger", "The match tester doesn't support media config "+cfgName+"."))
 		return
 	}
 
@@ -795,12 +824,23 @@ func mtRenamePlan(
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-func renderMatchTesterPage(csrfToken string, kind *mtKind) gomponents.Node {
-	configs := kind.configs()
-
+func renderMatchTesterPage(csrfToken string) gomponents.Node {
+	// One group per kind; the chosen config decides what is tested.
 	options := []gomponents.Node{html.Option(html.Value(""), gomponents.Text("-- select --"))}
-	for _, c := range configs {
-		options = append(options, html.Option(html.Value(c), gomponents.Text(c)))
+	for _, k := range mtKinds {
+		configs := k.configs()
+		if len(configs) == 0 {
+			continue
+		}
+
+		group := make([]gomponents.Node, 0, len(configs)+1)
+		group = append(group, gomponents.Attr("label", k.Label))
+
+		for _, c := range configs {
+			group = append(group, html.Option(html.Value(c), html.Data("hint", k.Subtitle), gomponents.Text(c)))
+		}
+
+		options = append(options, gomponents.El("optgroup", group...))
 	}
 
 	return html.Div(
@@ -811,19 +851,20 @@ func renderMatchTesterPage(csrfToken string, kind *mtKind) gomponents.Node {
 				html.Class("header-content"),
 				html.Div(
 					html.Class("header-icon-wrapper"),
-					html.I(html.Class("fa-solid "+kind.Icon+" header-icon")),
+					html.I(html.Class("fa-solid fa-flask header-icon")),
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text(kind.Title)),
-					html.P(html.Class("header-subtitle"), gomponents.Text(kind.Subtitle)),
+					html.H2(html.Class("header-title"), gomponents.Text("Match Tester")),
+					html.P(html.Class("header-subtitle"), gomponents.Text(
+						"Run the structure job's matching read-only over an import folder of any media config, compare every candidate, "+
+							"and organize the entries you pick with the candidate you pick. Nothing is written until you process an entry.")),
 				),
 			),
 		),
 		html.Form(
 			html.Class("config-form"),
 			html.ID("matchTesterForm"),
-			html.Input(html.Type("hidden"), html.Name("kind"), html.Value(kind.Key)),
 			html.Div(
 				html.Class("row g-3 align-items-end"),
 				html.Div(
@@ -836,6 +877,8 @@ func renderMatchTesterPage(csrfToken string, kind *mtKind) gomponents.Node {
 						hx.Get(mtRoute+"/sources"),
 						hx.Target("#mtSource"),
 						hx.Trigger("change"),
+						gomponents.Attr("onchange",
+							"var o=this.options[this.selectedIndex];document.getElementById('mtKindHint').textContent=(o&&o.dataset.hint)||'';"),
 						gomponents.Group(options),
 					),
 				),
@@ -866,6 +909,7 @@ func renderMatchTesterPage(csrfToken string, kind *mtKind) gomponents.Node {
 				),
 			),
 		),
+		html.P(html.ID("mtKindHint"), html.Class("small mt-2 mb-0")),
 		html.Div(
 			html.Class("small text-muted mt-2"),
 			gomponents.Text(fmt.Sprintf(

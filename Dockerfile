@@ -3,56 +3,36 @@
 # build context (CI passes the binaries its build job already made).
 ARG BINARIES=builder
 
-# Build stage
-FROM golang:1.26.10-bookworm AS builder
+# Build stage: runs on the build machine and cross-compiles for the target.
+FROM --platform=$BUILDPLATFORM golang:trixie AS builder
 
 LABEL org.opencontainers.image.authors="Kellerman81 <Kellerman81@gmail.com>"
 
-# Install build dependencies
-RUN apt-get update && \
-    apt-get -y install clang cmake gcc-i686-linux-gnu gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-mingw-w64
-RUN dpkg-reconfigure --frontend noninteractive tzdata
-
-# Set working directory
 WORKDIR /build
 
-# Copy go mod files first for better caching
-COPY ./pkg/main/go.mod ./pkg/main/go.sum ./
-RUN go mod download
+# Module files first for better caching
+COPY ./pkg/main/go.mod ./pkg/main/go.sum ./pkg/main/
+COPY ./pkg/imdb/go.mod ./pkg/imdb/go.sum ./pkg/imdb/
+RUN cd pkg/main && go mod download && cd ../imdb && go mod download
 
-# Copy source code
-COPY . .
+COPY ./pkg ./pkg
 
-# Build arguments
 ARG VERSION=dev
 ARG GITHASH=unknown
 ARG BUILD_DATE=unknown
-ARG TARGETOS
+ARG TARGETOS=linux
 ARG TARGETARCH
-ARG SETGCC=gcc
-ARG SETGOARM
 
-ENV CGO_ENABLED=1
+# Both modules are pure Go (modernc.org/sqlite): no C toolchain needed, and
+# the binaries are static.
+ENV CGO_ENABLED=0
 
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        SETGCC=aarch64-linux-gnu-gcc; \
-    elif [ "$TARGETARCH" = "armhf" ]; then \
-        SETGCC=arm-linux-gnueabihf-gcc; \
-        SETGOARM=7; \
-    elif [ "$TARGETOS" = "windows" ]; then \
-        SETGCC=x86_64-w64-mingw32-gcc; \
-    fi;
-    
-# Build the applications
-RUN cd ./pkg/main/ && \
-    CC=${SETGCC} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${SETGOARM} go build \
-    -ldflags="-s -w -X 'main.version=${VERSION}' -X 'main.githash=${GITHASH}' -X 'main.buildstamp=${BUILD_DATE}'" \
-    -o ../../go_media_downloader main.go
-
-RUN cd ./pkg/imdb/ && \
-    CC=${SETGCC} GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${SETGOARM} go build \
-    -ldflags="-s -w -X 'main.version=${VERSION}' -X 'main.githash=${GITHASH}' -X 'main.buildstamp=${BUILD_DATE}'" \
-    -o ../../init_imdb imdb.go
+RUN set -e; \
+    if [ "$TARGETARCH" = "arm" ]; then export GOARM=7; fi; \
+    export GOOS=$TARGETOS GOARCH=$TARGETARCH; \
+    LDF="-s -w -X 'main.version=${VERSION}' -X 'main.githash=${GITHASH}' -X 'main.buildstamp=${BUILD_DATE}'"; \
+    cd /build/pkg/main && go build -trimpath -ldflags="$LDF" -o /build/go_media_downloader main.go; \
+    cd /build/pkg/imdb && go build -trimpath -ldflags="$LDF" -o /build/init_imdb imdb.go
 
 FROM scratch AS prebuilt
 ARG TARGETARCH
@@ -62,60 +42,48 @@ COPY init_imdb-linux-${TARGETARCH} /build/init_imdb
 FROM ${BINARIES} AS binaries
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.authors="Kellerman81 <Kellerman81@gmail.com>"
 
-# Install runtime dependencies. unrar is only in Debian's non-free component,
-# which bookworm-slim doesn't enable by default.
+# unrar is only in Debian's non-free component, which trixie-slim doesn't
+# enable by default. p7zip-full is a transitional package for 7zip in trixie
+# but still provides /usr/bin/7za, which existing configs point at.
 RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
         mediainfo \
         flac \
-        p7zip \
         p7zip-full \
-        graphviz \
-        gv \
         tzdata \
         libchromaprint-tools \
         unzip unrar \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Set timezone
 RUN ln -fs /usr/share/zoneinfo/Europe/Berlin /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata
 
-# Create app user for security
+# UID/GID 999, same as the bookworm image, so existing volumes stay writable.
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Create application directories
-RUN mkdir -p /app/{config,databases,logs,backup,temp,docs,schema,static} && \
+RUN mkdir -p /app/config /app/databases /app/logs /app/backup /app/temp /app/docs /app/schema /app/static && \
     chown -R appuser:appuser /app
 
 WORKDIR /app
 
-# Copy built binaries from builder stage
-COPY --from=binaries /build/go_media_downloader /build/init_imdb /app/
+COPY --from=binaries --chmod=755 /build/go_media_downloader /build/init_imdb /app/
 
-# Copy application files
 COPY --chown=appuser:appuser ./config/ /app/config/
 COPY --chown=appuser:appuser ./databases/ /app/databases/
 COPY --chown=appuser:appuser ./docs/ /app/docs/
 COPY --chown=appuser:appuser ./schema/ /app/schema/
 COPY --chown=appuser:appuser ./static/ /app/static/
-COPY --chown=appuser:appuser ./LICENSE /app/LICENSE
-COPY --chown=appuser:appuser ./README.md /app/README.md
+COPY --chown=appuser:appuser ./LICENSE ./README.md /app/
 
-# Make binaries executable
-RUN chmod +x /app/go_media_downloader /app/init_imdb
-
-# Switch to non-root user
 USER appuser
 
 VOLUME ["/app/databases", "/app/config", "/app/logs"]
-# Expose port 9090 to the outside world
 EXPOSE 9090
 CMD ["/app/go_media_downloader"]

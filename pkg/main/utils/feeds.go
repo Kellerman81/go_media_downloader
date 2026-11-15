@@ -32,7 +32,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/slidingwindow"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 	"github.com/antchfx/htmlquery"
-	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/net/html"
 )
 
@@ -703,7 +702,7 @@ func checkaddtvdbfeed(tvdbid int, name string, cfglist *config.MediaListsConfig,
 		return true
 	}
 
-	dbserieid := database.Getdatarow[uint](false, database.QueryDbseriesGetIDByTvdb, &tvdbid)
+	dbserieid := database.Getdatarow[uint](false, database.QueryDbseriesGetIDByTvdb, tvdbid)
 
 	if dbserieid == 0 ||
 		database.Getdatarow[uint](
@@ -975,14 +974,13 @@ func loadManualConfig(
 	cfglist *config.ListsConfig,
 	configType string,
 ) ([]config.ManualConfig, error) {
-	content, err := os.Open(cfglist.ManualConfigFile)
+	data, err := os.ReadFile(cfglist.ManualConfigFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading %s config: %w", configType, err)
 	}
-	defer content.Close()
 
-	var s config.MainManualConfig
-	if err = toml.NewDecoder(content).Decode(&s); err != nil {
+	s, err := config.DecodeManualConfig(data)
+	if err != nil {
 		return nil, fmt.Errorf("decoding %s config: %w", configType, err)
 	}
 
@@ -1277,7 +1275,7 @@ func Feeds(
 	//   https://www.bestsellerliste.de/spiegel-bestseller-taschenbuecher-belletristik/
 	// Configure ChartEntryNodeXPath, ChartTitleXPath, ChartArtistXPath in the list config.
 	case "bookbestsellers":
-		return d, d.getbookbestsellers(ctx, list)
+		return d, d.getbookbestsellers(ctx, cfgp, list)
 
 	// IRC announce channel monitoring.
 	// Connects to irc_server, joins irc_channels and parses announce lines with
@@ -1679,7 +1677,10 @@ func fetchAndParseChartPage(ctx context.Context, url string, fn func(*html.Node)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("chart page returned status %d for %s", resp.StatusCode, url)
+		// Headless Chrome puts the reason (e.g. a navigation timeout) in the body.
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+		return fmt.Errorf("chart page returned status %d for %s: %s",
+			resp.StatusCode, url, strings.TrimSpace(string(msg)))
 	}
 
 	doc, err := htmlquery.Parse(resp.Body)
@@ -1921,8 +1922,15 @@ func (d *feedResults) getmusiccharts(ctx context.Context, cfglist *config.MediaL
 //   - ChartTitleXPath:     XPath (relative to entry) for the book title
 //   - ChartArtistXPath:    XPath (relative to entry) for the author name (optional)
 //   - ChartTitleAttribute / ChartArtistAttribute: use an HTML attribute instead of inner text
-func (d *feedResults) getbookbestsellers(ctx context.Context, cfglist *config.MediaListsConfig) error {
-	return d.scrapeChart(ctx, cfglist, &chartScrapeConfig{
+//
+// Under an audiobook config the entries go to d.Audiobooks and the ignore/replace
+// checks use the audiobook tables; otherwise they go to d.Books.
+func (d *feedResults) getbookbestsellers(
+	ctx context.Context,
+	cfgp *config.MediaTypeConfig,
+	cfglist *config.MediaListsConfig,
+) error {
+	sc := &chartScrapeConfig{
 		table:    "books",
 		dbTable:  "dbbooks",
 		fkColumn: "dbbook_id",
@@ -1933,9 +1941,22 @@ func (d *feedResults) getbookbestsellers(ctx context.Context, cfglist *config.Me
 		artistMatch: "EXISTS (SELECT 1 FROM dbauthors y WHERE LOWER(y.name) = LOWER(?) AND " +
 			"(y.id = dbbooks.dbauthor_id OR y.id IN (SELECT dbauthor_id FROM dbbook_authors WHERE dbbook_id = dbbooks.id)))",
 		appendResult: func(title, author string) {
-			d.Books = append(d.Books, config.ManualConfig{Name: title, AuthorName: author})
+			d.Books = append(d.Books, config.ManualConfig{Name: title, AuthorName: author, SingleTitle: true})
 		},
-	})
+	}
+
+	if cfgp != nil && cfgp.IsType == config.MediaTypeAudiobook {
+		sc.table = "audiobooks"
+		sc.dbTable = "dbaudiobooks"
+		sc.fkColumn = "dbaudiobook_id"
+		sc.artistMatch = "EXISTS (SELECT 1 FROM dbauthors y WHERE LOWER(y.name) = LOWER(?) AND " +
+			"y.id IN (SELECT dbauthor_id FROM dbaudiobook_authors WHERE dbaudiobook_id = dbaudiobooks.id))"
+		sc.appendResult = func(title, author string) {
+			d.Audiobooks = append(d.Audiobooks, config.ManualConfig{Name: title, AuthorName: author, SingleTitle: true})
+		}
+	}
+
+	return d.scrapeChart(ctx, cfglist, sc)
 }
 
 // runMovieCSRFAPIScraper runs the CSRF API movie scraper.

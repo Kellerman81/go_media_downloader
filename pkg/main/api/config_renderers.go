@@ -438,13 +438,19 @@ func convertMapToSelectOptions(optionsMap map[string][]string) []SelectOption {
 	return selectOptions
 }
 
+// convertSelectOptionsToMap turns field options into the option map of
+// renderFormGroup. "options" holds the labels (single selects post the label;
+// see feedTypeValue); "values" holds the values, used by the multi-choice chips.
 func convertSelectOptionsToMap(optionsMap []SelectOption) map[string][]string {
 	selectOptions := make([]string, 0, len(optionsMap))
+	values := make([]string, 0, len(optionsMap))
+
 	for _, row := range optionsMap {
 		selectOptions = append(selectOptions, row.Label)
+		values = append(values, fmt.Sprint(row.Value))
 	}
 
-	return map[string][]string{"options": selectOptions}
+	return map[string][]string{"options": selectOptions, "values": values}
 }
 
 // renderGeneralConfigSections organizes general config fields into logical collapsible groups.
@@ -540,9 +546,6 @@ func renderGeneralConfigSections(
 				{Name: "TraktClientID", Type: "text", Value: configv.TraktClientID},
 				{Name: "TraktClientSecret", Type: "password", Value: configv.TraktClientSecret},
 				{Name: "TraktRedirectUrl", Type: "text", Value: configv.TraktRedirectUrl},
-				{Name: "SpotifyClientID", Type: "text", Value: configv.SpotifyClientID},
-				{Name: "SpotifyClientSecret", Type: "password", Value: configv.SpotifyClientSecret},
-				{Name: "SpotifyRegion", Type: "text", Value: configv.SpotifyRegion},
 			}, group, comments, displayNames),
 
 		// Metadata Sources Section
@@ -556,6 +559,8 @@ func renderGeneralConfigSections(
 					Type:  "checkbox",
 					Value: configv.MovieMetaSourceTrakt,
 				},
+				{Name: "MovieMetaSourcePlex", Type: "checkbox", Value: configv.MovieMetaSourcePlex},
+				{Name: "MovieMetaSourceJellyfin", Type: "checkbox", Value: configv.MovieMetaSourceJellyfin},
 				{
 					Name:  "MovieAlternateTitleMetaSourceImdb",
 					Type:  "checkbox",
@@ -592,6 +597,25 @@ func renderGeneralConfigSections(
 					Type:  "checkbox",
 					Value: configv.SerieMetaSourceTrakt,
 				},
+				{Name: "SerieMetaSourcePlex", Type: "checkbox", Value: configv.SerieMetaSourcePlex},
+				{Name: "SerieMetaSourceJellyfin", Type: "checkbox", Value: configv.SerieMetaSourceJellyfin},
+				{Name: "PlexServerURL", Type: "text", Value: configv.PlexServerURL},
+				{Name: "PlexToken", Type: "password", Value: configv.PlexToken},
+				{Name: "JellyfinServerURL", Type: "text", Value: configv.JellyfinServerURL},
+				{Name: "JellyfinToken", Type: "password", Value: configv.JellyfinToken},
+				{Name: "CoverCacheDir", Type: "text", Value: configv.CoverCacheDir},
+				{Name: "PlayerVideoProfiles", Type: "array", Value: configv.PlayerVideoProfiles},
+				{Name: "PlayerAudioBitrates", Type: "arrayint", Value: configv.PlayerAudioBitrates},
+				{Name: "PlayerMaxTranscodes", Type: "number", Value: configv.PlayerMaxTranscodes},
+				{
+					Name:  "PlayerHWAccel",
+					Type:  "select",
+					Value: configv.PlayerHWAccel,
+					Options: convertMapToSelectOptions(map[string][]string{
+						"options": {"none", "vaapi", "qsv"},
+					}),
+				},
+				{Name: "PlayerHWDevice", Type: "text", Value: configv.PlayerHWDevice},
 			}, group, comments, displayNames),
 
 		// Rate Limiting Section
@@ -763,6 +787,11 @@ func renderGeneralConfigSections(
 					Name:  "MovieParseMetaSourcePriority",
 					Type:  "array",
 					Value: configv.MovieParseMetaSourcePriority,
+				},
+				{
+					Name:  "SerieMetaSourcePriority",
+					Type:  "array",
+					Value: configv.SerieMetaSourcePriority,
 				},
 				{Name: "MoveBufferSizeKB", Type: "number", Value: configv.MoveBufferSizeKB},
 				{Name: "SchedulerDisabled", Type: "checkbox", Value: configv.SchedulerDisabled},
@@ -2024,7 +2053,7 @@ func renderListsConfigSections(
 					Name:    "ManualConfigFile",
 					Type:    "text",
 					Value:   configv.ManualConfigFile,
-					Options: nil,
+					Options: convertMapToSelectOptions(map[string][]string{"options": manualConfigFileSuggestions()}),
 				},
 				{
 					Name:    "SkipEmptySize",
@@ -3614,7 +3643,12 @@ func renderQualityConfigSections(
 			accordionId,
 		),
 
-		// Reorder Rules
+		// Reorder Rules, with the priority editor that writes them.
+		html.Div(html.Class("d-flex justify-content-end mb-1"),
+			html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-primary"),
+				html.Title("Drag resolutions, sources, codecs and audio into the wanted order; the editor writes the reorder rules"),
+				gomponents.Attr("onclick", "openPriorityEditor("+jsString(configv.Name)+", function () { refreshReorderRules("+jsString(configv.Name)+"); })"),
+				html.I(html.Class("fa-solid fa-arrow-down-wide-short me-1")), gomponents.Text("Priority editor"))),
 		renderMediaArraySection(
 			"Reorder Rules",
 			"reorder-quality-"+configv.Name,
@@ -4210,43 +4244,21 @@ func renderFormGroup(
 
 		return gomponents.Text("")
 	case "selectarray":
-		var optionElements []gomponents.Node
-		if opts, ok := options["options"]; ok {
-			values := value.([]string)
-			opts2 := sort.StringSlice(opts)
-			opts2.Sort()
-
-			for _, opt := range opts2 {
-				selected := slices.Contains(values, opt)
-				if selected {
-					optionElements = append(optionElements, html.Option(
-						html.Value(opt),
-						gomponents.Text(opt),
-						html.Selected(),
-					))
-				} else {
-					optionElements = append(optionElements, html.Option(
-						html.Value(opt),
-						gomponents.Text(opt),
-					))
-				}
-			}
-		}
-
+		values, _ := value.([]string)
 		input = html.Div(
-			html.Select(
-				html.Class("form-select selectpicker"),
-				html.Multiple(),
-				html.Data("live-search", "true"),
-				html.ID(group+"_"+name),
-				html.Name(group+"_"+name),
-				gomponents.Group(optionElements),
-			),
+			renderChoiceChips(group+"_"+name, choiceOptionsFrom(options, true), values),
 			arrayPresentMarker(group+"_"+name),
 		)
 
 	case "select":
 		var optionElements []gomponents.Node
+
+		// An unset value gets its own empty option. Without it the browser
+		// preselects the first option, and saving the form writes that value.
+		if current, _ := value.(string); current == "" {
+			optionElements = append(optionElements, html.Option(html.Value(""), html.Selected(), gomponents.Text("— not set —")))
+		}
+
 		if opts, ok := options["options"]; ok {
 			opts2 := sort.StringSlice(selectOptionsWithCurrent(opts, value))
 			opts2.Sort()
@@ -4385,7 +4397,21 @@ func renderFormGroup(
 		)
 
 	case "text":
-		input = createFormField("text", group+"_"+name, value.(string), "", nil)
+		// Options of a text field are suggestions; any text stays allowed.
+		if suggestions := options["values"]; len(suggestions) > 0 {
+			listID := group + "_" + name + "_suggestions"
+			opts := make([]gomponents.Node, 0, len(suggestions))
+			for _, v := range suggestions {
+				opts = append(opts, html.Option(html.Value(v)))
+			}
+
+			input = html.Div(
+				createFormField("text", group+"_"+name, value.(string), "", []gomponents.Node{gomponents.Attr("list", listID)}),
+				html.DataList(html.ID(listID), gomponents.Group(opts)),
+			)
+		} else {
+			input = createFormField("text", group+"_"+name, value.(string), "", nil)
+		}
 	case "password":
 		input = createFormField("password", group+"_"+name, value.(string), "", nil)
 	case "number":
@@ -4426,6 +4452,11 @@ func renderFormGroup(
 			arrayPresentMarker(fieldName),
 		}
 
+		toolButton := ""
+		if tool := helperToolFor(displayNames[name]); tool != "" {
+			toolButton = helperToolRowButton(tool)
+		}
+
 		for _, v := range value.([]string) {
 			nodes = append(nodes, html.Div(
 				html.Class(ClassDFlex),
@@ -4435,12 +4466,13 @@ func renderFormGroup(
 					html.Name(fieldName),
 					html.Value(v),
 				),
+				gomponents.Raw(toolButton),
 				arrayRemoveRowButton(),
 			))
 		}
 
 		input = html.Div(append(nodes, arrayAddRowButton(
-			`<input class="form-control me-2" type="text" name="`+html2.EscapeString(fieldName)+`">`,
+			`<input class="form-control me-2" type="text" name="`+html2.EscapeString(fieldName)+`">`+toolButton,
 		))...)
 
 	case "arrayselectarray":
@@ -4628,71 +4660,19 @@ func renderFormGroup(
 		input = createFormField(inputType, group+"_"+name, "", "", nil)
 	}
 
-	// Enhanced form group with compact comment display using tooltips
 	var commentNode gomponents.Node
-	if comment, exists := comments[name]; exists && comment != "" {
-		// Create compact comment display with tooltip or collapsible help
-		shortComment := comment
-		if len(comment) > 80 {
-			// Truncate long comments and show first line only
-			lines := strings.Split(comment, "\n")
-
-			shortComment = strings.TrimSpace(lines[0])
-			if len(shortComment) > 80 {
-				shortComment = shortComment[:77] + "..."
-			}
-		}
-
-		// Create a compact help icon with tooltip for long comments
-		if len(comment) > 80 || strings.Contains(comment, "\n") {
-			commentNode = html.Div(
-				html.Div(
-					html.Class("d-flex align-items-center mt-1"),
-					html.Small(
-						html.Class("text-muted me-2"),
-						html.Style("font-size: 0.75em;"),
-						gomponents.Text(shortComment),
-					),
-					html.Button(
-						html.Type("button"),
-						html.Class("btn btn-outline-info btn-sm"),
-						html.Style(
-							"font-size: 0.85em; padding: 0.25rem 0.5rem; border-radius: 0.375rem;",
-						),
-						gomponents.Attr("data-bs-toggle", "collapse"),
-						gomponents.Attr("data-bs-target", "#help-"+group+"-"+name),
-						gomponents.Attr("aria-expanded", "false"),
-						gomponents.Attr("title", "Show detailed help"),
-						html.I(html.Class("fas fa-info-circle")),
-					),
-				),
-				html.Div(
-					html.ID("help-"+group+"-"+name),
-					html.Class("collapse mt-2"),
-					html.Div(
-						html.Class("alert alert-info"),
-						html.Style(
-							"font-size: 0.85em; padding: 0.75rem; margin: 0; border-radius: 0.375rem;",
-						),
-						// html.Strong(gomponents.Text("Help: ")),
-						html.Div(html.Class("mt-1"), gomponents.Group(createCommentLines(comment))),
-					),
-				),
-			)
-		} else {
-			// Short single line comment - display compactly
-			commentNode = html.Small(
-				html.Class("form-text text-muted"),
-				html.Style("font-size: 0.75em; margin-top: 0.25rem;"),
-				gomponents.Text(comment),
-			)
-		}
+	if comment := comments[name]; comment != "" {
+		commentNode = renderFieldHelp(group+"-"+name, comment)
 	}
 
 	// Get the display name from the displayNames map, fallback to fieldNameToUserFriendly
 	displayName := displayNames[name]
 	if displayName == "" {
 		displayName = fieldNameToUserFriendly(name)
+	}
+
+	if tool := helperToolFor(displayName); tool != "" && inputType == "text" {
+		input = withHelperTool(tool, group+"_"+name, input)
 	}
 
 	if inputType == "checkbox" {

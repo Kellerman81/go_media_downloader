@@ -105,14 +105,12 @@ type prioritySnapshot struct {
 var (
 	prioSnapshot atomic.Pointer[prioritySnapshot]
 
-	// mediainfopath/ffprobepath are lazily resolved on first use and read
-	// concurrently from per-file worker-pool goroutines (WorkerPoolParse) -
-	// mediainfoOnce/ffprobeOnce make that resolution safe; the plain
-	// check-then-write on the bare strings used to be an unsynchronized race.
+	// mediainfopath is lazily resolved on first use and read concurrently
+	// from per-file worker-pool goroutines (WorkerPoolParse) - mediainfoOnce
+	// makes that resolution safe; the plain check-then-write on the bare
+	// string used to be an unsynchronized race.
 	mediainfopath string
 	mediainfoOnce sync.Once
-	ffprobepath   string
-	ffprobeOnce   sync.Once
 
 	// Thread safety: Protect mutable global state.
 	prioritiesMu   sync.Mutex   // Serializes priority table generation
@@ -150,6 +148,25 @@ var (
 		{name: "tvdb", last: false, re: `(?i)(?:\b|_)((tvdb[0-9]{2,9}))(?:\b|_)`, getgroup: 2},
 	}
 )
+
+// GlobalScanPattern is one of the parser's fixed scan patterns.
+type GlobalScanPattern struct {
+	Name, Regex string
+	Last        bool // the last match counts instead of the first
+	Group       int  // capture group that holds the value
+}
+
+// GlobalScanPatterns returns the parser's fixed scan patterns (season,
+// episode, identifier, date, year, audio, imdb, tvdb), for the regex tester.
+func GlobalScanPatterns() []GlobalScanPattern {
+	out := make([]GlobalScanPattern, 0, len(globalscanpatterns))
+	for i := range globalscanpatterns {
+		p := &globalscanpatterns[i]
+		out = append(out, GlobalScanPattern{Name: p.name, Regex: p.re, Last: p.last, Group: p.getgroup})
+	}
+
+	return out
+}
 
 // getImdbFilename returns the path to the init_imdb executable
 // based on the current OS. For Windows it returns init_imdb.exe,

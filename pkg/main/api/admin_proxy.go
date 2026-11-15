@@ -39,6 +39,7 @@ type adminProxyRoute struct {
 var adminProxyRoutes = []adminProxyRoute{
 	{regexp.MustCompile(`^/api/movies/search/list/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/series/episodes/search/list/\d+$`), http.MethodGet},
+	{regexp.MustCompile(`^/api/series/search/id/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/series/searchrss/seasons/id/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/music/search/list/\d+$`), http.MethodGet},
 	{regexp.MustCompile(`^/api/books/search/list/\d+$`), http.MethodGet},
@@ -94,6 +95,11 @@ func HandleAdminAPIProxy(c *gin.Context) {
 	method, ok := resolveProxyMethod(u.Path)
 	if !ok {
 		sendForbidden(c, "path is not allowed through this proxy")
+		return
+	}
+
+	if acc := accessOf(c); !acc.Admin() && !acc.allowsProxyPath(u.Path) {
+		sendForbidden(c, "not allowed for this account")
 		return
 	}
 

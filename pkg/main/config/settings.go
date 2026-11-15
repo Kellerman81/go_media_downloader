@@ -1,6 +1,11 @@
 package config
 
-import "slices"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+)
 
 // GetSettingsGeneral returns the general settings. Before a config is loaded
 // (startup, tests) it returns a zero-value config rather than nil: ~190 call
@@ -435,4 +440,25 @@ func RangeSettingsDownloader(fn func(string, *DownloaderConfig)) {
 	for key, cfg := range currentSnapshot.Downloader {
 		fn(key, cfg)
 	}
+}
+
+// FfprobeExecutable is the ffprobe the app runs: ffprobe_path is the folder
+// that holds it, or the program itself; empty means ffprobe from the PATH.
+// Every caller uses it, so a changed path applies without a restart.
+func FfprobeExecutable() string {
+	name := "ffprobe"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+
+	g := GetSettingsGeneral()
+	if g == nil || g.FfprobePath == "" {
+		return name
+	}
+
+	if st, err := os.Stat(g.FfprobePath); err == nil && !st.IsDir() {
+		return g.FfprobePath
+	}
+
+	return filepath.Join(g.FfprobePath, name)
 }

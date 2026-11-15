@@ -552,7 +552,7 @@ func TestTestParsertype(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := TestParsertype(tt.template)
+			result, err := TestParsertype(tt.template, "")
 
 			if tt.wantErr && err == nil {
 				t.Errorf("TestParsertype() expected error but got none")
@@ -1471,32 +1471,33 @@ func TestValidateAudiobookLanguage(t *testing.T) {
 	tests := []struct {
 		name     string
 		s        *Organizer
+		movable  bool // move_unprocessed is set
 		language string
 		wrong    bool
+		left     int // audio files left afterwards
 	}{
-		{"allowed", org(true, "German", "ger"), "ger", false},
-		{"wrong language deleted", org(true, "eng"), "ger", true},
-		{"delete_wrong_language off", org(false, "eng"), "ger", false},
-		{"no allowed_languages", org(true), "ger", false},
+		{"allowed", org(true, "German", "ger"), true, "ger", false, 3},
+		{"wrong language deleted", org(true, "eng"), true, "ger", true, 0},
+		{"wrong language deleted, no move_unprocessed", org(true, "eng"), false, "ger", true, 0},
+		// Without delete_wrong_language the whole book goes to
+		// move_unprocessed/wrong_language.
+		{"wrong language moved", org(false, "eng"), true, "ger", true, 3},
+		{"neither delete nor move_unprocessed", org(false, "eng"), false, "ger", false, 3},
+		{"no allowed_languages", org(true), true, "ger", false, 3},
 		// Untagged and nothing detected (no whisper_url): not checked.
-		{"unknown passes", org(true, "eng"), "", false},
+		{"unknown passes", org(true, "eng"), true, "", false, 3},
 	}
 
 	for _, tt := range tests {
 		album := book(t, tt.language)
 
-		err := tt.s.validateAudiobookLanguage(context.Background(), album)
+		err := tt.s.validateAudiobookLanguage(context.Background(), album, tt.movable)
 		if got := errors.Is(err, errWrongLanguage); got != tt.wrong {
 			t.Errorf("%s: err %v, want wrong language %v", tt.name, err, tt.wrong)
 		}
 
-		want := 3
-		if tt.wrong {
-			want = 0
-		}
-
-		if n := remaining(album); n != want {
-			t.Errorf("%s: %d of 3 files left, want %d", tt.name, n, want)
+		if n := remaining(album); n != tt.left {
+			t.Errorf("%s: %d of 3 files left, want %d", tt.name, n, tt.left)
 		}
 	}
 }

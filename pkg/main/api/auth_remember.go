@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"net/http"
@@ -16,14 +15,16 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 )
 
 // "Remember me" is a stateless signed cookie, so it survives restarts without
 // persisting sessions. Only one random server secret is stored on disk. The
-// signing key also mixes in the login password, so changing WebAPIKey (or
-// deleting the key file) revokes every remembered login at once.
+// signing key also mixes in the account's password (the WebAPIKey for the
+// built-in admin, the password hash for other accounts), so a new password
+// revokes that account's remembered logins and deleting the key file all.
 const (
 	rememberCookieName = "remember_me"
 	RememberDuration   = 30 * 24 * time.Hour
@@ -86,6 +87,34 @@ func currentRememberKey() []byte {
 	return rememberKey(rememberServerSecret(), webPassword())
 }
 
+// rememberKeyFor is the remember-me key of an account; false for an unknown
+// one.
+func rememberKeyFor(user string) ([]byte, bool) {
+	if user == DefaultUsername {
+		return currentRememberKey(), true
+	}
+
+	u, err := database.GetUserByName(&user)
+	if err != nil || u.ID == 0 {
+		return nil, false
+	}
+
+	return rememberKey(rememberServerSecret(), u.PasswordHash), true
+}
+
+// rememberTokenUser is the user a token names, before its signature is
+// checked.
+func rememberTokenUser(token string) string {
+	u, _, _ := strings.Cut(token, ".")
+
+	user, err := base64.RawURLEncoding.DecodeString(u)
+	if err != nil {
+		return ""
+	}
+
+	return string(user)
+}
+
 func rememberMAC(key []byte, parts ...string) []byte {
 	m := hmac.New(sha256.New, key)
 	for _, p := range parts {
@@ -105,7 +134,7 @@ func newRememberToken(key []byte, user string, expires time.Time) string {
 }
 
 // parseRememberToken returns the user of a token that is correctly signed
-// with key, not expired at now, and names the admin user.
+// with key (the key of that user) and not expired at now.
 func parseRememberToken(key []byte, token string, now time.Time) (string, bool) {
 	u, rest, ok := strings.Cut(token, ".")
 	if !ok {
@@ -128,7 +157,7 @@ func parseRememberToken(key []byte, token string, now time.Time) (string, bool) 
 	}
 
 	user, err := base64.RawURLEncoding.DecodeString(u)
-	if err != nil || subtle.ConstantTimeCompare(user, []byte(DefaultUsername)) != 1 {
+	if err != nil {
 		return "", false
 	}
 
@@ -149,14 +178,28 @@ func restoreRememberedSession(c *gin.Context) (*Session, bool) {
 		return nil, false
 	}
 
-	key := currentRememberKey()
+	user := rememberTokenUser(token)
 
-	user, ok := parseRememberToken(key, token, time.Now())
+	key, ok := rememberKeyFor(user)
 	if !ok {
 		return nil, false
 	}
 
-	session := sessionStore.createSession(user, rememberCSRFToken(key, token))
+	if _, ok := parseRememberToken(key, token, time.Now()); !ok {
+		return nil, false
+	}
+
+	acc := adminAccess
+	if user != DefaultUsername {
+		u, err := database.GetUserByName(&user)
+		if err != nil || u.ID == 0 {
+			return nil, false
+		}
+
+		acc = accessOfUser(u)
+	}
+
+	session := sessionStore.createSession(acc, rememberCSRFToken(key, token))
 	setSessionCookie(c, session.ID, int(SessionDuration.Seconds()))
 
 	return session, true

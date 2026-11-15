@@ -437,6 +437,21 @@ func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 		SetStringArrayFromForm(&updatedConfig.MovieParseMetaSourcePriority, "MovieParseMetaSourcePriority").
 		SetStringArrayFromForm(&updatedConfig.MovieRSSMetaSourcePriority, "MovieRSSMetaSourcePriority").
 		SetStringArrayFromForm(&updatedConfig.MovieMetaSourcePriority, "MovieMetaSourcePriority").
+		SetStringArrayFromForm(&updatedConfig.SerieMetaSourcePriority, "SerieMetaSourcePriority").
+		SetBool(&updatedConfig.MovieMetaSourcePlex, "MovieMetaSourcePlex").
+		SetBool(&updatedConfig.MovieMetaSourceJellyfin, "MovieMetaSourceJellyfin").
+		SetBool(&updatedConfig.SerieMetaSourcePlex, "SerieMetaSourcePlex").
+		SetBool(&updatedConfig.SerieMetaSourceJellyfin, "SerieMetaSourceJellyfin").
+		SetString(&updatedConfig.PlexServerURL, "PlexServerURL").
+		SetString(&updatedConfig.PlexToken, "PlexToken").
+		SetString(&updatedConfig.JellyfinServerURL, "JellyfinServerURL").
+		SetString(&updatedConfig.JellyfinToken, "JellyfinToken").
+		SetString(&updatedConfig.CoverCacheDir, "CoverCacheDir").
+		SetStringArrayFromForm(&updatedConfig.PlayerVideoProfiles, "PlayerVideoProfiles").
+		SetIntArray(&updatedConfig.PlayerAudioBitrates, "PlayerAudioBitrates").
+		SetInt(&updatedConfig.PlayerMaxTranscodes, "PlayerMaxTranscodes").
+		SetString(&updatedConfig.PlayerHWAccel, "PlayerHWAccel").
+		SetString(&updatedConfig.PlayerHWDevice, "PlayerHWDevice").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceTrakt, "SerieAlternateTitleMetaSourceTrakt").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceImdb, "SerieAlternateTitleMetaSourceImdb").
 		SetBool(&updatedConfig.MovieAlternateTitleMetaSourceTrakt, "MovieAlternateTitleMetaSourceTrakt").
@@ -488,10 +503,6 @@ func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 		SetInt(&updatedConfig.TvmazeLimiterCalls, "TvmazeLimiterCalls").
 		SetBool(&updatedConfig.TvmazeDisableTLSVerify, "TvmazeDisableTLSVerify").
 		SetUint16(&updatedConfig.TvmazeTimeoutSeconds, "TvmazeTimeoutSeconds").
-		// Spotify
-		SetString(&updatedConfig.SpotifyClientID, "SpotifyClientID").
-		SetString(&updatedConfig.SpotifyClientSecret, "SpotifyClientSecret").
-		SetString(&updatedConfig.SpotifyRegion, "SpotifyRegion").
 		// Last.fm
 		SetString(&updatedConfig.LastFMAPIKey, "LastFMAPIKey").
 		// TheAudioDB

@@ -430,3 +430,32 @@ func TestSetEntry(t *testing.T) {
 		t.Errorf("wrong payload type: %v, dst changed to %q", err, dst.Name)
 	}
 }
+
+func TestWriteConfigFileKeepsPermissions(t *testing.T) {
+	useTempConfig(t, testMainConfig())
+
+	if err := os.Chmod(Configfile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteCfg(); err != nil {
+		t.Fatal(err)
+	}
+
+	if st, err := os.Stat(Configfile); err != nil || st.Mode().Perm() != 0o644 {
+		t.Errorf("after save: %v, %v", st.Mode().Perm(), err)
+	}
+
+	// A new file is owner-only.
+	if err := os.Remove(Configfile); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeConfigFile([]byte("[general]\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	if st, err := os.Stat(Configfile); err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("new file: %v, %v", st.Mode().Perm(), err)
+	}
+}

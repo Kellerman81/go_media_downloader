@@ -614,7 +614,14 @@ func writeConfigFile(cnt []byte) error {
 		return fmt.Errorf("close temp config file: %w", err)
 	}
 
-	if err := os.Chmod(tmpName, 0o600); err != nil {
+	// Keep the permissions of the file being replaced: a save must not lock
+	// out other users of a shared config folder. New files are owner-only.
+	mode := os.FileMode(0o600)
+	if st, err := os.Stat(target); err == nil {
+		mode = st.Mode().Perm()
+	}
+
+	if err := os.Chmod(tmpName, mode); err != nil {
 		return fmt.Errorf("chmod temp config file: %w", err)
 	}
 
@@ -624,7 +631,7 @@ func writeConfigFile(cnt []byte) error {
 		logger.Logtype("warn", 0).Err(err).Str(logger.StrFile, target).
 			Msg("Atomic config replace failed, rewriting in place")
 
-		if werr := os.WriteFile(target, cnt, 0o600); werr != nil {
+		if werr := os.WriteFile(target, cnt, mode); werr != nil {
 			return fmt.Errorf("replace config file: %w", errors.Join(err, werr))
 		}
 	}

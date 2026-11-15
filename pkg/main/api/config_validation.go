@@ -223,13 +223,19 @@ func validateImdbConfig(config *config.ImdbConfig) error {
 		return errors.New("IMDB ID size must be greater than 0")
 	}
 
-	validTypes := []string{"movie", "tvMovie", "tvmovie", "tvSeries", "tvseries", "video"}
+	// init_imdb matches the types exactly, so a wrongly cased type never matches.
 	for _, indexedType := range config.Indexedtypes {
-		isValid := slices.Contains(validTypes, indexedType)
-
-		if !isValid {
-			return fmt.Errorf("invalid indexed type: %s", indexedType)
+		if slices.ContainsFunc(imdbTitleTypes, func(t choiceOption) bool { return t.Value == indexedType }) {
+			continue
 		}
+
+		for _, t := range imdbTitleTypes {
+			if strings.EqualFold(t.Value, indexedType) {
+				return fmt.Errorf("invalid indexed type %q: IMDb's type is %q (case matters)", indexedType, t.Value)
+			}
+		}
+
+		return fmt.Errorf("invalid indexed type: %s", indexedType)
 	}
 
 	return nil

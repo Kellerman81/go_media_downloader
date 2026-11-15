@@ -458,6 +458,30 @@ func buildConfigSnapshot(src *MainConfig) (*ConfigSnapshot, error) {
 		snapshot.General.MovieMetaSourcePriority = []string{"imdb", "tmdb", "omdb", "trakt"}
 	}
 
+	if len(snapshot.General.PlayerVideoProfiles) == 0 {
+		snapshot.General.PlayerVideoProfiles = []string{"1080p|1080|8000|192", "720p|720|4000|160", "480p|480|1500|128"}
+	}
+
+	if len(snapshot.General.PlayerAudioBitrates) == 0 {
+		snapshot.General.PlayerAudioBitrates = []int{320, 192, 128, 64}
+	}
+
+	if snapshot.General.PlayerHWAccel == "" {
+		snapshot.General.PlayerHWAccel = "none"
+	}
+
+	if snapshot.General.PlayerHWDevice == "" {
+		snapshot.General.PlayerHWDevice = "/dev/dri/renderD128"
+	}
+
+	if snapshot.General.PlayerMaxTranscodes <= 0 {
+		snapshot.General.PlayerMaxTranscodes = 2
+	}
+
+	if len(snapshot.General.SerieMetaSourcePriority) == 0 {
+		snapshot.General.SerieMetaSourcePriority = []string{"tvdb", "tvmaze", "tmdb", "trakt"}
+	}
+
 	// Build configuration maps
 	for idx := range tomlConfig.Downloader {
 		cfg := &tomlConfig.Downloader[idx]

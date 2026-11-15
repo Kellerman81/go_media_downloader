@@ -310,7 +310,7 @@ func apiBooksClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	inres, inerr := database.DeleteRow("book_histories", "book_id = ?", id)
+	inres, inerr := database.DeleteRow("book_histories", "book_id = ?", &id)
 	handleDBInsertOrUpdate(c, inres, inerr, false)
 }
 

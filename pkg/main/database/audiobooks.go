@@ -378,7 +378,7 @@ func FindAudiobooksByTitleAuthor(
 			false,
 			remaining(),
 			"SELECT id FROM dbaudiobooks WHERE title = ? COLLATE NOCASE OR slug = NULLIF(?, '') COLLATE NOCASE",
-			title, slug)
+			title, &slug)
 
 		for i := range ids {
 			addResult(ids[i])
@@ -445,7 +445,7 @@ func fillAudiobookResult(result *AudiobookSearchResult) *AudiobookSearchResult {
 // when it does not exist.
 func FindAudiobookByID(id uint) *AudiobookSearchResult {
 	if id == 0 ||
-		Getdatarow[uint](false, "SELECT count() FROM dbaudiobooks WHERE id = ?", &id) == 0 {
+		Getdatarow[uint](false, "SELECT count() FROM dbaudiobooks WHERE id = ?", id) == 0 {
 		return nil
 	}
 
@@ -475,17 +475,17 @@ func FindAudiobookByASIN(asin string) (*AudiobookSearchResult, error) {
 // InsertAudiobookFile records an audiobook file in the database.
 func InsertAudiobookFile(
 	audiobookID uint,
-	filepath string,
-	filename string,
-	extension string,
-	format string,
-	qualityProfile string,
-	fileSize int64,
-	bitrate int,
-	runtimeMs int64,
-	trackNumber int,
-	discNumber int,
-	dbaudiobookID uint,
+	filepath *string,
+	filename *string,
+	extension *string,
+	format *string,
+	qualityProfile *string,
+	fileSize *int64,
+	bitrate *int,
+	runtimeMs *int64,
+	trackNumber *int,
+	discNumber *int,
+	dbaudiobookID *uint,
 ) error {
 	if audiobookID == 0 {
 		return nil // Skip if no database ID
@@ -495,18 +495,18 @@ func InsertAudiobookFile(
 	// use [location],[filename],[extension],[format],[quality_profile],[file_size],[bitrate],[runtime_ms],[track_number],[disc_number],[audiobook_id],[dbaudiobook_id]
 	ExecN(
 		"insert into audiobook_files (location, filename, extension, format, quality_profile, file_size, bitrate, runtime_ms, track_number, disc_number, audiobook_id, dbaudiobook_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		&filepath,
-		&filename,
-		&extension,
-		&format,
-		&qualityProfile,
-		&fileSize,
-		&bitrate,
-		&runtimeMs,
-		&trackNumber,
-		&discNumber,
-		&audiobookID,
-		&dbaudiobookID,
+		filepath,
+		filename,
+		extension,
+		format,
+		qualityProfile,
+		fileSize,
+		bitrate,
+		runtimeMs,
+		trackNumber,
+		discNumber,
+		audiobookID,
+		dbaudiobookID,
 	)
 
 	return nil
@@ -539,7 +539,7 @@ func GetAudiobookByRootpath(rootpath string) (*Audiobook, error) {
 	var ab Audiobook
 	GetdatarowArgs(
 		"SELECT id, dbaudiobook_id, listname, rootpath, quality_profile FROM audiobooks WHERE rootpath = ? LIMIT 1",
-		&rootpath,
+		rootpath,
 		&ab.ID,
 		&ab.DbaudiobookID,
 		&ab.Listname,
@@ -576,7 +576,7 @@ func UpdateAudiobookRootpath(audiobookID uint, rootpath string) error {
 		return nil
 	}
 
-	ExecN("UPDATE audiobooks SET rootpath = ? WHERE id = ?", &rootpath, &audiobookID)
+	ExecN("UPDATE audiobooks SET rootpath = ? WHERE id = ?", rootpath, audiobookID)
 
 	return nil
 }

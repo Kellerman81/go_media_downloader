@@ -488,7 +488,7 @@ func jobImportParseBook(
 
 	// Insert file record
 	database.ExecN(insertQuery,
-		&pathv, &basefile, &extfile, &qualityProfileName,
+		pathv, &basefile, &extfile, &qualityProfileName,
 		&m.BookID, &m.DbbookID,
 	)
 	database.ExecN(updateMissing, &m.BookID)

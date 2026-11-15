@@ -164,7 +164,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbseries WHERE seriename = ? LIMIT 1",
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 
 	if existingID > 0 {
@@ -184,7 +184,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 		INSERT INTO dbseries (
 			seriename, created_at, updated_at
 		) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
@@ -370,14 +370,23 @@ func (s *Scraper) buildRequestBody(page int) string {
 //   - int: Total number of hits matching the query (nbHits)
 //   - error: Any errors during fetch
 func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, int, error) {
+	hits, nbHits, err := s.query(ctx, s.buildRequestBody(page))
+	if err != nil {
+		return nil, 0, fmt.Errorf("page %d: %w", page, err)
+	}
+
+	return hits, nbHits, nil
+}
+
+// query posts one request body to the Algolia API and returns the first
+// result's hits and total hit count.
+func (s *Scraper) query(ctx context.Context, requestBody string) ([]AlgoliaHit, int, error) {
 	// Build API URL
 	apiURL := fmt.Sprintf(
 		"https://tsmkfa364q-dsn.algolia.net/1/indexes/*/queries?x-algolia-application-id=%s&x-algolia-api-key=%s",
 		url.QueryEscape(s.applicationID),
 		url.QueryEscape(s.apiKey),
 	)
-
-	requestBody := s.buildRequestBody(page)
 
 	req, err := http.NewRequestWithContext(
 		ctx,
@@ -400,12 +409,12 @@ func (s *Scraper) fetchPage(ctx context.Context, page int) ([]AlgoliaHit, int, e
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to fetch page %d: %w", page, err)
+		return nil, 0, fmt.Errorf("failed to fetch: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("algolia API returned status %d for page %d", resp.StatusCode, page)
+		return nil, 0, fmt.Errorf("algolia API returned status %d", resp.StatusCode)
 	}
 
 	data, readErr := io.ReadAll(resp.Body)
@@ -507,7 +516,7 @@ func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 	// Scraper provenance for later re-scraping: the source clip id and the item
 	// page URL (built the same way as the original scraping script).
 	scraperID := strconv.Itoa(hit.ClipID)
-	scraperURL := s.config.SiteURL + "/en/video/" + hit.Sitename + "/" + hit.URL + "/" + scraperID
+	scraperURL := logger.JoinStrings(s.config.SiteURL, "/en/video/", hit.Sitename, "/", hit.URL, "/", scraperID)
 
 	episode := database.DbserieEpisode{
 		Identifier: identifier,
@@ -526,24 +535,25 @@ func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbserie_episodes WHERE dbserie_id = ? AND identifier = ? AND title = ? LIMIT 1",
-		s.dbserieID,
-		identifier,
-		hit.Title,
+		&s.dbserieID,
+		&identifier,
+		&hit.Title,
 	)
 
 	if existingID > 0 {
 		// Episode exists, update it. Backfill scraper fields only when empty.
 		err = database.ExecNErr(`
 			UPDATE dbserie_episodes SET
-				overview = ?,
+				overview = CASE WHEN ? <> '' THEN ? ELSE overview END,
 				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
 				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL THEN ? ELSE scraper_url END,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
-			episode.Overview,
-			episode.ScraperID,
-			episode.ScraperURL,
-			existingID,
+			&episode.Overview,
+			&episode.Overview,
+			&episode.ScraperID,
+			&episode.ScraperURL,
+			&existingID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update episode '%s': %w: %w", hit.Title, errDBWrite, err)
@@ -559,13 +569,13 @@ func (s *Scraper) createEpisode(_ context.Context, hit *AlgoliaHit) error {
 			INSERT INTO dbserie_episodes (
 				identifier, title, first_aired, dbserie_id, overview, scraper_id, scraper_url, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-			episode.Identifier,
-			episode.Title,
-			episode.FirstAired,
-			episode.DbserieID,
-			episode.Overview,
-			episode.ScraperID,
-			episode.ScraperURL,
+			&episode.Identifier,
+			&episode.Title,
+			&episode.FirstAired,
+			&episode.DbserieID,
+			&episode.Overview,
+			&episode.ScraperID,
+			&episode.ScraperURL,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to insert episode '%s': %w: %w", hit.Title, errDBWrite, err)
@@ -688,10 +698,84 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 		}
 	}
 
+	s.backfillPlots(ctx)
+
 	logger.Logtype(logger.StatusInfo, 0).
 		Str("site", s.config.SiteName).
 		Int("total", totalProcessed).
 		Msg("Scraping completed")
 
 	return totalProcessed, nil
+}
+
+// plotBackfillBatch is how many episodes without a plot one run looks up by
+// clip id. Runs only scrape the newest page, so episodes created before
+// descriptions were saved are otherwise never revisited.
+const plotBackfillBatch = 50
+
+// backfillPlots fills the overview of up to plotBackfillBatch episodes of
+// this series that have none, looking their clips up by the stored
+// scraper_id in one request. Failures are logged; they never fail the run.
+func (s *Scraper) backfillPlots(ctx context.Context) {
+	ids := database.GetrowsN[string](false, plotBackfillBatch,
+		`SELECT scraper_id FROM dbserie_episodes
+		WHERE dbserie_id = ? AND COALESCE(overview, '') = '' AND COALESCE(scraper_id, '') <> ''
+		ORDER BY id DESC LIMIT `+strconv.Itoa(plotBackfillBatch), &s.dbserieID)
+	if len(ids) == 0 || ctx.Err() != nil {
+		return
+	}
+
+	body := plotBackfillRequestBody(ids)
+	if body == "" {
+		return
+	}
+
+	hits, _, err := s.query(ctx, body)
+	if err != nil {
+		logger.Logtype(logger.StatusWarning, 0).Err(err).Str("site", s.config.SiteName).Msg("Plot backfill failed")
+		return
+	}
+
+	filled := 0
+
+	for i := range hits {
+		if hits[i].Description == "" || hits[i].ClipID == 0 {
+			continue
+		}
+
+		clipID := strconv.Itoa(hits[i].ClipID)
+		if err := database.ExecNErr(
+			`UPDATE dbserie_episodes SET overview = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE dbserie_id = ? AND scraper_id = ? AND COALESCE(overview, '') = ''`,
+			&hits[i].Description, &s.dbserieID, &clipID,
+		); err == nil {
+			filled++
+		}
+	}
+
+	logger.Logtype(logger.StatusInfo, 0).
+		Str("site", s.config.SiteName).
+		Int("looked_up", len(ids)).
+		Int("filled", filled).
+		Msg("Plot backfill")
+}
+
+// plotBackfillRequestBody asks for the clips with the given ids (numeric
+// clip_id filter, ORed); "" without a numeric id, as an unfiltered query
+// would return the newest clips instead.
+func plotBackfillRequestBody(ids []string) string {
+	filters := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if n, err := strconv.Atoi(id); err == nil && n > 0 {
+			filters = append(filters, "clip_id="+strconv.Itoa(n))
+		}
+	}
+
+	if len(filters) == 0 {
+		return ""
+	}
+
+	params := fmt.Sprintf("query=&hitsPerPage=%d&filters=%s", len(filters), url.QueryEscape(strings.Join(filters, " OR ")))
+
+	return fmt.Sprintf(`{"requests":[{"indexName":"all_scenes_latest_desc","params":"%s"}]}`, params)
 }

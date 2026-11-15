@@ -18,7 +18,6 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
-	"github.com/pelletier/go-toml/v2"
 )
 
 // handler implements mediatype.Handler for TV series.
@@ -88,16 +87,16 @@ var (
 		"DBQualityMediaByID":       "select quality_profile from serie_episodes where id = ?",
 		"SearchGenSelect":          "select serie_episodes.quality_profile, serie_episodes.id ",
 		"SearchGenTable":           " from serie_episodes inner join dbserie_episodes on dbserie_episodes.id=serie_episodes.dbserie_episode_id inner join series on series.id=serie_episodes.serie_id where ",
-		"SearchGenMissing":         "serie_episodes.missing = 1 and ((dbserie_episodes.season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
+		"SearchGenMissing":         "serie_episodes.dont_search = 0 and series.dont_search = 0 and serie_episodes.missing = 1 and ((dbserie_episodes.season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
 		"SearchGenMissingEnd":      ") and serie_episodes.dbserie_episode_id in (select id from dbserie_episodes group by dbserie_id, identifier having count() = 1)",
-		"SearchGenReached":         "serie_episodes.missing = 0 and serie_episodes.quality_reached = 0 and ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
+		"SearchGenReached":         "serie_episodes.dont_search = 0 and series.dont_search = 0 and serie_episodes.dont_upgrade = 0 and series.dont_upgrade = 0 and serie_episodes.missing = 0 and serie_episodes.quality_reached = 0 and ((dbserie_episodes.Season != '0' and series.search_specials=0) or (series.search_specials=1)) and series.listname in (?",
 		"SearchGenLastScan":        " and (serie_episodes.lastscan is null or serie_episodes.lastscan < ?)",
 		"SearchGenDate":            " and (dbserie_episodes.first_aired < ? or dbserie_episodes.first_aired is null)",
 		"SearchGenOrder":           " order by serie_episodes.Lastscan asc",
 		"DBIDUnmatchedPathList":    "select id from serie_file_unmatcheds where filepath = ? and listname = ? COLLATE NOCASE",
 		"InsertUnmatched":          "Insert into serie_file_unmatcheds (parsed_data, listname, filepath, last_checked) values (?, ?, ?, datetime('now','localtime'))",
 		"UpdateUnmatched":          "update serie_file_unmatcheds SET parsed_data = ?, last_checked = datetime('now','localtime') where id = ?",
-		"GetRSSData":               "select serie_episodes.dont_search, serie_episodes.dont_upgrade, series.listname, serie_episodes.quality_profile, dbseries.seriename from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id where serie_episodes.id = ?",
+		"GetRSSData":               "select (serie_episodes.dont_search or series.dont_search), (serie_episodes.dont_upgrade or series.dont_upgrade), series.listname, serie_episodes.quality_profile, dbseries.seriename from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id where serie_episodes.id = ?",
 		"GetOrganizeData":          "select dbserie_id, rootpath, listname from series where id = ?",
 		"ClearHistoryByList":       "delete from serie_episode_histories where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
 		"QueryMediaByList":         "select id, quality_reached, quality_profile from serie_episodes where serie_id in (Select id from series where listname = ? COLLATE NOCASE)",
@@ -207,7 +206,7 @@ func (h *handler) GetDBIDsFull(
 
 		if m.DbserieID == 0 {
 			m.FindDbserieByNameWithSlug(m.Title)
-			m.PreferOriginalDbserie(m.Title)
+			m.PreferOriginalDbserie(&m.Title)
 		}
 	}
 
@@ -216,14 +215,23 @@ func (h *handler) GetDBIDsFull(
 		m.RegexGetMatchesStr1(cfgp)
 	}
 
-	if m.DbserieID == 0 {
+	// A series identified by title: its releases carry the episode title in
+	// place of S01E01, so the parsed title is the series name plus that.
+	if m.DbserieID == 0 && !m.MatchEpisodeByTitle() {
 		return logger.ErrNotFoundDbserie
 	}
 
-	// Set episode ID
-	m.SetDBEpisodeIDfromM()
+	// An episode number that names an episode wins over the title, as long
+	// as a title in the release fits that episode (series identified by title).
+	if !m.TitleMatched {
+		m.SetDBEpisodeIDfromM()
 
-	if m.DbserieEpisodeID == 0 {
+		if !m.EpisodeTitleFits() {
+			m.DbserieEpisodeID = 0
+		}
+	}
+
+	if m.DbserieEpisodeID == 0 && !m.MatchEpisodeByTitle() {
 		return logger.ErrNotFoundDbserieEpisode
 	}
 
@@ -506,17 +514,17 @@ func (*handler) SearchConfigByName(
 
 // loadSeriesConfig loads series configuration from a TOML file.
 func loadSeriesConfig(file string) ([]config.ManualConfig, error) {
-	content, err := os.Open(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
-	defer content.Close()
 
-	var s config.MainManualConfig
+	s, err := config.DecodeManualConfig(data)
+	if err != nil {
+		return nil, err
+	}
 
-	err = toml.NewDecoder(content).Decode(&s)
-
-	return s.Config, err
+	return s.Config, nil
 }
 
 // RecordDownloadHistory records a series episode download in the serie_episode_histories table.
@@ -566,7 +574,7 @@ func (*handler) RecordDownloadHistory(nzb *apiexternal_v2.Nzbwithprio, targetPat
 		"Insert into serie_episode_histories (title, url, target, indexer, downloaded_at, serie_id, serie_episode_id, dbserie_episode_id, dbserie_id, resolution_id, quality_id, codec_id, audio_id, quality_profile) VALUES (?, ?, ?, ?, datetime('now','localtime'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		&nzb.NZB.Title,
 		&nzb.NZB.DownloadURL,
-		&targetPath,
+		targetPath,
 		&indexerName,
 		&serieID,
 		&nzb.NzbepisodeID,
@@ -649,7 +657,7 @@ func (*handler) FillSearchVar(entry *apiexternal_v2.Nzbwithprio, mediaid uint) e
 	}
 
 	database.GetdatarowArgs(
-		"select serie_episodes.dbserie_episode_id, serie_episodes.dbserie_id, serie_episodes.serie_id, serie_episodes.dont_search, serie_episodes.dont_upgrade, serie_episodes.quality_profile, series.listname, dbseries.thetvdb_id, dbseries.seriename, dbserie_episodes.season, dbserie_episodes.episode, dbserie_episodes.identifier, dbserie_episodes.absolute_episode from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id inner join dbserie_episodes ON dbserie_episodes.id=serie_episodes.dbserie_episode_id where serie_episodes.id = ?",
+		"select serie_episodes.dbserie_episode_id, serie_episodes.dbserie_id, serie_episodes.serie_id, (serie_episodes.dont_search or series.dont_search), (serie_episodes.dont_upgrade or series.dont_upgrade), serie_episodes.quality_profile, series.listname, dbseries.thetvdb_id, dbseries.seriename, dbserie_episodes.season, dbserie_episodes.episode, dbserie_episodes.identifier, dbserie_episodes.absolute_episode from serie_episodes inner join series ON series.id=serie_episodes.serie_id inner join dbseries ON dbseries.id=serie_episodes.dbserie_id inner join dbserie_episodes ON dbserie_episodes.id=serie_episodes.dbserie_episode_id where serie_episodes.id = ?",
 		&entry.NzbepisodeID,
 		&entry.Info.DbserieEpisodeID,
 		&entry.Dbid,

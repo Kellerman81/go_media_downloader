@@ -32,6 +32,7 @@ func TestAudiobookSortWithZeroRuntimes(t *testing.T) {
 	}
 
 	folder := `V:\completed\Audiobook\David Baldacci - Die Sammler`
+	requireDir(t, folder)
 
 	files, err := parser_v2.CollectFilesOnly(folder, parser_v2.AudioExtensions)
 	if err != nil {
@@ -104,6 +105,8 @@ func TestKeinKeksDistanceMatch(t *testing.T) {
 	}
 
 	folder := `P:\C\Cornelia Funke\Kein Keks fuer Kobolde (B01FUMJRB0)`
+	requireDir(t, folder)
+
 	asin := "B01FUMJRB0"
 	region := "de"
 

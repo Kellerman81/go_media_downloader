@@ -232,10 +232,9 @@ func TestImportAndMergeAudiobook_SingleBook(t *testing.T) {
 		RateLimitSeconds: 1,
 	})
 
-	// Test with a known Dan Brown audiobook ASIN
-	// "The Da Vinci Code" - this is a well-known audiobook that should have chapters
-	// You may need to replace this ASIN with an actual valid one
-	testASIN := "B000A14OMA" // Example ASIN - replace with a valid Dan Brown audiobook ASIN
+	// "The Da Vinci Code" (Dan Brown) on Audible US, 108 chapters on Audnex
+	// (checked 2026-11-12). The previous B000A14OMA is no longer sold in the US.
+	testASIN := "B0036JVO6G"
 
 	t.Logf("=== Testing importAndMergeAudiobook simulation for ASIN: %s ===", testASIN)
 

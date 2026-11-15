@@ -238,6 +238,13 @@ definitions:
         example: true
         type: boolean
     type: object
+  api.Jsonqueue:
+    properties:
+      data:
+        additionalProperties:
+          $ref: '#/definitions/syncops.Job'
+        type: object
+    type: object
   api.Jsonresults:
     properties:
       accepted:
@@ -248,6 +255,13 @@ definitions:
         items:
           $ref: '#/definitions/apiexternal_v2.Nzbwithprio'
         type: array
+    type: object
+  api.Jsonschedules:
+    properties:
+      data:
+        additionalProperties:
+          $ref: '#/definitions/syncops.JobSchedule'
+        type: object
     type: object
   api.Jsonsearchstarted:
     properties:
@@ -282,10 +296,25 @@ definitions:
         example: true
         type: boolean
     type: object
+  api.Jsontraktauthtoken:
+    properties:
+      data:
+        $ref: '#/definitions/apiexternal_v2.OAuthToken'
+    type: object
   api.Jsontraktauthurl:
     properties:
       data:
         example: https://trakt.tv/oauth/authorize?client_id=abc123&redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob&response_type=code&state=state
+        type: string
+    type: object
+  api.Jsontraktlistitems:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/trakt.TraktUserListItem'
+        type: array
+      error:
+        example: ""
         type: string
     type: object
   api.Jsonunauthorized:
@@ -719,6 +748,9 @@ definitions:
         type: integer
       CacheDuration2:
         type: integer
+      CoverCacheDir:
+        description: CoverCacheDir is the folder the Library page caches covers in
+        type: string
       DBLogLevel:
         description: 'DBLogLevel defines the database log level to use, options are
           info or debug (not recommended) - default: info'
@@ -783,6 +815,11 @@ definitions:
         description: 'GoodreadsLimiterSeconds defines seconds limit for Goodreads
           API calls - default: 1'
         type: integer
+      HeadlessChromeURL:
+        description: |-
+          HeadlessChromeURL is the base URL of a browserless headless Chrome that
+          loads the pages of chart, bestseller and htmlxpath scrapes
+        type: string
       ITunesLimiterCalls:
         description: 'ITunesLimiterCalls defines calls limit for iTunes API in defined
           seconds - default: 20'
@@ -803,10 +840,17 @@ definitions:
         description: 'JellyfinLimiterSeconds defines seconds limit for Jellyfin API
           calls - default: 1'
         type: integer
+      JellyfinServerURL:
+        description: JellyfinServerURL is the Jellyfin server used as metadata and
+          cover source
+        type: string
       JellyfinTimeoutSeconds:
         description: 'JellyfinTimeoutSeconds defines the HTTP timeout in seconds for
           Jellyfin API calls - default: 30'
         type: integer
+      JellyfinToken:
+        description: JellyfinToken is the API key for JellyfinServerURL
+        type: string
       LastFMAPIKey:
         description: LastFMAPIKey is the API key for Last.fm - get one at https://www.last.fm/api/account/create
         type: string
@@ -879,9 +923,17 @@ definitions:
         description: 'MovieMetaSourceImdb defines whether to scan IMDB for movie metadata
           - default: false'
         type: boolean
+      MovieMetaSourceJellyfin:
+        description: 'MovieMetaSourceJellyfin defines whether to use the Jellyfin
+          server as a movie metadata source - default: false'
+        type: boolean
       MovieMetaSourceOmdb:
         description: 'MovieMetaSourceOmdb defines whether to scan OMDB for movie metadata
           - default: false'
+        type: boolean
+      MovieMetaSourcePlex:
+        description: 'MovieMetaSourcePlex defines whether to use the Plex server as
+          a movie metadata source - default: false'
         type: boolean
       MovieMetaSourcePriority:
         description: MovieMetaSourcePriority defines priority order to scan metadata
@@ -971,6 +1023,27 @@ definitions:
         description: OpenLibraryLimiterSeconds defines seconds limit for OpenLibrary
           API calls - 0 = built-in 60
         type: integer
+      PlayerAudioBitrates:
+        description: PlayerAudioBitrates are the audio transcoding bitrates of the
+          Library player
+        items:
+          type: integer
+        type: array
+      PlayerHWAccel:
+        description: PlayerHWAccel selects GPU encoding for player transcodes
+        type: string
+      PlayerHWDevice:
+        description: PlayerHWDevice is the GPU render device for vaapi/qsv
+        type: string
+      PlayerMaxTranscodes:
+        description: PlayerMaxTranscodes limits concurrent player transcodes
+        type: integer
+      PlayerVideoProfiles:
+        description: PlayerVideoProfiles are the transcoding qualities of the Library
+          player
+        items:
+          type: string
+        type: array
       PlexDisableTLSVerify:
         description: 'PlexDisableTLSVerify specifies whether to disable TLS certificate
           verification for Plex API calls - default: false'
@@ -983,10 +1056,16 @@ definitions:
         description: 'PlexLimiterSeconds defines seconds limit for Plex API calls
           - default: 1'
         type: integer
+      PlexServerURL:
+        description: PlexServerURL is the Plex server used as metadata and cover source
+        type: string
       PlexTimeoutSeconds:
         description: 'PlexTimeoutSeconds defines the HTTP timeout in seconds for Plex
           API calls - default: 30'
         type: integer
+      PlexToken:
+        description: PlexToken is the X-Plex-Token for PlexServerURL
+        type: string
       SchedulerDisabled:
         description: SchedulerDisabled enables/disables scheduler - default false
         type: boolean
@@ -1002,6 +1081,20 @@ definitions:
         description: 'SerieAlternateTitleMetaSourceTrakt defines whether to scan Trakt
           for alternate series titles - default: false'
         type: boolean
+      SerieMetaSourceJellyfin:
+        description: 'SerieMetaSourceJellyfin defines whether to use the Jellyfin
+          server as a series metadata source - default: false'
+        type: boolean
+      SerieMetaSourcePlex:
+        description: 'SerieMetaSourcePlex defines whether to use the Plex server as
+          a series metadata source - default: false'
+        type: boolean
+      SerieMetaSourcePriority:
+        description: SerieMetaSourcePriority defines the order of the series metadata
+          sources
+        items:
+          type: string
+        type: array
       SerieMetaSourceTmdb:
         description: 'SerieMetaSourceTmdb defines whether to scan TMDb for series
           metadata - default: false'
@@ -1013,16 +1106,6 @@ definitions:
       SevenZipPath:
         description: SevenZipPath specifies the path to the 7z executable for unpacking
           various archive formats
-        type: string
-      SpotifyClientID:
-        description: SpotifyClientID is the client ID for Spotify Web API
-        type: string
-      SpotifyClientSecret:
-        description: SpotifyClientSecret is the client secret for Spotify Web API
-        type: string
-      SpotifyRegion:
-        description: SpotifyRegion is the ISO 3166-1 alpha-2 country code for market
-          filtering
         type: string
       TarPath:
         description: TarPath specifies the path to the tar executable for unpacking
@@ -1644,6 +1727,16 @@ definitions:
           If the existing DB release has no files attached, it will be replaced.
           If it has files, the alternative release is added as a new entry.
         type: boolean
+      AllowCountMismatchIfTotalMatch:
+        description: |-
+          AllowCountMismatchIfTotalMatch turns on allow_missing_tracks and
+          allow_extra_tracks for a single release when its tags match and the
+          total runtime does.
+        type: boolean
+      AllowExtraTracks:
+        description: AllowExtraTracks accepts local files that have no track in the
+          release.
+        type: boolean
       AllowMissingTracks:
         description: |-
           AllowMissingTracks skips the strict track count check during runtime verification.
@@ -1723,6 +1816,11 @@ definitions:
           Only effective when PerTrackToleranceSeconds > 0.
           Default 0 means PerTrackToleranceSeconds is used as both grace and hard limit.
         type: integer
+      ReplaceEmbeddedChapters:
+        description: |-
+          ReplaceEmbeddedChapters writes the matched book's chapter list into a
+          single-file audiobook whose chapters do not pair 1:1 with the book's.
+        type: boolean
       SkipSeriesTrackMatch:
         description: SkipSeriesTrackMatch disables chapter/track count matching for
           audiobooks that belong to a series.
@@ -1775,6 +1873,16 @@ definitions:
         description: |-
           AllowAlternativeReleases enables searching MusicBrainz for alternative releases
           when the DB has a title match but with a different track count/edition.
+        type: boolean
+      AllowCountMismatchIfTotalMatch:
+        description: |-
+          AllowCountMismatchIfTotalMatch turns on allow_missing_tracks and
+          allow_extra_tracks for a single release when its tags match and the
+          total runtime does.
+        type: boolean
+      AllowExtraTracks:
+        description: AllowExtraTracks accepts local files that have no track in the
+          release.
         type: boolean
       AllowMissingTracks:
         description: |-
@@ -1854,6 +1962,11 @@ definitions:
           Only effective when PerTrackToleranceSeconds > 0.
           Default 0 means PerTrackToleranceSeconds is used as both grace and hard limit.
         type: integer
+      ReplaceEmbeddedChapters:
+        description: |-
+          ReplaceEmbeddedChapters writes the matched book's chapter list into a
+          single-file audiobook whose chapters do not pair 1:1 with the book's.
+        type: boolean
       StrongRecThresh:
         description: |-
           StrongRecThresh overrides the strong recommendation threshold (default 0.04).
@@ -2277,8 +2390,9 @@ definitions:
           search before looking for missing media, 0 means don't wait
         type: integer
       MissingScanReleaseDatePre:
-        description: MissingScanReleaseDatePre is the minimum number of days to wait
-          after media release before scanning, 0 means don't check
+        description: MissingScanReleaseDatePre starts the missing search this many
+          days before the release (air) date; negative waits after it, 0 doesn't check
+          the date
         type: integer
       MoveReplaced:
         description: MoveReplaced indicates if replaced media should be moved to old
@@ -2648,6 +2762,10 @@ definitions:
         description: CronFeedsRefreshSeriesFull is the cron schedule for full refreshing
           of series RSS feeds
         type: string
+      CronFileCacheCleanup:
+        description: CronFileCacheCleanup is the cron schedule for removing orphaned
+          cached files
+        type: string
       CronImdb:
         description: CronImdb is the cron schedule for imdb scans
         type: string
@@ -2775,6 +2893,10 @@ definitions:
       IntervalFeedsRefreshSeriesFull:
         description: IntervalFeedsRefreshSeriesFull is the interval for full rss feed
           refreshes for series
+        type: string
+      IntervalFileCacheCleanup:
+        description: IntervalFileCacheCleanup is the interval for removing orphaned
+          cached files
         type: string
       IntervalImdb:
         description: IntervalImdb is the interval for imdb scans
@@ -3522,6 +3644,11 @@ definitions:
       serieid:
         description: SerieID is the application ID of the TV series
         type: integer
+      titlematched:
+        description: |-
+          TitleMatched: the episode was found by its title (MatchEpisodeByTitle),
+          the release names no usable episode number.
+        type: boolean
       tvdb:
         description: Tvdb is the TVDB ID
         type: string
@@ -5851,6 +5978,34 @@ paths:
       summary: Add a cache entry
       tags:
       - cache
+  /api/cache/cleanupfiles:
+    get:
+      description: Removes cached covers and episode thumbnails no list entry or episode
+        file has any more, converted subtitles of removed or replaced files, and leftover
+        temporary files. Everything removed is rebuilt when needed. The request waits
+        until done.
+      parameters:
+      - description: 'API key: the webapikey setting from [general] in config.toml'
+        in: query
+        name: apikey
+        required: true
+        type: string
+      responses:
+        "200":
+          description: 'Removed files: covers, subtitles, temp and bytes'
+          schema:
+            type: object
+        "401":
+          description: Missing or wrong apikey
+          schema:
+            $ref: '#/definitions/api.Jsonunauthorized'
+        "500":
+          description: The cache folder can't be read
+          schema:
+            $ref: '#/definitions/api.Jsonerror'
+      summary: Clean up the file cache
+      tags:
+      - cache
   /api/cache/clear/{type}:
     delete:
       description: Removes all entries of one cache type (see /api/cache/list).
@@ -7096,6 +7251,16 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 'true (default): also search by title, not only by ID; false:
+          by ID only'
+        in: query
+        name: searchByTitle
+        type: string
+      - description: 'true (default): download the best accepted release; false: search
+          only'
+        in: query
+        name: download
+        type: boolean
       - description: 'API key: the webapikey setting from [general] in config.toml'
         in: query
         name: apikey
@@ -8447,14 +8612,7 @@ paths:
         "200":
           description: Queued and running jobs keyed by queue ID
           schema:
-            allOf:
-            - $ref: '#/definitions/api.Jsondata'
-            - properties:
-                data:
-                  additionalProperties:
-                    $ref: '#/definitions/syncops.Job'
-                  type: object
-              type: object
+            $ref: '#/definitions/api.Jsonqueue'
         "401":
           description: Missing or wrong apikey
           schema:
@@ -8553,14 +8711,7 @@ paths:
         "200":
           description: Schedules keyed by ID
           schema:
-            allOf:
-            - $ref: '#/definitions/api.Jsondata'
-            - properties:
-                data:
-                  additionalProperties:
-                    $ref: '#/definitions/syncops.JobSchedule'
-                  type: object
-              type: object
+            $ref: '#/definitions/api.Jsonschedules'
         "401":
           description: Missing or wrong apikey
           schema:
@@ -9221,6 +9372,16 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 'true (default): also search by title, not only by ID; false:
+          by ID only'
+        in: query
+        name: searchByTitle
+        type: string
+      - description: 'true (default): download the best accepted release; false: search
+          only'
+        in: query
+        name: download
+        type: boolean
       - description: 'API key: the webapikey setting from [general] in config.toml'
         in: query
         name: apikey
@@ -9709,6 +9870,16 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 'true (default): also search by title, not only by ID; false:
+          by ID only'
+        in: query
+        name: searchByTitle
+        type: string
+      - description: 'true (default): download the best accepted release; false: search
+          only'
+        in: query
+        name: download
+        type: boolean
       - description: 'API key: the webapikey setting from [general] in config.toml'
         in: query
         name: apikey
@@ -9756,6 +9927,16 @@ paths:
         name: season
         required: true
         type: string
+      - description: 'true (default): also search by title, not only by ID; false:
+          by ID only'
+        in: query
+        name: searchByTitle
+        type: string
+      - description: 'true (default): download the best accepted release; false: search
+          only'
+        in: query
+        name: download
+        type: boolean
       - description: 'API key: the webapikey setting from [general] in config.toml'
         in: query
         name: apikey
@@ -10209,12 +10390,7 @@ paths:
         "200":
           description: The stored token; data is null when Trakt is not set up
           schema:
-            allOf:
-            - $ref: '#/definitions/api.Jsondata'
-            - properties:
-                data:
-                  $ref: '#/definitions/apiexternal_v2.OAuthToken'
-              type: object
+            $ref: '#/definitions/api.Jsontraktauthtoken'
         "401":
           description: Missing or wrong apikey
           schema:
@@ -10246,14 +10422,7 @@ paths:
         "200":
           description: List items, and the error text if Trakt failed
           schema:
-            allOf:
-            - $ref: '#/definitions/api.Jsondataerror'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/trakt.TraktUserListItem'
-                  type: array
-              type: object
+            $ref: '#/definitions/api.Jsontraktlistitems'
         "401":
           description: Missing or wrong apikey
           schema:

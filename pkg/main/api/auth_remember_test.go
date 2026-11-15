@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -44,7 +45,7 @@ func TestParseRememberToken(t *testing.T) {
 		"password changed": {rememberKey(secret, "other"), valid},
 		"secret changed":   {rememberKey(bytes.Repeat([]byte{2}, rememberSecretLen), "pw"), valid},
 		"expired":          {key, newRememberToken(key, DefaultUsername, now.Add(-time.Second))},
-		"other user":       {key, newRememberToken(key, "bob", now.Add(time.Hour))},
+		"user swapped":     {key, base64.RawURLEncoding.EncodeToString([]byte("bob")) + "." + parts[1] + "." + parts[2]},
 		"expiry extended":  {key, parts[0] + ".9999999999." + parts[2]},
 		"mac cut":          {key, parts[0] + "." + parts[1] + "." + parts[2][:10]},
 		"no dots":          {key, "garbage"},

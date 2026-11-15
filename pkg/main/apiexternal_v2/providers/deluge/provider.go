@@ -684,3 +684,27 @@ func parseTorrentInfo(hash string, data map[string]any) *apiexternal_v2.TorrentI
 
 	return info
 }
+
+// DownloadDir is where Deluge leaves finished torrents, as Deluge sees it:
+// the "move completed" folder when that is on, else the download folder.
+func (p *Provider) DownloadDir(ctx context.Context, _ string) (string, error) {
+	result, err := p.call(ctx, "core.get_config_values",
+		[]any{[]string{"download_location", "move_completed", "move_completed_path"}})
+	if err != nil {
+		return "", err
+	}
+
+	values, _ := result.(map[string]any)
+	if move, _ := values["move_completed"].(bool); move {
+		if dir, _ := values["move_completed_path"].(string); dir != "" {
+			return dir, nil
+		}
+	}
+
+	dir, _ := values["download_location"].(string)
+	if dir == "" {
+		return "", errors.New("no download folder in the answer")
+	}
+
+	return dir, nil
+}

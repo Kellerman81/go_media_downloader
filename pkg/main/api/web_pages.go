@@ -17,6 +17,25 @@ func addCSS() gomponents.Node {
     					content: unset;
 					}
 					.listunstyle { list-style-type: none; }
+					.field-help-hint { font-size: 0.78rem; margin-top: 0; }
+					.field-help-toggle { font-size: 0.78rem; line-height: 1.2; text-decoration: none; vertical-align: baseline; }
+					.field-help-toggle .fa-chevron-down { font-size: 0.65em; transition: transform 0.2s; }
+					.field-help-toggle:not(.collapsed) .fa-chevron-down { transform: rotate(180deg); }
+					.field-help-toggle.collapsed .when-open, .field-help-toggle:not(.collapsed) .when-collapsed { display: none; }
+					.field-help {
+						font-size: 0.8rem; line-height: 1.45; color: #495057;
+						background: #f8f9fb; border: 1px solid #e3e8ef; border-left: 3px solid #3b7ddd;
+						border-radius: 0.375rem; padding: 0.6rem 0.85rem;
+						overflow-wrap: anywhere;
+					}
+					.field-help p { margin: 0 0 0.35rem; }
+					.field-help p:last-child, .field-help ul:last-child { margin-bottom: 0; }
+					.field-help ul { margin: 0.15rem 0 0.4rem; padding-left: 1.1rem; }
+					.field-help li { margin-bottom: 0.1rem; }
+					.field-help-heading { font-weight: 600; margin: 0.35rem 0 0.15rem; color: #343a40; }
+					.field-help-heading:first-child { margin-top: 0; }
+					.choice-chip { font-size: 0.8rem; }
+					.choice-chip-value { opacity: 0.7; font-size: 0.85em; margin-left: 0.35em; font-family: var(--bs-font-monospace, monospace); }
 					.alert-column { flex-direction: column; }
 					.config-section { 
 						background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
@@ -347,16 +366,12 @@ func addCSS() gomponents.Node {
 						font-weight: 600;
 					}
 					
-					/* Responsive sidebar */
-					@media (max-width: 768px) {
-						.sidebar {
-							transform: translateX(-100%);
-							transition: transform 0.3s ease;
-						}
-						
-						.sidebar.show {
-							transform: translateX(0);
-						}
+					/* Small screens: the theme hides the sidebar by its margin and
+					   the hamburger (js-sidebar-toggle) shows it with .collapsed;
+					   no own transform here, which kept it off-screen on phones. */
+					@media (max-width: 991.98px) {
+						/* The open menu lies above the fixed footer, which hid its lower entries. */
+						.sidebar.collapsed { position: relative; z-index: 1010; }
 					}
 					
 					/* Footer positioned only under main content, not sidebar */
@@ -768,8 +783,10 @@ func addCSS() gomponents.Node {
 					}
 					
 					/* Actions Column Visibility and Styling */
+					/* Not the responsive detail rows: their one cell is also the last
+					   child and would get nowrap, centering and the sticky column. */
 					.dataTables_wrapper table th:last-child,
-					.dataTables_wrapper table td:last-child {
+					.dataTables_wrapper table tr:not(.child) > td:last-child {
 						/* width 1% + nowrap sizes the column to its buttons (artists have five) */
 						min-width: 120px !important;
 						width: 1% !important;
@@ -782,6 +799,15 @@ func addCSS() gomponents.Node {
 						border-left: 1px solid #dee2e6 !important;
 					}
 					
+					.dataTables_wrapper table tr.child > td {
+						white-space: normal;
+						text-align: left;
+					}
+
+					.dataTables_wrapper table tr.child .dtr-data {
+						overflow-wrap: anywhere;
+					}
+
 					/* Actions column header styling */
 					.dataTables_wrapper table th:last-child {
 						background: #f8f9fa !important;
@@ -790,14 +816,14 @@ func addCSS() gomponents.Node {
 					}
 					
 					/* Row hover effect - maintain actions column background */
-					.dataTables_wrapper table tbody tr:hover td:last-child {
+					.dataTables_wrapper table tbody tr:not(.child):hover > td:last-child {
 						background: #f8f9fa !important;
 					}
 					
 					/* Ensure actions column is always visible on mobile */
 					@media (max-width: 768px) {
 						.dataTables_wrapper table th:last-child,
-						.dataTables_wrapper table td:last-child {
+						.dataTables_wrapper table tr:not(.child) > td:last-child {
 							min-width: 100px !important;
 						}
 					}
@@ -1882,7 +1908,83 @@ func csrfAutoAttachScript() gomponents.Node {
 `))
 }
 
+// pageHead is the document head shared by full pages and embedded tool pages.
+func pageHead(pageTitle string) gomponents.Node {
+	return html.Head(
+		html.Meta(html.Charset("utf-8")),
+		html.Meta(
+			html.Name("viewport"),
+			html.Content("width=device-width, initial-scale=1"),
+		),
+		html.TitleEl(gomponents.Text(pageTitle)),
+		faviconLinks(),
+
+		// Load jQuery first
+		html.Script(html.Src("https://code.jquery.com/jquery-3.7.1.min.js")),
+		html.Link(
+			html.Rel("stylesheet"),
+			html.Href("/static/css/light.css"),
+		), // https://cdn.jsdelivr.net/npm/@adminkit/core@3.4.0/dist/css/app.min.css
+		// Choices.js CSS and JS for searchable dropdowns
+		// html.Link(html.Rel("stylesheet"), html.Href("https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css")),
+		html.Script(html.Src("/static/js/app.js")),
+		html.Script(html.Src("/static/js/datatables.js")),
+		// html.Script(html.Src("https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js")),
+
+		html.Script(html.Src("https://unpkg.com/htmx.org@2.0.11/dist/htmx.min.js")),
+		csrfAutoAttachScript(),
+		addCSS(),
+		helperToolScript(),
+		// adminStyles(),
+	)
+}
+
+// renderToolPage writes a helper tool page. With ?embed=1 it renders only the
+// tool, without sidebar and footer, for the overlay that config fields open
+// (helperToolScript).
+func renderToolPage(ctx *gin.Context, title string, content gomponents.Node) {
+	renderPageIn(ctx, title, true, content)
+}
+
+// renderPageIn is renderToolPage for a page that is not in the Management
+// menu (management false: no submenu is opened for it).
+func renderPageIn(ctx *gin.Context, title string, management bool, content gomponents.Node) {
+	var node gomponents.Node
+	if ctx.Query("embed") == "1" {
+		node = html.Doctype(html.HTML(
+			html.Lang("en"),
+			pageHead(title+" · Media Downloader"),
+			html.Body(
+				html.Class("helper-embed"),
+				html.Main(html.Class("content p-3"),
+					html.Div(html.Class("container-fluid p-0"), html.Div(html.Class("row"), content))),
+			),
+		))
+	} else {
+		node = pageAs(accessOf(ctx), title, false, false, management, content)
+	}
+
+	var buf strings.Builder
+	node.Render(&buf)
+
+	ctx.Header("Content-Type", "text/html")
+	ctx.String(http.StatusOK, buf.String())
+}
+
 func page(
+	title string,
+	activeConfig bool,
+	activeDatabase bool,
+	activeManagement bool,
+	addcontent ...gomponents.Node,
+) gomponents.Node {
+	return pageAs(nil, title, activeConfig, activeDatabase, activeManagement, addcontent...)
+}
+
+// pageAs is page for an account: non-admins get their reduced sidebar, and
+// the top bar names the account (nil: an admin page, no name).
+func pageAs(
+	acc *userAccess,
 	title string,
 	activeConfig bool,
 	activeDatabase bool,
@@ -1897,32 +1999,7 @@ func page(
 	return html.Doctype(
 		html.HTML(
 			html.Lang("en"),
-			html.Head(
-				html.Meta(html.Charset("utf-8")),
-				html.Meta(
-					html.Name("viewport"),
-					html.Content("width=device-width, initial-scale=1"),
-				),
-				html.TitleEl(gomponents.Text(pageTitle)),
-				faviconLinks(),
-
-				// Load jQuery first
-				html.Script(html.Src("https://code.jquery.com/jquery-3.7.1.min.js")),
-				html.Link(
-					html.Rel("stylesheet"),
-					html.Href("/static/css/light.css"),
-				), // https://cdn.jsdelivr.net/npm/@adminkit/core@3.4.0/dist/css/app.min.css
-				// Choices.js CSS and JS for searchable dropdowns
-				// html.Link(html.Rel("stylesheet"), html.Href("https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css")),
-				html.Script(html.Src("/static/js/app.js")),
-				html.Script(html.Src("/static/js/datatables.js")),
-				// html.Script(html.Src("https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js")),
-
-				html.Script(html.Src("https://unpkg.com/htmx.org@2.0.11/dist/htmx.min.js")),
-				csrfAutoAttachScript(),
-				addCSS(),
-				// adminStyles(),
-			),
+			pageHead(pageTitle),
 			html.Body(
 				html.A(
 					html.Href("#main-content"),
@@ -1933,7 +2010,8 @@ func page(
 					gomponents.Text("Skip to main content"),
 				),
 				html.Div(html.Class("wrapper"),
-					createNavbar(activeConfig, activeDatabase, activeManagement),
+					createNavbarFor(acc, activeConfig, activeDatabase, activeManagement),
+					gomponents.If(acc != nil, html.Script(gomponents.Raw("window.gmdUser = "+jsString(accName(acc))+";"))),
 					html.Div(
 						html.Class("main"),
 						html.Nav(html.Class("navbar navbar-expand navbar-light navbar-bg"),
@@ -1946,6 +2024,7 @@ func page(
 									gomponents.Attr("aria-hidden", "true"),
 								),
 							),
+							accountMenu(acc),
 						),
 						html.Main(
 							html.Class("content"),
@@ -2087,7 +2166,10 @@ function showConfigPreview(configType, configName, fieldName) {
 
     // Fetch preview content
     fetch('/api/manage/config/preview/' + configType + '/' + encodeURIComponent(configName))
-        .then(response => response.text())
+        .then(response => {
+            if (!response.ok) { throw new Error('the server answered ' + response.status); }
+            return response.text();
+        })
         .then(html => {
             modalBody.innerHTML = html;
             // After inserting HTML, expand all collapsed sections
@@ -2102,8 +2184,8 @@ function showConfigPreview(configType, configName, fieldName) {
 function expandAllCollapsedSections(container) {
     if (!container) return;
 
-    // Add 'show' class to all collapse elements to make them visible
-    container.querySelectorAll('.collapse').forEach(function(el) {
+    // Add 'show' class to the collapsed sections; field help boxes stay closed.
+    container.querySelectorAll('.collapse:not([id^="help-"])').forEach(function(el) {
         el.classList.add('show');
     });
 
@@ -2114,7 +2196,7 @@ function expandAllCollapsedSections(container) {
     });
 
     // Also handle any buttons with data-bs-toggle="collapse"
-    container.querySelectorAll('[data-bs-toggle="collapse"]').forEach(function(el) {
+    container.querySelectorAll('[data-bs-toggle="collapse"]:not(.field-help-toggle)').forEach(function(el) {
         el.classList.remove('collapsed');
         el.setAttribute('aria-expanded', 'true');
     });
@@ -2133,39 +2215,34 @@ function openConfigPage(baseUrl, configName) {
 
 // On page load, check for hash anchor and expand the matching config item
 document.addEventListener('DOMContentLoaded', function() {
+    // The Library keeps its open entry in the hash (#album/12) itself.
+    if (document.getElementById('libModal')) { return; }
     if (window.location.hash) {
         var configName = decodeURIComponent(window.location.hash.substring(1));
         if (configName) {
-            // Find and expand the matching accordion item
-            // Look for buttons/headers containing the config name
+            // Expand the item whose header names exactly this config
+            // ("List SeriesX"), not every header that contains the text.
             setTimeout(function() {
-                var found = false;
-                // Try to find accordion buttons with matching text
-                document.querySelectorAll('.accordion-button, .card-header button, [data-bs-toggle="collapse"]').forEach(function(btn) {
-                    if (btn.textContent && btn.textContent.includes(configName)) {
-                        // Found matching item - expand it
-                        var collapseTarget = btn.getAttribute('data-bs-target') || btn.getAttribute('href');
-                        if (collapseTarget) {
-                            var collapseEl = document.querySelector(collapseTarget);
-                            if (collapseEl) {
-                                // Use Bootstrap's collapse API to show
-                                var bsCollapse = new bootstrap.Collapse(collapseEl, {toggle: false});
-                                bsCollapse.show();
-                                // Remove collapsed class from button
-                                btn.classList.remove('collapsed');
-                                btn.setAttribute('aria-expanded', 'true');
-                                // Scroll into view
-                                btn.scrollIntoView({behavior: 'smooth', block: 'center'});
-                                // Highlight briefly
-                                btn.style.backgroundColor = '#fff3cd';
-                                setTimeout(function() {
-                                    btn.style.backgroundColor = '';
-                                }, 2000);
-                                found = true;
-                            }
-                        }
-                    }
-                });
+                var btn = Array.prototype.find.call(
+                    document.querySelectorAll('#main-content .accordion-button, #main-content [data-bs-toggle="collapse"]'),
+                    function(b) {
+                        var text = (b.textContent || '').replace(/\s+/g, ' ').trim();
+                        return text === configName || text.endsWith(' ' + configName);
+                    });
+                var target = null;
+                try {
+                    target = btn && document.querySelector(btn.getAttribute('data-bs-target') || btn.getAttribute('href'));
+                } catch (e) { /* the header points to no valid selector */ }
+                if (!target) {
+                    if (typeof showToaster === 'function') { showToaster('warning', configName + ' was not found on this page'); }
+                    return;
+                }
+                bootstrap.Collapse.getOrCreateInstance(target, {toggle: false}).show();
+                btn.classList.remove('collapsed');
+                btn.setAttribute('aria-expanded', 'true');
+                btn.scrollIntoView({behavior: 'smooth', block: 'center'});
+                btn.style.backgroundColor = '#fff3cd';
+                setTimeout(function() { btn.style.backgroundColor = ''; }, 2000);
             }, 300); // Small delay to ensure DOM is ready
         }
     }
@@ -2367,20 +2444,7 @@ func adminPageJobManagement(ctx *gin.Context) {
 }
 
 func adminPageCronGenerator(ctx *gin.Context) {
-	csrfToken := getCSRFToken(ctx)
-	pageNode := page(
-		"Cron Expression Generator",
-		false,
-		false,
-		true,
-		renderCronGeneratorPage(csrfToken),
-	)
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-
-	ctx.Header("Content-Type", "text/html")
-	ctx.String(http.StatusOK, buf.String())
+	renderToolPage(ctx, "Cron Expression Generator", renderCronGeneratorPage(getCSRFToken(ctx), ctx.Query("value")))
 }
 
 func adminPageDebugStats(ctx *gin.Context) {
@@ -2653,29 +2717,11 @@ func adminPageQualityReorder(ctx *gin.Context) {
 }
 
 func adminPageRegexTester(ctx *gin.Context) {
-	csrfToken := getCSRFToken(ctx)
-	pageNode := page("Regex Pattern Tester", false, false, true, renderRegexTesterPage(csrfToken))
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-
-	ctx.Header("Content-Type", "text/html")
-	ctx.String(http.StatusOK, buf.String())
+	renderToolPage(ctx, "Regex Pattern Tester",
+		renderRegexTesterPage(getCSRFToken(ctx), ctx.Query("value"), ctx.Query("tab") == "pattern"))
 }
 
 func adminPageNamingGenerator(ctx *gin.Context) {
-	csrfToken := getCSRFToken(ctx)
-	pageNode := page(
-		"Naming Template Generator",
-		false,
-		false,
-		true,
-		renderNamingGeneratorPage(csrfToken),
-	)
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-
-	ctx.Header("Content-Type", "text/html")
-	ctx.String(http.StatusOK, buf.String())
+	renderToolPage(ctx, "Naming Template Generator",
+		renderNamingGeneratorPage(getCSRFToken(ctx), ctx.Query("type"), ctx.Query("value")))
 }

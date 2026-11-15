@@ -353,7 +353,7 @@ func newTestProcessor(t *testing.T, cfg imdbConfig) *imdbProcessor {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite3", "file:"+t.Name()+"?mode=memory&cache=shared&_fk=1")
+	db, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared&_pragma=foreign_keys(1)")
 	if err != nil {
 		t.Fatal(err)
 	}

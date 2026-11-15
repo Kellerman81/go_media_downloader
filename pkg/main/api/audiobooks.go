@@ -285,7 +285,7 @@ func apiAudiobooksClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	inres, inerr := database.DeleteRow("audiobook_histories", "audiobook_id = ?", id)
+	inres, inerr := database.DeleteRow("audiobook_histories", "audiobook_id = ?", &id)
 	handleDBInsertOrUpdate(c, inres, inerr, false)
 }
 
@@ -421,7 +421,7 @@ func apiRetagAuthorAudiobooks(c *gin.Context) {
 		logger.StrAudiobook,
 		"Retag Author Audiobooks_"+c.Param(logger.StrID),
 		func(ctx context.Context, cfgp *config.MediaTypeConfig) error {
-			return utils.RetagAuthorAudiobooks(ctx, cfgp, authorID)
+			return utils.RetagAuthorAudiobooks(ctx, cfgp, &authorID)
 		},
 	)
 }

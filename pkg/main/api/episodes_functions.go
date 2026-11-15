@@ -38,7 +38,7 @@ func triggerEpisodeDownloads(
 
 		// Get series information
 		series := database.StructscanT[database.Serie](false, 1,
-			"SELECT * FROM series WHERE id = ?", episode.SerieID)
+			"SELECT * FROM series WHERE id = ?", &episode.SerieID)
 		if len(series) == 0 {
 			results.FailedDownloads++
 
@@ -54,7 +54,7 @@ func triggerEpisodeDownloads(
 
 		// Get episode details
 		dbEpisode := database.StructscanT[database.DbserieEpisode](false, 1,
-			"SELECT * FROM dbserie_episodes WHERE id = ?", episode.DbserieEpisodeID)
+			"SELECT * FROM dbserie_episodes WHERE id = ?", &episode.DbserieEpisodeID)
 		if len(dbEpisode) == 0 {
 			results.FailedDownloads++
 

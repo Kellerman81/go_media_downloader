@@ -509,7 +509,7 @@ func (s *ConfigSearcher) checkhistory(
 // indexers (differing URL, case, or slightly different reported size) is only
 // parsed once.
 func normalizedTitleKey(title string, size int64) string {
-	return strings.ToLower(strings.TrimSpace(title)) + "|" + strconv.FormatInt(size/(10<<20), 10)
+	return logger.JoinStrings(strings.ToLower(strings.TrimSpace(title)), "|", strconv.FormatInt(size/(10<<20), 10))
 }
 
 // checkprocessed checks if the given entry is already processed using O(1) map lookups

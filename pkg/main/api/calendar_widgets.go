@@ -1,15 +1,18 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
+	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
 )
 
@@ -24,886 +27,671 @@ func escapeJSString(s string) string {
 	return s
 }
 
-// CalendarControlsHandler renders the calendar view controls.
-func CalendarControlsHandler(c *gin.Context) {
-	currentView := c.DefaultQuery("view", "agenda")
-	currentFilter := c.DefaultQuery("filter", "all")
-
-	content := html.Div(
-		html.Class("row mb-4"),
-		html.Div(
-			html.Class("col-md-6"),
-			html.Div(
-				html.Class("btn-group"),
-				gomponents.Attr("role", "group"),
-				html.Button(
-					html.Class(getViewButtonClass("month", currentView)),
-					html.ID("btn-month-view"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=month&filter="+currentFilter,
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view=month&filter="+currentFilter+"', '#calendar-controls')",
-					),
-					gomponents.Text("Month"),
-				),
-				html.Button(
-					html.Class(getViewButtonClass("week", currentView)),
-					html.ID("btn-week-view"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=week&filter="+currentFilter,
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view=week&filter="+currentFilter+"', '#calendar-controls')",
-					),
-					gomponents.Text("Week"),
-				),
-				html.Button(
-					html.Class(getViewButtonClass("agenda", currentView)),
-					html.ID("btn-agenda-view"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=agenda&filter="+currentFilter,
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view=agenda&filter="+currentFilter+"', '#calendar-controls')",
-					),
-					gomponents.Text("Agenda"),
-				),
-			),
-		),
-		html.Div(
-			html.Class("col-md-6 text-end"),
-			html.Div(
-				html.Class("btn-group"),
-				gomponents.Attr("role", "group"),
-				html.Button(
-					html.Class(getFilterButtonClass("movies", currentFilter)),
-					html.ID("btn-movies"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view="+currentView+"&filter=movies",
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view="+currentView+"&filter=movies', '#calendar-controls')",
-					),
-					gomponents.Text("Movies"),
-				),
-				html.Button(
-					html.Class(getFilterButtonClass("series", currentFilter)),
-					html.ID("btn-series"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view="+currentView+"&filter=series",
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view="+currentView+"&filter=series', '#calendar-controls')",
-					),
-					gomponents.Text("Series"),
-				),
-				html.Button(
-					html.Class(getFilterButtonClass("albums", currentFilter)),
-					html.ID("btn-albums"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view="+currentView+"&filter=albums",
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view="+currentView+"&filter=albums', '#calendar-controls')",
-					),
-					gomponents.Text("Albums"),
-				),
-				html.Button(
-					html.Class(getFilterButtonClass("audiobooks", currentFilter)),
-					html.ID("btn-audiobooks"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view="+currentView+"&filter=audiobooks",
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view="+currentView+"&filter=audiobooks', '#calendar-controls')",
-					),
-					gomponents.Text("Audiobooks"),
-				),
-				html.Button(
-					html.Class(getFilterButtonClass("all", currentFilter)),
-					html.ID("btn-all"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view="+currentView+"&filter=all",
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr(
-						"hx-on::after-request",
-						"htmx.ajax('GET', '/api/admin/calendar/controls?view="+currentView+"&filter=all', '#calendar-controls')",
-					),
-					gomponents.Text("All"),
-				),
-			),
-		),
-	)
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-
-	var buf strings.Builder
-	content.Render(&buf)
-	c.String(http.StatusOK, buf.String())
+// calendarTypeFilters are the type buttons; a type only gets one when a media
+// group of it is configured.
+var calendarTypeFilters = []struct {
+	Key, Label, Icon string
+	configured       func(*config.MediaConfig) bool
+}{
+	{"movies", "Movies", "fa-film", func(m *config.MediaConfig) bool { return len(m.Movies) > 0 }},
+	{"series", "Series", "fa-tv", func(m *config.MediaConfig) bool { return len(m.Series) > 0 }},
+	{"albums", "Albums", "fa-compact-disc", func(m *config.MediaConfig) bool { return len(m.Music) > 0 }},
+	{"audiobooks", "Audiobooks", "fa-headphones", func(m *config.MediaConfig) bool { return len(m.AudioBooks) > 0 }},
+	{"books", "Books", "fa-book", func(m *config.MediaConfig) bool { return len(m.Books) > 0 }},
 }
 
-// CalendarContentHandler renders the calendar content based on view and filter.
-func CalendarContentHandler(c *gin.Context) {
-	view := c.DefaultQuery("view", "agenda")
-	filter := c.DefaultQuery("filter", "all")
-	dateParam := c.Query("date")
+// calendarLink is a toolbar control that reloads the calendar with another state.
+func calendarLink(st calendarState, change func(*calendarState), class string, nodes ...gomponents.Node) gomponents.Node {
+	q := st.Query(change)
 
-	var (
-		baseDate time.Time
-		err      error
+	return html.Button(append([]gomponents.Node{
+		html.Type("button"),
+		html.Class(class),
+		hx.Get("/api/admin/calendar/content?" + q),
+		hx.Target("#calendar-content"),
+		hx.PushURL("/api/admin/calendar?" + q),
+	}, nodes...)...)
+}
+
+func calendarPeriodLabel(st calendarState) string {
+	start, end := st.Range()
+
+	if st.View == "month" {
+		return start.Format("January 2006")
+	}
+
+	return start.Format("Jan 2") + " – " + end.Format("Jan 2, 2006")
+}
+
+// calendarSearchItems are the missing monitored entries of the overdue
+// events as {type, id} JSON for the "search overdue" buttons.
+func calendarSearchItems(events []calendarEvent) (string, int) {
+	type item struct {
+		Type string `json:"type"`
+		ID   uint   `json:"id"`
+	}
+
+	items := []item{}
+
+	for _, e := range events {
+		if !e.Overdue {
+			continue
+		}
+
+		for _, en := range e.Entries {
+			if en.Monitored && !en.Downloaded && en.ID > 0 {
+				items = append(items, item{e.Type, en.ID})
+			}
+		}
+	}
+
+	data, _ := json.Marshal(items)
+
+	return string(data), len(items)
+}
+
+// calendarSearchButton searches all overdue events of a list, one by one:
+// by ID (IMDb / TVDB) or by title. Albums, audiobooks and books are always
+// searched by title, so they get one button.
+func calendarSearchButton(st calendarState, events []calendarEvent, label string) gomponents.Node {
+	if st.access != nil && !st.access.CanSearch() {
+		return nil
+	}
+
+	data, n := calendarSearchItems(events)
+	if n == 0 {
+		return nil
+	}
+
+	main := fmt.Sprintf("%s (%d)", label, n)
+	run := func(byTitle bool) gomponents.Node {
+		return gomponents.Group([]gomponents.Node{
+			html.Data("items", data),
+			gomponents.Attr("onclick", fmt.Sprintf("calendarBulkSearch(JSON.parse(this.dataset.items), %t)", byTitle)),
+		})
+	}
+
+	button := html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-danger"),
+		html.Title("Search everything that is released and still missing, one after the other"), run(false),
+		html.I(html.Class("fa-solid fa-magnifying-glass me-1")), gomponents.Text(main))
+	if !slices.ContainsFunc(events, func(e calendarEvent) bool { return e.Overdue && (e.Type == "movie" || e.Type == "series") }) {
+		return button
+	}
+
+	// The button searches by ID; the menu picks ID or title.
+	item := func(byTitle bool, icon, text string) gomponents.Node {
+		return html.Li(html.Button(html.Type("button"), html.Class("dropdown-item"), run(byTitle),
+			html.I(html.Class("fa-solid "+icon+" me-2")), gomponents.Text(text)))
+	}
+
+	return html.Div(html.Class("btn-group"),
+		button,
+		html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-danger dropdown-toggle dropdown-toggle-split"),
+			html.Data("bs-toggle", "dropdown"), html.Aria("expanded", "false"),
+			html.Span(html.Class("visually-hidden"), gomponents.Text("Choose how to search"))),
+		html.Ul(html.Class("dropdown-menu dropdown-menu-end"),
+			item(false, "fa-magnifying-glass", "Search by ID (IMDb / TVDB)"),
+			item(true, "fa-magnifying-glass-plus", "Search by title")))
+}
+
+// calendarSelects are the media group and genre selects; they reload the
+// calendar with the changed parameter.
+func calendarSelects(st calendarState, genres []string) gomponents.Node {
+	sel := func(param, label, current string, opts [][2]string) gomponents.Node {
+		nodes := []gomponents.Node{html.Option(html.Value(""), gomponents.Text(label))}
+		for _, o := range opts {
+			nodes = append(nodes, html.Option(html.Value(o[0]), gomponents.If(strings.EqualFold(o[0], current), html.Selected()), gomponents.Text(o[1])))
+		}
+
+		return html.Select(html.Class("form-select form-select-sm w-auto"), gomponents.Attr("aria-label", label),
+			html.Data("query", st.Query(nil)),
+			gomponents.Attr("onchange", "calendarSetParam(this.dataset.query, "+jsString(param)+", this.value)"), gomponents.Group(nodes))
+	}
+
+	var groups [][2]string
+	for _, g := range libraryGroups() {
+		if st.access == nil || st.access.AllowsGroup(g.Name) {
+			groups = append(groups, [2]string{g.Name, g.Name})
+		}
+	}
+
+	gen := make([][2]string, 0, len(genres)+1)
+	for _, g := range genres {
+		gen = append(gen, [2]string{g, g})
+	}
+
+	if st.Genre != "" && !slices.ContainsFunc(genres, func(g string) bool { return strings.EqualFold(g, st.Genre) }) {
+		gen = append(gen, [2]string{st.Genre, st.Genre})
+	}
+
+	return html.Div(html.Class("d-flex flex-wrap gap-2"),
+		gomponents.If(len(groups) > 1, sel("group", "All media groups", st.Group, groups)),
+		gomponents.If(len(gen) > 0, sel("genre", "Any genre", st.Genre, gen)))
+}
+
+func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []string) gomponents.Node {
+	button := func(active bool) string {
+		if active {
+			return "btn btn-sm btn-primary"
+		}
+
+		return "btn btn-sm btn-outline-primary"
+	}
+
+	views := []gomponents.Node{}
+	for _, v := range calendarViews {
+		views = append(views, calendarLink(st, func(s *calendarState) { s.View = v }, button(st.View == v),
+			gomponents.Text(strings.ToUpper(v[:1])+v[1:])))
+	}
+
+	types := []gomponents.Node{calendarLink(st, func(s *calendarState) { s.Filter = "all" }, button(st.Filter == "all"), gomponents.Text("All"))}
+	if media := config.GetSettingsMediaAll(); media != nil {
+		for _, t := range calendarTypeFilters {
+			if t.configured(media) || st.Filter == t.Key {
+				types = append(types, calendarLink(st, func(s *calendarState) { s.Filter = t.Key }, button(st.Filter == t.Key),
+					html.I(html.Class("fa-solid "+t.Icon+" me-1")), gomponents.Text(t.Label)))
+			}
+		}
+	}
+
+	today := time.Now()
+	todayDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+
+	var downloaded, partial, overdue, fresh int
+
+	for _, e := range events {
+		if e.Downloaded {
+			downloaded++
+		}
+
+		if e.Partial {
+			partial++
+		}
+
+		if e.Overdue {
+			overdue++
+		}
+
+		if e.New {
+			fresh++
+		}
+	}
+
+	summary := fmt.Sprintf("%d events", len(events))
+	if !st.OnlyMissing {
+		summary += fmt.Sprintf(" · %d downloaded · %d missing", downloaded, len(events)-downloaded-partial)
+	}
+
+	if partial > 0 {
+		summary += fmt.Sprintf(" · %d partly downloaded", partial)
+	}
+
+	if overdue > 0 {
+		summary += fmt.Sprintf(" · %d overdue", overdue)
+	}
+
+	if fresh > 0 {
+		summary += fmt.Sprintf(" · %d new since yesterday", fresh)
+	}
+
+	// Laid out explicitly: the theme's form-switch padding pushes the input
+	// out of the card.
+	missingSwitch := html.Div(
+		html.Class("form-check form-switch mb-0 ps-0 d-flex align-items-center gap-2"),
+		html.Input(
+			html.Class("form-check-input m-0"), html.Style("float: none;"), html.Type("checkbox"), html.ID("calOnlyMissing"),
+			gomponents.If(st.OnlyMissing, html.Checked()),
+			hx.Get("/api/admin/calendar/content?"+st.Query(func(s *calendarState) { s.OnlyMissing = !s.OnlyMissing })),
+			hx.Target("#calendar-content"),
+			hx.PushURL("/api/admin/calendar?"+st.Query(func(s *calendarState) { s.OnlyMissing = !s.OnlyMissing })),
+			hx.Trigger("change"),
+		),
+		html.Label(html.Class("form-check-label"), html.For("calOnlyMissing"), gomponents.Text("Only missing")),
 	)
 
-	if dateParam != "" {
-		baseDate, err = time.Parse("2006-01-02", dateParam)
-		if err != nil {
-			baseDate = time.Now()
-		}
-	} else {
-		baseDate = time.Now()
+	return html.Div(
+		html.Class("mb-3"),
+		html.Div(
+			html.Class("d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"),
+			html.Div(html.Class("btn-group"), gomponents.Attr("role", "group"), gomponents.Group(views)),
+			html.Div(
+				html.Class("d-flex align-items-center gap-2"),
+				calendarLink(st, func(s *calendarState) { s.Date = s.Step(-1) }, "btn btn-sm btn-outline-secondary",
+					gomponents.Attr("aria-label", "Previous"), html.I(html.Class("fas fa-chevron-left"))),
+				calendarLink(st, func(s *calendarState) { s.Date = todayDate }, "btn btn-sm btn-outline-secondary", gomponents.Text("Today")),
+				calendarLink(st, func(s *calendarState) { s.Date = s.Step(1) }, "btn btn-sm btn-outline-secondary",
+					gomponents.Attr("aria-label", "Next"), html.I(html.Class("fas fa-chevron-right"))),
+				html.H5(html.Class("mb-0 ms-2"), gomponents.Text(calendarPeriodLabel(st))),
+			),
+			html.Div(html.Class("btn-group flex-wrap"), gomponents.Attr("role", "group"), gomponents.Group(types)),
+		),
+		html.Div(
+			html.Class("d-flex flex-wrap align-items-center justify-content-between gap-2"),
+			html.Div(html.Class("d-flex flex-wrap align-items-center gap-3"),
+				missingSwitch,
+				calendarSelects(st, genres),
+				html.Small(html.Class("text-muted"), gomponents.Text(summary)),
+			),
+			html.Div(html.Class("d-flex flex-wrap gap-2"),
+				calendarSearchButton(st, events, "Search overdue"),
+				html.A(
+					html.Class("btn btn-sm btn-outline-secondary"),
+					html.Href("/api/admin/calendar/ical?"+st.Query(nil)),
+					html.Title("Download the events shown here as an iCalendar file"),
+					html.I(html.Class("fas fa-download me-1")),
+					gomponents.Text("Download .ics"),
+				),
+			),
+		),
+	)
+}
+
+// CalendarContentHandler renders the toolbar and the view for the query state.
+func CalendarContentHandler(c *gin.Context) {
+	st := calendarStateFromQuery(c)
+	start, end := st.Range()
+	base := st.filter(getCalendarEvents(start, end, st.Filter), false)
+	genres := calendarGenres(base)
+	events := base
+
+	if st.Genre != "" {
+		events = slices.DeleteFunc(slices.Clone(base), func(e calendarEvent) bool { return !calendarHasGenre(e.genre, st.Genre) })
 	}
 
-	var start, end time.Time
-	switch view {
+	var view gomponents.Node
+
+	switch st.View {
 	case "month":
-		start = time.Date(baseDate.Year(), baseDate.Month(), 1, 0, 0, 0, 0, baseDate.Location()).
-			AddDate(0, 0, -7)
-		end = start.AddDate(0, 2, 0)
-
+		view = renderMonthView(st, events)
 	case "week":
-		start = baseDate.AddDate(0, 0, -int(baseDate.Weekday())).AddDate(0, 0, -7)
-		end = start.AddDate(0, 0, 21)
-
+		view = renderWeekView(st, events)
 	default:
-		start = time.Now().AddDate(0, 0, -30)
-		end = time.Now().AddDate(0, 0, 60)
-	}
-
-	events := getCalendarEvents(start, end, filter)
-
-	var content gomponents.Node
-
-	switch view {
-	case "month":
-		content = renderMonthViewWithFilter(events, filter, baseDate)
-	case "week":
-		content = renderWeekViewWithFilter(events, filter, baseDate)
-	default:
-		content = renderAgendaView(events)
+		view = renderAgendaView(events)
 	}
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, renderComponentToString(html.Div(renderCalendarToolbar(st, events, genres), view)))
+}
 
-	var buf strings.Builder
-	content.Render(&buf)
-	c.String(http.StatusOK, buf.String())
+func calendarToday() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func dayKey(t time.Time) string { return t.Format("2006-01-02") }
+
+func eventsByDay(events []calendarEvent) map[string][]calendarEvent {
+	out := make(map[string][]calendarEvent)
+	for _, e := range events {
+		out[dayKey(e.Date)] = append(out[dayKey(e.Date)], e)
+	}
+
+	return out
 }
 
 func renderAgendaView(events []calendarEvent) gomponents.Node {
 	if len(events) == 0 {
-		return html.P(
-			html.Class("text-muted text-center py-4"),
-			gomponents.Text("No upcoming events"),
-		)
+		return html.P(html.Class("text-muted text-center py-4"), gomponents.Text("No events in this period."))
 	}
 
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].Date.Before(events[j].Date)
-	})
+	byDay := eventsByDay(events)
+	today := dayKey(calendarToday())
 
-	groupedEvents := make(map[string][]calendarEvent)
-	for _, event := range events {
-		date := event.Date.Format("2006-01-02")
+	var (
+		sections []gomponents.Node
+		seen     = map[string]bool{}
+	)
 
-		groupedEvents[date] = append(groupedEvents[date], event)
-	}
+	for _, e := range events {
+		day := dayKey(e.Date)
+		if seen[day] {
+			continue
+		}
 
-	var dates []string
-	for date := range groupedEvents {
-		dates = append(dates, date)
-	}
+		seen[day] = true
 
-	sort.Strings(dates)
+		heading := []gomponents.Node{gomponents.Text(e.Date.Format("Monday, January 2, 2006"))}
+		class := "text-secondary border-bottom pb-1 mb-2"
 
-	var sections []gomponents.Node
-	for _, date := range dates {
-		dayEvents := groupedEvents[date]
-		parsedDate, _ := time.Parse("2006-01-02", date)
+		switch {
+		case day == today:
+			class = "text-primary border-bottom border-primary pb-1 mb-2"
+
+			heading = append(heading, html.Span(html.Class("badge bg-primary ms-2"), gomponents.Text("Today")))
+		case day < today:
+			class += " opacity-75"
+		}
 
 		sections = append(sections, html.Div(
-			html.Class("agenda-date mb-3"),
-			html.H5(
-				html.Class("text-secondary border-bottom pb-2"),
-				gomponents.Text(parsedDate.Format("Monday, January 2, 2006")),
-			),
-			gomponents.Group(renderEventCards(dayEvents)),
+			html.Class("mb-3"),
+			html.H6(html.Class(class), gomponents.Group(heading)),
+			html.Div(html.Class("list-group"), gomponents.Group(renderEventRows(byDay[day]))),
 		))
 	}
 
 	return html.Div(sections...)
 }
 
-func renderMonthViewWithFilter(
-	events []calendarEvent,
-	filter string,
-	monthDate ...time.Time,
-) gomponents.Node {
-	var baseDate time.Time
-	if len(monthDate) > 0 {
-		baseDate = monthDate[0]
-	} else {
-		baseDate = time.Now()
-	}
+// renderEventRows renders events as compact clickable list rows.
+func renderEventRows(events []calendarEvent) []gomponents.Node {
+	rows := make([]gomponents.Node, 0, len(events))
 
-	currentMonth := baseDate.Month()
-	currentYear := baseDate.Year()
-
-	eventsByDay := make(map[int][]calendarEvent)
 	for _, event := range events {
-		if event.Date.Month() == currentMonth && event.Date.Year() == currentYear {
-			day := event.Date.Day()
-
-			eventsByDay[day] = append(eventsByDay[day], event)
+		title := []gomponents.Node{html.Strong(gomponents.Text(event.Title))}
+		if ep := episodeCode(event); ep != "" {
+			title = append(title, html.Span(html.Class("text-muted ms-2"), gomponents.Text(ep)))
 		}
+
+		meta := []gomponents.Node{}
+		if event.Listname != "" {
+			meta = append(meta, html.Span(html.Class("badge bg-secondary me-1"), gomponents.Text(event.Listname)))
+		}
+
+		if event.Network != "" {
+			meta = append(meta, html.Span(html.Class("text-info me-2"), gomponents.Text(event.Network)))
+		}
+
+		if event.IMDBRating > 0 {
+			meta = append(meta, html.Span(html.Class("text-warning"), html.I(html.Class("fas fa-star me-1")),
+				gomponents.Text(formatRating(event.IMDBRating))))
+		}
+
+		if event.New {
+			title = append(title, html.Span(html.Class("badge bg-info ms-2"), gomponents.Text("New")))
+		}
+
+		var thumb gomponents.Node = html.I(html.Class("fa-solid " + calendarTypeIcon(event.Type) + " text-muted mt-1"))
+		if event.ThumbURL != "" {
+			thumb = html.Img(html.Class("rounded flex-shrink-0 calendar-thumb"), html.Src(event.ThumbURL), html.Alt(""), gomponents.Attr("loading", "lazy"))
+		}
+
+		rows = append(rows, html.Button(
+			html.Type("button"),
+			html.Class("list-group-item list-group-item-action d-flex align-items-start gap-3 py-2"),
+			html.Style("border-left: 4px solid "+getEventBadgeColor(event)+";"),
+			calendarEventAttrs(event),
+			thumb,
+			html.Div(
+				html.Class("flex-grow-1 text-start"),
+				html.Div(gomponents.Group(title)),
+				gomponents.If(len(meta) > 0, html.Div(html.Class("small"), gomponents.Group(meta))),
+				gomponents.If(event.Overview != "", html.Div(html.Class("small text-muted"), gomponents.Text(truncateText(event.Overview, 160)))),
+			),
+			html.Span(html.Class("badge"), html.Style("background-color: "+getEventBadgeColor(event)+";"), gomponents.Text(calendarStatusLabel(event))),
+		))
 	}
 
-	monthNames := []string{
-		"", "January", "February", "March", "April", "May", "June",
-		"July", "August", "September", "October", "November", "December",
+	return rows
+}
+
+func calendarTypeIcon(t string) string {
+	switch t {
+	case "movie":
+		return "fa-film"
+	case "series":
+		return "fa-tv"
+	case "album":
+		return "fa-compact-disc"
+	case "audiobook":
+		return "fa-headphones"
+	case "book":
+		return "fa-book"
 	}
 
-	firstDay := time.Date(currentYear, currentMonth, 1, 0, 0, 0, 0, time.UTC)
-	lastDay := time.Date(currentYear, currentMonth+1, 0, 0, 0, 0, 0, time.UTC)
-	daysInMonth := lastDay.Day()
-	startDay := int(firstDay.Weekday())
+	return "fa-calendar"
+}
 
-	var calendarRows []gomponents.Node
+// monthMaxEvents is how many events a month cell lists before "+N more".
+const monthMaxEvents = 3
 
-	calendarRows = append(calendarRows, html.Div(
-		html.Class("row text-center fw-bold bg-light py-3 border-bottom"),
-		html.Style("font-size: 0.875rem;"),
-		html.Div(html.Class("col"), gomponents.Text("Sun")),
-		html.Div(html.Class("col"), gomponents.Text("Mon")),
-		html.Div(html.Class("col"), gomponents.Text("Tue")),
-		html.Div(html.Class("col"), gomponents.Text("Wed")),
-		html.Div(html.Class("col"), gomponents.Text("Thu")),
-		html.Div(html.Class("col"), gomponents.Text("Fri")),
-		html.Div(html.Class("col"), gomponents.Text("Sat")),
-	))
+func renderMonthView(st calendarState, events []calendarEvent) gomponents.Node {
+	first, last := st.Range()
+	byDay := eventsByDay(events)
+	today := calendarToday()
 
-	currentDate := 1
-	for week := range 6 {
-		if currentDate > daysInMonth {
+	header := make([]gomponents.Node, 0, 7)
+	for _, d := range []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"} {
+		header = append(header, html.Div(html.Class("col py-2"), gomponents.Text(d)))
+	}
+
+	rows := []gomponents.Node{html.Div(html.Class("row g-0 text-center fw-bold bg-light border-bottom small"), gomponents.Group(header))}
+
+	day := first.AddDate(0, 0, -int(first.Weekday()))
+	for day.Compare(last) <= 0 {
+		cells := make([]gomponents.Node, 0, 7)
+
+		for range 7 {
+			cells = append(cells, renderMonthCell(st, day, byDay[dayKey(day)], day.Month() == first.Month(), day.Equal(today)))
+			day = day.AddDate(0, 0, 1)
+		}
+
+		rows = append(rows, html.Div(html.Class("row g-0 border-bottom"), gomponents.Group(cells)))
+	}
+
+	return html.Div(html.Class("border rounded overflow-hidden"), gomponents.Group(rows))
+}
+
+func renderMonthCell(st calendarState, day time.Time, events []calendarEvent, inMonth, isToday bool) gomponents.Node {
+	if !inMonth {
+		return html.Div(html.Class("col border-end bg-light"), html.Style("min-height: 110px;"))
+	}
+
+	number := html.Div(html.Class("small fw-bold mb-1"), gomponents.Text(strconv.Itoa(day.Day())))
+	if isToday {
+		number = html.Div(html.Class("mb-1"), html.Span(html.Class("badge rounded-pill bg-primary"), gomponents.Text(strconv.Itoa(day.Day()))))
+	}
+
+	content := []gomponents.Node{number}
+
+	groups := groupCalendarEvents(events)
+	for i, grp := range groups {
+		if i == monthMaxEvents {
+			content = append(content, html.Button(
+				html.Type("button"),
+				html.Class("btn btn-link btn-sm p-0 small"),
+				html.Data("query", st.Query(nil)),
+				gomponents.Attr("onclick", fmt.Sprintf("showMoreEvents('%s', this.dataset.query)", dayKey(day))),
+				gomponents.Textf("+%d more", calendarEventCount(groups[monthMaxEvents:])),
+			))
+
 			break
 		}
 
-		weekCells := make([]gomponents.Node, 0, 7)
-		for day := range 7 {
-			cellContent := []gomponents.Node{}
-
-			if week != 0 || day >= startDay {
-				if currentDate <= daysInMonth {
-					cellContent = append(cellContent, html.Div(
-						html.Class("day-number fw-bold mb-2"),
-						html.Style("color: #495057; font-size: 1rem;"),
-						gomponents.Text(strconv.Itoa(currentDate)),
-					))
-
-					if dayEvents, exists := eventsByDay[currentDate]; exists {
-						for i, event := range dayEvents {
-							if i >= 3 {
-								break
-							}
-
-							cellContent = append(cellContent, html.Div(
-								html.Class("event-item badge d-block mb-1 text-truncate"),
-								html.Style(
-									"font-size: 0.7rem; padding: 4px 8px; color: white; background-color: "+getEventBadgeColor(
-										event,
-									)+"; border-radius: 4px; cursor: pointer;",
-								),
-								html.Title(event.Title),
-								gomponents.Attr("onclick", buildShowEventDetailsCall(event)),
-								gomponents.Text(truncateText(event.Title, 12)),
-							))
-						}
-
-						if len(dayEvents) > 3 {
-							cellContent = append(cellContent, html.Small(
-								html.Class("text-muted"),
-								html.Style("cursor: pointer; text-decoration: underline;"),
-								gomponents.Attr(
-									"onclick",
-									"showMoreEvents("+strconv.Itoa(
-										currentDate,
-									)+", '"+currentMonth.String()+"', "+strconv.Itoa(
-										currentYear,
-									)+")",
-								),
-								gomponents.Text("+"+strconv.Itoa(len(dayEvents)-3)+" more"),
-							))
-						}
-					}
-				}
-
-				currentDate++
+		pill := func(event calendarEvent) gomponents.Node {
+			label := event.Title
+			if ep := episodeCode(event); ep != "" {
+				label = ep + " " + label
 			}
 
-			weekCells = append(weekCells, html.Div(
-				html.Class("col border-end p-3"),
-				html.Style("min-height: 120px; background-color: #fff;"),
-				gomponents.Group(cellContent),
-			))
+			if event.New {
+				label = "★ " + label
+			}
+
+			return html.Div(
+				html.Class("badge d-block text-start text-truncate mb-1 fw-normal"),
+				html.Style("cursor: pointer; background-color: "+getEventBadgeColor(event)+";"),
+				html.Title(label),
+				calendarEventAttrs(event),
+				gomponents.Text(label),
+			)
 		}
 
-		calendarRows = append(calendarRows, html.Div(
-			html.Class("row border-top"),
-			gomponents.Group(weekCells),
-		))
-	}
-
-	prevMonth := baseDate.AddDate(0, -1, 0)
-	nextMonth := baseDate.AddDate(0, 1, 0)
-
-	return html.Div(
-		html.Class("month-view"),
-		html.Div(
-			html.Class("month-header mb-4 p-3 bg-light rounded"),
-			html.Style("border: 1px solid #dee2e6;"),
-			html.Div(
-				html.Class("d-flex justify-content-between align-items-center"),
-				html.Button(
-					html.Class("btn btn-outline-secondary btn-sm"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=month&filter="+filter+"&date="+prevMonth.Format(
-							"2006-01-02",
-						),
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr("hx-trigger", "click"),
-					html.I(html.Class("fas fa-chevron-left me-1")),
-					gomponents.Text("Prev"),
-				),
-				html.H4(
-					html.Class("mb-0 fw-bold"),
-					html.Style("color: #495057;"),
-					gomponents.Text(monthNames[currentMonth]+" "+strconv.Itoa(currentYear)),
-				),
-				html.Button(
-					html.Class("btn btn-outline-secondary btn-sm"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=month&filter="+filter+"&date="+nextMonth.Format(
-							"2006-01-02",
-						),
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Text("Next"),
-					html.I(html.Class("fas fa-chevron-right ms-1")),
-				),
-			),
-		),
-		html.Div(
-			html.Class("calendar-grid border rounded"),
-			html.Style("border-color: #dee2e6 !important; background-color: #fff;"),
-			gomponents.Group(calendarRows),
-		),
-	)
-}
-
-func renderWeekViewWithFilter(
-	events []calendarEvent,
-	filter string,
-	weekDate ...time.Time,
-) gomponents.Node {
-	var baseDate time.Time
-	if len(weekDate) > 0 {
-		baseDate = weekDate[0]
-	} else {
-		baseDate = time.Now()
-	}
-
-	// Truncate to midnight: events are parsed to UTC midnight, so a baseDate
-	// that retains the current wall-clock time (the default/no-param case)
-	// would push startOfWeek past midnight and wrongly exclude any event
-	// dated exactly on the first day of the week.
-	baseDate = time.Date(
-		baseDate.Year(),
-		baseDate.Month(),
-		baseDate.Day(),
-		0, 0, 0, 0,
-		baseDate.Location(),
-	)
-
-	startOfWeek := baseDate.AddDate(0, 0, -int(baseDate.Weekday()))
-
-	eventsByDay := make([][]calendarEvent, 7)
-
-	endOfWeek := startOfWeek.AddDate(0, 0, 7)
-	for _, event := range events {
-		if (event.Date.Equal(startOfWeek) || event.Date.After(startOfWeek)) &&
-			event.Date.Before(endOfWeek) {
-			dayOfWeek := int(event.Date.Weekday())
-
-			eventsByDay[dayOfWeek] = append(eventsByDay[dayOfWeek], event)
-		}
-	}
-
-	dayNames := []string{
-		"Sunday",
-		"Monday",
-		"Tuesday",
-		"Wednesday",
-		"Thursday",
-		"Friday",
-		"Saturday",
-	}
-
-	weekCells := make([]gomponents.Node, 0, 7)
-
-	for day := range 7 {
-		currentDay := startOfWeek.AddDate(0, 0, day)
-
-		var dayContent []gomponents.Node
-
-		dayContent = append(dayContent, html.Div(
-			html.Class("day-date fw-bold mb-2"),
-			gomponents.Text(strconv.Itoa(currentDay.Day())),
-		))
-
-		for _, event := range eventsByDay[day] {
-			dayContent = append(dayContent, html.Div(
-				html.Class("event-item card card-body p-2 mb-2"),
-				html.Style(
-					"font-size: 0.8em; border-left: 4px solid "+getEventBadgeColor(
-						event,
-					)+" !important; background-color: "+getEventBackgroundColor(
-						event,
-					)+"; cursor: pointer;",
-				),
-				gomponents.Attr("onclick", buildShowEventDetailsCall(event)),
-				html.Strong(
-					html.Style("color: "+getEventTextColor(event)+";"),
-					gomponents.Text(event.Title),
-				),
-				func() gomponents.Node {
-					if event.Type == "series" && event.Season != "0" && event.Season != "" &&
-						event.Episode > 0 {
-						return gomponents.Group([]gomponents.Node{
-							html.Br(),
-							html.Small(
-								html.Style("color: "+getEventTextColor(event)+"; opacity: 0.8;"),
-								gomponents.Text(
-									"S"+padZero(
-										logger.StringToInt(event.Season),
-									)+"E"+padZero(
-										event.Episode,
-									),
-								),
-							),
-						})
-					}
-
-					return nil
-				}(),
-				func() gomponents.Node {
-					if event.Listname != "" {
-						return gomponents.Group([]gomponents.Node{
-							html.Br(),
-							html.Small(
-								html.Class("badge bg-secondary"),
-								html.Style("font-size: 0.7em;"),
-								gomponents.Text(event.Listname),
-							),
-						})
-					}
-
-					return nil
-				}(),
-				func() gomponents.Node {
-					if event.Network != "" {
-						return gomponents.Group([]gomponents.Node{
-							html.Br(),
-							html.Small(
-								html.Class("text-muted"),
-								gomponents.Text(event.Network),
-							),
-						})
-					}
-
-					return nil
-				}(),
-			))
+		if len(grp) == 1 {
+			content = append(content, pill(grp[0]))
+			continue
 		}
 
-		weekCells = append(weekCells, html.Div(
-			html.Class("col border-end p-2"),
-			html.Style("min-height: 300px;"),
-			gomponents.Group(dayContent),
+		content = append(content, calendarGroupNode(grp, pill))
+	}
+
+	class := "col border-end p-1"
+	if isToday {
+		class += " bg-primary bg-opacity-10"
+	}
+
+	return html.Div(html.Class(class), html.Style("min-height: 110px; min-width: 0;"), gomponents.Group(content))
+}
+
+func renderWeekView(st calendarState, events []calendarEvent) gomponents.Node {
+	first, _ := st.Range()
+	byDay := eventsByDay(events)
+	today := calendarToday()
+
+	cols := make([]gomponents.Node, 0, 7)
+
+	for i := range 7 {
+		day := first.AddDate(0, 0, i)
+
+		headClass := "text-center fw-bold py-2 border-bottom small"
+		if day.Equal(today) {
+			headClass += " bg-primary text-white"
+		} else {
+			headClass += " bg-light"
+		}
+
+		card := func(event calendarEvent) gomponents.Node {
+			label := []gomponents.Node{html.Strong(gomponents.Text(event.Title))}
+			if event.New {
+				label = append(label, html.Span(html.Class("badge bg-info ms-1"), gomponents.Text("New")))
+			}
+
+			if ep := episodeCode(event); ep != "" {
+				label = append(label, html.Div(html.Class("opacity-75"), gomponents.Text(ep)))
+			}
+
+			if event.Listname != "" {
+				label = append(label, html.Div(html.Class("opacity-75 text-truncate"), gomponents.Text(event.Listname)))
+			}
+
+			return html.Div(
+				html.Class("rounded p-2 mb-2 small"),
+				html.Style("cursor: pointer; border-left: 4px solid "+getEventBadgeColor(event)+"; background-color: "+
+					getEventBackgroundColor(event)+"; color: "+getEventTextColor(event)+";"),
+				calendarEventAttrs(event),
+				gomponents.Group(label),
+			)
+		}
+
+		items := []gomponents.Node{}
+		for _, grp := range groupCalendarEvents(byDay[dayKey(day)]) {
+			if len(grp) == 1 {
+				items = append(items, card(grp[0]))
+			} else {
+				items = append(items, calendarGroupNode(grp, card))
+			}
+		}
+
+		cols = append(cols, html.Div(
+			html.Class("col border-end"),
+			html.Style("min-width: 0;"),
+			html.Div(html.Class(headClass), gomponents.Text(day.Format("Mon 2"))),
+			html.Div(html.Class("p-1"), html.Style("min-height: 300px;"), gomponents.Group(items)),
 		))
 	}
 
-	prevWeek := startOfWeek.AddDate(0, 0, -7)
-	nextWeek := startOfWeek.AddDate(0, 0, 7)
-
-	return html.Div(
-		html.Class("week-view"),
-		html.Div(
-			html.Class("week-header mb-3"),
-			html.Div(
-				html.Class("d-flex justify-content-between align-items-center"),
-				html.Button(
-					html.Class("btn btn-outline-secondary"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=week&filter="+filter+"&date="+prevWeek.Format(
-							"2006-01-02",
-						),
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr("hx-trigger", "click"),
-					html.I(html.Class("fas fa-chevron-left me-1")),
-					gomponents.Text("Previous"),
-				),
-				html.H4(
-					html.Class("mb-0"),
-					gomponents.Text("Week of "+startOfWeek.Format("January 2, 2006")),
-				),
-				html.Button(
-					html.Class("btn btn-outline-secondary"),
-					gomponents.Attr(
-						"hx-get",
-						"/api/admin/calendar/content?view=week&filter="+filter+"&date="+nextWeek.Format(
-							"2006-01-02",
-						),
-					),
-					gomponents.Attr("hx-target", "#calendar-content"),
-					gomponents.Attr("hx-swap", "innerHTML"),
-					gomponents.Attr("hx-trigger", "click"),
-					gomponents.Text("Next"),
-					html.I(html.Class("fas fa-chevron-right ms-1")),
-				),
-			),
-		),
-		html.Div(
-			html.Class("row text-center fw-bold bg-light py-2"),
-			gomponents.Group(func() []gomponents.Node {
-				headers := make([]gomponents.Node, 0, len(dayNames))
-				for _, name := range dayNames {
-					headers = append(headers, html.Div(html.Class("col"), gomponents.Text(name)))
-				}
-
-				return headers
-			}()),
-		),
-		html.Div(
-			html.Class("row border-top"),
-			gomponents.Group(weekCells),
-		),
-	)
+	return html.Div(html.Class("border rounded overflow-hidden"), html.Div(html.Class("row g-0"), gomponents.Group(cols)))
 }
 
-func renderEventCards(events []calendarEvent) []gomponents.Node {
-	cards := make([]gomponents.Node, 0, len(events))
-
-	for _, event := range events {
-		cards = append(cards, html.Div(
-			html.Class("card mb-2"),
-			html.Style("cursor: pointer;"),
-			gomponents.Attr("onclick", buildShowEventDetailsCall(event)),
-			html.Div(
-				html.Class("card-body py-3"),
-				html.Div(
-					html.Class("row align-items-center"),
-					html.Div(
-						html.Class("col-md-8"),
-						html.H6(
-							html.Class("mb-1"),
-							gomponents.Text(event.Title),
-							func() gomponents.Node {
-								if event.Type == "series" && event.Season != "0" &&
-									event.Season != "" &&
-									event.Episode > 0 {
-									return html.Small(
-										html.Class("text-muted ms-2"),
-										gomponents.Text(
-											"S"+padZero(
-												logger.StringToInt(event.Season),
-											)+"E"+padZero(
-												event.Episode,
-											),
-										),
-									)
-								}
-
-								return nil
-							}(),
-						),
-						func() gomponents.Node {
-							if event.Listname != "" {
-								return html.Small(
-									html.Class("badge bg-secondary me-2 mb-1"),
-									gomponents.Text(event.Listname),
-								)
-							}
-
-							return nil
-						}(),
-						func() gomponents.Node {
-							if event.Overview != "" {
-								truncated := event.Overview
-								if len(truncated) > 200 {
-									truncated = truncated[:200] + "..."
-								}
-
-								return html.P(
-									html.Class("text-muted mb-2"),
-									html.Style("font-size: 0.9rem; line-height: 1.4;"),
-									gomponents.Text(truncated),
-								)
-							}
-
-							return nil
-						}(),
-						func() gomponents.Node {
-							if event.Network != "" {
-								return html.Small(
-									html.Class("text-info"),
-									gomponents.Text(event.Network),
-								)
-							}
-
-							return nil
-						}(),
-					),
-					html.Div(
-						html.Class("col-md-4 text-end"),
-						html.Span(
-							html.Class("badge"),
-							html.Style("background-color: "+getEventBadgeColor(event)+";"),
-							gomponents.Text(event.Status),
-						),
-						func() gomponents.Node {
-							if event.IMDBRating > 0 {
-								return gomponents.Group([]gomponents.Node{
-									html.Br(),
-									html.Small(
-										html.Class("text-warning"),
-										gomponents.Text("* "+formatRating(event.IMDBRating)),
-									),
-								})
-							}
-
-							return nil
-						}(),
-					),
-				),
-			),
-		))
-	}
-
-	return cards
-}
-
-// CalendarDayEventsHandler fetches all events for a specific day.
+// CalendarDayEventsHandler lists the events of one day (?date=, with the
+// calendar's filter and missing state) for the "+N more" dialog.
 func CalendarDayEventsHandler(c *gin.Context) {
-	dayStr := c.Query("day")
-	monthStr := c.Query("month")
-	yearStr := c.DefaultQuery("year", strconv.Itoa(time.Now().Year()))
+	st := calendarStateFromQuery(c)
 
-	day, err := strconv.Atoi(dayStr)
-	if err != nil {
-		c.String(http.StatusBadRequest, "Invalid day parameter")
-		return
+	events := st.filter(getCalendarEvents(st.Date, st.Date, st.Filter), true)
+
+	var content gomponents.Node = html.P(html.Class("text-muted text-center"), gomponents.Text("No events on this day."))
+	if len(events) > 0 {
+		content = gomponents.Group([]gomponents.Node{
+			gomponents.If(calendarSearchButton(st, events, "") != nil, html.Div(html.Class("mb-2 text-end"), calendarSearchButton(st, events, "Search all missing of this day"))),
+			html.Div(html.Class("list-group"), gomponents.Group(renderEventRows(events))),
+		})
 	}
 
-	year, err := strconv.Atoi(yearStr)
-	if err != nil {
-		c.String(http.StatusBadRequest, "Invalid year parameter")
-		return
+	c.String(http.StatusOK, renderComponentToString(content))
+}
+
+// calendarStatusLabel is the status, with "Overdue" for released monitored
+// items still missing.
+func calendarStatusLabel(event calendarEvent) string {
+	if event.Overdue && !event.Partial {
+		return "Overdue"
 	}
 
-	months := map[string]time.Month{
-		"January": time.January, "February": time.February, "March": time.March,
-		"April": time.April, "May": time.May, "June": time.June,
-		"July": time.July, "August": time.August, "September": time.September,
-		"October": time.October, "November": time.November, "December": time.December,
+	return event.Status
+}
+
+// groupCalendarEvents groups the episodes of one series (on one day) so a
+// site series with many episodes takes one line; other events stay single.
+func groupCalendarEvents(events []calendarEvent) [][]calendarEvent {
+	var (
+		groups [][]calendarEvent
+		index  = map[string]int{}
+	)
+
+	for _, e := range events {
+		key := ""
+		if e.Type == "series" {
+			key = e.Show
+			if key == "" {
+				key = e.Title
+			}
+		}
+
+		if i, ok := index[key]; ok && key != "" {
+			groups[i] = append(groups[i], e)
+			continue
+		}
+
+		if key != "" {
+			index[key] = len(groups)
+		}
+
+		groups = append(groups, []calendarEvent{e})
 	}
 
-	month, exists := months[monthStr]
-	if !exists {
-		c.String(http.StatusBadRequest, "Invalid month parameter")
-		return
+	return groups
+}
+
+func calendarEventCount(groups [][]calendarEvent) int {
+	n := 0
+	for _, g := range groups {
+		n += len(g)
 	}
 
-	targetDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	return n
+}
 
-	// getCalendarEvents treats endDate as inclusive (queries < end+1 day).
-	allEvents := getCalendarEvents(targetDate, targetDate, "all")
-
-	var dayEvents []calendarEvent
-
-	for _, event := range allEvents {
-		if event.Date.Year() == targetDate.Year() &&
-			event.Date.Month() == targetDate.Month() &&
-			event.Date.Day() == targetDate.Day() {
-			dayEvents = append(dayEvents, event)
+// calendarGroupNode is a collapsed series ("girlsway ×3") that shows its
+// episodes on click; its colour is the most urgent of its episodes.
+func calendarGroupNode(grp []calendarEvent, item func(calendarEvent) gomponents.Node) gomponents.Node {
+	worst := grp[0]
+	for _, e := range grp {
+		if e.Overdue || (!e.Downloaded && worst.Downloaded) {
+			worst = e
 		}
 	}
 
-	var content gomponents.Node
-	if len(dayEvents) == 0 {
-		content = html.P(
-			html.Class("text-muted text-center"),
-			gomponents.Text("No events scheduled for this day."),
-		)
-	} else {
-		var eventCards []gomponents.Node
-		for _, event := range dayEvents {
-			eventCards = append(eventCards, html.Div(
-				html.Class("card mb-2"),
-				html.Style("cursor: pointer;"),
-				gomponents.Attr("onclick", buildShowEventDetailsCall(event)),
-				html.Div(
-					html.Class("card-body py-2"),
-					html.H6(
-						html.Class("card-title mb-1"),
-						gomponents.Text(event.Title),
-						func() gomponents.Node {
-							if event.Type == "series" && event.Season != "0" &&
-								event.Season != "" &&
-								event.Episode > 0 {
-								return html.Small(
-									html.Class("text-muted ms-2"),
-									gomponents.Text(
-										"S"+padZero(
-											logger.StringToInt(event.Season),
-										)+"E"+padZero(
-											event.Episode,
-										),
-									),
-								)
-							}
-
-							return nil
-						}(),
-					),
-					func() gomponents.Node {
-						if event.Listname != "" {
-							return html.Small(
-								html.Class("badge bg-secondary me-2 mb-1"),
-								gomponents.Text(event.Listname),
-							)
-						}
-
-						return nil
-					}(),
-					func() gomponents.Node {
-						if event.Overview != "" {
-							truncated := event.Overview
-							if len(truncated) > 150 {
-								truncated = truncated[:150] + "..."
-							}
-
-							return html.P(
-								html.Class("card-text text-muted small"),
-								gomponents.Text(truncated),
-							)
-						}
-
-						return nil
-					}(),
-					html.Div(
-						html.Class("d-flex justify-content-between align-items-center"),
-						func() gomponents.Node {
-							if event.Network != "" {
-								return html.Small(
-									html.Class("text-info"),
-									gomponents.Text(event.Network),
-								)
-							}
-
-							return html.Span()
-						}(),
-						html.Span(
-							html.Class("badge"),
-							html.Style("background-color: "+getEventBadgeColor(event)),
-							gomponents.Text(event.Status),
-						),
-					),
-				),
-			))
-		}
-
-		content = html.Div(gomponents.Group(eventCards))
+	name := grp[0].Show
+	if name == "" {
+		name = grp[0].Title
 	}
 
-	var buf strings.Builder
-	content.Render(&buf)
-	c.String(http.StatusOK, buf.String())
-}
-
-// Helper functions.
-func getViewButtonClass(view, current string) string {
-	base := "btn btn-outline-secondary"
-	if view == current {
-		return base + " active"
+	children := make([]gomponents.Node, 0, len(grp))
+	for _, e := range grp {
+		children = append(children, item(e))
 	}
 
-	return base
-}
-
-func getFilterButtonClass(filter, current string) string {
-	base := "btn btn-outline-secondary"
-	if filter == current {
-		return base + " active"
-	}
-
-	return base
+	return html.Div(html.Class("calendar-group"),
+		html.Div(
+			html.Class("badge d-block text-start text-truncate mb-1 fw-normal"),
+			html.Style("cursor: pointer; background-color: "+getEventBadgeColor(worst)+";"),
+			html.Title(fmt.Sprintf("%s: %d episodes (click to show them)", name, len(grp))),
+			gomponents.Attr("onclick", "this.parentElement.classList.toggle('open')"),
+			html.I(html.Class("fa-solid fa-layer-group me-1")),
+			gomponents.Textf("%s ×%d", name, len(grp)),
+		),
+		html.Div(html.Class("calendar-group-items ps-2"), gomponents.Group(children)),
+	)
 }
 
 func getEventBadgeColor(event calendarEvent) string {
@@ -911,8 +699,16 @@ func getEventBadgeColor(event calendarEvent) string {
 		return "#28a745"
 	}
 
+	if event.Partial {
+		return "#138496"
+	}
+
+	if event.Overdue {
+		return "#dc3545"
+	}
+
 	if event.Monitored {
-		return "#ffc107"
+		return "#d39e00"
 	}
 
 	return "#6c757d"
@@ -921,6 +717,14 @@ func getEventBadgeColor(event calendarEvent) string {
 func getEventBackgroundColor(event calendarEvent) string {
 	if event.Downloaded {
 		return "#d4edda"
+	}
+
+	if event.Partial {
+		return "#d1ecf1"
+	}
+
+	if event.Overdue {
+		return "#f8d7da"
 	}
 
 	if event.Monitored {
@@ -935,6 +739,14 @@ func getEventTextColor(event calendarEvent) string {
 		return "#155724"
 	}
 
+	if event.Partial {
+		return "#0c5460"
+	}
+
+	if event.Overdue {
+		return "#721c24"
+	}
+
 	if event.Monitored {
 		return "#856404"
 	}
@@ -942,51 +754,20 @@ func getEventTextColor(event calendarEvent) string {
 	return "#383d41"
 }
 
-func padZero(num int) string {
-	if num < 10 {
-		return "0" + strconv.Itoa(num)
-	}
-
-	return strconv.Itoa(num)
-}
-
 func formatRating(rating float64) string {
 	return strconv.FormatFloat(rating, 'f', 1, 64)
 }
 
-// buildShowEventDetailsCall generates the onclick attribute for showing event details.
-func buildShowEventDetailsCall(event calendarEvent) string {
-	downloaded := "false"
-	if event.Downloaded {
-		downloaded = "true"
+// calendarEventAttrs makes an element open the event details dialog: the
+// event goes along as JSON in data-event (attribute-escaped by gomponents).
+func calendarEventAttrs(event calendarEvent) gomponents.Node {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return nil
 	}
 
-	return "showEventDetails(" + strconv.FormatUint(
-		uint64(event.ID),
-		10,
-	) + ", '" + escapeJSString(
-		event.Title,
-	) + "', '" + escapeJSString(
-		event.Type,
-	) + "', '" + escapeJSString(
-		event.Network,
-	) + "', " + strconv.Itoa(
-		logger.StringToInt(event.Season),
-	) + ", " + strconv.Itoa(
-		event.Episode,
-	) + ", '" + event.Date.Format(
-		"2006-01-02",
-	) + "', '" + escapeJSString(
-		event.Overview,
-	) + "', '" + escapeJSString(
-		event.IMDBID,
-	) + "', " + strconv.Itoa(
-		event.TheTVDBID,
-	) + ", " + strconv.Itoa(
-		event.MovieDBID,
-	) + ", " + strconv.Itoa(
-		event.TraktID,
-	) + ", " + downloaded + ", '" + escapeJSString(
-		event.Listname,
-	) + "')"
+	return gomponents.Group([]gomponents.Node{
+		html.Data("event", string(data)),
+		gomponents.Attr("onclick", "showEventDetails(JSON.parse(this.dataset.event))"),
+	})
 }

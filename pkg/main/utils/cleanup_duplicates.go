@@ -222,8 +222,8 @@ func dedupeGroup(
 
 	var deleted int
 
-	for _, id := range ids {
-		if id == keeper {
+	for id := range ids {
+		if ids[id] == keeper {
 			continue
 		}
 
@@ -233,11 +233,11 @@ func dedupeGroup(
 			for _, ref := range spec.refs {
 				database.ExecN(
 					"update "+ref[0]+" set "+ref[1]+" = ? where "+ref[1]+" = ?",
-					&keeper, &id,
+					&keeper, &ids[id],
 				)
 			}
 
-			deleteParentRow(spec, id)
+			deleteParentRow(spec, &ids[id])
 		}
 
 		deleted++
@@ -299,11 +299,9 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 	bestEpisodes := 0
 	scored := false
 
-	for _, id := range withFiles {
-		idCopy := id
-
+	for id := range withFiles {
 		profile := database.Getdatarow[string](false,
-			"select quality_profile from "+spec.table+" where id = ?", &idCopy)
+			"select quality_profile from "+spec.table+" where id = ?", &withFiles[id])
 		if profile == "" {
 			continue
 		}
@@ -321,11 +319,11 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 		case isType == config.MediaTypeSeries && spec.childTable != "":
 			// A series row; serie_episodes rows (episodeDupSpec) fall through
 			// to the per-episode Getpriobyfiles below.
-			episodes, prio = seriesFileScore(idCopy, qualcfg)
+			episodes, prio = seriesFileScore(&withFiles[id], qualcfg)
 		case audio:
-			prio, _ = searcher.GetpriobyfilesAudio(isType, &idCopy, true, -1, qualcfg, false)
+			prio, _ = searcher.GetpriobyfilesAudio(isType, &withFiles[id], true, -1, qualcfg, false)
 		default:
-			prio, _ = searcher.Getpriobyfiles(isType, &idCopy, true, -1, qualcfg, false)
+			prio, _ = searcher.Getpriobyfiles(isType, &withFiles[id], true, -1, qualcfg, false)
 		}
 
 		// For series, coverage (episodes with files) wins over quality so the
@@ -334,7 +332,7 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 			scored = true
 			bestPrio = prio
 			bestEpisodes = episodes
-			best = id
+			best = withFiles[id]
 		}
 	}
 
@@ -349,11 +347,11 @@ func pickKeeper(spec dupTableSpec, ids []uint, isType uint) uint {
 // per episode (serie_episode_files.serie_episode_id), so passing the series id
 // to it would score an unrelated episode. Returns the number of episodes with
 // files and the sum of their best-file priorities.
-func seriesFileScore(serieID uint, qualcfg *config.QualityConfig) (int, int) {
+func seriesFileScore(serieID *uint, qualcfg *config.QualityConfig) (int, int) {
 	episodeIDs := database.Getrowssize[uint](false,
 		"select count(distinct serie_episode_id) from serie_episode_files where serie_id = ?",
 		"select distinct serie_episode_id from serie_episode_files where serie_id = ?",
-		&serieID)
+		serieID)
 
 	var sum int
 	for i := range episodeIDs {
@@ -367,20 +365,20 @@ func seriesFileScore(serieID uint, qualcfg *config.QualityConfig) (int, int) {
 // deleteParentRow removes a parent row and all of its child rows (files,
 // histories and, for series, serie_episodes). FK cascade is disabled, so each
 // is deleted explicitly.
-func deleteParentRow(spec dupTableSpec, id uint) {
+func deleteParentRow(spec dupTableSpec, id *uint) {
 	if spec.fileTable != "" {
-		database.ExecN("delete from "+spec.fileTable+" where "+spec.fileFK+" = ?", &id)
+		database.ExecN("delete from "+spec.fileTable+" where "+spec.fileFK+" = ?", id)
 	}
 
 	if spec.histTable != "" {
-		database.ExecN("delete from "+spec.histTable+" where "+spec.histFK+" = ?", &id)
+		database.ExecN("delete from "+spec.histTable+" where "+spec.histFK+" = ?", id)
 	}
 
 	if spec.childTable != "" {
-		database.ExecN("delete from "+spec.childTable+" where "+spec.childFK+" = ?", &id)
+		database.ExecN("delete from "+spec.childTable+" where "+spec.childFK+" = ?", id)
 	}
 
-	database.ExecN("delete from "+spec.table+" where id = ?", &id)
+	database.ExecN("delete from "+spec.table+" where id = ?", id)
 }
 
 // episodeDupSpec lets pickKeeper compare duplicate serie_episodes rows by

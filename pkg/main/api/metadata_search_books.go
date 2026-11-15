@@ -21,52 +21,6 @@ import (
 	"maragu.dev/gomponents/html"
 )
 
-// BookMetadataSearchPage renders the book metadata search page.
-func BookMetadataSearchPage(c *gin.Context) {
-	bookLists := getMediaListsByType("book")
-	qualityProfiles := getQualityProfileNames()
-	csrfToken := getCSRFToken(c)
-
-	content := bookMetadataSearchContent(bookLists, qualityProfiles, csrfToken)
-
-	pageNode := page(
-		"Book Metadata Search",
-		false, // activeConfig
-		false, // activeDatabase
-		true,  // activeManagement
-		content,
-	)
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-	c.String(http.StatusOK, buf.String())
-}
-
-// AudiobookMetadataSearchPage renders the audiobook metadata search page.
-func AudiobookMetadataSearchPage(c *gin.Context) {
-	audiobookLists := getMediaListsByType("audiobook")
-	qualityProfiles := getQualityProfileNames()
-	csrfToken := getCSRFToken(c)
-
-	content := audiobookMetadataSearchContent(audiobookLists, qualityProfiles, csrfToken)
-
-	pageNode := page(
-		"Audiobook Metadata Search",
-		false, // activeConfig
-		false, // activeDatabase
-		true,  // activeManagement
-		content,
-	)
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-
-	var buf strings.Builder
-	pageNode.Render(&buf)
-	c.String(http.StatusOK, buf.String())
-}
-
 // Book metadata provider keys.
 const (
 	provOpenLibrary = "openlibrary"
@@ -287,7 +241,7 @@ func bookMetadataSearchContent(
 			),
 
 			bookSearchScript(),
-			listQualityScript("book", map[string]string{"bk4_list": "bk4_quality_profile"}),
+			listQualityScript("book", mediaConfigs, map[string]string{"bk4_list": "bk4_quality_profile"}),
 		),
 	)
 }
@@ -475,7 +429,7 @@ func audiobookMetadataSearchContent(
 			),
 
 			audiobookSearchScript(),
-			listQualityScript("audiobook", map[string]string{"ab4_list": "ab4_quality_profile"}),
+			listQualityScript("audiobook", mediaConfigs, map[string]string{"ab4_list": "ab4_quality_profile"}),
 		),
 	)
 }
@@ -543,8 +497,10 @@ func SearchBookMetadata(c *gin.Context) {
 		html.H6(html.Class("mb-2"), gomponents.Textf("%d books found", len(results))),
 	)
 
+	lists := haveLists(c, "book")
+
 	for i := range results {
-		nodes = append(nodes, createBookResultCard(results[i]))
+		nodes = append(nodes, createBookResultCard(results[i], haveBook(lists, &results[i])))
 	}
 
 	renderMusicHTML(c, html.Div(nodes...))
@@ -561,7 +517,7 @@ func openLibraryWorkID(id string) string {
 	return ""
 }
 
-func createBookResultCard(book apiexternal_v2.BookSearchResult) gomponents.Node {
+func createBookResultCard(book apiexternal_v2.BookSearchResult, have bool) gomponents.Node {
 	title := book.Title
 	if book.PublishYear > 0 {
 		title = fmt.Sprintf("%s (%d)", book.Title, book.PublishYear)
@@ -572,7 +528,8 @@ func createBookResultCard(book apiexternal_v2.BookSearchResult) gomponents.Node 
 	return html.Div(
 		html.Class("card mb-2"),
 		html.Div(html.Class("card-body py-2"),
-			html.Div(html.Class("d-flex justify-content-between align-items-start"),
+			html.Div(html.Class("d-flex justify-content-between align-items-start gap-3"),
+				metaCover(book.CoverURL, false),
 				html.Div(html.Class("flex-grow-1"),
 					html.H6(html.Class("card-title mb-1"), gomponents.Text(title)),
 					func() gomponents.Node {
@@ -595,9 +552,9 @@ func createBookResultCard(book apiexternal_v2.BookSearchResult) gomponents.Node 
 
 						return nil
 					}(),
+					metaLinks(bookResultLinks(&book)),
 				),
-				html.Button(
-					html.Class("btn btn-success btn-sm add-book-btn ms-3"),
+				metaAddButton(have, "btn btn-success btn-sm add-book-btn ms-3",
 					html.Data("openlibrary-id", openLibraryWorkID(book.ID)),
 					html.Data("isbn", book.ISBN13),
 					html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
@@ -785,8 +742,10 @@ func SearchAudiobookMetadata(c *gin.Context) {
 		html.H6(html.Class("mb-2"), gomponents.Textf("%d audiobooks found", len(results))),
 	)
 
+	lists := haveLists(c, "audiobook")
+
 	for i := range results {
-		nodes = append(nodes, createAudiobookResultCard(results[i]))
+		nodes = append(nodes, createAudiobookResultCard(results[i], haveAudiobook(lists, &results[i])))
 	}
 
 	renderMusicHTML(c, html.Div(nodes...))
@@ -807,7 +766,7 @@ func audiobookDurationStr(d time.Duration) string {
 	return fmt.Sprintf("%dm", minutes)
 }
 
-func createAudiobookResultCard(ab apiexternal_v2.AudiobookSearchResult) gomponents.Node {
+func createAudiobookResultCard(ab apiexternal_v2.AudiobookSearchResult, have bool) gomponents.Node {
 	authorStr := strings.Join(ab.Authors, ", ")
 	narratorStr := strings.Join(ab.Narrators, ", ")
 	durationStr := audiobookDurationStr(ab.Duration)
@@ -815,7 +774,8 @@ func createAudiobookResultCard(ab apiexternal_v2.AudiobookSearchResult) gomponen
 	return html.Div(
 		html.Class("card mb-2"),
 		html.Div(html.Class("card-body py-2"),
-			html.Div(html.Class("d-flex justify-content-between align-items-start"),
+			html.Div(html.Class("d-flex justify-content-between align-items-start gap-3"),
+				metaCover(ab.CoverURL, true),
 				html.Div(html.Class("flex-grow-1"),
 					html.H6(html.Class("card-title mb-1"), gomponents.Text(ab.Title)),
 					func() gomponents.Node {
@@ -851,9 +811,9 @@ func createAudiobookResultCard(ab apiexternal_v2.AudiobookSearchResult) gomponen
 
 						return nil
 					}(),
+					metaLinks(audiobookResultLinks(&ab)),
 				),
-				html.Button(
-					html.Class("btn btn-success btn-sm add-audiobook-btn ms-3"),
+				metaAddButton(have, "btn btn-success btn-sm add-audiobook-btn ms-3",
 					html.Data("asin", ab.ASIN),
 					html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
 					gomponents.Text("Add Audiobook"),
@@ -1044,7 +1004,7 @@ func AddBookToDatabase(c *gin.Context) {
 			false,
 			1,
 			"SELECT id FROM dbbooks WHERE isbn_13 = ?",
-			bookDetails.ISBN13,
+			&bookDetails.ISBN13,
 		)
 	}
 
@@ -1053,7 +1013,7 @@ func AddBookToDatabase(c *gin.Context) {
 			false,
 			1,
 			"SELECT id FROM dbbooks WHERE openlibrary_id = ?",
-			bookDetails.OpenLibraryID,
+			&bookDetails.OpenLibraryID,
 		)
 	}
 
@@ -1064,29 +1024,29 @@ func AddBookToDatabase(c *gin.Context) {
 	if len(bookExists) == 0 {
 		newID, err := database.ExecNid(
 			"INSERT INTO dbbooks (title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			bookDetails.Title,
-			bookDetails.Title, // Use Title as OriginalTitle since BookDetails doesn't have OriginalTitle
-			bookDetails.ISBN13,
-			bookDetails.ISBN10,
+			&bookDetails.Title,
+			&bookDetails.Title, // Use Title as OriginalTitle since BookDetails doesn't have OriginalTitle
+			&bookDetails.ISBN13,
+			&bookDetails.ISBN10,
 			"",
-			bookDetails.OpenLibraryID,
+			&bookDetails.OpenLibraryID,
 			"",
-			bookDetails.Description,
-			bookDetails.Publisher,
-			bookDetails.PublishDate,
-			bookDetails.PageCount,
-			bookDetails.Language,
+			&bookDetails.Description,
+			&bookDetails.Publisher,
+			&bookDetails.PublishDate,
+			&bookDetails.PageCount,
+			&bookDetails.Language,
 			strings.Join(bookDetails.Genres, ", "),
-			bookDetails.CoverURL,
+			&bookDetails.CoverURL,
 			0,
 			0,
 			"",
 			0.0,
 			0,
-			bookDetails.PublishYear,
+			&bookDetails.PublishYear,
 			"",
-			nowTime,
-			nowTime,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert book")
@@ -1108,8 +1068,8 @@ func AddBookToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE",
-		dbBookID,
-		listName,
+		&dbBookID,
+		&listName,
 	)
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
@@ -1137,11 +1097,11 @@ func AddBookToDatabase(c *gin.Context) {
 	// Add to books table
 	if err := database.ExecNErr(
 		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		dbBookID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbBookID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		// ExecN (the fire-and-forget variant previously used here) has no
 		// return value - a write failure here was reported to the user as
@@ -1179,7 +1139,7 @@ func AddAudiobookToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT id FROM dbaudiobooks WHERE asin = ?",
-		asin,
+		&asin,
 	)
 
 	var dbAudiobookID int
@@ -1209,25 +1169,25 @@ func AddAudiobookToDatabase(c *gin.Context) {
 
 		newID, err := database.ExecNid(
 			"INSERT INTO dbaudiobooks (title, asin, audible_id, runtime_minutes, chapter_count, release_date, publisher, language, abridged, cover_url, sample_url, average_rating, ratings_count, year, slug, dbbook_id, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			details.Title,
-			asin,
+			&details.Title,
+			&asin,
 			"",
-			runtimeMinutes,
+			&runtimeMinutes,
 			0,
-			details.ReleaseDate,
-			details.Publisher,
-			details.Language,
+			&details.ReleaseDate,
+			&details.Publisher,
+			&details.Language,
 			false, // Abridged - not available in AudiobookDetails
-			details.CoverURL,
+			&details.CoverURL,
 			"",
 			0.0,
 			0,
-			details.ReleaseYear,
+			&details.ReleaseYear,
 			"",
 			0,
-			details.Description,
-			nowTime,
-			nowTime,
+			&details.Description,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert audiobook")
@@ -1249,8 +1209,8 @@ func AddAudiobookToDatabase(c *gin.Context) {
 		false,
 		1,
 		"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE",
-		dbAudiobookID,
-		listName,
+		&dbAudiobookID,
+		&listName,
 	)
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
@@ -1275,11 +1235,11 @@ func AddAudiobookToDatabase(c *gin.Context) {
 	// Add to audiobooks table
 	if err := database.ExecNErr(
 		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		dbAudiobookID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbAudiobookID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
 		return
@@ -1326,9 +1286,9 @@ func AddBookManual(c *gin.Context) {
 	if author != "" {
 		existing = database.GetrowsN[int](false, 1,
 			"SELECT id FROM dbbooks WHERE title = ? COLLATE NOCASE AND dbauthor_id IN (SELECT id FROM dbauthors WHERE name = ? COLLATE NOCASE) ORDER BY id LIMIT 1",
-			title, author)
+			&title, &author)
 	} else {
-		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbbooks WHERE title = ? COLLATE NOCASE ORDER BY id LIMIT 1", title)
+		existing = database.GetrowsN[int](false, 1, "SELECT id FROM dbbooks WHERE title = ? COLLATE NOCASE ORDER BY id LIMIT 1", &title)
 	}
 
 	nowTime := time.Now()
@@ -1339,7 +1299,7 @@ func AddBookManual(c *gin.Context) {
 		dbBookID = existing[0]
 
 		inList := database.GetrowsN[int](false, 1,
-			"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE", dbBookID, listName)
+			"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE", &dbBookID, &listName)
 		if len(inList) > 0 && inList[0] > 0 {
 			c.JSON(http.StatusConflict, gin.H{"error": "Book already exists in list '" + listName + "'"})
 			return
@@ -1353,29 +1313,29 @@ func AddBookManual(c *gin.Context) {
 
 		newID, err := database.ExecNid(
 			"INSERT INTO dbbooks (title, original_title, isbn_13, isbn_10, asin, openlibrary_id, goodreads_id, description, publisher, publish_date, page_count, language, genres, cover_url, dbauthor_id, dbbook_series_id, series_position, average_rating, ratings_count, year, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			title,
-			title,
-			isbn,
+			&title,
+			&title,
+			&isbn,
 			"",
 			"",
 			"",
 			"",
 			"",
-			publisher,
+			&publisher,
 			nil,
 			0,
 			"",
 			"",
 			"",
-			dbauthorID,
+			&dbauthorID,
 			0,
 			"",
 			0.0,
 			0,
-			year,
+			&year,
 			"",
-			nowTime,
-			nowTime,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual book")
@@ -1400,11 +1360,11 @@ func AddBookManual(c *gin.Context) {
 
 	if err := database.ExecNErr(
 		"INSERT INTO books (dbbook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		dbBookID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbBookID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book: " + err.Error()})
 		return
@@ -1459,16 +1419,16 @@ func AddAudiobookManual(c *gin.Context) {
 	// was given, or the row has none.
 	var existing []int
 	if asin != "" {
-		existing = database.GetrowsN[int](false, 1, manualAudiobookByASINQuery, asin)
+		existing = database.GetrowsN[int](false, 1, manualAudiobookByASINQuery, &asin)
 	}
 
 	if len(existing) == 0 {
 		if author != "" {
 			existing = database.GetrowsN[int](false, 1,
-				manualAudiobookByTitleAuthorQuery, title, asin, author)
+				manualAudiobookByTitleAuthorQuery, &title, &asin, &author)
 		} else {
 			existing = database.GetrowsN[int](false, 1,
-				manualAudiobookByTitleQuery, title, asin)
+				manualAudiobookByTitleQuery, &title, &asin)
 		}
 	}
 
@@ -1480,7 +1440,7 @@ func AddAudiobookManual(c *gin.Context) {
 		dbaudiobookID = uint(existing[0]) //nolint:gosec // row ids are positive
 
 		inList := database.GetrowsN[int](false, 1,
-			"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE", existing[0], listName)
+			"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE", &existing[0], &listName)
 		if len(inList) > 0 && inList[0] > 0 {
 			c.JSON(http.StatusConflict, gin.H{"error": "Audiobook already exists in list '" + listName + "'"})
 			return
@@ -1488,10 +1448,10 @@ func AddAudiobookManual(c *gin.Context) {
 	} else {
 		newID, err := database.ExecNid(
 			"INSERT INTO dbaudiobooks (title, asin, audible_id, runtime_minutes, chapter_count, release_date, publisher, language, abridged, cover_url, sample_url, average_rating, ratings_count, year, slug, dbbook_id, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			title,
-			asin,
+			&title,
+			&asin,
 			"",
-			runtime,
+			&runtime,
 			0,
 			nil,
 			"",
@@ -1505,8 +1465,8 @@ func AddAudiobookManual(c *gin.Context) {
 			"",
 			0,
 			"",
-			nowTime,
-			nowTime,
+			&nowTime,
+			&nowTime,
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual audiobook")
@@ -1520,7 +1480,7 @@ func AddAudiobookManual(c *gin.Context) {
 
 		dbaudiobookID = uint(newID) //nolint:gosec // safe: value within target type range
 
-		linkManualAudiobookPeople(dbaudiobookID, author, narrator)
+		linkManualAudiobookPeople(&dbaudiobookID, author, narrator)
 	}
 
 	// Resolve the wanted quality for this list, matching AddAudiobookToDatabase -
@@ -1537,11 +1497,11 @@ func AddAudiobookManual(c *gin.Context) {
 
 	if err := database.ExecNErr(
 		"INSERT INTO audiobooks (dbaudiobook_id, listname, rootpath, missing, quality_reached, quality_profile, blacklisted, dont_upgrade, dont_search, created_at, updated_at) VALUES (?, ?, '', 1, 0, ?, 0, 0, 0, ?, ?)",
-		dbaudiobookID,
-		listName,
-		qualityProfile,
-		nowTime,
-		nowTime,
+		&dbaudiobookID,
+		&listName,
+		&qualityProfile,
+		&nowTime,
+		&nowTime,
 	); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
 		return
@@ -1555,12 +1515,12 @@ func AddAudiobookManual(c *gin.Context) {
 // linkManualAudiobookPeople links (or creates) the author/narrator of a new
 // manual audiobook via the junction tables, matching the search-based import
 // pipeline (importfeed.addAudiobookDetailToDatabase).
-func linkManualAudiobookPeople(dbaudiobookID uint, author, narrator string) {
+func linkManualAudiobookPeople(dbaudiobookID *uint, author, narrator string) {
 	if author != "" {
 		if authorID := importfeed.AddOrGetAuthor(author); authorID > 0 {
 			if err := database.ExecNErr(
 				`INSERT INTO dbaudiobook_authors (dbaudiobook_id, dbauthor_id, role, position) VALUES (?, ?, 'author', 0)`,
-				&dbaudiobookID, &authorID,
+				dbaudiobookID, &authorID,
 			); err != nil {
 				logger.Logtype("error", 0).
 					Err(err).
@@ -1574,7 +1534,7 @@ func linkManualAudiobookPeople(dbaudiobookID uint, author, narrator string) {
 		if narratorID := importfeed.AddOrGetNarrator(narrator); narratorID > 0 {
 			if err := database.ExecNErr(
 				`INSERT INTO dbaudiobook_narrators (dbaudiobook_id, dbnarrator_id, position) VALUES (?, ?, 0)`,
-				&dbaudiobookID, &narratorID,
+				dbaudiobookID, &narratorID,
 			); err != nil {
 				logger.Logtype("error", 0).
 					Err(err).
@@ -1604,6 +1564,7 @@ function bookSearch(mode){
 	p.append('book_title', title);
 	p.append('book_author', author);
 	if(mode==='bk3'){ p.append('view','select'); }
+	p.append('have_list', bkVal(mode+'_list') || '');
 	bkPost('/api/admin/search/books', p).then(function(r){return r.text();})
 		.then(function(h){ box.innerHTML=h; })
 		.catch(function(){ box.innerHTML='<div class="alert alert-danger">Search failed.</div>'; });
@@ -1726,6 +1687,7 @@ function audiobookSearch(mode){
 	p.append('audiobook_author', author);
 	if(mode==='ab2' || mode==='ab3'){ p.append('byauthor','1'); }
 	if(mode==='ab3'){ p.append('view','select'); }
+	p.append('have_list', abVal(mode+'_list') || '');
 	abPost('/api/admin/search/audiobooks', p).then(function(r){return r.text();})
 		.then(function(h){ box.innerHTML=h; })
 		.catch(function(){ box.innerHTML='<div class="alert alert-danger">Search failed.</div>'; });

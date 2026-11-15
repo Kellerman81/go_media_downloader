@@ -120,9 +120,9 @@ func apiMovieDelete(ctx *gin.Context) {
 		return
 	}
 
-	database.DeleteRow("movies", "dbmovie_id=?", id)
+	database.DeleteRow("movies", "dbmovie_id=?", &id)
 
-	_, err := database.DeleteRow("dbmovies", "id=?", id)
+	_, err := database.DeleteRow("dbmovies", "id=?", &id)
 
 	handleDBError(ctx, err, StrOK)
 }
@@ -154,7 +154,7 @@ func apiMovieListGet(ctx *gin.Context) {
 		"select count() from movies where listname = ? COLLATE NOCASE",
 		&listName,
 	)
-	data := database.QueryResultMovies(query, listName)
+	data := database.QueryResultMovies(query, &listName)
 
 	sendJSONResponse(
 		ctx,
@@ -266,7 +266,7 @@ func movieDeleteList(ctx *gin.Context) {
 		return
 	}
 
-	_, err := database.DeleteRow("movies", "id=?", id)
+	_, err := database.DeleteRow("movies", "id=?", &id)
 	handleDBError(ctx, err, StrOK)
 }
 
@@ -373,35 +373,35 @@ func updateDBMovie(c *gin.Context) {
 				"Poster",
 				"Slug",
 			},
-			dbmovie.Title,
-			dbmovie.ReleaseDate,
-			dbmovie.Year,
-			dbmovie.Adult,
-			dbmovie.Budget,
-			dbmovie.Genres,
-			dbmovie.OriginalLanguage,
-			dbmovie.OriginalTitle,
-			dbmovie.Overview,
-			dbmovie.Popularity,
-			dbmovie.Revenue,
-			dbmovie.Runtime,
-			dbmovie.SpokenLanguages,
-			dbmovie.Status,
-			dbmovie.Tagline,
-			dbmovie.VoteAverage,
-			dbmovie.VoteCount,
-			dbmovie.TraktID,
-			dbmovie.MoviedbID,
-			dbmovie.ImdbID,
-			dbmovie.FreebaseMID,
-			dbmovie.FreebaseID,
-			dbmovie.FacebookID,
-			dbmovie.InstagramID,
-			dbmovie.TwitterID,
-			dbmovie.URL,
-			dbmovie.Backdrop,
-			dbmovie.Poster,
-			dbmovie.Slug,
+			&dbmovie.Title,
+			&dbmovie.ReleaseDate,
+			&dbmovie.Year,
+			&dbmovie.Adult,
+			&dbmovie.Budget,
+			&dbmovie.Genres,
+			&dbmovie.OriginalLanguage,
+			&dbmovie.OriginalTitle,
+			&dbmovie.Overview,
+			&dbmovie.Popularity,
+			&dbmovie.Revenue,
+			&dbmovie.Runtime,
+			&dbmovie.SpokenLanguages,
+			&dbmovie.Status,
+			&dbmovie.Tagline,
+			&dbmovie.VoteAverage,
+			&dbmovie.VoteCount,
+			&dbmovie.TraktID,
+			&dbmovie.MoviedbID,
+			&dbmovie.ImdbID,
+			&dbmovie.FreebaseMID,
+			&dbmovie.FreebaseID,
+			&dbmovie.FacebookID,
+			&dbmovie.InstagramID,
+			&dbmovie.TwitterID,
+			&dbmovie.URL,
+			&dbmovie.Backdrop,
+			&dbmovie.Poster,
+			&dbmovie.Slug,
 		)
 	} else {
 		inres, err = database.UpdateArray(
@@ -438,36 +438,36 @@ func updateDBMovie(c *gin.Context) {
 				"Slug",
 			},
 			"id != 0 and id = ?",
-			dbmovie.Title,
-			dbmovie.ReleaseDate,
-			dbmovie.Year,
-			dbmovie.Adult,
-			dbmovie.Budget,
-			dbmovie.Genres,
-			dbmovie.OriginalLanguage,
-			dbmovie.OriginalTitle,
-			dbmovie.Overview,
-			dbmovie.Popularity,
-			dbmovie.Revenue,
-			dbmovie.Runtime,
-			dbmovie.SpokenLanguages,
-			dbmovie.Status,
-			dbmovie.Tagline,
-			dbmovie.VoteAverage,
-			dbmovie.VoteCount,
-			dbmovie.TraktID,
-			dbmovie.MoviedbID,
-			dbmovie.ImdbID,
-			dbmovie.FreebaseMID,
-			dbmovie.FreebaseID,
-			dbmovie.FacebookID,
-			dbmovie.InstagramID,
-			dbmovie.TwitterID,
-			dbmovie.URL,
-			dbmovie.Backdrop,
-			dbmovie.Poster,
-			dbmovie.Slug,
-			dbmovie.ID,
+			&dbmovie.Title,
+			&dbmovie.ReleaseDate,
+			&dbmovie.Year,
+			&dbmovie.Adult,
+			&dbmovie.Budget,
+			&dbmovie.Genres,
+			&dbmovie.OriginalLanguage,
+			&dbmovie.OriginalTitle,
+			&dbmovie.Overview,
+			&dbmovie.Popularity,
+			&dbmovie.Revenue,
+			&dbmovie.Runtime,
+			&dbmovie.SpokenLanguages,
+			&dbmovie.Status,
+			&dbmovie.Tagline,
+			&dbmovie.VoteAverage,
+			&dbmovie.VoteCount,
+			&dbmovie.TraktID,
+			&dbmovie.MoviedbID,
+			&dbmovie.ImdbID,
+			&dbmovie.FreebaseMID,
+			&dbmovie.FreebaseID,
+			&dbmovie.FacebookID,
+			&dbmovie.InstagramID,
+			&dbmovie.TwitterID,
+			&dbmovie.URL,
+			&dbmovie.Backdrop,
+			&dbmovie.Poster,
+			&dbmovie.Slug,
+			&dbmovie.ID,
 		)
 	}
 
@@ -514,15 +514,15 @@ func updateMovie(c *gin.Context) {
 				"dont_search",
 				"rootpath",
 			},
-			movie.Missing,
-			movie.Listname,
-			movie.DbmovieID,
-			movie.QualityProfile,
-			movie.Blacklisted,
-			movie.QualityReached,
-			movie.DontUpgrade,
-			movie.DontSearch,
-			movie.Rootpath,
+			&movie.Missing,
+			&movie.Listname,
+			&movie.DbmovieID,
+			&movie.QualityProfile,
+			&movie.Blacklisted,
+			&movie.QualityReached,
+			&movie.DontUpgrade,
+			&movie.DontSearch,
+			&movie.Rootpath,
 		)
 	} else {
 		inres, err = database.UpdateArray(
@@ -539,16 +539,16 @@ func updateMovie(c *gin.Context) {
 				"rootpath",
 			},
 			"id != 0 and id = ?",
-			movie.Missing,
-			movie.Listname,
-			movie.DbmovieID,
-			movie.QualityProfile,
-			movie.Blacklisted,
-			movie.QualityReached,
-			movie.DontUpgrade,
-			movie.DontSearch,
-			movie.Rootpath,
-			movie.ID,
+			&movie.Missing,
+			&movie.Listname,
+			&movie.DbmovieID,
+			&movie.QualityProfile,
+			&movie.Blacklisted,
+			&movie.QualityReached,
+			&movie.DontUpgrade,
+			&movie.DontSearch,
+			&movie.Rootpath,
+			&movie.ID,
 		)
 	}
 
@@ -559,6 +559,8 @@ func updateMovie(c *gin.Context) {
 // @Description  Queues a search of the indexers for one list entry (missing or upgrade, by ID and title) and downloads the best accepted release. Returns immediately; the work runs in the job queue.
 // @Tags         movies · search
 // @Param        id   path      int  true  "movies (list entry) ID"
+// @Param        searchByTitle  query     string  false  "true (default): also search by title, not only by ID; false: by ID only"
+// @Param        download       query     bool    false  "true (default): download the best accepted release; false: search only"
 // @Param        apikey query     string    true  "API key: the webapikey setting from [general] in config.toml"
 // @Success      200  {object}  Jsonstarted  "Queued as a background job"
 // @Success      204  "Nothing Done - no media group or nothing to search (no body)"
@@ -568,6 +570,7 @@ func updateMovie(c *gin.Context) {
 // @Failure      500  {object}  Jsonservererror  "The job could not be queued"
 // @Router       /api/movies/search/id/{id} [get].
 func apimoviesSearch(c *gin.Context) {
+	titlesearch, download := queryFlag(c, "searchByTitle", true), queryFlag(c, "download", true)
 	movie, _ := database.GetMovies(
 		database.Querywithargs{Where: logger.FilterByID},
 		c.Param(logger.StrID),
@@ -595,7 +598,7 @@ func apimoviesSearch(c *gin.Context) {
 					func(_ uint32, ctx context.Context) error {
 						searchvar := searcher.NewSearcher(media, nil, "", nil)
 
-						err := searchvar.MediaSearch(ctx, media, movie.ID, true, false, false)
+						err := searchvar.MediaSearch(ctx, media, movie.ID, titlesearch, false, false)
 						if err != nil {
 							if err != nil && !errors.Is(err, logger.ErrDisabled) {
 								logger.Logtype("error", 2).
@@ -605,7 +608,7 @@ func apimoviesSearch(c *gin.Context) {
 									Msg("Search Failed")
 							}
 						} else {
-							if len(searchvar.Accepted) >= 1 {
+							if download && len(searchvar.Accepted) >= 1 {
 								searchvar.Download()
 							}
 						}
@@ -891,6 +894,6 @@ func apiMoviesClearHistoryID(c *gin.Context) {
 		return
 	}
 
-	inres, inerr := database.DeleteRow("movie_histories", "movie_id = ?", id)
+	inres, inerr := database.DeleteRow("movie_histories", "movie_id = ?", &id)
 	handleDBInsertOrUpdate(c, inres, inerr, false)
 }

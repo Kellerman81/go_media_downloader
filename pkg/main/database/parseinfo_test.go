@@ -236,7 +236,7 @@ func TestFindDbbookByAuthorFirst(t *testing.T) {
 
 // migratedDB builds an in-memory SQLite database from the migrations in
 // ../schema/<dir> so SQL can be checked against the real schema.
-func migratedDB(t *testing.T, dir string) *sqlx.DB {
+func migratedDB(t testing.TB, dir string) *sqlx.DB {
 	t.Helper()
 
 	db, err := sqlx.Open("sqlite", ":memory:")
@@ -270,7 +270,7 @@ func migratedDB(t *testing.T, dir string) *sqlx.DB {
 
 // useMigratedMainDB points the package at a migrated in-memory main database
 // for the duration of the test.
-func useMigratedMainDB(t *testing.T) *sqlx.DB {
+func useMigratedMainDB(t testing.TB) *sqlx.DB {
 	t.Helper()
 
 	NewCache(time.Hour, time.Hour)
@@ -288,7 +288,7 @@ func useMigratedMainDB(t *testing.T) *sqlx.DB {
 	return db
 }
 
-func mustExec(t *testing.T, db *sqlx.DB, query string, args ...any) {
+func mustExec(t testing.TB, db *sqlx.DB, query string, args ...any) {
 	t.Helper()
 
 	if _, err := db.Exec(query, args...); err != nil {
@@ -469,7 +469,8 @@ func TestAlbumAndBookCreditChecks(t *testing.T) {
 		want   bool
 	}{{"prince", true}, {"the artist", true}, {"Madonna", false}} {
 		m := ParseInfo{Artist: tt.artist}
-		if got := m.albumHasArtist(1); got != tt.want {
+		id := uint(1)
+		if got := m.albumHasArtist(&id); got != tt.want {
 			t.Errorf("albumHasArtist(%q) = %v, want %v", tt.artist, got, tt.want)
 		}
 	}
@@ -479,7 +480,8 @@ func TestAlbumAndBookCreditChecks(t *testing.T) {
 		want   bool
 	}{{"main author", true}, {"Co Author", true}, {"Other", false}} {
 		m := ParseInfo{Artist: tt.author}
-		if got := m.bookHasAuthor(1); got != tt.want {
+		id := uint(1)
+		if got := m.bookHasAuthor(&id); got != tt.want {
 			t.Errorf("bookHasAuthor(%q) = %v, want %v", tt.author, got, tt.want)
 		}
 	}
@@ -872,7 +874,7 @@ func TestPreferOriginalDbserie(t *testing.T) {
 	for _, tt := range tests {
 		m := ParseInfo{Year: tt.year}
 		m.FindDbserieByNameWithSlug(tt.title)
-		m.PreferOriginalDbserie(tt.title)
+		m.PreferOriginalDbserie(&tt.title)
 
 		if m.DbserieID != tt.want {
 			t.Errorf("%q (%d): DbserieID = %d, want %d", tt.title, tt.year, m.DbserieID, tt.want)

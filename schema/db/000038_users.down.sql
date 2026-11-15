@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS media_requests;
+DROP TABLE IF EXISTS users;

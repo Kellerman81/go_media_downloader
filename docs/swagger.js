@@ -2443,6 +2443,44 @@ window.SWAGGER_SPEC = {
                 }
             }
         },
+        "/api/cache/cleanupfiles": {
+            "get": {
+                "description": "Removes cached covers and episode thumbnails no list entry or episode file has any more, converted subtitles of removed or replaced files, and leftover temporary files. Everything removed is rebuilt when needed. The request waits until done.",
+                "tags": [
+                    "cache"
+                ],
+                "summary": "Clean up the file cache",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key: the webapikey setting from [general] in config.toml",
+                        "name": "apikey",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Removed files: covers, subtitles, temp and bytes",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or wrong apikey",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonunauthorized"
+                        }
+                    },
+                    "500": {
+                        "description": "The cache folder can't be read",
+                        "schema": {
+                            "$ref": "#/definitions/api.Jsonerror"
+                        }
+                    }
+                }
+            }
+        },
         "/api/cache/clear/{type}": {
             "delete": {
                 "description": "Removes all entries of one cache type (see /api/cache/list).",
@@ -4219,6 +4257,18 @@ window.SWAGGER_SPEC = {
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true (default): also search by title, not only by ID; false: by ID only",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true (default): download the best accepted release; false: search only",
+                        "name": "download",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -6228,22 +6278,7 @@ window.SWAGGER_SPEC = {
                     "200": {
                         "description": "Queued and running jobs keyed by queue ID",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/api.Jsondata"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "$ref": "#/definitions/syncops.Job"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/api.Jsonqueue"
                         }
                     },
                     "401": {
@@ -6391,22 +6426,7 @@ window.SWAGGER_SPEC = {
                     "200": {
                         "description": "Schedules keyed by ID",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/api.Jsondata"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "object",
-                                            "additionalProperties": {
-                                                "$ref": "#/definitions/syncops.JobSchedule"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/api.Jsonschedules"
                         }
                     },
                     "401": {
@@ -7213,6 +7233,18 @@ window.SWAGGER_SPEC = {
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true (default): also search by title, not only by ID; false: by ID only",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true (default): download the best accepted release; false: search only",
+                        "name": "download",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -8024,6 +8056,18 @@ window.SWAGGER_SPEC = {
                     },
                     {
                         "type": "string",
+                        "description": "true (default): also search by title, not only by ID; false: by ID only",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true (default): download the best accepted release; false: search only",
+                        "name": "download",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "API key: the webapikey setting from [general] in config.toml",
                         "name": "apikey",
                         "in": "query",
@@ -8088,6 +8132,18 @@ window.SWAGGER_SPEC = {
                         "name": "season",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "true (default): also search by title, not only by ID; false: by ID only",
+                        "name": "searchByTitle",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true (default): download the best accepted release; false: search only",
+                        "name": "download",
+                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -8781,19 +8837,7 @@ window.SWAGGER_SPEC = {
                     "200": {
                         "description": "The stored token; data is null when Trakt is not set up",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/api.Jsondata"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/apiexternal_v2.OAuthToken"
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/api.Jsontraktauthtoken"
                         }
                     },
                     "401": {
@@ -8839,22 +8883,7 @@ window.SWAGGER_SPEC = {
                     "200": {
                         "description": "List items, and the error text if Trakt failed",
                         "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/api.Jsondataerror"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "type": "array",
-                                            "items": {
-                                                "$ref": "#/definitions/trakt.TraktUserListItem"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
+                            "$ref": "#/definitions/api.Jsontraktlistitems"
                         }
                     },
                     "401": {
@@ -9222,6 +9251,17 @@ window.SWAGGER_SPEC = {
                 }
             }
         },
+        "api.Jsonqueue": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/syncops.Job"
+                    }
+                }
+            }
+        },
         "api.Jsonresults": {
             "type": "object",
             "properties": {
@@ -9235,6 +9275,17 @@ window.SWAGGER_SPEC = {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/apiexternal_v2.Nzbwithprio"
+                    }
+                }
+            }
+        },
+        "api.Jsonschedules": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/syncops.JobSchedule"
                     }
                 }
             }
@@ -9288,12 +9339,35 @@ window.SWAGGER_SPEC = {
                 }
             }
         },
+        "api.Jsontraktauthtoken": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/apiexternal_v2.OAuthToken"
+                }
+            }
+        },
         "api.Jsontraktauthurl": {
             "type": "object",
             "properties": {
                 "data": {
                     "type": "string",
                     "example": "https://trakt.tv/oauth/authorize?client_id=abc123\u0026redirect_uri=urn%3Aietf%3Awg%3Aoauth%3A2.0%3Aoob\u0026response_type=code\u0026state=state"
+                }
+            }
+        },
+        "api.Jsontraktlistitems": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/trakt.TraktUserListItem"
+                    }
+                },
+                "error": {
+                    "type": "string",
+                    "example": ""
                 }
             }
         },
@@ -9914,6 +9988,10 @@ window.SWAGGER_SPEC = {
                 "CacheDuration2": {
                     "type": "integer"
                 },
+                "CoverCacheDir": {
+                    "description": "CoverCacheDir is the folder the Library page caches covers in",
+                    "type": "string"
+                },
                 "DBLogLevel": {
                     "description": "DBLogLevel defines the database log level to use, options are info or debug (not recommended) - default: info",
                     "type": "string"
@@ -9974,6 +10052,10 @@ window.SWAGGER_SPEC = {
                     "description": "GoodreadsLimiterSeconds defines seconds limit for Goodreads API calls - default: 1",
                     "type": "integer"
                 },
+                "HeadlessChromeURL": {
+                    "description": "HeadlessChromeURL is the base URL of a browserless headless Chrome that\nloads the pages of chart, bestseller and htmlxpath scrapes",
+                    "type": "string"
+                },
                 "ITunesLimiterCalls": {
                     "description": "ITunesLimiterCalls defines calls limit for iTunes API in defined seconds - default: 20",
                     "type": "integer"
@@ -9994,9 +10076,17 @@ window.SWAGGER_SPEC = {
                     "description": "JellyfinLimiterSeconds defines seconds limit for Jellyfin API calls - default: 1",
                     "type": "integer"
                 },
+                "JellyfinServerURL": {
+                    "description": "JellyfinServerURL is the Jellyfin server used as metadata and cover source",
+                    "type": "string"
+                },
                 "JellyfinTimeoutSeconds": {
                     "description": "JellyfinTimeoutSeconds defines the HTTP timeout in seconds for Jellyfin API calls - default: 30",
                     "type": "integer"
+                },
+                "JellyfinToken": {
+                    "description": "JellyfinToken is the API key for JellyfinServerURL",
+                    "type": "string"
                 },
                 "LastFMAPIKey": {
                     "description": "LastFMAPIKey is the API key for Last.fm - get one at https://www.last.fm/api/account/create",
@@ -10070,8 +10160,16 @@ window.SWAGGER_SPEC = {
                     "description": "MovieMetaSourceImdb defines whether to scan IMDB for movie metadata - default: false",
                     "type": "boolean"
                 },
+                "MovieMetaSourceJellyfin": {
+                    "description": "MovieMetaSourceJellyfin defines whether to use the Jellyfin server as a movie metadata source - default: false",
+                    "type": "boolean"
+                },
                 "MovieMetaSourceOmdb": {
                     "description": "MovieMetaSourceOmdb defines whether to scan OMDB for movie metadata - default: false",
+                    "type": "boolean"
+                },
+                "MovieMetaSourcePlex": {
+                    "description": "MovieMetaSourcePlex defines whether to use the Plex server as a movie metadata source - default: false",
                     "type": "boolean"
                 },
                 "MovieMetaSourcePriority": {
@@ -10154,6 +10252,32 @@ window.SWAGGER_SPEC = {
                     "description": "OpenLibraryLimiterSeconds defines seconds limit for OpenLibrary API calls - 0 = built-in 60",
                     "type": "integer"
                 },
+                "PlayerAudioBitrates": {
+                    "description": "PlayerAudioBitrates are the audio transcoding bitrates of the Library player",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "PlayerHWAccel": {
+                    "description": "PlayerHWAccel selects GPU encoding for player transcodes",
+                    "type": "string"
+                },
+                "PlayerHWDevice": {
+                    "description": "PlayerHWDevice is the GPU render device for vaapi/qsv",
+                    "type": "string"
+                },
+                "PlayerMaxTranscodes": {
+                    "description": "PlayerMaxTranscodes limits concurrent player transcodes",
+                    "type": "integer"
+                },
+                "PlayerVideoProfiles": {
+                    "description": "PlayerVideoProfiles are the transcoding qualities of the Library player",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "PlexDisableTLSVerify": {
                     "description": "PlexDisableTLSVerify specifies whether to disable TLS certificate verification for Plex API calls - default: false",
                     "type": "boolean"
@@ -10166,9 +10290,17 @@ window.SWAGGER_SPEC = {
                     "description": "PlexLimiterSeconds defines seconds limit for Plex API calls - default: 1",
                     "type": "integer"
                 },
+                "PlexServerURL": {
+                    "description": "PlexServerURL is the Plex server used as metadata and cover source",
+                    "type": "string"
+                },
                 "PlexTimeoutSeconds": {
                     "description": "PlexTimeoutSeconds defines the HTTP timeout in seconds for Plex API calls - default: 30",
                     "type": "integer"
+                },
+                "PlexToken": {
+                    "description": "PlexToken is the X-Plex-Token for PlexServerURL",
+                    "type": "string"
                 },
                 "SchedulerDisabled": {
                     "description": "SchedulerDisabled enables/disables scheduler - default false",
@@ -10186,6 +10318,21 @@ window.SWAGGER_SPEC = {
                     "description": "SerieAlternateTitleMetaSourceTrakt defines whether to scan Trakt for alternate series titles - default: false",
                     "type": "boolean"
                 },
+                "SerieMetaSourceJellyfin": {
+                    "description": "SerieMetaSourceJellyfin defines whether to use the Jellyfin server as a series metadata source - default: false",
+                    "type": "boolean"
+                },
+                "SerieMetaSourcePlex": {
+                    "description": "SerieMetaSourcePlex defines whether to use the Plex server as a series metadata source - default: false",
+                    "type": "boolean"
+                },
+                "SerieMetaSourcePriority": {
+                    "description": "SerieMetaSourcePriority defines the order of the series metadata sources",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "SerieMetaSourceTmdb": {
                     "description": "SerieMetaSourceTmdb defines whether to scan TMDb for series metadata - default: false",
                     "type": "boolean"
@@ -10196,18 +10343,6 @@ window.SWAGGER_SPEC = {
                 },
                 "SevenZipPath": {
                     "description": "SevenZipPath specifies the path to the 7z executable for unpacking various archive formats",
-                    "type": "string"
-                },
-                "SpotifyClientID": {
-                    "description": "SpotifyClientID is the client ID for Spotify Web API",
-                    "type": "string"
-                },
-                "SpotifyClientSecret": {
-                    "description": "SpotifyClientSecret is the client secret for Spotify Web API",
-                    "type": "string"
-                },
-                "SpotifyRegion": {
-                    "description": "SpotifyRegion is the ISO 3166-1 alpha-2 country code for market filtering",
                     "type": "string"
                 },
                 "TarPath": {
@@ -10876,6 +11011,14 @@ window.SWAGGER_SPEC = {
                     "description": "AllowAlternativeReleases enables searching MusicBrainz for alternative releases\nwhen the DB has a title match but with a different track count/edition.\nIf the existing DB release has no files attached, it will be replaced.\nIf it has files, the alternative release is added as a new entry.",
                     "type": "boolean"
                 },
+                "AllowCountMismatchIfTotalMatch": {
+                    "description": "AllowCountMismatchIfTotalMatch turns on allow_missing_tracks and\nallow_extra_tracks for a single release when its tags match and the\ntotal runtime does.",
+                    "type": "boolean"
+                },
+                "AllowExtraTracks": {
+                    "description": "AllowExtraTracks accepts local files that have no track in the release.",
+                    "type": "boolean"
+                },
                 "AllowMissingTracks": {
                     "description": "AllowMissingTracks skips the strict track count check during runtime verification.\nWhen true, a local folder with fewer tracks than expected is still accepted.",
                     "type": "boolean"
@@ -10938,6 +11081,10 @@ window.SWAGGER_SPEC = {
                     "description": "PerTrackToleranceSecondsMax is the hard cutoff for per-track runtime matching.\nTrack pairs whose diff exceeds this value are excluded from matching entirely.\nOnly effective when PerTrackToleranceSeconds \u003e 0.\nDefault 0 means PerTrackToleranceSeconds is used as both grace and hard limit.",
                     "type": "integer"
                 },
+                "ReplaceEmbeddedChapters": {
+                    "description": "ReplaceEmbeddedChapters writes the matched book's chapter list into a\nsingle-file audiobook whose chapters do not pair 1:1 with the book's.",
+                    "type": "boolean"
+                },
                 "SkipSeriesTrackMatch": {
                     "description": "SkipSeriesTrackMatch disables chapter/track count matching for audiobooks that belong to a series.",
                     "type": "boolean"
@@ -10989,6 +11136,14 @@ window.SWAGGER_SPEC = {
                 },
                 "AllowAlternativeReleases": {
                     "description": "AllowAlternativeReleases enables searching MusicBrainz for alternative releases\nwhen the DB has a title match but with a different track count/edition.",
+                    "type": "boolean"
+                },
+                "AllowCountMismatchIfTotalMatch": {
+                    "description": "AllowCountMismatchIfTotalMatch turns on allow_missing_tracks and\nallow_extra_tracks for a single release when its tags match and the\ntotal runtime does.",
+                    "type": "boolean"
+                },
+                "AllowExtraTracks": {
+                    "description": "AllowExtraTracks accepts local files that have no track in the release.",
                     "type": "boolean"
                 },
                 "AllowMissingTracks": {
@@ -11052,6 +11207,10 @@ window.SWAGGER_SPEC = {
                 "PerTrackToleranceSecondsMax": {
                     "description": "PerTrackToleranceSecondsMax is the hard cutoff for per-track runtime matching.\nTrack pairs whose diff exceeds this value are excluded from matching entirely.\nOnly effective when PerTrackToleranceSeconds \u003e 0.\nDefault 0 means PerTrackToleranceSeconds is used as both grace and hard limit.",
                     "type": "integer"
+                },
+                "ReplaceEmbeddedChapters": {
+                    "description": "ReplaceEmbeddedChapters writes the matched book's chapter list into a\nsingle-file audiobook whose chapters do not pair 1:1 with the book's.",
+                    "type": "boolean"
                 },
                 "StrongRecThresh": {
                     "description": "StrongRecThresh overrides the strong recommendation threshold (default 0.04).\nAlbum candidates with distance below this are accepted unconditionally.",
@@ -11599,7 +11758,7 @@ window.SWAGGER_SPEC = {
                     "type": "integer"
                 },
                 "MissingScanReleaseDatePre": {
-                    "description": "MissingScanReleaseDatePre is the minimum number of days to wait after media release before scanning, 0 means don't check",
+                    "description": "MissingScanReleaseDatePre starts the missing search this many days before the release (air) date; negative waits after it, 0 doesn't check the date",
                     "type": "integer"
                 },
                 "MoveReplaced": {
@@ -12037,6 +12196,10 @@ window.SWAGGER_SPEC = {
                     "description": "CronFeedsRefreshSeriesFull is the cron schedule for full refreshing of series RSS feeds",
                     "type": "string"
                 },
+                "CronFileCacheCleanup": {
+                    "description": "CronFileCacheCleanup is the cron schedule for removing orphaned cached files",
+                    "type": "string"
+                },
                 "CronImdb": {
                     "description": "CronImdb is the cron schedule for imdb scans",
                     "type": "string"
@@ -12175,6 +12338,10 @@ window.SWAGGER_SPEC = {
                 },
                 "IntervalFeedsRefreshSeriesFull": {
                     "description": "IntervalFeedsRefreshSeriesFull is the interval for full rss feed refreshes for series",
+                    "type": "string"
+                },
+                "IntervalFileCacheCleanup": {
+                    "description": "IntervalFileCacheCleanup is the interval for removing orphaned cached files",
                     "type": "string"
                 },
                 "IntervalImdb": {
@@ -13244,6 +13411,10 @@ window.SWAGGER_SPEC = {
                 "serieid": {
                     "description": "SerieID is the application ID of the TV series",
                     "type": "integer"
+                },
+                "titlematched": {
+                    "description": "TitleMatched: the episode was found by its title (MatchEpisodeByTitle),\nthe release names no usable episode number.",
+                    "type": "boolean"
                 },
                 "tvdb": {
                     "description": "Tvdb is the TVDB ID",

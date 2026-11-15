@@ -2451,7 +2451,7 @@ func buildMusicFailureReport(
 func discoverAddFoundArtistAlbums(
 	ctx context.Context,
 	albumTitle string, artist *string,
-	dbalbumID uint,
+	dbalbumID *uint,
 	cfgp *config.MediaTypeConfig,
 	listid int,
 	data *config.MediaDataConfig,
@@ -2467,7 +2467,7 @@ func discoverAddFoundArtistAlbums(
 
 		releaseGroupID := database.Getdatarow[string](false,
 			"SELECT musicbrainz_release_group_id FROM dbalbums WHERE id = ?",
-			&dbalbumID,
+			dbalbumID,
 		)
 
 		if releaseGroupID == "" {
@@ -2478,14 +2478,14 @@ func discoverAddFoundArtistAlbums(
 		// discovery was already triggered for this series — skip to avoid redundant API calls.
 		seriesName := database.Getdatarow[string](false,
 			"SELECT series_name FROM dbalbums WHERE id = ?",
-			&dbalbumID,
+			dbalbumID,
 		)
 		if seriesName != "" {
 			otherCount := database.Getdatarow[int](
 				false,
 				"SELECT COUNT(*) FROM dbalbums WHERE series_name = ? AND id != ?",
 				&seriesName,
-				&dbalbumID,
+				dbalbumID,
 			)
 			if otherCount > 0 {
 				logger.Logtype("debug", 1).

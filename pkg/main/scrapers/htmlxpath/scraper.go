@@ -33,6 +33,8 @@ type Config struct {
 	URLXPath       string // XPath relative to scene node for URL
 	DateXPath      string // XPath relative to scene node for date
 	ActorsXPath    string // XPath relative to scene node for actors (can select multiple)
+	PlotXPath      string // XPath relative to scene node for the plot
+	ScenePlotXPath string // XPath for the plot on the scene's own page (URLXPath)
 	TitleAttribute string // Optional: HTML attribute to extract title from (default: innerText)
 	URLAttribute   string // Optional: HTML attribute to extract URL from (default: href)
 
@@ -53,7 +55,13 @@ type Scraper struct {
 	config    *Config
 	dbserieID uint
 	client    *http.Client
+
+	scenePlotFetches int // scene pages loaded for plots this run
 }
+
+// maxScenePlotFetches caps the scene pages one run loads for plots, so a
+// first run on a large site doesn't load every scene page.
+const maxScenePlotFetches = 25
 
 // NewScraper creates a new HTML/XPath scraper instance.
 //
@@ -129,7 +137,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 	existingID := database.Getdatarow[uint](
 		false,
 		"SELECT id FROM dbseries WHERE seriename = ? LIMIT 1",
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 
 	if existingID > 0 {
@@ -149,7 +157,7 @@ func (s *Scraper) getOrCreateSerie(_ context.Context) error {
 		INSERT INTO dbseries (
 			seriename, created_at, updated_at
 		) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		s.config.SerieName,
+		&s.config.SerieName,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create series '%s': %w", s.config.SerieName, err)
@@ -191,6 +199,11 @@ func (s *Scraper) fetchPage(ctx context.Context, pageNum int) (*html.Node, error
 		url = s.config.StartURL
 	}
 
+	return s.fetchURL(ctx, url)
+}
+
+// fetchURL loads and parses one page, after the site's wait time.
+func (s *Scraper) fetchURL(ctx context.Context, url string) (*html.Node, error) {
 	req, err := pageRequest(ctx, s.config.ChromeURL, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -369,14 +382,65 @@ func resolveURL(base, ref string) string {
 	return b.ResolveReference(r).String()
 }
 
+// episodeOverview is the stored overview: the plot, followed by the actors.
+// Without a plot it is the actor list, as before plots were scraped.
+func episodeOverview(plot, actors string) string {
+	switch {
+	case plot == "":
+		return actors
+	case actors == "":
+		return plot
+	default:
+		return plot + "\n\nActors: " + actors
+	}
+}
+
+// scenePlot loads the plot from the scene's own page when ScenePlotXPath is
+// set, the episode has no plot yet and the run's page budget allows it.
+func (s *Scraper) scenePlot(ctx context.Context, episodeURL, storedOverview, actors string) string {
+	if s.config.ScenePlotXPath == "" || episodeURL == "" || s.scenePlotFetches >= maxScenePlotFetches ||
+		(storedOverview != "" && storedOverview != actors) {
+		return ""
+	}
+
+	s.scenePlotFetches++
+
+	doc, err := s.fetchURL(ctx, episodeURL)
+	if err != nil {
+		logger.Logtype(logger.StatusWarning, 0).Err(err).
+			Str("site", s.config.SiteName).Str("url", episodeURL).Msg("Failed to load scene page for the plot")
+
+		return ""
+	}
+
+	return s.extractText(doc, s.config.ScenePlotXPath, "")
+}
+
 func (s *Scraper) createEpisode(
-	_ context.Context,
+	ctx context.Context,
 	title, episodeURL string,
 	date time.Time,
-	actors string,
+	actors, plot string,
 ) error {
 	// Create episode identifier from date (YYMMDD format)
 	identifier := date.Format("06-01-02")
+
+	existingID := database.Getdatarow[uint](
+		false,
+		"SELECT id FROM dbserie_episodes WHERE dbserie_id = ? AND identifier = ? AND title = ? LIMIT 1",
+		&s.dbserieID,
+		&identifier,
+		title,
+	)
+
+	var stored string
+	if existingID > 0 {
+		stored = database.Getdatarow[string](false, "SELECT COALESCE(overview, '') FROM dbserie_episodes WHERE id = ?", &existingID)
+	}
+
+	if plot == "" {
+		plot = s.scenePlot(ctx, episodeURL, stored, actors)
+	}
 
 	episode := database.DbserieEpisode{
 		Identifier: identifier,
@@ -386,33 +450,31 @@ func (s *Scraper) createEpisode(
 			Valid: true,
 		},
 		DbserieID:  s.dbserieID,
-		Overview:   actors, // Store actors in overview field
+		Overview:   episodeOverview(plot, actors),
 		ScraperURL: episodeURL,
 	}
 
-	// Check if episode already exists
-	existingID := database.Getdatarow[uint](
-		false,
-		"SELECT id FROM dbserie_episodes WHERE dbserie_id = ? AND identifier = ? AND title = ? LIMIT 1",
-		s.dbserieID,
-		identifier,
-		title,
-	)
-
 	if existingID > 0 {
-		// Episode exists, update it. Backfill scraper fields only when empty.
+		// Episode exists, update it. Backfill scraper fields only when empty,
+		// and keep a stored overview over an empty one. Without a new plot a
+		// stored plot stays too: the actor list alone doesn't replace it.
+		overview := episode.Overview
+		if plot == "" && stored != "" && stored != actors {
+			overview = ""
+		}
+
 		err := database.ExecNErr(`
 			UPDATE dbserie_episodes
-			SET first_aired = ?, overview = ?,
+			SET first_aired = ?, overview = CASE WHEN ? <> '' THEN ? ELSE overview END,
 				scraper_id = CASE WHEN scraper_id = '' OR scraper_id IS NULL THEN ? ELSE scraper_id END,
 				scraper_url = CASE WHEN scraper_url = '' OR scraper_url IS NULL THEN ? ELSE scraper_url END,
 				updated_at = CURRENT_TIMESTAMP
 			WHERE id = ?`,
-			episode.FirstAired,
-			episode.Overview,
-			episode.ScraperID,
-			episode.ScraperURL,
-			existingID,
+			&episode.FirstAired,
+			&overview, &overview,
+			&episode.ScraperID,
+			&episode.ScraperURL,
+			&existingID,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to update episode: %w", err)
@@ -432,13 +494,13 @@ func (s *Scraper) createEpisode(
 		INSERT INTO dbserie_episodes (
 			dbserie_id, identifier, title, first_aired, overview, scraper_id, scraper_url, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		episode.DbserieID,
-		episode.Identifier,
-		episode.Title,
-		episode.FirstAired,
-		episode.Overview,
-		episode.ScraperID,
-		episode.ScraperURL,
+		&episode.DbserieID,
+		&episode.Identifier,
+		&episode.Title,
+		&episode.FirstAired,
+		&episode.Overview,
+		&episode.ScraperID,
+		&episode.ScraperURL,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create episode: %w", err)
@@ -542,6 +604,11 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			dateStr := s.extractText(sceneNode, s.config.DateXPath, "")
 			actors := s.extractActors(sceneNode, s.config.ActorsXPath)
 
+			var plot string
+			if s.config.PlotXPath != "" {
+				plot = s.extractText(sceneNode, s.config.PlotXPath, "")
+			}
+
 			// Validate required fields
 			if title == "" || dateStr == "" {
 				logger.Logtype(logger.StatusDebug, 0).
@@ -566,7 +633,7 @@ func (s *Scraper) Scrape(ctx context.Context, firstpageonly bool) (int, error) {
 			}
 
 			// Create episode
-			if err := s.createEpisode(ctx, title, url, date, actors); err != nil {
+			if err := s.createEpisode(ctx, title, url, date, actors, plot); err != nil {
 				logger.Logtype(logger.StatusError, 0).
 					Err(err).
 					Str("site", s.config.SiteName).

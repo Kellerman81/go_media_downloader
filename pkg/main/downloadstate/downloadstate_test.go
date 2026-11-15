@@ -102,11 +102,11 @@ func TestCheck(t *testing.T) {
 	useTestDB(t)
 
 	ids := seed(t, "Heat.1995.1080p", "Heat.1995.720p", "Heat.1995.2160p", "Heat.1995.Gone", "Heat.1995.NoID")
-	Started(config.MediaTypeMovie, ids[0], "fake", "aaaa")
-	Started(config.MediaTypeMovie, ids[1], "fake", "BBBB")
-	Started(config.MediaTypeMovie, ids[2], "fake", "cccc")
-	Started(config.MediaTypeMovie, ids[3], "fake", "dddd")
-	Started(config.MediaTypeMovie, ids[4], "fake", "")
+	Started(config.MediaTypeMovie, &ids[0], new("fake"), "aaaa")
+	Started(config.MediaTypeMovie, &ids[1], new("fake"), "BBBB")
+	Started(config.MediaTypeMovie, &ids[2], new("fake"), "cccc")
+	Started(config.MediaTypeMovie, &ids[3], new("fake"), "dddd")
+	Started(config.MediaTypeMovie, &ids[4], new("fake"), "")
 	// The vanished download has been missing for long enough.
 	exec(t, "update movie_histories set state_changed_at = datetime('now','localtime','-1 hour') where id = ?", ids[3])
 
@@ -147,8 +147,8 @@ func TestOrganized(t *testing.T) {
 	useTestDB(t)
 
 	ids := seed(t, "Heat.1995.1080p.BluRay-GRP", "Heat.1995.720p.WEB-OTHER")
-	Started(config.MediaTypeMovie, ids[0], "drone", "")
-	Started(config.MediaTypeMovie, ids[1], "drone", "")
+	Started(config.MediaTypeMovie, &ids[0], new("drone"), "")
+	Started(config.MediaTypeMovie, &ids[1], new("drone"), "")
 
 	// The folder name picks the older row over the newest one.
 	Organized(config.MediaTypeMovie, []uint{1}, "/dl/Heat.1995.1080p.BluRay-GRP", "/dl/Heat.1995.1080p.BluRay-GRP/heat.mkv", "", "")
@@ -179,7 +179,7 @@ func TestCheckRowRemovesFailed(t *testing.T) {
 	useTestDB(t)
 
 	ids := seed(t, "Heat.1995.1080p")
-	Started(config.MediaTypeMovie, ids[0], "fake", "abc")
+	Started(config.MediaTypeMovie, &ids[0], new("fake"), "abc")
 
 	c := &fakeClient{}
 	useClient(t, c)
@@ -202,8 +202,8 @@ func TestOrganizedImportFolderSuffix(t *testing.T) {
 	useTestDB(t)
 
 	ids := seed(t, "a.season.of.promises.2026.720p.web.h264-norbit", "a.season.of.promises.2026.1080p.web.h264-norbit")
-	Started(config.MediaTypeMovie, ids[0], "en", "")
-	Started(config.MediaTypeMovie, ids[1], "en", "")
+	Started(config.MediaTypeMovie, &ids[0], new("en"), "")
+	Started(config.MediaTypeMovie, &ids[1], new("en"), "")
 
 	folder := "/downloads/completed/Movies/a.season.of.promises.2026.720p.web.h264-norbit (tt46075510)"
 	Organized(config.MediaTypeMovie, []uint{1}, folder, folder+"/a.season.of.promises.2026.720p.web.h264-norbit (tt46075510).mkv", "", "")
@@ -244,7 +244,7 @@ func TestPendingFor(t *testing.T) {
 	// Two days old: a client-reported download still counts, a plain "added" no longer does.
 	exec(t, "update movie_histories set downloaded_at = datetime('now','localtime','-2 days') where id in (?, ?)", ids[1], ids[2])
 
-	got := PendingFor(config.MediaTypeMovie, 1)
+	got := PendingFor(config.MediaTypeMovie, new(uint(1)))
 	if len(got) != 3 {
 		t.Fatalf("PendingFor = %+v, want the added, old downloading and completed rows", got)
 	}
@@ -253,7 +253,7 @@ func TestPendingFor(t *testing.T) {
 		t.Errorf("quality ids not read: %+v", got)
 	}
 
-	if got := PendingFor(config.MediaTypeMovie, 2); len(got) != 0 {
+	if got := PendingFor(config.MediaTypeMovie, new(uint(2))); len(got) != 0 {
 		t.Errorf("other movie: %+v", got)
 	}
 }

@@ -469,9 +469,9 @@ func HandleMovieMetadata(c *gin.Context) {
 	case "book":
 		c.String(http.StatusOK, handleBookMetadataLookup(isbn, updateDB))
 	case "audiobook":
-		c.String(http.StatusOK, handleAudiobookMetadataLookup(asin, updateDB))
+		c.String(http.StatusOK, handleAudiobookMetadataLookup(&asin, updateDB))
 	case "music":
-		c.String(http.StatusOK, handleAlbumMetadataLookup(mbReleaseID, updateDB))
+		c.String(http.StatusOK, handleAlbumMetadataLookup(&mbReleaseID, updateDB))
 	}
 }
 
@@ -838,7 +838,7 @@ func handleEpisodeMetadataLookup(
 	if updateDB && result["title"] != nil {
 		if err := updateEpisodeMetadataDB(
 			seriesImdbID, tvdbID, season, episode,
-			epTitle, epOverview, epAired, epRuntime,
+			&epTitle, &epOverview, epAired, &epRuntime,
 		); err != nil {
 			result["db_error"] = err.Error()
 		}
@@ -873,14 +873,14 @@ func handleEpisodeMetadataLookup(
 }
 
 // findDbserieID resolves an existing dbseries row by TVDB ID, falling back to IMDB ID.
-func findDbserieID(imdbID string, tvdbID int) uint {
+func findDbserieID(imdbID string, tvdbID *int) uint {
 	var id uint
-	if tvdbID != 0 {
-		database.Scanrowsdyn(false, database.QueryDbseriesGetIDByTvdb, &id, &tvdbID)
+	if (*tvdbID) != 0 {
+		database.Scanrowsdyn(false, database.QueryDbseriesGetIDByTvdb, &id, tvdbID)
 	}
 
 	if id == 0 && imdbID != "" {
-		database.Scanrowsdyn(false, "select id from dbseries where imdb_id = ?", &id, &imdbID)
+		database.Scanrowsdyn(false, "select id from dbseries where imdb_id = ?", &id, imdbID)
 	}
 
 	return id
@@ -893,7 +893,7 @@ func updateSeriesMetadataDB(imdbID, tvdbID, provider string) error {
 	tvdbIDInt, _ := strconv.Atoi(tvdbID)
 
 	var dbserie database.Dbserie
-	if id := findDbserieID(imdbID, tvdbIDInt); id != 0 {
+	if id := findDbserieID(imdbID, &tvdbIDInt); id != 0 {
 		if err := dbserie.GetDbserieByIDP(&id); err != nil {
 			return fmt.Errorf("load series %d: %w", id, err)
 		}
@@ -981,13 +981,13 @@ func updateSeriesMetadataDB(imdbID, tvdbID, provider string) error {
 func updateEpisodeMetadataDB(
 	imdbID, tvdbID string,
 	season, episode int,
-	title, overview string,
+	title *string, overview *string,
 	aired time.Time,
-	runtime int,
+	runtime *int,
 ) error {
 	tvdbIDInt, _ := strconv.Atoi(tvdbID)
 
-	dbserieID := findDbserieID(imdbID, tvdbIDInt)
+	dbserieID := findDbserieID(imdbID, &tvdbIDInt)
 	if dbserieID == 0 {
 		return errors.New("series not found in database")
 	}
@@ -1012,10 +1012,10 @@ func updateEpisodeMetadataDB(
 
 	return database.ExecNErr(
 		"update dbserie_episodes SET title = CASE WHEN ? != '' THEN ? ELSE title END, overview = CASE WHEN ? != '' THEN ? ELSE overview END, first_aired = COALESCE(?, first_aired), runtime = CASE WHEN ? > 0 THEN ? ELSE runtime END where id = ?",
-		&title, &title,
-		&overview, &overview,
+		title, title,
+		overview, overview,
 		&firstAired,
-		&runtime, &runtime,
+		runtime, runtime,
 		&episodeID,
 	)
 }
@@ -1269,10 +1269,10 @@ func handleBookMetadataLookup(isbn string, updateDB bool) string {
 
 // handleAudiobookMetadataLookup fetches audiobook metadata by ASIN and optionally
 // updates (or inserts) the matching dbaudiobooks row.
-func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
+func handleAudiobookMetadataLookup(asin *string, updateDB bool) string {
 	var ab database.Dbaudiobook
 
-	ab.ASIN = asin
+	ab.ASIN = *asin
 
 	if err := metadata.AudiobookGetMetadata(
 		context.Background(), audiobookMetadataConfig(), &ab, true,
@@ -1281,7 +1281,7 @@ func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
 	}
 
 	if ab.Title == "" {
-		return renderAlert("No audiobook metadata found for ASIN "+asin, "warning")
+		return renderAlert("No audiobook metadata found for ASIN "+(*asin), "warning")
 	}
 
 	heading := "Audiobook"
@@ -1289,12 +1289,12 @@ func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
 		id := database.Getdatarow[uint](
 			false,
 			"SELECT id FROM dbaudiobooks WHERE asin = ? LIMIT 1",
-			&asin,
+			asin,
 		)
 		if id == 0 {
 			if newid, err := database.ExecNid(
 				"INSERT INTO dbaudiobooks (asin) VALUES (?)",
-				&asin,
+				asin,
 			); err == nil {
 				id = uint(newid) //nolint:gosec // safe: value within target type range
 			}
@@ -1360,10 +1360,10 @@ func handleAudiobookMetadataLookup(asin string, updateDB bool) string {
 
 // handleAlbumMetadataLookup fetches music album metadata by MusicBrainz release
 // ID and optionally updates (or inserts) the matching dbalbums row.
-func handleAlbumMetadataLookup(mbReleaseID string, updateDB bool) string {
+func handleAlbumMetadataLookup(mbReleaseID *string, updateDB bool) string {
 	var album database.Dbalbum
 
-	album.MusicbrainzReleaseID = mbReleaseID
+	album.MusicbrainzReleaseID = *mbReleaseID
 
 	if err := metadata.AlbumGetMetadata(context.Background(), &album, true); err != nil {
 		return renderAlert("Album metadata lookup failed: "+err.Error(), "danger")
@@ -1371,7 +1371,7 @@ func handleAlbumMetadataLookup(mbReleaseID string, updateDB bool) string {
 
 	if album.Title == "" {
 		return renderAlert(
-			"No album metadata found for MusicBrainz release "+mbReleaseID,
+			"No album metadata found for MusicBrainz release "+(*mbReleaseID),
 			"warning",
 		)
 	}
@@ -1379,11 +1379,11 @@ func handleAlbumMetadataLookup(mbReleaseID string, updateDB bool) string {
 	heading := "Album"
 	if updateDB {
 		id := database.Getdatarow[uint](
-			false, "SELECT id FROM dbalbums WHERE musicbrainz_release_id = ? LIMIT 1", &mbReleaseID,
+			false, "SELECT id FROM dbalbums WHERE musicbrainz_release_id = ? LIMIT 1", mbReleaseID,
 		)
 		if id == 0 {
 			if newid, err := database.ExecNid(
-				"INSERT INTO dbalbums (musicbrainz_release_id) VALUES (?)", &mbReleaseID,
+				"INSERT INTO dbalbums (musicbrainz_release_id) VALUES (?)", mbReleaseID,
 			); err == nil {
 				id = uint(newid) //nolint:gosec // safe: value within target type range
 			}

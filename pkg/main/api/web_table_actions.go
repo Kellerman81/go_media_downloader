@@ -289,7 +289,9 @@ const tableScript = `
 		"bSort": true,
 		"bPaginate": true,
 		responsive: true,
-		"aaSorting": [[0, "desc"]],
+		// No initial sort column, so the first load uses the table's own
+		// DefaultOrderBy (database.GetTableDefaults); a header click sorts.
+		"aaSorting": [],
 		"bProcessing": true,
 		"bServerSide": true,
 		"sAjaxSource": "/api/admin/tablejson/" + encodeURIComponent(cfg.table),

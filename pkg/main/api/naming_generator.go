@@ -7,6 +7,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/structure"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
+	hx "maragu.dev/gomponents-htmx"
 	"maragu.dev/gomponents/html"
 )
 
@@ -26,842 +27,421 @@ type TemplateStructure struct {
 	Example     string `json:"example"`
 }
 
-type NamingFieldsResponse struct {
-	Fields     []TemplateField     `json:"fields"`
-	Structures []TemplateStructure `json:"structures"`
-	DataType   string              `json:"data_type"`
+// ngTypes are the template types of the naming generator: one per media
+// type for the naming field of a media group, plus notification messages.
+var ngTypes = []struct{ Value, Label string }{
+	{"movie", "Movies (media group → naming)"},
+	{"series", "Series (media group → naming)"},
+	{"music", "Music (media group → naming)"},
+	{"book", "Books (media group → naming)"},
+	{"audiobook", "Audiobooks (media group → naming)"},
+	{"notification", "Notification title and message"},
 }
 
-func renderNamingGeneratorPage(csrfToken string) gomponents.Node {
+// ngTypeFields lists the naming data each media type fills: struct names
+// (matching their nested fields) and top-level fields. Source is the parsed
+// release or file.
+var ngTypeFields = map[string][]string{
+	"movie":     {"Dbmovie", "Source", "TitleSource", "Title", "Identifier"},
+	"series":    {"Dbserie", "Serie", "DbserieEpisode", "Source", "TitleSource", "EpisodeTitleSource", "Identifier", "Episodes", "Title"},
+	"music":     {"Dbalbum", "Dbtrack", "Artist", "AlbumArtist", "Source", "Title", "Track", "Disc", "TotalDiscs"},
+	"book":      {"Dbbook", "Author", "BookSeries", "Source", "Title"},
+	"audiobook": {"Dbaudiobook", "DbaudiobookChapter", "Dbbook", "Author", "BookSeries", "Source", "Title", "Track", "Disc", "TotalDiscs"},
+}
+
+// ngKnownType reports whether dataType is one of ngTypes.
+func ngKnownType(dataType string) bool {
+	for _, t := range ngTypes {
+		if t.Value == dataType {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ngKind maps a template type to the data it is rendered with: "notification"
+// or "parser" (naming). Unknown types are naming templates.
+func ngKind(dataType string) string {
+	if dataType == "notification" {
+		return "notification"
+	}
+
+	return "parser"
+}
+
+// ngExamples are the examples offered on the naming generator page.
+var ngExamples = []struct{ Label, DataType, Template string }{
+	{
+		"Series: folder per season", "series",
+		`{{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}/{{.Dbserie.Seriename}} - S{{printf "%02s" .DbserieEpisode.Season}}{{range .Episodes}}E{{printf "%02d" . }}{{end}} - {{.DbserieEpisode.Title}} [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}] ({{.Source.Tvdb}})`,
+	},
+	{
+		"Series: one folder per series", "series",
+		`{{.Dbserie.Seriename}}/{{.Dbserie.Seriename}} {{.DbserieEpisode.Identifier}} {{.EpisodeTitleSource}} - [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}]`,
+	},
+	{
+		"Movie: folder per movie", "movie",
+		`{{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}{{if eq .Source.Extended true}} extended{{end}}] ({{.Source.Imdb}})`,
+	},
+	{
+		"Music: letter / artist / album / track", "music",
+		`{{if .AlbumArtist.Name}}{{firstLetter .AlbumArtist.Name}}{{else}}_{{end}}/{{if or (eq .AlbumArtist.Name "Various Artists") (eq .AlbumArtist.Name "VA") (eq .AlbumArtist.Name "Various")}}Various Artists{{else}}{{.AlbumArtist.Name}}{{end}}/{{.Dbalbum.Title}}{{if .Dbalbum.Year}} ({{.Dbalbum.Year}}){{end}}/{{if gt .TotalDiscs 1}}{{printf "%02d" .Dbtrack.DiscNumber}}-{{end}}{{printf "%02d" .Track}} - {{.Title}}`,
+	},
+	{
+		"Music: artist / album / track", "music",
+		`{{.AlbumArtist.Name}}/{{.Dbalbum.Title}}{{if .Dbalbum.Year}} ({{.Dbalbum.Year}}){{end}}/{{printf "%02d" .Track}} - {{.Artist.Name}} - {{.Title}}`,
+	},
+	{
+		"Book: author / series / title", "book",
+		`{{if .Author.Name}}{{.Author.Name}}{{else}}Unknown Author{{end}}/{{if .BookSeries.Name}}{{.BookSeries.Name}}/{{if .Dbbook.SeriesPosition}}{{.Dbbook.SeriesPosition}} - {{end}}{{end}}{{.Dbbook.Title}}{{if .Dbbook.Year}} ({{.Dbbook.Year}}){{end}}/{{.Author.Name}} - {{.Dbbook.Title}}`,
+	},
+	{
+		"Audiobook: letter / author / series / title / part", "audiobook",
+		`{{if .Author.Name}}{{firstLetter .Author.Name}}{{else}}_{{end}}/{{if .Author.Name}}{{.Author.Name}}{{else}}{{.Dbaudiobook.Title}}{{end}}{{if .BookSeries.Name}}/{{.BookSeries.Name}}{{end}}/{{if and .BookSeries.Name .Dbbook.SeriesPosition}}{{.Dbbook.SeriesPosition}} - {{end}}{{.Dbaudiobook.Title}}{{if .Dbaudiobook.ASIN}} ({{.Dbaudiobook.ASIN}}){{end}}/{{if gt .TotalDiscs 1}}{{.Disc}}-{{end}}{{.Track}} - {{.Title}}`,
+	},
+	{
+		"Audiobook: author / title / chapter", "audiobook",
+		`{{.Author.Name}}/{{.Dbaudiobook.Title}}{{if .Dbaudiobook.Year}} ({{.Dbaudiobook.Year}}){{end}}/{{printf "%03d" .Track}} - {{.Title}}`,
+	},
+	{
+		"Notification: CSV line", "notification",
+		`{{.Time}};{{.Title}};{{.Identifier}};{{.SourcePath}};{{.Targetpath}};{{ range .Replaced }}{{.}},{{end}}`,
+	},
+	{
+		"Notification: moved message", "notification",
+		`{{.Title}} - moved from {{.SourcePath}} to {{.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }}{{.}},{{end}}{{end}}`,
+	},
+}
+
+// renderNamingGeneratorPage renders the generator for a template type, with
+// an optional template to start from (both from the URL, so config fields can
+// open it prefilled).
+func renderNamingGeneratorPage(csrfToken, dataType, template string) gomponents.Node {
+	if !ngKnownType(dataType) {
+		dataType = "movie"
+	}
+
+	typeOptions := make([]gomponents.Node, 0, len(ngTypes))
+	for _, t := range ngTypes {
+		typeOptions = append(typeOptions, html.Option(html.Value(t.Value), gomponents.If(t.Value == dataType, html.Selected()),
+			gomponents.Text(t.Label)))
+	}
+
+	placeholder := ""
+	for _, e := range ngExamples {
+		if e.DataType == dataType {
+			placeholder = e.Template
+			break
+		}
+	}
+
+	examples := []gomponents.Node{html.Option(html.Value(""), gomponents.Text("Start from an example…"))}
+	for _, t := range ngTypes {
+		var opts []gomponents.Node
+		for _, e := range ngExamples {
+			if e.DataType == t.Value {
+				opts = append(opts, html.Option(html.Value(e.Template), html.Data("type", e.DataType), gomponents.Text(e.Label)))
+			}
+		}
+
+		if len(opts) > 0 {
+			examples = append(examples, html.OptGroup(gomponents.Attr("label", t.Label), gomponents.Group(opts)))
+		}
+	}
+
 	return html.Div(
 		html.Class("config-section-enhanced"),
-
-		// Enhanced page header
-		html.Div(
-			html.Class("page-header-enhanced"),
+		renderEnhancedPageHeader(
+			"fa-solid fa-code",
+			"Naming Generator",
+			"Build the Go templates for file and folder names and for notification messages. "+
+				"Every change is checked and previewed with sample data.",
+		),
+		html.Form(
+			html.ID("namingForm"),
+			hx.Post("/api/admin/naming-generator/check"),
+			hx.Target("#namingResult"),
+			hx.Trigger("input delay:500ms from:#ngTemplate, change from:#ngType"),
+			hx.Headers(createHTMXHeaders(csrfToken)),
 			html.Div(
-				html.Class("header-content"),
+				html.Class("card border-0 shadow-sm mb-4"),
 				html.Div(
-					html.Class("header-icon-wrapper"),
-					html.I(html.Class("fas fa-code header-icon")),
-				),
-				html.Div(
-					html.Class("header-text"),
-					html.H2(
-						html.Class("header-title"),
-						gomponents.Text("Advanced Template Generator"),
-					),
-					html.P(
-						html.Class("header-subtitle"),
-						gomponents.Text(
-							"Generate Go templates with drag-and-drop fields and template structures",
+					html.Class("card-body row g-3 align-items-end"),
+					html.Div(
+						html.Class("col-md-5"),
+						html.Label(html.Class("form-label fw-semibold"), html.For("ngType"), gomponents.Text("Template for")),
+						html.Select(
+							html.Class("form-select"), html.ID("ngType"), html.Name("data_type"),
+							hx.Get("/api/admin/naming-generator/fields"), hx.Target("#ngFields"), hx.Trigger("change"),
+							gomponents.Group(typeOptions),
 						),
+					),
+					html.Div(
+						html.Class("col-md-4"),
+						html.Label(html.Class("form-label"), html.For("ngExample"), gomponents.Text("Example")),
+						html.Select(html.Class("form-select"), html.ID("ngExample"), gomponents.Group(examples)),
+					),
+					html.Div(
+						html.Class("col-md-3 text-md-end"),
+						html.Button(html.Type("button"), html.Class("btn btn-outline-secondary me-2"), html.ID("ngCopy"),
+							html.I(html.Class("fas fa-copy me-1")), gomponents.Text("Copy")),
+						html.Button(html.Type("button"), html.Class("btn btn-outline-danger"), html.ID("ngClear"),
+							html.I(html.Class("fas fa-eraser me-1")), gomponents.Text("Clear")),
 					),
 				),
 			),
-		),
-
-		// Data Type Selection
-		html.Div(
-			html.Class("row mb-4"),
 			html.Div(
-				html.Class("col-12"),
+				html.Class("row g-4"),
 				html.Div(
-					html.Class("card border-0 shadow-sm"),
-					html.Style("border-radius: 15px; overflow: hidden;"),
+					html.Class("col-lg-4"),
 					html.Div(
-						html.Class("card-header border-0"),
-						html.Style(
-							"background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;",
-						),
-						html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
-							gomponents.Text("Data Source Selection")),
-					),
-					html.Div(
-						html.Class("card-body p-4"),
-						html.Div(html.Class("form-group mb-4"),
-							html.Label(html.Class("form-label fw-semibold"),
-								gomponents.Text("Select Data Type")),
-							html.Select(
-								html.Class("form-select form-select-lg"),
-								html.ID("dataTypeSelector"),
-								html.Option(
-									html.Value(""),
-									gomponents.Text("Choose data structure to work with"),
-								),
-								html.Option(
-									html.Value("parser"),
-									gomponents.Text(
-										"Parser Type - Media file parsing and naming templates",
-									),
-								),
-								html.Option(
-									html.Value("notification"),
-									gomponents.Text(
-										"Notification Type - Media processing notifications",
-									),
-								),
-							),
-							html.Small(
-								html.Class("form-text text-muted"),
-								gomponents.Text(
-									"Different data types provide different available fields",
-								),
-							),
-						),
-					),
-				),
-			),
-		),
-
-		html.Div(
-			html.Class("row mb-4"),
-			html.Div(
-				html.Class("col-12"),
-				html.Div(
-					html.Class("card border-0 shadow-sm"),
-					html.Style("border-radius: 15px; overflow: hidden;"),
-					html.Div(
-						html.Class("card-header border-0"),
-						html.Style(
-							"background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%); color: white; padding: 1.5rem;",
-						),
-						html.H5(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
-							gomponents.Text("Examples")),
-					),
-					html.Div(
-						html.Class("card-body p-4"),
+						html.Class("card border-0 shadow-sm h-100"),
+						html.Div(html.Class("card-header bg-transparent fw-semibold"),
+							html.I(html.Class("fa-solid fa-list me-2 text-primary")), gomponents.Text("Fields")),
 						html.Div(
-							html.Class("form-group mb-4"),
-							gomponents.Text(
-								`Parser Type: {{.Dbserie.Seriename}}/Season {{.DbserieEpisode.Season}}/{{.Dbserie.Seriename}} - S{{printf "%02s" .DbserieEpisode.Season}}{{range .Episodes}}E{{printf "%02d" . }}{{end}} - {{.DbserieEpisode.Title}} [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}] ({{.Source.Tvdb}})`,
-							),
-							html.Br(),
-							gomponents.Text(
-								`Parser Type: {{.Dbserie.Seriename}}/{{.Dbserie.Seriename}} {{.DbserieEpisode.Identifier}} {{.EpisodeTitleSource}} - [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}]`,
-							),
-							html.Br(),
-							gomponents.Text(
-								`Parser Type: {{.Dbmovie.Title}} ({{.Dbmovie.Year}})/{{.Dbmovie.Title}} ({{.Dbmovie.Year}}) [{{.Source.Resolution}} {{.Source.Quality}} {{.Source.Codec}} {{.Source.Audio}}{{if eq .Source.Proper true}} proper{{end}}{{if eq .Source.Extended true}} extended{{end}}] ({{.Source.Imdb}})`,
-							),
-							html.Br(),
-							gomponents.Text(
-								`Notification Type: {{.Time}};{{.Title}};{{.Identifier}};{{.SourcePath}};{{.Targetpath}};{{ range .Replaced }}{{.}},{{end}}`,
-							),
-							html.Br(),
-							gomponents.Text(
-								`Notification Type: {{.Title}} - moved from {{.SourcePath}} to {{.Targetpath}}{{if .Replaced }} Replaced: {{ range .Replaced }}{{.}},{{end}}{{end}}`,
-							),
-							html.Br(),
+							html.Class("card-body"),
+							html.Input(html.Class("form-control form-control-sm mb-2"), html.Type("search"), html.ID("ngFieldSearch"),
+								html.Placeholder("Search fields…")),
+							html.P(html.Class("small text-muted"), gomponents.Text("Click a field to insert it at the cursor.")),
+							html.Div(html.ID("ngFields"), html.Style("max-height: 560px; overflow-y: auto;"), renderNamingFields(dataType)),
 						),
 					),
 				),
-			),
-		),
-
-		// Template Builder Area
-		html.Div(
-			html.Class("row"),
-			// Available Fields Panel
-			html.Div(
-				html.Class("col-md-4"),
 				html.Div(
-					html.Class("card border-0 shadow-sm h-100"),
-					html.Style("border-radius: 15px; overflow: hidden;"),
+					html.Class("col-lg-8"),
 					html.Div(
-						html.Class("card-header border-0"),
-						html.Style(
-							"background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 1rem;",
-						),
-						html.H6(html.Class("card-title mb-2"), html.Style("font-weight: 600;"),
-							gomponents.Text("Available Fields & Structures")),
+						html.Class("card border-0 shadow-sm mb-4"),
+						html.Div(html.Class("card-header bg-transparent fw-semibold"),
+							html.I(html.Class("fa-solid fa-pen me-2 text-primary")), gomponents.Text("Template")),
 						html.Div(
-							html.Class("input-group input-group-sm"),
-							html.Input(
-								html.Class("form-control"),
-								html.Type("text"),
-								html.ID("fieldSearch"),
-								html.Placeholder("Search fields..."),
-								html.Style("background: rgba(255,255,255,0.9); border: none;"),
-							),
-							html.Div(
-								html.Class("input-group-text"),
-								html.Style("background: rgba(255,255,255,0.9); border: none;"),
-								html.I(html.Class("fas fa-search text-muted")),
+							html.Class("card-body"),
+							html.Textarea(
+								html.Class("form-control font-monospace"), html.ID("ngTemplate"), html.Name("template"), html.Rows("6"),
+								html.Placeholder(placeholder),
+								gomponents.Text(template),
 							),
 						),
 					),
-					html.Div(
-						html.Class("card-body p-3"),
-						html.Div(html.ID("fieldsContainer"),
-							html.P(html.Class("text-muted text-center mt-4"),
-								gomponents.Text("Select a data type to see available fields")),
-						),
-					),
-				),
-			),
-
-			// Template Editor Panel
-			html.Div(
-				html.Class("col-md-8"),
-				html.Div(
-					html.Class("card border-0 shadow-sm h-100"),
-					html.Style("border-radius: 15px; overflow: hidden;"),
-					html.Div(
-						html.Class(
-							"card-header border-0 d-flex justify-content-between align-items-center",
-						),
-						html.Style(
-							"background: linear-gradient(135deg, #6f42c1 0%, #5a2d91 100%); color: white; padding: 1rem;",
-						),
-						html.H6(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
-							gomponents.Text("Template Editor")),
-						html.Div(html.Class("btn-group btn-group-sm"),
-							html.Button(
-								html.Class("btn btn-outline-light btn-sm"),
-								html.ID("clearTemplate"),
-								html.Type("button"),
-								html.I(html.Class("fas fa-trash me-1")),
-								gomponents.Text("Clear"),
-							),
-							html.Button(
-								html.Class("btn btn-outline-light btn-sm"),
-								html.ID("copyTemplate"),
-								html.Type("button"),
-								html.I(html.Class("fas fa-copy me-1")),
-								gomponents.Text("Copy"),
-							),
-						),
-					),
-					html.Div(
-						html.Class("card-body p-0"),
-						html.Textarea(
-							html.Class("form-control"),
-							html.ID("templateEditor"),
-							html.Style(
-								"height: 400px; border: none; font-family: 'Monaco', 'Consolas', 'Courier New', monospace; font-size: 14px; resize: vertical;",
-							),
-							html.Placeholder(
-								"Build your Go template here...\n\nDrag fields from the left panel or click to insert.\nUse template structures for conditional logic and loops.",
-							),
-						),
-						html.Div(
-							html.Class("p-3 border-top bg-light"),
-							html.Div(
-								html.Class("d-flex justify-content-between align-items-center"),
-								html.Div(html.Class("btn-group"),
-									html.Button(
-										html.Class("btn btn-success"),
-										html.ID("previewTemplate"),
-										html.Type("button"),
-										html.I(html.Class("fas fa-eye me-2")),
-										gomponents.Text("Preview Output"),
-									),
-									html.Button(
-										html.Class("btn btn-info"),
-										html.ID("verifyTemplate"),
-										html.Type("button"),
-										html.I(html.Class("fas fa-check-circle me-2")),
-										gomponents.Text("Verify Template"),
-									),
-								),
-								html.Small(
-									html.Class("text-muted"),
-									gomponents.Text(
-										"Drag fields from left panel or click to insert • Use Ctrl+A to select all",
-									),
-								),
-							),
-						),
+					html.Div(html.ID("namingResult"),
+						gomponents.If(template == "",
+							html.P(html.Class("text-muted"), gomponents.Text("Type a template or pick an example to see the preview."))),
+						// A prefilled template is checked right away.
+						gomponents.If(template != "", html.Div(hx.Post("/api/admin/naming-generator/check"), hx.Trigger("load"),
+							hx.Include("#namingForm"), hx.Target("#namingResult"), hx.Headers(createHTMXHeaders(csrfToken)))),
 					),
 				),
 			),
 		),
-
-		// Preview Section
-		html.Div(
-			html.Class("row mt-4"),
-			html.Div(
-				html.Class("col-12"),
-				html.Div(
-					html.ID("previewSection"),
-					html.Class("card border-0 shadow-sm d-none"),
-					html.Style("border-radius: 15px; overflow: hidden;"),
-					html.Div(
-						html.Class("card-header border-0"),
-						html.Style(
-							"background: linear-gradient(135deg, #fd7e14 0%, #e55a2b 100%); color: white; padding: 1rem;",
-						),
-						html.H6(html.Class("card-title mb-0"), html.Style("font-weight: 600;"),
-							gomponents.Text("Template Preview")),
-					),
-					html.Div(
-						html.Class("card-body p-3"),
-						html.Div(html.ID("previewContent")),
-					),
-				),
-			),
-		),
-
-		// JavaScript for advanced functionality
-		html.Script(gomponents.Raw(`
-			$(document).ready(function() {
-				var fieldData = {};
-				var cursorPosition = 0;
-
-				// Track cursor position in textarea
-				$('#templateEditor').on('click keyup', function() {
-					cursorPosition = this.selectionStart;
-				});
-
-				// Data type selector change
-				$('#dataTypeSelector').on('change', function() {
-					var dataType = $(this).val();
-					if (dataType) {
-						loadFieldsForDataType(dataType);
-					} else {
-						$('#fieldsContainer').html('<p class="text-muted text-center mt-4">Select a data type to see available fields</p>');
-					}
-				});
-
-				function loadFieldsForDataType(dataType) {
-					// Show loading
-					$('#fieldsContainer').html('<div class="text-center mt-4"><i class="fas fa-spinner fa-spin"></i> Loading fields...</div>');
-					
-					// Fetch fields via AJAX
-					$.ajax({
-						url: '/api/admin/naming-generator/fields/' + dataType,
-						method: 'GET',
-						success: function(response) {
-							fieldData = response;
-							renderFieldsPanel(response);
-						},
-						error: function() {
-							$('#fieldsContainer').html('<div class="alert alert-danger">Failed to load fields</div>');
-						}
-					});
-				}
-
-				function renderFieldsPanel(data) {
-					var html = '<div class="accordion" id="fieldsAccordion">';
-					var accordionId = 0;
-					
-					// Template Structures Section
-					if (data.structures && data.structures.length > 0) {
-						html += '<div class="accordion-item border-0 mb-2">';
-						html += '<h6 class="accordion-header" id="heading-structures">';
-						html += '<button class="accordion-button collapsed bg-light border-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-structures" aria-expanded="false" aria-controls="collapse-structures" style="padding: 0.75rem; font-size: 0.9rem; font-weight: 600;">';
-						html += '<i class="fas fa-code-branch me-2 text-info"></i>Template Structures';
-						html += '</button>';
-						html += '</h6>';
-						html += '<div id="collapse-structures" class="accordion-collapse collapse" aria-labelledby="heading-structures" data-bs-parent="#fieldsAccordion">';
-						html += '<div class="accordion-body p-2">';
-						data.structures.forEach(function(structure) {
-							html += '<div class="field-item structure-item mb-2" data-template="' + escapeHtml(structure.template) + '">';
-							html += '<div class="d-flex justify-content-between align-items-center">';
-							html += '<div>';
-							html += '<strong class="text-info">' + structure.name + '</strong>';
-							html += '<br><small class="text-muted">' + structure.description + '</small>';
-							html += '</div>';
-							html += '<button class="btn btn-outline-info btn-sm" onclick="insertAtCursor(\'' + structure.template.replace(/'/g, '\\\'') + '\')"><i class="fas fa-plus"></i></button>';
-							html += '</div>';
-							html += '</div>';
-						});
-						html += '</div>';
-						html += '</div>';
-						html += '</div>';
-					}
-
-					// Group fields by category
-					var categories = {};
-					data.fields.forEach(function(field) {
-						if (!categories[field.category]) {
-							categories[field.category] = [];
-						}
-						categories[field.category].push(field);
-					});
-
-					// Render field categories as collapsible accordion items (all collapsed by default)
-					Object.keys(categories).forEach(function(category, index) {
-						var categoryId = 'category-' + accordionId++;
-						
-						html += '<div class="accordion-item border-0 mb-2">';
-						html += '<h6 class="accordion-header" id="heading-' + categoryId + '">';
-						html += '<button class="accordion-button collapsed bg-light border-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-' + categoryId + '" aria-expanded="false" aria-controls="collapse-' + categoryId + '" style="padding: 0.75rem; font-size: 0.9rem; font-weight: 600;">';
-						html += getCategoryIcon(category) + ' ' + category;
-						html += '</button>';
-						html += '</h6>';
-						html += '<div id="collapse-' + categoryId + '" class="accordion-collapse collapse" aria-labelledby="heading-' + categoryId + '" data-bs-parent="#fieldsAccordion">';
-						html += '<div class="accordion-body p-2">';
-						
-						categories[category].forEach(function(field) {
-							html += '<div class="field-item mb-2" data-template="' + escapeHtml(field.template) + '" data-field-name="' + field.name.toLowerCase() + '" data-field-description="' + field.description.toLowerCase() + '" data-category="' + category.toLowerCase() + '">';
-							html += '<div class="d-flex justify-content-between align-items-center">';
-							html += '<div>';
-							html += '<strong>' + field.name + '</strong>';
-							if (field.type) {
-								html += ' <span class="badge bg-secondary">' + field.type + '</span>';
-							}
-							html += '<br><small class="text-muted">' + field.description + '</small>';
-							if (field.example) {
-								html += '<br><small class="text-success">Ex: ' + field.example + '</small>';
-							}
-							html += '</div>';
-							html += '<button class="btn btn-outline-primary btn-sm" onclick="insertAtCursor(\'' + field.template.replace(/'/g, '\\\'') + '\')"><i class="fas fa-plus"></i></button>';
-							html += '</div>';
-							html += '</div>';
-						});
-						html += '</div>';
-						html += '</div>';
-						html += '</div>';
-					});
-
-					html += '</div>'; // Close accordion
-					$('#fieldsContainer').html(html);
-					
-					// Initialize search functionality
-					setupFieldSearch();
-				}
-
-				function getCategoryIcon(category) {
-					var icons = {
-						'Basic Information': '<i class="fas fa-info-circle"></i>',
-						'Media Details': '<i class="fas fa-film"></i>',
-						'File Information': '<i class="fas fa-file"></i>',
-						'Dates & Times': '<i class="fas fa-clock"></i>',
-						'Quality & Resolution': '<i class="fas fa-star"></i>',
-						'External IDs': '<i class="fas fa-link"></i>',
-						'Arrays & Lists': '<i class="fas fa-list"></i>',
-						'Paths & Locations': '<i class="fas fa-folder"></i>'
-					};
-					return icons[category] || '<i class="fas fa-tag"></i>';
-				}
-				
-				function setupFieldSearch() {
-					var searchInput = document.getElementById('fieldSearch');
-					if (!searchInput) return;
-					
-					searchInput.addEventListener('input', function() {
-						var searchTerm = this.value.toLowerCase().trim();
-						var fieldsContainer = document.getElementById('fieldsContainer');
-						var accordionItems = fieldsContainer.querySelectorAll('.accordion-item');
-						var hasVisibleResults = false;
-						
-						// If search is empty, collapse all sections
-						if (!searchTerm) {
-							accordionItems.forEach(function(item) {
-								var collapse = item.querySelector('.accordion-collapse');
-								if (collapse && collapse.classList.contains('show')) {
-									collapse.classList.remove('show');
-									var button = item.querySelector('.accordion-button');
-									if (button) {
-										button.classList.add('collapsed');
-										button.setAttribute('aria-expanded', 'false');
-									}
-								}
-								// Show all field items
-								var fieldItems = item.querySelectorAll('.field-item');
-								fieldItems.forEach(function(fieldItem) {
-									fieldItem.style.display = 'block';
-								});
-							});
-							return;
-						}
-						
-						// Search through each accordion section
-						accordionItems.forEach(function(item) {
-							var fieldItems = item.querySelectorAll('.field-item');
-							var hasMatches = false;
-							
-							// Check each field in this section
-							fieldItems.forEach(function(fieldItem) {
-								var fieldName = fieldItem.getAttribute('data-field-name') || '';
-								var fieldDescription = fieldItem.getAttribute('data-field-description') || '';
-								var category = fieldItem.getAttribute('data-category') || '';
-								
-								var matches = fieldName.includes(searchTerm) || 
-										fieldDescription.includes(searchTerm) || 
-										category.includes(searchTerm);
-								
-								if (matches) {
-									fieldItem.style.display = 'block';
-									hasMatches = true;
-									hasVisibleResults = true;
-								} else {
-									fieldItem.style.display = 'none';
-								}
-							});
-							
-							// Auto-expand sections with matches, collapse others
-							var collapse = item.querySelector('.accordion-collapse');
-							var button = item.querySelector('.accordion-button');
-							
-							if (hasMatches) {
-								if (collapse && !collapse.classList.contains('show')) {
-									collapse.classList.add('show');
-									if (button) {
-										button.classList.remove('collapsed');
-										button.setAttribute('aria-expanded', 'true');
-									}
-								}
-							} else {
-								if (collapse && collapse.classList.contains('show')) {
-									collapse.classList.remove('show');
-									if (button) {
-										button.classList.add('collapsed');
-										button.setAttribute('aria-expanded', 'false');
-									}
-								}
-							}
-						});
-						
-						// Show "no results" message if needed
-						if (!hasVisibleResults && searchTerm) {
-							var noResults = fieldsContainer.querySelector('.no-results-message');
-							if (!noResults) {
-								noResults = document.createElement('div');
-								noResults.className = 'no-results-message alert alert-info text-center mt-3';
-								noResults.innerHTML = '<i class="fas fa-search me-2"></i>No fields found matching "' + searchTerm + '"';
-								fieldsContainer.appendChild(noResults);
-							} else {
-								noResults.innerHTML = '<i class="fas fa-search me-2"></i>No fields found matching "' + searchTerm + '"';
-								noResults.style.display = 'block';
-							}
-						} else {
-							var noResults = fieldsContainer.querySelector('.no-results-message');
-							if (noResults) {
-								noResults.style.display = 'none';
-							}
-						}
-					});
-					
-					// Clear search when ESC is pressed
-					searchInput.addEventListener('keydown', function(e) {
-						if (e.key === 'Escape') {
-							this.value = '';
-							this.dispatchEvent(new Event('input'));
-						}
-					});
-				}
-
-				// Insert at cursor position
-				window.insertAtCursor = function(text) {
-					var textarea = document.getElementById('templateEditor');
-					var value = textarea.value;
-					var start = textarea.selectionStart;
-					var end = textarea.selectionEnd;
-					
-					textarea.value = value.substring(0, start) + text + value.substring(end);
-					textarea.focus();
-					textarea.setSelectionRange(start + text.length, start + text.length);
-				};
-
-				// Clear template
-				$('#clearTemplate').on('click', function() {
-					confirmAction('Please confirm', 'Are you sure you want to clear the template?', function() {
-						$('#templateEditor').val('').focus();
-					})
-				});
-
-				// Copy template
-				$('#copyTemplate').on('click', function() {
-					var template = $('#templateEditor').val();
-					if (template.trim() === '') {
-						showToaster('warning', 'Template is empty');
-						return;
-					}
-					
-					navigator.clipboard.writeText(template).then(function() {
-						showToaster('success', 'Template copied to clipboard!');
-					}, function(err) {
-						showToaster('error', 'Failed to copy template');
-					});
-				});
-
-				// Preview template
-				$('#previewTemplate').on('click', function() {
-					var template = $('#templateEditor').val();
-					var dataType = $('#dataTypeSelector').val();
-					
-					if (template.trim() === '') {
-						showToaster('warning', 'Please enter a template to preview');
-						return;
-					}
-					
-					if (!dataType) {
-						showToaster('warning', 'Please select a data type');
-						return;
-					}
-
-					$.ajax({
-						url: '/api/admin/naming-generator/preview',
-						method: 'POST',
-						data: {
-							template: template,
-							data_type: dataType,
-							csrf_token: $('input[name="csrf_token"]').val()
-						},
-						success: function(response) {
-							displayPreview(response);
-						},
-						error: function(xhr) {
-							var error = 'Preview failed';
-							if (xhr.responseJSON && xhr.responseJSON.error) {
-								error = xhr.responseJSON.error;
-							}
-							showToaster('error', error);
-						}
-					});
-				});
-
-				// Verify template
-				$('#verifyTemplate').on('click', function() {
-					var template = $('#templateEditor').val();
-					var dataType = $('#dataTypeSelector').val();
-					
-					if (template.trim() === '') {
-						showToaster('warning', 'Please enter a template to verify');
-						return;
-					}
-					
-					if (!dataType) {
-						showToaster('warning', 'Please select a data type');
-						return;
-					}
-
-					$.ajax({
-						url: '/api/admin/naming-generator/verify',
-						method: 'POST',
-						data: {
-							template: template,
-							data_type: dataType,
-							csrf_token: $('input[name="csrf_token"]').val()
-						},
-						success: function(response) {
-							displayVerification(response);
-						},
-						error: function(xhr) {
-							var error = 'Verification failed';
-							if (xhr.responseJSON && xhr.responseJSON.error) {
-								error = xhr.responseJSON.error;
-							}
-							showToaster('error', error);
-						}
-					});
-				});
-
-				function displayPreview(response) {
-					var html = '<div class="row">';
-					
-					// Template
-					html += '<div class="col-md-6 mb-3">';
-					html += '<h6 class="fw-bold mb-2"><i class="fas fa-code me-2"></i>Template</h6>';
-					html += '<pre class="bg-light p-3 rounded" style="font-size: 12px;"><code>' + escapeHtml(response.template) + '</code></pre>';
-					html += '</div>';
-					
-					// Preview Output
-					html += '<div class="col-md-6 mb-3">';
-					html += '<h6 class="fw-bold mb-2"><i class="fas fa-eye me-2"></i>Preview Output</h6>';
-					if (response.error) {
-						html += '<div class="alert alert-danger"><small>' + escapeHtml(response.error) + '</small></div>';
-					} else {
-						html += '<pre class="bg-success bg-opacity-10 border border-success border-opacity-25 p-3 rounded" style="font-size: 12px;"><code>' + escapeHtml(response.output) + '</code></pre>';
-					}
-					html += '</div>';
-					
-					html += '</div>';
-					
-					$('#previewContent').html(html);
-					$('#previewSection').removeClass('d-none');
-					
-					// Scroll to preview
-					$('html, body').animate({
-						scrollTop: $('#previewSection').offset().top - 100
-					}, 500);
-				}
-
-				function displayVerification(response) {
-					var html = '<div class="row">';
-					
-					// Template
-					html += '<div class="col-md-6 mb-3">';
-					html += '<h6 class="fw-bold mb-2"><i class="fas fa-code me-2"></i>Template</h6>';
-					html += '<pre class="bg-light p-3 rounded" style="font-size: 12px;"><code>' + escapeHtml(response.template) + '</code></pre>';
-					html += '</div>';
-					
-					// Verification Results
-					html += '<div class="col-md-6 mb-3">';
-					html += '<h6 class="fw-bold mb-2"><i class="fas fa-check-circle me-2"></i>Verification Results</h6>';
-					
-					if (response.valid) {
-						html += '<div class="alert alert-success">';
-						html += '<i class="fas fa-check-circle me-2"></i>';
-						html += '<strong>Template is valid!</strong><br>';
-						html += '<small>' + response.message + '</small>';
-						html += '</div>';
-						
-						if (response.suggestions && response.suggestions.length > 0) {
-							html += '<div class="alert alert-info">';
-							html += '<strong>Suggestions:</strong><br>';
-							html += '<ul class="mb-0 mt-1">';
-							response.suggestions.forEach(function(suggestion) {
-								html += '<li><small>' + escapeHtml(suggestion) + '</small></li>';
-							});
-							html += '</ul>';
-							html += '</div>';
-						}
-					} else {
-						html += '<div class="alert alert-danger">';
-						html += '<i class="fas fa-exclamation-triangle me-2"></i>';
-						html += '<strong>Template has issues:</strong><br>';
-						html += '<small>' + escapeHtml(response.message) + '</small>';
-						html += '</div>';
-						
-						if (response.errors && response.errors.length > 0) {
-							html += '<div class="alert alert-warning">';
-							html += '<strong>Issues found:</strong><br>';
-							html += '<ul class="mb-0 mt-1">';
-							response.errors.forEach(function(error) {
-								html += '<li><small>' + escapeHtml(error) + '</small></li>';
-							});
-							html += '</ul>';
-							html += '</div>';
-						}
-					}
-					
-					html += '</div>';
-					html += '</div>';
-					
-					$('#previewContent').html(html);
-					$('#previewSection').removeClass('d-none');
-					
-					// Scroll to preview
-					$('html, body').animate({
-						scrollTop: $('#previewSection').offset().top - 100
-					}, 500);
-				}
-
-				function escapeHtml(text) {
-					var map = {
-						'&': '&amp;',
-						'<': '&lt;',
-						'>': '&gt;',
-						'"': '&quot;',
-						"'": '&#039;'
-					};
-					return text.replace(/[&<>"']/g, function(m) { return map[m]; });
-				}
-
-				// CSRF token
-				$('<input>').attr({
-					type: 'hidden',
-					name: 'csrf_token',
-					value: '`+csrfToken+`'
-				}).appendTo('body');
-			});
-		`)),
+		html.Script(gomponents.Raw(ngScript)),
 	)
 }
 
-func HandleNamingFieldsForType(ctx *gin.Context) {
-	dataType := ctx.Param("type")
-	if dataType == "" {
-		sendJSONError(ctx, http.StatusBadRequest, "Data type is required")
-		return
-	}
-
+// renderNamingFields renders the insertable fields and template structures
+// of a template type, grouped by category.
+func renderNamingFields(dataType string) gomponents.Node {
 	fields, structures := getFieldsForDataType(dataType)
 
-	response := NamingFieldsResponse{
-		Fields:     fields,
-		Structures: structures,
-		DataType:   dataType,
+	item := func(name, template, description, example, kind string) gomponents.Node {
+		search := strings.ToLower(name + " " + description)
+		nodes := []gomponents.Node{
+			html.Class("list-group-item list-group-item-action py-1 px-2 ng-field"),
+			html.Type("button"),
+			html.Data("ng-insert", template),
+			html.Data("search", search),
+			html.Div(html.Class("d-flex justify-content-between"),
+				html.Code(gomponents.Text(name)),
+				gomponents.If(kind != "", html.Span(html.Class("badge bg-light text-dark border"), gomponents.Text(kind))),
+			),
+			html.Div(html.Class("small text-muted"), gomponents.Text(description)),
+		}
+
+		if example != "" {
+			nodes = append(nodes, html.Div(html.Class("small text-success text-truncate"), gomponents.Text("e.g. "+example)))
+		}
+
+		return html.Button(nodes...)
 	}
 
-	ctx.JSON(http.StatusOK, response)
+	section := func(title string, items []gomponents.Node) gomponents.Node {
+		return html.Details(html.Class("mb-2 ng-category"),
+			html.Summary(html.Class("fw-semibold small"), gomponents.Textf("%s (%d)", title, len(items))),
+			html.Div(html.Class("list-group list-group-flush mt-1"), gomponents.Group(items)),
+		)
+	}
+
+	sections := make([]gomponents.Node, 0)
+
+	structItems := make([]gomponents.Node, 0, len(structures))
+	for _, st := range structures {
+		structItems = append(structItems, item(st.Name, st.Template, st.Description, st.Example, ""))
+	}
+
+	sections = append(sections, section("Template structures", structItems))
+
+	var order []string
+
+	byCategory := map[string][]gomponents.Node{}
+	for _, f := range fields {
+		if _, ok := byCategory[f.Category]; !ok {
+			order = append(order, f.Category)
+		}
+
+		byCategory[f.Category] = append(byCategory[f.Category], item(f.Name, f.Template, f.Description, f.Example, f.Type))
+	}
+
+	for _, c := range order {
+		sections = append(sections, section(c, byCategory[c]))
+	}
+
+	return gomponents.Group(sections)
 }
 
-func HandleNamingPreview(ctx *gin.Context) {
+// HandleNamingFieldsForType renders the fields panel for ?data_type=.
+func HandleNamingFieldsForType(ctx *gin.Context) {
+	ctx.String(http.StatusOK, renderComponentToString(renderNamingFields(ctx.Query("data_type"))))
+}
+
+// HandleNamingCheck verifies the posted template and renders it with sample data.
+func HandleNamingCheck(ctx *gin.Context) {
 	template := strings.TrimSpace(ctx.PostForm("template"))
 	dataType := strings.TrimSpace(ctx.PostForm("data_type"))
 
 	if template == "" {
-		sendJSONError(ctx, http.StatusBadRequest, "Template is required")
+		ctx.String(http.StatusOK, renderComponentToString(
+			html.P(html.Class("text-muted"), gomponents.Text("Type a template or pick an example to see the preview."))))
+
 		return
 	}
 
-	if dataType == "" {
-		sendJSONError(ctx, http.StatusBadRequest, "Data type is required")
-		return
-	}
-
-	// Generate preview with sample data
 	var (
-		outstr string
+		output string
 		err    error
 	)
 
-	switch dataType {
-	case "notification":
-		{
-			outstr, err = structure.TestInputnotifier(template)
-		}
-
-	case "parser":
-		{
-			outstr, err = structure.TestParsertype(template)
-		}
-
-	default:
-		sendJSONError(ctx, http.StatusBadRequest, "Unknown data type")
+	if !ngKnownType(dataType) {
+		ctx.String(http.StatusOK, renderAlert("Unknown template type "+dataType, "danger"))
 		return
 	}
 
-	response := map[string]any{
-		"template": template,
-		"output":   outstr,
+	if ngKind(dataType) == "notification" {
+		output, err = structure.TestInputnotifier(template)
+	} else {
+		output, err = structure.TestParsertype(template, dataType)
 	}
 
-	if err != nil {
-		response["error"] = err.Error()
-	}
-
-	ctx.JSON(http.StatusOK, response)
-}
-
-func HandleNamingVerify(ctx *gin.Context) {
-	template := strings.TrimSpace(ctx.PostForm("template"))
-	dataType := strings.TrimSpace(ctx.PostForm("data_type"))
-
-	if template == "" {
-		sendJSONError(ctx, http.StatusBadRequest, "Template is required")
-		return
-	}
-
-	if dataType == "" {
-		sendJSONError(ctx, http.StatusBadRequest, "Data type is required")
-		return
-	}
-
-	// Verify template syntax and provide suggestions
 	verification := verifyGoTemplate(template, dataType)
 
-	response := map[string]any{
-		"template": template,
-		"valid":    verification.Valid,
-		"message":  verification.Message,
+	var preview gomponents.Node
+	if err != nil {
+		preview = html.Div(html.Class("alert alert-danger mb-0 small"), gomponents.Text(err.Error()))
+	} else {
+		preview = html.Pre(html.Class("bg-light border rounded p-3 mb-0 small"), html.Style("white-space: pre-wrap;"),
+			gomponents.Text(output))
 	}
 
-	if len(verification.Errors) > 0 {
-		response["errors"] = verification.Errors
+	list := func(items []string) gomponents.Node {
+		lis := make([]gomponents.Node, 0, len(items))
+		for _, it := range items {
+			lis = append(lis, html.Li(gomponents.Text(it)))
+		}
+
+		return html.Ul(html.Class("mb-0 small"), gomponents.Group(lis))
 	}
 
-	if len(verification.Suggestions) > 0 {
-		response["suggestions"] = verification.Suggestions
+	var check gomponents.Node
+	if verification.Valid {
+		check = html.Div(html.Class("text-success small"),
+			html.I(html.Class("fas fa-check-circle me-1")), gomponents.Text(verification.Message),
+			gomponents.If(len(verification.Suggestions) > 0, html.Div(html.Class("mt-2"), html.Strong(gomponents.Text("Suggestions:")), list(verification.Suggestions))),
+		)
+	} else {
+		check = html.Div(html.Class("alert alert-warning mb-0 small"),
+			html.I(html.Class("fas fa-exclamation-triangle me-1")), gomponents.Text(verification.Message),
+			gomponents.If(len(verification.Errors) > 0, list(verification.Errors)),
+		)
 	}
 
-	ctx.JSON(http.StatusOK, response)
+	ctx.String(http.StatusOK, renderComponentToString(html.Div(
+		html.Class("card border-0 shadow-sm"),
+		html.Div(html.Class("card-header bg-transparent fw-semibold"),
+			html.I(html.Class("fa-solid fa-eye me-2 text-primary")), gomponents.Text("Preview with sample data")),
+		html.Div(html.Class("card-body"),
+			preview,
+			html.Div(html.Class("mt-3"), check),
+		),
+	)))
 }
+
+// ngScript inserts fields at the cursor, filters the fields panel, loads
+// examples and handles copy/clear. Changes to the template fire an input
+// event, which the form turns into a check request.
+const ngScript = `
+(function () {
+	function tpl() { return document.getElementById('ngTemplate'); }
+	function changed() { tpl().dispatchEvent(new Event('input', { bubbles: true })); }
+	function notify(kind, msg) { if (typeof showToaster === 'function') { showToaster(kind, msg); } }
+
+	document.addEventListener('click', function (e) {
+		var field = e.target.closest && e.target.closest('[data-ng-insert]');
+		if (field) {
+			var t = tpl(), v = field.getAttribute('data-ng-insert');
+			var start = t.selectionStart, end = t.selectionEnd;
+			t.value = t.value.slice(0, start) + v + t.value.slice(end);
+			t.focus();
+			t.setSelectionRange(start + v.length, start + v.length);
+			changed();
+			return;
+		}
+		if (e.target.closest && e.target.closest('#ngClear')) {
+			tpl().value = '';
+			changed();
+			tpl().focus();
+		}
+		if (e.target.closest && e.target.closest('#ngCopy')) {
+			if (!tpl().value.trim()) { notify('warning', 'The template is empty'); return; }
+			navigator.clipboard.writeText(tpl().value).then(
+				function () { notify('success', 'Template copied'); },
+				function () { notify('error', 'Copying failed'); });
+		}
+	});
+
+	document.addEventListener('change', function (e) {
+		// The placeholder shows the first example of the selected type.
+		if (e.target.id === 'ngType') {
+			var first = document.querySelector('#ngExample option[data-type="' + e.target.value + '"]');
+			tpl().placeholder = first ? first.value : '';
+			return;
+		}
+		if (e.target.id !== 'ngExample' || !e.target.value) { return; }
+		var opt = e.target.selectedOptions[0];
+		var type = document.getElementById('ngType');
+		tpl().value = e.target.value;
+		e.target.value = '';
+		if (type.value !== opt.dataset.type) {
+			type.value = opt.dataset.type;
+			type.dispatchEvent(new Event('change', { bubbles: true }));
+		} else {
+			changed();
+		}
+	});
+
+	document.addEventListener('input', function (e) {
+		if (e.target.id !== 'ngFieldSearch') { return; }
+		var q = e.target.value.toLowerCase().trim();
+		document.querySelectorAll('#ngFields .ng-category').forEach(function (cat) {
+			var any = false;
+			cat.querySelectorAll('.ng-field').forEach(function (f) {
+				var hit = !q || f.dataset.search.indexOf(q) >= 0;
+				f.classList.toggle('d-none', !hit);
+				any = any || hit;
+			});
+			cat.classList.toggle('d-none', !any);
+			cat.open = !!q && any;
+		});
+	});
+})();
+`
 
 func getFieldsForDataType(dataType string) ([]TemplateField, []TemplateStructure) {
 	structures := []TemplateStructure{
@@ -903,14 +483,28 @@ func getFieldsForDataType(dataType string) ([]TemplateField, []TemplateStructure
 		},
 	}
 
-	switch dataType {
-	case "parser":
-		return getParserFields(), structures
-	case "notification":
+	if dataType == "notification" {
 		return getNotificationFields(), structures
-	default:
-		return []TemplateField{}, structures
 	}
+
+	fields := getParserFields()
+
+	prefixes, ok := ngTypeFields[dataType]
+	if !ok {
+		return fields, structures
+	}
+
+	filtered := fields[:0]
+	for _, f := range fields {
+		for _, p := range prefixes {
+			if f.Name == p || strings.HasPrefix(f.Name, p+".") {
+				filtered = append(filtered, f)
+				break
+			}
+		}
+	}
+
+	return filtered, structures
 }
 
 func getParserFields() []TemplateField {
@@ -2929,14 +2523,16 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 		Suggestions: []string{},
 	}
 
-	// Get available fields for the data type
-	fields, _ := getFieldsForDataType(dataType)
+	// The type only narrows the fields panel: every naming field is filled
+	// (possibly empty) for every media type, so all of them are valid.
+	kind := ngKind(dataType)
+	fields, _ := getFieldsForDataType(kind)
 
 	// Build a map of valid field references
 	validFields := make(map[string]bool)
 
 	// Add top-level fields based on data type
-	switch dataType {
+	switch kind {
 	case "parser":
 		{
 			validFields["TitleSource"] = true
@@ -3027,8 +2623,8 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 		}
 
 		// Add helpful suggestions
-		if dataType == "parser" && !strings.Contains(templateStr, ".Dbmovie.") &&
-			!strings.Contains(templateStr, ".Dbserie.") {
+		if (dataType == "movie" && !strings.Contains(templateStr, ".Dbmovie.")) ||
+			(dataType == "series" && !strings.Contains(templateStr, ".Dbserie.")) {
 			verification.Suggestions = append(
 				verification.Suggestions,
 				"Consider using nested fields like {{.Dbmovie.Title}} or {{.Dbserie.Seriename}} for richer data",
@@ -3042,7 +2638,7 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 			)
 		}
 
-		if dataType == "notification" && !strings.Contains(templateStr, ".Replaced") &&
+		if kind == "notification" && !strings.Contains(templateStr, ".Replaced") &&
 			!strings.Contains(templateStr, "range") {
 			verification.Suggestions = append(
 				verification.Suggestions,
@@ -3062,11 +2658,10 @@ func verifyGoTemplate(templateStr, dataType string) TemplateVerification {
 	// preview uses.
 	if verification.Valid {
 		var err error
-		switch dataType {
-		case "parser":
-			_, err = structure.TestParsertype(templateStr)
-		case "notification":
+		if kind == "notification" {
 			_, err = structure.TestInputnotifier(templateStr)
+		} else {
+			_, err = structure.TestParsertype(templateStr, dataType)
 		}
 
 		if err != nil {

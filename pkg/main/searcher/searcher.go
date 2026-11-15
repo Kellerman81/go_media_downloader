@@ -979,11 +979,20 @@ func (s *ConfigSearcher) searchparse(
 	}
 }
 
-// sortAcceptedByPriority orders accepted releases best-first (highest priority),
-// keeping indexer order for equal priorities, because Download takes the first
-// entry per media and skips the rest.
+// sortAcceptedByPriority orders accepted releases best-first, keeping indexer
+// order for equal ones, because Download takes the first entry per media and
+// skips the rest. Releases that name their episode by number come before ones
+// matched by episode title (surer), then by highest priority.
 func sortAcceptedByPriority(accepted []apiexternal_v2.Nzbwithprio) {
 	slices.SortStableFunc(accepted, func(a, b apiexternal_v2.Nzbwithprio) int {
+		if a.Info.TitleMatched != b.Info.TitleMatched {
+			if a.Info.TitleMatched {
+				return 1
+			}
+
+			return -1
+		}
+
 		return cmp.Compare(b.Info.Priority, a.Info.Priority)
 	})
 }
@@ -1256,7 +1265,7 @@ func getrssdata(isType uint, entry *apiexternal_v2.Nzbwithprio) {
 // It returns true if the indexer has failed within the configured block interval,
 // preventing repeated attempts to use a problematic indexer.
 // Returns false if blocking is disabled or no recent failures are found.
-func (*ConfigSearcher) isIndexerBlocked(url string) bool {
+func (*ConfigSearcher) isIndexerBlocked(url *string) bool {
 	if config.GetSettingsGeneral().FailedIndexerBlockTime == 0 {
 		return false
 	}
@@ -1267,7 +1276,7 @@ func (*ConfigSearcher) isIndexerBlocked(url string) bool {
 	return database.Getdatarow[uint](
 		false,
 		"select count() from indexer_fails where last_fail > ? and indexer = ?",
-		&intval, &url,
+		&intval, url,
 	) >= 1
 }
 
@@ -1911,7 +1920,7 @@ func withPending(isType uint, id *uint, minPrio int, qualcfg *config.QualityConf
 		return minPrio, true
 	}
 
-	pending := downloadstate.PendingFor(isType, *id)
+	pending := downloadstate.PendingFor(isType, id)
 	if len(pending) == 0 {
 		return minPrio, true
 	}

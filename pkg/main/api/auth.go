@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
@@ -28,6 +29,8 @@ type Session struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	UserID    string
+	Role      string   // database.Role*
+	Groups    []string // media configs a non-admin may see
 	CSRFToken string
 	// WizardDismissed tracks whether this session has already been sent to (or
 	// dismissed) the setup wizard, so the dashboard doesn't redirect to it on
@@ -56,9 +59,14 @@ func generateSecureToken(length int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// createSession creates a new session for the user. An empty csrfToken gets
-// a random one.
-func (ss *SessionStore) createSession(userID, csrfToken string) *Session {
+// access is what the session's account may do.
+func (s *Session) access() *userAccess {
+	return &userAccess{Name: s.UserID, Role: s.Role, Groups: s.Groups}
+}
+
+// createSession creates a new session for the account. An empty csrfToken
+// gets a random one.
+func (ss *SessionStore) createSession(acc *userAccess, csrfToken string) *Session {
 	ss.mutex.Lock()
 	defer ss.mutex.Unlock()
 
@@ -71,7 +79,9 @@ func (ss *SessionStore) createSession(userID, csrfToken string) *Session {
 		ID:        sessionID,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(SessionDuration),
-		UserID:    userID,
+		UserID:    acc.Name,
+		Role:      acc.Role,
+		Groups:    acc.Groups,
 		CSRFToken: csrfToken,
 	}
 
@@ -111,6 +121,19 @@ func (ss *SessionStore) deleteSession(sessionID string) {
 	defer ss.mutex.Unlock()
 
 	delete(ss.sessions, sessionID)
+}
+
+// deleteUserSessions ends every session of an account (deleted, changed or
+// given a new password); its next request goes to the login page.
+func (ss *SessionStore) deleteUserSessions(name string) {
+	ss.mutex.Lock()
+	defer ss.mutex.Unlock()
+
+	for id, s := range ss.sessions {
+		if strings.EqualFold(s.UserID, name) {
+			delete(ss.sessions, id)
+		}
+	}
 }
 
 // markWizardDismissed flags a session so the dashboard stops auto-redirecting
@@ -187,14 +210,52 @@ func renderGenerateAPIKeyControl(fieldName string) gomponents.Node {
 	)
 }
 
-// authenticateUser checks if the provided credentials are valid.
-func authenticateUser(username, password string) bool {
-	expectedPassword := webPassword()
+// dummyPasswordHash is checked for unknown user names, so a login takes as
+// long whether the name exists or not.
+var dummyPasswordHash = sync.OnceValue(func() string {
+	h, _ := database.HashPassword("no-such-user-password")
+	return h
+})
 
-	usernameMatch := subtle.ConstantTimeCompare([]byte(username), []byte(DefaultUsername)) == 1
-	passwordMatch := subtle.ConstantTimeCompare([]byte(password), []byte(expectedPassword)) == 1
+// authenticateUser checks the credentials: the built-in admin (admin + web
+// API key), else an account of the users table.
+func authenticateUser(username, password string) (*userAccess, bool) {
+	if subtle.ConstantTimeCompare([]byte(username), []byte(DefaultUsername)) == 1 {
+		if subtle.ConstantTimeCompare([]byte(password), []byte(webPassword())) == 1 {
+			return adminAccess, true
+		}
 
-	return usernameMatch && passwordMatch
+		return nil, false
+	}
+
+	u, err := database.GetUserByName(&username)
+	if err != nil || u.ID == 0 {
+		database.CheckPassword(dummyPasswordHash(), password)
+		return nil, false
+	}
+
+	if !database.CheckPassword(u.PasswordHash, password) {
+		return nil, false
+	}
+
+	database.TouchUserLogin(&u.ID)
+
+	return accessOfUser(u), true
+}
+
+// accessOfUser is the access of an account.
+func accessOfUser(u *database.User) *userAccess {
+	return &userAccess{Name: u.Username, Role: u.Role, Groups: u.Groups()}
+}
+
+// homePath is where an account lands after login: the dashboard for
+// admins, the Library for everyone else.
+func homePath(acc *userAccess) string {
+	if acc.Admin() {
+		return "/api/admin"
+	}
+
+	return "/api/admin/library"
 }
 
 // requireAuth checks for a valid session and stores it in the context. It
@@ -683,7 +744,8 @@ func handleLogin(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
 
-	if !authenticateUser(username, password) {
+	acc, ok := authenticateUser(username, password)
+	if !ok {
 		loginLimiter.fail(ip, time.Now())
 		c.Redirect(http.StatusFound, "/api/login?error=Invalid+credentials")
 		return
@@ -693,20 +755,19 @@ func handleLogin(c *gin.Context) {
 
 	var session *Session
 
-	if c.PostForm("remember-me") != "" {
-		key := currentRememberKey()
-		token := newRememberToken(key, username, time.Now().Add(RememberDuration))
-		session = sessionStore.createSession(username, rememberCSRFToken(key, token))
+	if key, ok := rememberKeyFor(acc.Name); ok && c.PostForm("remember-me") != "" {
+		token := newRememberToken(key, acc.Name, time.Now().Add(RememberDuration))
+		session = sessionStore.createSession(acc, rememberCSRFToken(key, token))
 		setRememberCookie(c, token, int(RememberDuration.Seconds()))
 	} else {
-		session = sessionStore.createSession(username, "")
+		session = sessionStore.createSession(acc, "")
 		setRememberCookie(c, "", -1)
 	}
 
 	setSessionCookie(c, session.ID, int(SessionDuration.Seconds()))
 	setCSRFCookie(c, session.CSRFToken, int(SessionDuration.Seconds()))
 
-	c.Redirect(http.StatusFound, "/api/admin")
+	c.Redirect(http.StatusFound, homePath(acc))
 }
 
 // requestIsHTTPS reports whether the client reached us over HTTPS, either
@@ -828,6 +889,12 @@ func protectAdminRoutes(c *gin.Context) {
 		}
 
 		requireCSRF(c)
+
+		if c.IsAborted() {
+			return
+		}
+
+		authorizeAccount(c)
 
 		if c.IsAborted() {
 			return

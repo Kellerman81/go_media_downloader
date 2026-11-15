@@ -69,7 +69,7 @@ func apiAdminDropdownData(ctx *gin.Context) {
 	// If this is an ID lookup request, handle it separately
 	if idLookup != "" {
 		if idVal, err := strconv.Atoi(idLookup); err == nil {
-			option := getDropdownOptionByID(tableName, fieldName, idVal)
+			option := getDropdownOptionByID(tableName, fieldName, &idVal)
 			if option != nil {
 				sendSelect2Response(ctx, []map[string]any{*option}, false)
 				return
@@ -811,7 +811,7 @@ func apiAdminTableUpdate(ctx *gin.Context) {
 		}
 	}
 
-	err = updateAdminRecord(tableName, index, data)
+	err = updateAdminRecord(tableName, &index, data)
 	sendOperationResult(ctx, err)
 }
 
@@ -840,7 +840,7 @@ func apiAdminTableDelete(ctx *gin.Context) {
 		return
 	}
 
-	err = deleteAdminRecord(tableName, index)
+	err = deleteAdminRecord(tableName, &index)
 	sendOperationResult(ctx, err)
 }
 
@@ -1041,7 +1041,7 @@ func apiAdminTableDataEditForm(ctx *gin.Context) {
 	// exposes the same fields as the add form (which uses all columns). MapScan
 	// tolerates legacy non-numeric values in numeric columns, so the per-table
 	// CAST/COALESCE scans are no longer needed.
-	rows := database.GetrowsType(nil, false, 1, "SELECT * FROM "+tableName+" WHERE id = ?", id)
+	rows := database.GetrowsType(nil, false, 1, "SELECT * FROM "+tableName+" WHERE id = ?", &id)
 	if len(rows) == 0 {
 		sendBadRequest(ctx, "record not found")
 		return

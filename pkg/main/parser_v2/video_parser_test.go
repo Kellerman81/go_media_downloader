@@ -565,6 +565,8 @@ func TestRegression_VideoParseFileP(t *testing.T) {
 		{"Show.S01E01E02.720p.mkv", "Show", 0, "S01E01E02", 1, "720p", ""},
 		{"Show.S01E01E02E03.720p.mkv", "Show", 0, "S01E01E02E03", 1, "720p", ""},
 		{"Show.S01E01-E03.720p.mkv", "Show", 0, "S01E01-E03", 1, "720p", ""},
+		// A year as the season (TheTVDB numbers yearly series like that).
+		{"Terra.X.S2026E39.Ozeanien.GERMAN.DOKU.720p.HDTV.x264-TMSF", "Terra X", 0, "S2026E39", 39, "720p", "HDTV"},
 		{"Show.S01E02-720p-GRP.mkv", "Show", 0, "S01E02", 2, "720p", ""},
 		// Episode-only marker needs a boundary.
 		{"Se7en.1995.1080p.mkv", "Se7en", 1995, "", 0, "1080p", ""},

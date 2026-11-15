@@ -360,6 +360,13 @@ func Getmoviemetadata(
 			movieGetOmdbMetadata(dbmovie, overwrite)
 		case "trakt":
 			errTrakt = movieGetTraktMetadata(dbmovie, overwrite)
+		case sourcePlex, sourceJellyfin:
+			// Skipped unless movie_meta_source_plex/_jellyfin is on.
+			if err := movieGetMediaServerMetadata(dbmovie, priorities[i], overwrite); err != nil &&
+				!errors.Is(err, errMediaServerOff) {
+				logger.Logtype("warn", 1).Err(err).Str("source", priorities[i]).Uint(logger.StrID, dbmovie.ID).
+					Msg("Get media server movie metadata")
+			}
 		}
 	}
 
@@ -927,49 +934,59 @@ func SerieGetMetadata(
 		Str(logger.StrTitle, serie.Seriename).
 		Msg("ended get metadata for")
 
-	aliases, err := serieGetMetadataTvdb(serie, language, overwrite, aliases)
-	if err != nil {
-		logger.Logtype("error", 1).
-			Uint(logger.StrID, serie.ID).
-			Err(err).
-			Msg("Get Tvdb data")
-	}
+	// Sources run in serie_meta_source_priority order (default tvdb, tvmaze,
+	// tmdb, trakt). On a refresh only the first source that delivers data may
+	// overwrite; every later one fills gaps.
+	delivered := false
 
-	// TVmaze only fills gaps behind TVDB; it may overwrite only when TVDB
-	// supplied nothing.
-	err = serieGetMetadataTvmaze(serie, overwrite && err != nil)
-	if err != nil && !errors.Is(err, logger.ErrNotFound) {
-		logger.Logtype("error", 2).
-			Str(logger.StrTitle, serie.Seriename).
-			Uint(logger.StrID, serie.ID).
-			Err(err).
-			Msg("Failed to retrieve TVmaze metadata")
-	}
+	for _, source := range config.GetSettingsGeneral().SerieMetaSourcePriority {
+		var err error
 
-	if querytmdb && serie.ThetvdbID != 0 {
-		err = serieGetMetadataTmdb(serie, false)
+		ow := overwrite && !delivered
+
+		switch source {
+		case logger.StrTvdb:
+			aliases, err = serieGetMetadataTvdb(serie, language, ow, aliases)
+		case "tvmaze":
+			err = serieGetMetadataTvmaze(serie, ow)
+			if errors.Is(err, logger.ErrNotFound) {
+				continue
+			}
+		case "tmdb":
+			if !querytmdb || serie.ThetvdbID == 0 {
+				continue
+			}
+
+			err = serieGetMetadataTmdb(serie, ow)
+		case "trakt":
+			if !querytrakt || serie.ImdbID == "" {
+				continue
+			}
+
+			err = serieGetMetadataTrakt(serie, ow)
+			if err == nil && len(config.GetSettingsImdb().Indexedlanguages) > 0 {
+				aliases = processTraktSerieAliases(serie, aliases)
+			}
+		case sourcePlex, sourceJellyfin:
+			err = serieGetMediaServerMetadata(serie, source, ow)
+			if errors.Is(err, errMediaServerOff) {
+				continue
+			}
+		default:
+			continue
+		}
+
 		if err != nil {
 			logger.Logtype("error", 1).
+				Str("source", source).
 				Uint(logger.StrID, serie.ID).
 				Err(err).
-				Msg("Get Tmdb data")
-		}
-	}
+				Msg("Get series metadata")
 
-	if querytrakt && serie.ImdbID != "" {
-		err = serieGetMetadataTrakt(serie, false)
-		if err != nil {
-			logger.Logtype("error", 1).
-				Uint(logger.StrID, serie.ID).
-				Err(err).
-				Msg("Get Trakt data")
-
-			return aliases
+			continue
 		}
 
-		if len(config.GetSettingsImdb().Indexedlanguages) > 0 {
-			aliases = processTraktSerieAliases(serie, aliases)
-		}
+		delivered = true
 	}
 
 	return aliases

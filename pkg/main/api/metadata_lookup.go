@@ -547,7 +547,7 @@ func imdbLocalTitle(id string) (*imdbTitle, error) {
 	t := &rows[0]
 	t.AlternativeTitles = database.GetrowsN[string](true, 50,
 		"select distinct title || case when region != '' then ' [' || region || ']' else '' end "+
-			"from imdb_akas where tconst = ? and title != ? order by region limit 50", id, t.PrimaryTitle)
+			"from imdb_akas where tconst = ? and title != ? order by region limit 50", id, &t.PrimaryTitle)
 
 	return t, nil
 }
