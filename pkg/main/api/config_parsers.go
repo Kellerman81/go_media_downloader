@@ -450,6 +450,8 @@ func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 		SetStringArrayFromForm(&updatedConfig.PlayerVideoProfiles, "PlayerVideoProfiles").
 		SetIntArray(&updatedConfig.PlayerAudioBitrates, "PlayerAudioBitrates").
 		SetInt(&updatedConfig.PlayerMaxTranscodes, "PlayerMaxTranscodes").
+		SetInt(&updatedConfig.PlayerMaxBandwidth, "PlayerMaxBandwidth").
+		SetInt(&updatedConfig.PlayerSpeedTestMinutes, "PlayerSpeedTestMinutes").
 		SetString(&updatedConfig.PlayerHWAccel, "PlayerHWAccel").
 		SetString(&updatedConfig.PlayerHWDevice, "PlayerHWDevice").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceTrakt, "SerieAlternateTitleMetaSourceTrakt").

@@ -597,10 +597,10 @@ func TestPlayMetaOf(t *testing.T) {
 		tags           map[string]string
 		want           playMeta
 	}{
-		{"track", "901", "/m/01 - x.mp3", tags, playMeta{"Wannabe", "Spice Girls · Bravo Hits 22", "Spice Girls", "Bravo Hits 22"}},
+		{"track", "901", "/m/01 - x.mp3", tags, playMeta{"Wannabe", "Spice Girls · Bravo Hits 22", "Spice Girls", "Bravo Hits 22", "/api/admin/library/cover/album/901"}},
 		{"track", "902", "/m/02 - Plain Name.mp3", nil, playMeta{Title: "02 - Plain Name"}},
-		{"movie", "901", "/v/m.mkv", nil, playMeta{"Monster und Mythen", "2018 · Documentary, History", "", "2018"}},
-		{"episode", "901", "/v/e.mkv", nil, playMeta{"Der große Bluff", "Terra X · S2018E32", "Terra X", "S2018E32"}},
+		{"movie", "901", "/v/m.mkv", nil, playMeta{"Monster und Mythen", "2018 · Documentary, History", "", "2018", "/api/admin/library/cover/movie/901"}},
+		{"episode", "901", "/v/e.mkv", nil, playMeta{"Der große Bluff", "Terra X · S2018E32", "Terra X", "S2018E32", "/api/admin/library/cover/series/901"}},
 	} {
 		if got := playMetaOf(tc.kind, tc.id, tc.path, playProbe{Tags: tc.tags}); got != tc.want {
 			t.Errorf("%s %s: got %+v, want %+v", tc.kind, tc.id, got, tc.want)

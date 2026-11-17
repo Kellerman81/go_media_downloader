@@ -31,6 +31,7 @@ type Session struct {
 	UserID    string
 	Role      string   // database.Role*
 	Groups    []string // media configs a non-admin may see
+	Features  []string // database.Feature* of a non-admin
 	CSRFToken string
 	// WizardDismissed tracks whether this session has already been sent to (or
 	// dismissed) the setup wizard, so the dashboard doesn't redirect to it on
@@ -61,7 +62,7 @@ func generateSecureToken(length int) string {
 
 // access is what the session's account may do.
 func (s *Session) access() *userAccess {
-	return &userAccess{Name: s.UserID, Role: s.Role, Groups: s.Groups}
+	return &userAccess{Name: s.UserID, Role: s.Role, Groups: s.Groups, Features: s.Features}
 }
 
 // createSession creates a new session for the account. An empty csrfToken
@@ -82,6 +83,7 @@ func (ss *SessionStore) createSession(acc *userAccess, csrfToken string) *Sessio
 		UserID:    acc.Name,
 		Role:      acc.Role,
 		Groups:    acc.Groups,
+		Features:  acc.Features,
 		CSRFToken: csrfToken,
 	}
 
@@ -245,13 +247,13 @@ func authenticateUser(username, password string) (*userAccess, bool) {
 
 // accessOfUser is the access of an account.
 func accessOfUser(u *database.User) *userAccess {
-	return &userAccess{Name: u.Username, Role: u.Role, Groups: u.Groups()}
+	return &userAccess{Name: u.Username, Role: u.Role, Groups: u.Groups(), Features: u.FeatureList()}
 }
 
 // homePath is where an account lands after login: the dashboard for
 // admins, the Library for everyone else.
 func homePath(acc *userAccess) string {
-	if acc.Admin() {
+	if acc.Admin() && !acc.App {
 		return "/api/admin"
 	}
 
@@ -767,7 +769,12 @@ func handleLogin(c *gin.Context) {
 	setSessionCookie(c, session.ID, int(SessionDuration.Seconds()))
 	setCSRFCookie(c, session.CSRFToken, int(SessionDuration.Seconds()))
 
-	c.Redirect(http.StatusFound, homePath(acc))
+	home := homePath(acc)
+	if appMode(c) {
+		home = appHome
+	}
+
+	c.Redirect(http.StatusFound, home)
 }
 
 // requestIsHTTPS reports whether the client reached us over HTTPS, either
@@ -879,6 +886,14 @@ func handleLogout(c *gin.Context) {
 // the handler.
 func protectAdminRoutes(c *gin.Context) {
 	path := c.Request.URL.Path
+
+	// YouTube refuses trailer embeds without a Referer (error 153): don't let
+	// a stricter browser or proxy default strip the origin.
+	c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+
+	if setAppMode(c) {
+		return
+	}
 
 	if (strings.HasPrefix(path, "/api/admin") || strings.HasPrefix(path, "/api/manage")) &&
 		path != "/api/login" && path != "/api/logout" {

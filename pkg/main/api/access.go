@@ -13,12 +13,17 @@ import (
 )
 
 // userAccess is what the logged-in account may do: admins everything,
-// the other roles view and play the media groups they were given, plus
-// searching (searchinguser) or requesting new media (requestinguser).
+// other accounts view and play the media groups they were given, plus
+// their features (search, request, download, requestdelete; the role
+// pre-sets them).
 type userAccess struct {
-	Name   string
-	Role   string
-	Groups []string // media configs (movie_DE); not used for admins
+	Name     string
+	Role     string
+	Groups   []string // media configs (movie_DE); not used for admins
+	Features []string // database.Feature*; not used for admins
+	// App: the request comes from the desktop player (app mode, gmd_app
+	// cookie): only the end-user pages, compact layout.
+	App bool
 }
 
 var adminAccess = &userAccess{Name: DefaultUsername, Role: database.RoleAdmin}
@@ -26,26 +31,37 @@ var adminAccess = &userAccess{Name: DefaultUsername, Role: database.RoleAdmin}
 // accessOf returns the access of the request's session; none (no groups,
 // no rights) without one.
 func accessOf(c *gin.Context) *userAccess {
+	acc := &userAccess{}
+
 	if v, ok := c.Get("session"); ok {
 		if s, ok := v.(*Session); ok {
-			return s.access()
+			acc = s.access()
 		}
 	}
 
-	return &userAccess{}
+	acc.App = appMode(c)
+
+	return acc
 }
 
 func (a *userAccess) Admin() bool { return a.Role == database.RoleAdmin }
 
-// CanSearch: may start searches and downloads.
-func (a *userAccess) CanSearch() bool {
-	return a.Role == database.RoleAdmin || a.Role == database.RoleSearchingUser
+// Has reports whether the account has the feature (admins have all).
+func (a *userAccess) Has(feature string) bool {
+	return a.Admin() || slices.Contains(a.Features, feature)
 }
 
+// CanSearch: may start searches and downloads.
+func (a *userAccess) CanSearch() bool { return a.Has(database.FeatureSearch) }
+
 // CanRequest: may add new media to the wanted lists.
-func (a *userAccess) CanRequest() bool {
-	return a.Role == database.RoleAdmin || a.Role == database.RoleRequestingUser
-}
+func (a *userAccess) CanRequest() bool { return a.Has(database.FeatureRequest) }
+
+// CanDownload: may download media files.
+func (a *userAccess) CanDownload() bool { return a.Has(database.FeatureDownload) }
+
+// CanReport: may report files as wrong (requestdelete).
+func (a *userAccess) CanReport() bool { return a.Has(database.FeatureRequestDelete) }
 
 // AllowsGroup reports whether the account may see the media config.
 func (a *userAccess) AllowsGroup(name string) bool {
@@ -167,8 +183,9 @@ func (a *userAccess) allowsEpisode(episodeID any) bool {
 // account's media groups.
 var userPaths = []string{
 	"/api/admin/library", "/api/admin/library/grid", "/api/admin/library/item", "/api/admin/library/random",
-	"/api/admin/library/filters", "/api/admin/library/links", "/api/admin/library/playlist",
+	"/api/admin/library/filters", "/api/admin/library/links", "/api/admin/library/playlist", "/api/admin/library/trailer",
 	"/api/admin/library/playall", "/api/admin/library/cover/", "/api/admin/library/thumb/", "/api/admin/library/play/",
+	"/api/admin/library/download/", "/api/admin/library/download-entry/", // the handlers check the download feature
 	"/api/admin/calendar", "/api/admin/calendar/content", "/api/admin/calendar/events",
 	"/api/admin/calendar/day-events", "/api/admin/calendar/ical",
 }
@@ -234,8 +251,13 @@ func (a *userAccess) allowsPath(method, path string) bool {
 	switch {
 	case a.Admin():
 		return true
-	case path == "/api/admin/account":
-		return true // own password
+	case path == "/api/admin/account", path == "/api/admin/account/settings":
+		return true // own password and settings
+	case method == http.MethodPost && (path == "/api/admin/library/play/progress" || path == "/api/admin/library/watched" ||
+		path == "/api/admin/library/watched-entry"):
+		return true
+	case method == http.MethodPost && path == "/api/admin/library/report":
+		return a.CanReport()
 	case method == http.MethodGet && pathIn(path, userPaths):
 		return true
 	case path == "/api/admin/proxy":

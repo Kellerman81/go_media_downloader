@@ -478,6 +478,10 @@ func buildConfigSnapshot(src *MainConfig) (*ConfigSnapshot, error) {
 		snapshot.General.PlayerMaxTranscodes = 2
 	}
 
+	if snapshot.General.PlayerSpeedTestMinutes <= 0 {
+		snapshot.General.PlayerSpeedTestMinutes = 30
+	}
+
 	if len(snapshot.General.SerieMetaSourcePriority) == 0 {
 		snapshot.General.SerieMetaSourcePriority = []string{"tvdb", "tvmaze", "tmdb", "trakt"}
 	}

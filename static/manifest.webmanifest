@@ -1,0 +1,20 @@
+{
+  "name": "Go Media Downloader",
+  "short_name": "Go Media",
+  "description": "Library, player and calendar of your media",
+  "id": "/api/admin/library",
+  "start_url": "/api/admin/library",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#222e3c",
+  "theme_color": "#222e3c",
+  "icons": [
+    { "src": "/static/img/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/img/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/img/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Library", "url": "/api/admin/library" },
+    { "name": "Calendar", "url": "/api/admin/calendar" }
+  ]
+}

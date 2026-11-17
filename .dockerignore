@@ -1,0 +1,2 @@
+# The wiki and README screenshots are not part of the image (Dockerfile copies ./docs/).
+docs/screenshots

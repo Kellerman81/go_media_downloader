@@ -219,6 +219,7 @@ Swap Memory: Default ~300-600MB - on a file move action the swap memory will gro
 	- setup your series.toml if wanted
 	- Run the go_media_downloader executable
 
+- directly after the start the console output (with Docker: the container log, e.g. `docker logs media_downloader`) shows the address of the web interface with the username and password to log in, e.g. `Web UI: http://localhost:9090/api/admin (user 'admin', password '...')` - the password is the `webapikey` from the general settings of your config
 - it will first build the imdb cache and then start importing your feeds, get metadata and scan/match the data - depending on your media repository size it might take several hours
 - after the initial scan is finished the API and the scheduler will be started
 - the scheduler will then scan for new releases and new/missing data in your folders and refresh your feeds

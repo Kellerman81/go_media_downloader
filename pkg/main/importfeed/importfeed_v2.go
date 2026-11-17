@@ -177,6 +177,10 @@ func checkaddMediaEntry(
 		return logger.ErrListnameEmpty
 	}
 
+	if excludedFromImport(strings.ToLower(s.logItemType), cfgp, dbid) {
+		return nil
+	}
+
 	var getcount uint
 
 	if cfgplist.IgnoreMapListsLen >= 1 {

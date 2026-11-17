@@ -28,7 +28,7 @@ import (
 // a list, with search, filter, sort and paging, and a detail dialog per entry.
 
 // libPageSizes are the "per page" choices of the grid; 0 is all.
-var libPageSizes = []int{100, 200, 500, 1000, 0}
+var libPageSizes = []int{50, 100, 200, 500, 1000, 0}
 
 // libDefaultPageSize is the page size without a choice.
 const libDefaultPageSize = 100
@@ -165,6 +165,7 @@ func libraryGroups() []libGroup {
 
 // libQuery is the state of the grid: group, search, filter, sort, view, page.
 type libQuery struct {
+	User                              string // the account (Continue row)
 	Group, Search, Filter, Sort, View string
 	List, Genre                       string // extra filters
 	Res, YearFrom, YearTo             int    // resolution id, year range
@@ -175,8 +176,11 @@ type libQuery struct {
 }
 
 var (
-	libFilters = [][2]string{{"all", "All"}, {"missing", "Missing"}, {"have", "Downloaded"}, {"incomplete", "Metadata incomplete"}}
-	libSorts   = [][2]string{
+	libFilters = [][2]string{
+		{"all", "All"}, {"missing", "Missing"}, {"have", "Downloaded"},
+		{"watched", "Watched / heard"}, {"unwatched", "Not watched / heard"}, {"incomplete", "Metadata incomplete"},
+	}
+	libSorts = [][2]string{
 		{"title", "Title"}, {"added", "Recently added"}, {"downloaded", "Last downloaded"}, {"filed", "Last file added"},
 		{"year", "Year"}, {"random", "Random"},
 	}
@@ -184,7 +188,7 @@ var (
 
 func libQueryFrom(c *gin.Context) libQuery {
 	q := libQuery{Group: c.Query("group"), Search: strings.TrimSpace(c.Query("q")), Filter: c.Query("filter"),
-		Sort: c.Query("sort"), View: c.Query("view")}
+		Sort: c.Query("sort"), View: c.Query("view"), User: accName(accessOf(c))}
 	if !accessOf(c).AllowsGroup(q.Group) {
 		q.Group = "" // not a media group: every handler refuses it
 	}
@@ -332,7 +336,9 @@ type libRow struct {
 	// DontSearch: held back from searching (dont_search, e.g. a media
 	// request not approved yet): no search buttons.
 	DontSearch bool `db:"dont_search"`
-	NoTitle    bool `db:"-"` // the metadata has no title; Title is the folder name
+	Watched    bool `db:"watched"` // the account watched (heard) all its files
+	Heard      bool `db:"-"`       // say "heard" (audiobooks)
+	NoTitle    bool `db:"-"`       // the metadata has no title; Title is the folder name
 }
 
 // libWhere builds the WHERE clause and its arguments of a query.
@@ -362,6 +368,17 @@ func libWhere(g *libGroup, q libQuery) (string, []any) {
 		where += " AND have"
 	case "incomplete":
 		where += " AND " + k.Incomplete
+	case "watched", "unwatched":
+		// Albums and books have no watched state: no filter.
+		if expr, wargs := libWatchedExpr(k, q.User); expr != "" {
+			if q.Filter == "watched" {
+				where += " AND " + expr
+			} else {
+				where += " AND have AND NOT " + expr
+			}
+
+			args = append(args, wargs...)
+		}
 	}
 
 	if q.List != "" && slices.ContainsFunc(g.Lists, func(l string) bool { return strings.EqualFold(l, q.List) }) {
@@ -641,12 +658,22 @@ func libraryRows(g *libGroup, q libQuery) ([]libRow, int) {
 	order := libOrder(q, false)
 
 	total := database.Getdatarow[int](false, "SELECT count() FROM ("+inner+") e WHERE "+where, args...)
+
+	watched, wargs := libWatchedExpr(k, q.User)
+	if watched == "" {
+		watched = "0"
+	}
+
 	rows := database.StructscanT[libRow](false, q.capacity(),
-		"SELECT id, db_id, title, sub, year, overview, listname, missing, have, genre, dont_search FROM ("+inner+") e WHERE "+where+
-			" ORDER BY "+order+q.limit(),
-		args...)
+		"SELECT id, db_id, title, sub, year, overview, listname, missing, have, genre, dont_search, "+watched+" AS watched FROM ("+
+			inner+") e WHERE "+where+" ORDER BY "+order+q.limit(),
+		append(wargs, args...)...)
 
 	libFillTitles(k, rows)
+
+	for i := range rows {
+		rows[i].Heard = k.Type == "audiobook"
+	}
 
 	return rows, total
 }
@@ -840,6 +867,14 @@ func LibraryPage(c *gin.Context) {
 		hide = append(hide, ".lib-search")
 	}
 
+	if !acc.CanDownload() {
+		hide = append(hide, ".lib-download")
+	}
+
+	if !acc.CanReport() {
+		hide = append(hide, ".lib-report")
+	}
+
 	renderPageIn(c, "Library", false, html.Div(
 		html.Class("config-section-enhanced"),
 		gomponents.If(len(hide) > 0, html.StyleEl(gomponents.Raw(strings.Join(hide, ", ")+" { display: none !important; }"))),
@@ -942,6 +977,8 @@ func renderLibrary(groups []libGroup, q libQuery, csrfToken string) gomponents.N
 			libSelBtn("libSelectClear()", "btn-outline-secondary", "fa-eraser", "Clear"),
 			html.Span(html.Class("flex-grow-1")),
 			libSelBtn("libBulk('search')", "btn-primary lib-search", "fa-magnifying-glass", "Search"),
+			libSelBtn("libBulk('watched')", "btn-outline-success", "fa-check", "Watched"),
+			libSelBtn("libBulk('unwatched')", "btn-outline-secondary", "fa-eye-slash", "Not watched"),
 			libSelBtn("libBulk('refresh')", "btn-outline-primary lib-admin", "fa-rotate", "Refresh metadata"),
 			libSelBtn("libBulk('delete')", "btn-outline-danger lib-admin", "fa-trash", "Delete entries"),
 			libSelBtn("libBulk('deletefiles')", "btn-danger lib-admin", "fa-trash-can", "Delete with files"),
@@ -1250,10 +1287,16 @@ func renderLibraryGrid(q libQuery) gomponents.Node {
 
 	g := &groups[idx]
 
+	// What the account didn't finish, above the first page.
+	var cont gomponents.Node
+	if q.Page <= 1 && q.Search == "" {
+		cont = libContinueRow(q.User, g)
+	}
+
 	// Episodes are a view of series groups only.
 	if q.View == "episodes" {
 		if g.Kind.Type == "series" {
-			return renderLibraryEpisodes(g, q)
+			return gomponents.Group([]gomponents.Node{cont, renderLibraryEpisodes(g, q)})
 		}
 
 		q.View = "grid"
@@ -1262,7 +1305,7 @@ func renderLibraryGrid(q libQuery) gomponents.Node {
 	rows, total := libraryRows(g, q)
 
 	if total == 0 {
-		return html.P(html.Class("text-muted text-center py-5"), gomponents.Text("Nothing found."))
+		return gomponents.Group([]gomponents.Node{cont, html.P(html.Class("text-muted text-center py-5"), gomponents.Text("Nothing found."))})
 	}
 
 	items := make([]gomponents.Node, 0, len(rows))
@@ -1291,6 +1334,7 @@ func renderLibraryGrid(q libQuery) gomponents.Node {
 	}
 
 	return gomponents.Group([]gomponents.Node{
+		cont,
 		libCountLine(q, total, "entries", libPlayKinds[g.Kind.Type] != ""),
 		body,
 		libPager(q, total),
@@ -1303,6 +1347,13 @@ func libCoverURL(k *libKind, r *libRow) string {
 
 func libStatusBadge(r *libRow) gomponents.Node {
 	switch {
+	case r.Watched:
+		label := "Watched"
+		if r.Heard {
+			label = "Heard"
+		}
+
+		return html.Span(html.Class("badge bg-info"), html.I(html.Class("fa-solid fa-check me-1")), gomponents.Text(label))
 	case r.Missing:
 		return html.Span(html.Class("badge bg-warning text-dark"), gomponents.Text("Missing"))
 	case r.Have:
@@ -1310,6 +1361,20 @@ func libStatusBadge(r *libRow) gomponents.Node {
 	}
 
 	return nil
+}
+
+// libWatchedExpr is the SQL condition "the account watched (heard) every
+// file of the entry e" with its arguments; "" for kinds without a watched
+// state (albums, books). Series: every downloaded episode.
+func libWatchedExpr(k *libKind, user string) (string, []any) {
+	kind := continueKinds[k.Type]
+	if kind == "" || user == "" {
+		return "", nil
+	}
+
+	return "(EXISTS (SELECT 1 FROM " + k.Files + " wf WHERE wf." + k.FilesFK + " = e.id) AND NOT EXISTS (SELECT 1 FROM " + k.Files +
+		" wf WHERE wf." + k.FilesFK + " = e.id AND NOT EXISTS (SELECT 1 FROM play_history wh WHERE wh.username = ? AND wh.kind = ? " +
+		"AND wh.file_id = wf.id AND wh.completion >= " + strconv.FormatFloat(database.Watched, 'f', 2, 64) + ")))", []any{user, kind}
 }
 
 // libRefreshPaths are the API paths of the metadata refresh per type.
@@ -1506,10 +1571,12 @@ var libFileOrder = map[string]string{
 
 // libPlayButton starts the player on a file; buttons with the same list form
 // the playlist, in order.
-func libPlayButton(kind string, fileID uint, list string, order int, label string) gomponents.Node {
+func libPlayButton(kind string, fileID uint, list string, order int, label string, watched, last bool) gomponents.Node {
 	return html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-success py-0 me-1"), html.Title("Play"),
 		html.Data("play-kind", kind), html.Data("play-id", strconv.FormatUint(uint64(fileID), 10)),
 		html.Data("play-list", list), html.Data("play-order", strconv.Itoa(order)), html.Data("play-label", label),
+		gomponents.If(watched, html.Data("watched", "1")),
+		gomponents.If(last, html.Data("last", "1")),
 		gomponents.Attr("onclick", "libPlay(this)"),
 		html.I(html.Class("fa-solid fa-play")))
 }
@@ -1517,8 +1584,10 @@ func libPlayButton(kind string, fileID uint, list string, order int, label strin
 // libItem is the detail of one list entry.
 type libItem struct {
 	libRow
-	Kind   *libKind
-	Filter string // the grid's filter, applied to the episodes of a series
+	Kind    *libKind
+	Filter  string           // the grid's filter, applied to the episodes of a series
+	Watched map[uint]float64 // the account's completion of the files, by file id
+	Last    uint             // the file the account played last (Play goes on there)
 }
 
 func loadLibraryItem(k *libKind, id *uint64) *libItem {
@@ -1552,6 +1621,11 @@ func HandleLibraryItem(c *gin.Context) {
 	it.Filter = c.Query("filter")
 	if it.Filter != "have" && it.Filter != "missing" {
 		it.Filter = "all"
+	}
+
+	if pk := libPlayKinds[k.Type]; pk != "" {
+		it.Watched = database.PlayCompletions(accName(accessOf(c)), pk, k.Files, k.FilesFK, &id)
+		it.Last = database.LastPlayedFile(accName(accessOf(c)), pk, k.Files, k.FilesFK, &id)
 	}
 
 	c.String(http.StatusOK, renderComponentToString(renderLibraryItem(it)))
@@ -1660,7 +1734,11 @@ func renderLibraryItem(it *libItem) gomponents.Node {
 	fileRows := make([]gomponents.Node, 0, len(files))
 	for i, f := range files {
 		fileRows = append(fileRows, html.Tr(
-			html.Td(html.Class("text-nowrap"), gomponents.If(playKind != "", libPlayButton(playKind, f.ID, "files", i, path.Base(f.Location)))),
+			html.Td(html.Class("text-nowrap"),
+				gomponents.If(playKind != "", libPlayButton(playKind, f.ID, "files", i, path.Base(f.Location),
+					it.Watched[f.ID] >= database.Watched, f.ID == it.Last)),
+				libFileButtons(k, f.ID, path.Base(f.Location)),
+				gomponents.If(playKind != "", libWatchedMark(playKind, f.ID, it.Watched))),
 			html.Td(html.Class("font-monospace small text-break"), gomponents.Text(f.Location)),
 			html.Td(html.Class("small"), gomponents.Text(f.Quality)),
 			html.Td(html.Class("text-end text-nowrap"), libPartDeleteButtons("file", k.Type, f.ID, true))))
@@ -1697,7 +1775,10 @@ func renderLibraryItem(it *libItem) gomponents.Node {
 			html.Td(status),
 			html.Td(html.Class("text-end text-nowrap"),
 				// The list is newest first; the playlist runs oldest first.
-				gomponents.If(e.FileID > 0, libPlayButton("episode", e.FileID, "episodes", len(episodes)-i, e.Ident+" "+e.Title)),
+				gomponents.If(e.FileID > 0, libWatchedMark("episode", e.FileID, it.Watched)),
+				gomponents.If(e.FileID > 0, libPlayButton("episode", e.FileID, "episodes", len(episodes)-i, e.Ident+" "+e.Title,
+					it.Watched[e.FileID] >= database.Watched, e.FileID == it.Last)),
+				gomponents.If(e.FileID > 0, libFileButtons(k, e.FileID, e.Ident+" "+e.Title)),
 				gomponents.If(!e.HasFiles && !e.DontSearch, html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-primary py-0 me-1 lib-search"),
 					html.Title("Search this episode"),
 					gomponents.Attr("onclick", fmt.Sprintf("libAction('search', %s)", jsString("/api/series/episodes/search/list/"+strconv.FormatUint(uint64(e.ID), 10)))),
@@ -1769,9 +1850,10 @@ func renderLibraryItem(it *libItem) gomponents.Node {
 
 	actions := html.Div(html.Class("d-flex flex-wrap gap-2 mt-3"),
 		playFirst,
+		libEntryDownload(k, it.ID, len(files)),
 		// Filled with "Open in Plex/Jellyfin" after the dialog shows.
 		gomponents.If(k.Type == "movie" || k.Type == "series", html.Span(html.ID("libLinks"), html.Class("d-contents"),
-			html.Data("type", k.Type), html.Data("id", strconv.FormatUint(uint64(it.DbID), 10)))),
+			html.Data("type", k.Type), html.Data("id", strconv.FormatUint(uint64(it.DbID), 10)), html.Data("list", it.Listname))),
 		gomponents.If(!it.DontSearch, html.Button(html.Type("button"), html.Class("btn btn-sm btn-primary lib-search"),
 			gomponents.Attr("onclick", fmt.Sprintf("libAction('search', %s)", jsString(searchURL))),
 			html.I(html.Class("fa-solid fa-magnifying-glass me-1")), gomponents.Text(map[bool]string{true: "Search missing episodes", false: "Search"}[k.Type == "series"]))),
@@ -1782,6 +1864,10 @@ func renderLibraryItem(it *libItem) gomponents.Node {
 			gomponents.Attr("onclick", fmt.Sprintf("libAction('refresh', %s)", jsString("/api/"+refreshURL+"/refresh/"+strconv.FormatUint(uint64(it.DbID), 10)))),
 			html.I(html.Class("fa-solid fa-rotate me-1")), gomponents.Text("Refresh metadata")),
 		html.Span(html.Class("flex-grow-1")),
+		html.Div(html.Class("form-check align-self-center mb-0 lib-admin"),
+			html.Title("The list imports and searches of this media group won't add it again (Import Exclusions page)"),
+			html.Input(html.Type("checkbox"), html.Class("form-check-input"), html.ID("libExclude")),
+			html.Label(html.Class("form-check-label small"), html.For("libExclude"), gomponents.Text("Don't add again from lists"))),
 		html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-danger lib-admin"),
 			gomponents.Attr("onclick", fmt.Sprintf("libDelete(%s, %d, false)", jsString(k.Type), it.ID)),
 			html.I(html.Class("fa-solid fa-trash me-1")), gomponents.Text("Delete entry")),
@@ -1789,6 +1875,13 @@ func renderLibraryItem(it *libItem) gomponents.Node {
 			gomponents.Attr("onclick", fmt.Sprintf("libDelete(%s, %d, true)", jsString(k.Type), it.ID)),
 			html.I(html.Class("fa-solid fa-trash-can me-1")), gomponents.Text(map[bool]string{true: "Delete entry and file", false: fmt.Sprintf("Delete entry and %d files", fileCount)}[fileCount == 1]))),
 	)
+
+	// Filled after the dialog shows (libLoadCollection), for admins.
+	var collection gomponents.Node
+	if k.Type == "movie" {
+		collection = html.Div(html.ID("libCollection"), html.Class("lib-admin mt-3"),
+			html.Data("id", strconv.FormatUint(uint64(it.DbID), 10)), html.Data("list", it.Listname))
+	}
 
 	coverClass := "rounded shadow-sm lib-detail-cover"
 	if k.Square {
@@ -1812,6 +1905,7 @@ func renderLibraryItem(it *libItem) gomponents.Node {
 				html.P(html.Class("mb-0"), html.Style("white-space:pre-line"), gomponents.Text(overview)),
 				actions,
 				libExtLinksNode(libExtLinks(it)),
+				collection,
 			),
 		),
 		html.Ul(html.Class("nav nav-tabs mt-4"), html.Role("tablist"),
@@ -2071,12 +2165,20 @@ func HandleLibraryDelete(c *gin.Context) {
 		}
 	}
 
+	if c.PostForm("exclude") == "1" {
+		if err := excludeLibraryEntry(k, &id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "not excluded, the entry was kept: " + err.Error()})
+			return
+		}
+	}
+
 	if err := deleteLibraryEntry(k, &id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	logger.Logtype("info", 0).Str("type", k.Type).Uint64(logger.StrID, id).Int("files_deleted", removed).Msg("Library: entry deleted")
+	logger.Logtype("info", 0).Str("type", k.Type).Uint64(logger.StrID, id).Int("files_deleted", removed).
+		Bool("excluded", c.PostForm("exclude") == "1").Msg("Library: entry deleted")
 
 	c.JSON(http.StatusOK, gin.H{"deleted": true, "files": removed})
 }
@@ -2133,6 +2235,7 @@ const libraryCSS = `
 
 const libraryJS = `
 var libCsrf = {{csrf}};
+
 var libCurrent = null;
 
 function libReloadGrid() { htmx.trigger('#libForm', 'change'); }
@@ -2156,6 +2259,7 @@ function openLibraryItem(type, id, filter, fromHistory) {
 			var root = body.firstElementChild;
 			document.getElementById('libModalTitle').textContent = root && root.dataset.title ? root.dataset.title : '';
 			libLoadLinks();
+			libLoadCollection();
 		})
 		.catch(function (e) { body.innerHTML = '<div class="alert alert-danger">' + e.message + '</div>'; });
 }
@@ -2177,6 +2281,103 @@ function libLoadLinks() {
 			});
 		})
 		.catch(function () {});
+	fetch('/api/admin/library/trailer?type=' + encodeURIComponent(box.dataset.type) + '&id=' + encodeURIComponent(box.dataset.id) +
+		'&list=' + encodeURIComponent(box.dataset.list || ''), { credentials: 'same-origin' })
+		.then(function (r) { return r.status === 200 ? r.json() : null; })
+		.then(function (t) {
+			if (!t || !t.key) { return; }
+			var b = document.createElement('button');
+			b.type = 'button'; b.className = 'btn btn-sm btn-outline-danger';
+			b.title = t.name || 'Trailer';
+			b.innerHTML = '<i class="fa-brands fa-youtube me-1"></i>';
+			b.appendChild(document.createTextNode('Trailer' + (t.language ? ' (' + t.language.toUpperCase() + ')' : '')));
+			b.addEventListener('click', function () { libShowTrailer(t); });
+			box.insertBefore(b, box.firstChild);
+		})
+		.catch(function () {});
+}
+
+// libLoadCollection shows the TMDB collection of a movie (admins): its
+// movies, adding the missing ones and adding new ones automatically.
+function libLoadCollection() {
+	var box = document.getElementById('libCollection');
+	if (!box) { return; }
+	var q = 'id=' + encodeURIComponent(box.dataset.id) + '&list=' + encodeURIComponent(box.dataset.list || '');
+	fetch('/api/admin/library/collection?' + q, { credentials: 'same-origin' })
+		.then(function (r) { return r.status === 200 ? r.json() : null; })
+		.then(function (d) {
+			if (!d || !d.parts || d.parts.length < 2) { return; }
+			var missing = d.parts.filter(function (p) { return !p.have && !p.excluded; }).length;
+			var have = d.parts.filter(function (p) { return p.have; }).length;
+			box.innerHTML = '<div class="border rounded p-2"><div class="d-flex flex-wrap align-items-center gap-2 mb-2">' +
+				'<strong class="lib-coll-name"></strong><span class="badge bg-secondary"></span><span class="flex-grow-1"></span>' +
+				'<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="libCollMonitor">' +
+				'<label class="form-check-label small" for="libCollMonitor">Add new movies automatically</label></div>' +
+				'<button type="button" class="btn btn-sm btn-primary lib-coll-add"></button></div><div class="d-flex flex-wrap gap-1 lib-coll-parts"></div></div>';
+			box.querySelector('.lib-coll-name').textContent = 'Part of ' + d.name;
+			box.querySelector('.badge').textContent = have + ' / ' + d.parts.length + ' in this media group';
+			var add = box.querySelector('.lib-coll-add');
+			add.textContent = missing ? 'Add ' + missing + ' missing' : 'Complete';
+			add.disabled = !missing;
+			var mon = box.querySelector('#libCollMonitor');
+			mon.checked = !!d.monitored;
+			d.parts.forEach(function (p) {
+				var s = document.createElement('span');
+				s.className = 'badge ' + (p.have ? 'text-bg-success' : p.excluded ? 'text-bg-dark' : 'text-bg-light border');
+				s.title = p.have ? 'In a list of this media group' : p.excluded ? 'Excluded (Import Exclusions)' : 'Not in this media group';
+				s.textContent = p.title + (p.year ? ' (' + p.year + ')' : '');
+				box.querySelector('.lib-coll-parts').appendChild(s);
+			});
+			var post = function (vals, done) {
+				vals.id = box.dataset.id; vals.list = box.dataset.list || ''; vals.csrf_token = libCsrf;
+				fetch('/api/admin/library/collection/add', { method: 'POST', credentials: 'same-origin', body: new URLSearchParams(vals), headers: { 'X-CSRF-Token': libCsrf } })
+					.then(function (r) { return r.json().then(function (j) { if (!r.ok) { throw new Error(j.error || ('HTTP ' + r.status)); } return j; }); })
+					.then(done)
+					.catch(function (e) { libNotify('error', e.message); });
+			};
+			mon.addEventListener('change', function () {
+				post({ monitor: mon.checked ? '1' : '0' }, function () {
+					libNotify('success', mon.checked ? 'New movies of ' + d.name + ' are added to ' + box.dataset.list : 'No longer adding new movies of ' + d.name);
+				});
+			});
+			add.addEventListener('click', function () {
+				add.disabled = true;
+				post({ add: '1' }, function (j) { libNotify('success', 'Adding ' + j.adding + ' movies in the background - they show up in the Library shortly'); });
+			});
+		})
+		.catch(function () {});
+}
+
+// libShowTrailer plays a YouTube trailer over the page (privacy-enhanced
+// embed: no cookies before playing).
+function libShowTrailer(t) {
+	// Brave strips the Referer of embeds, which YouTube answers with error 153:
+	// play the trailer on YouTube's own page in a window of its own.
+	if (navigator.brave) {
+		window.open('https://www.youtube.com/watch?v=' + encodeURIComponent(t.key), 'gmdTrailer', 'popup,width=1100,height=700');
+		return;
+	}
+	var o = document.createElement('div');
+	o.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center';
+	o.style.zIndex = 2100; o.style.background = 'rgba(0,0,0,.85)';
+	o.innerHTML = '<div style="width:min(960px,94vw)"><div class="d-flex justify-content-between align-items-center mb-2 text-white">' +
+		'<span class="lib-trailer-name text-truncate"></span><span class="d-flex align-items-center gap-3">' +
+		'<a class="link-light small text-nowrap lib-trailer-yt" target="_blank" rel="noopener"><i class="fa-brands fa-youtube me-1"></i>Open on YouTube</a>' +
+		'<button type="button" class="btn-close btn-close-white" aria-label="Close"></button></span></div>' +
+		// YouTube refuses embeds without a Referer (error 153); a reverse proxy's
+		// Referrer-Policy: no-referrer would strip it, the frame's own policy wins.
+		'<div class="ratio ratio-16x9"><iframe referrerpolicy="strict-origin-when-cross-origin" ' +
+		'allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></div></div>';
+	o.querySelector('.lib-trailer-name').textContent = t.name || '';
+	o.querySelector('.lib-trailer-yt').href = 'https://www.youtube.com/watch?v=' + encodeURIComponent(t.key);
+	o.querySelector('iframe').src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(t.key) +
+		'?autoplay=1&rel=0&origin=' + encodeURIComponent(location.origin);
+	var close = function () { o.remove(); document.removeEventListener('keydown', esc, true); };
+	var esc = function (e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+	o.querySelector('.btn-close').addEventListener('click', close);
+	o.addEventListener('click', function (e) { if (e.target === o) { close(); } });
+	document.addEventListener('keydown', esc, true);
+	document.body.appendChild(o);
 }
 
 var libHashRe = /^#(movie|series|album|audiobook|book)\/(\d+)$/;
@@ -2247,15 +2448,25 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
 // libBulk runs an action on every selected entry, one after the other.
 function libBulk(action) {
 	var items = Array.from(libSel.items.values());
-	if (!items.length) { libNotify('error', 'Nothing selected'); return; }
-	var what = { search: 'Search', refresh: 'Refresh the metadata of', delete: 'Delete', deletefiles: 'Delete WITH their files on disk' }[action];
+	var mark = action === 'watched' || action === 'unwatched';
+	// Albums and books have no watched state.
+	if (mark) { items = items.filter(function (it) { return it.type === 'movie' || it.type === 'series' || it.type === 'audiobook'; }); }
+	if (!items.length) { libNotify('error', mark ? 'Nothing selected that can be watched' : 'Nothing selected'); return; }
+	var what = { search: 'Search', refresh: 'Refresh the metadata of', delete: 'Delete', deletefiles: 'Delete WITH their files on disk',
+		watched: 'Marked as watched', unwatched: 'Marked as not watched' }[action];
 	var msg = what + ' ' + items.length + (items.length === 1 ? ' entry' : ' entries') + '?' +
 		(action === 'deletefiles' ? ' The files cannot be restored.' : action === 'delete' ? ' Files on disk are kept.' : '');
-	confirmAction('Please confirm', msg, function () {
+	// Marking only changes the account's own history: no confirmation.
+	(mark ? function (f) { f(); } : function (f) { confirmAction('Please confirm', msg, f); })(function () {
 		var ok = 0, failed = 0, i = 0;
 		function one(it) {
 			if (action === 'search' || action === 'refresh') {
 				return gmdApiProxyFetch(action === 'search' ? it.search : it.refresh).then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } });
+			}
+			if (mark) {
+				var wf = new URLSearchParams({ type: it.type, id: it.id, watched: action === 'watched' ? '1' : '0', csrf_token: libCsrf });
+				return fetch('/api/admin/library/watched-entry', { method: 'POST', credentials: 'same-origin', body: wf, headers: { 'X-CSRF-Token': libCsrf } })
+					.then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } });
 			}
 			var form = new URLSearchParams({ type: it.type, id: it.id, files: action === 'deletefiles' ? '1' : '0', csrf_token: libCsrf });
 			return fetch('/api/admin/library/delete', { method: 'POST', credentials: 'same-origin', body: form, headers: { 'X-CSRF-Token': libCsrf } })
@@ -2265,6 +2476,7 @@ function libBulk(action) {
 			if (i >= items.length) {
 				libNotify(failed ? 'error' : 'success', what + ': ' + ok + ' done' + (failed ? ', ' + failed + ' failed' : ''));
 				if (action === 'delete' || action === 'deletefiles') { libSel.items.clear(); libReloadGrid(); }
+				if (mark) { libReloadGrid(); }
 				libSelSync();
 				return;
 			}
@@ -2577,9 +2789,11 @@ function libDeletePart(part, type, id, withFiles, btn) {
 }
 
 function libDelete(type, id, withFiles) {
-	var msg = withFiles ? 'Delete this entry AND its files on disk? The files cannot be restored.' : 'Delete this entry from the list? Files on disk are kept.';
+	var ex = document.getElementById('libExclude'), exclude = !!(ex && ex.checked);
+	var msg = (withFiles ? 'Delete this entry AND its files on disk? The files cannot be restored.' : 'Delete this entry from the list? Files on disk are kept.') +
+		(exclude ? ' The lists of this media group won\'t add it again.' : '');
 	confirmAction('Please confirm', msg, function () {
-		var form = new URLSearchParams({ type: type, id: id, files: withFiles ? '1' : '0', csrf_token: libCsrf });
+		var form = new URLSearchParams({ type: type, id: id, files: withFiles ? '1' : '0', exclude: exclude ? '1' : '0', csrf_token: libCsrf });
 		fetch('/api/admin/library/delete', { method: 'POST', credentials: 'same-origin', body: form, headers: { 'X-CSRF-Token': libCsrf } })
 			.then(function (r) { return r.json().then(function (d) { if (!r.ok) { throw new Error(d.error || ('HTTP ' + r.status)); } return d; }); })
 			.then(function (d) {
@@ -2652,17 +2866,125 @@ const playerJS = `
 var lp = null;
 
 // lpStore keeps the Library's and the player's settings (saved views, sizes,
-// volume, resume positions) per account: browsers are shared. The built-in
-// admin still finds what was saved before accounts existed (no prefix).
+// volume, languages) in the account (window.gmdSettings, saved to the
+// server shortly after a change), so they follow it to every browser.
+// Settings this browser saved before that are taken over on first use.
+var lpSettingsTimer = null;
+
+// libReport asks why a file is wrong and reports it to the admins.
+function libReport(type, id, label) {
+	var old = document.getElementById('libReportBox');
+	if (old) { old.remove(); }
+	var box = document.createElement('div');
+	box.id = 'libReportBox';
+	// Dark on white also over a full-screen player (white text there).
+	box.className = 'card shadow position-fixed top-50 start-50 translate-middle bg-white text-dark';
+	box.style.zIndex = 2100; box.style.width = 'min(26rem, 92vw)';
+	box.innerHTML = '<div class="card-body"><h6 class="card-title">Report a wrong file</h6><div class="small text-muted mb-2 text-break lib-report-label"></div>' +
+		'<label class="form-label small" for="libReportReason">What is wrong?</label>' +
+		'<select class="form-select form-select-sm mb-2" id="libReportReason"><option value="quality">Bad quality</option>' +
+		'<option value="language">Wrong language</option><option value="content">Wrong content</option><option value="other">Something else</option></select>' +
+		'<label class="form-label small" for="libReportNote">Note (optional)</label>' +
+		'<textarea class="form-control form-control-sm mb-3" id="libReportNote" rows="2" maxlength="500"></textarea>' +
+		'<div class="text-end"><button type="button" class="btn btn-sm btn-secondary me-2 lib-report-cancel">Cancel</button>' +
+		'<button type="button" class="btn btn-sm btn-warning lib-report-send">Report</button></div></div>';
+	box.querySelector('.lib-report-label').textContent = label;
+	box.querySelector('.lib-report-cancel').addEventListener('click', function () { box.remove(); });
+	box.querySelector('.lib-report-send').addEventListener('click', function () {
+		var form = new URLSearchParams({ type: type, id: String(id), reason: box.querySelector('#libReportReason').value,
+			note: box.querySelector('#libReportNote').value, csrf_token: lpCsrf() });
+		fetch('/api/admin/library/report', { method: 'POST', credentials: 'same-origin', body: form, headers: { 'X-CSRF-Token': lpCsrf() } })
+			.then(function (r) { return r.json().then(function (d) { if (!r.ok) { throw new Error(d.error || ('HTTP ' + r.status)); } return d; }); })
+			.then(function () { box.remove(); libNotify('success', 'Reported - an admin will look at it.'); })
+			.catch(function (e) { libNotify('error', 'Not reported: ' + e.message); });
+	});
+	// In full screen only the full-screen element is shown.
+	(document.fullscreenElement || document.body).appendChild(box);
+}
+
+// lpCsrf is the page's CSRF token (the Library's, else the cookie's: the
+// Calendar has the player without the Library script).
+function lpCsrf() {
+	if (typeof libCsrf !== 'undefined') { return libCsrf; }
+	var m = /(?:^|; )csrf_token=([^;]+)/.exec(document.cookie);
+	return m ? decodeURIComponent(m[1]) : '';
+}
 function lpStore(key, value) {
-	var user = window.gmdUser || 'admin', k = 'u:' + user + ':' + key;
+	var s = window.gmdSettings || (window.gmdSettings = {});
+	if (value === undefined) {
+		if (Object.prototype.hasOwnProperty.call(s, key)) { return s[key]; }
+		var old = lpLocal(key);
+		if (old !== null) { s[key] = old; lpSaveSettings(); }
+		return old;
+	}
+	s[key] = String(value);
+	lpSaveSettings();
+}
+
+// lpLocal reads what this browser stored per account before (the built-in
+// admin's from before accounts existed: no prefix).
+function lpLocal(key) {
+	var user = window.gmdUser || 'admin';
 	try {
-		if (value === undefined) {
-			var v = localStorage.getItem(k);
-			return v === null && user === 'admin' ? localStorage.getItem(key) : v;
-		}
-		localStorage.setItem(k, value);
+		var v = localStorage.getItem('u:' + user + ':' + key);
+		return v === null && user === 'admin' ? localStorage.getItem(key) : v;
 	} catch (e) { return null; }
+}
+
+function lpSaveSettings() {
+	clearTimeout(lpSettingsTimer);
+	lpSettingsTimer = setTimeout(function () {
+		fetch('/api/admin/account/settings', { method: 'POST', credentials: 'same-origin', keepalive: true,
+			headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': lpCsrf() }, body: JSON.stringify(window.gmdSettings) }).catch(function () {});
+	}, 1500);
+}
+
+// The measured connection is kept per browser (it is the device's network)
+// in a cookie that expires after player_speedtest_minutes: a laptop that
+// moves to another network measures again.
+function lpNetCookie(kbps) {
+	if (kbps === undefined) {
+		var m = /(?:^|; )gmd_net=(\d+)/.exec(document.cookie);
+		return m ? +m[1] : 0;
+	}
+	document.cookie = 'gmd_net=' + kbps + '; max-age=' + ((window.gmdNetMinutes || 30) * 60) + '; path=/; SameSite=Lax';
+}
+
+// lpNet is what a stream can get: the connection, at most the server's
+// share of player_max_bandwidth.
+function lpNet() {
+	var server = (lp && lp.info && lp.info.serverKbps) || 0;
+	if (!lp || !lp.net) { return server; }
+	return server ? Math.min(lp.net, server) : lp.net;
+}
+
+// lpReport sends the position to the server (play history, resume, the
+// admins' Now Playing); its answer can stop the player with a message.
+function lpReport(state, pos) {
+	if (!lp || !lp.info || !lp.sid) { return; }
+	var it = lpItem(), m = lp.info.meta || {}, mine = lp, q = lpQ('.lp-quality');
+	var body = new URLSearchParams({ sid: lp.sid, kind: it.kind, id: it.id, state: state,
+		pos: String(Math.floor(pos === undefined ? lpPosition() : pos)), dur: String(Math.floor(lp.info.duration || 0)),
+		title: [m.title || it.label, m.sub || lp.entry].filter(Boolean).join(' · '), quality: q ? q.value : '',
+		mode: lp.hlsSid ? 'hls' : (q && q.value !== 'original') ? 'transcode' : (lp.info.mode || '') });
+	fetch('/api/admin/library/play/progress', { method: 'POST', credentials: 'same-origin', body: body, keepalive: state === 'stop',
+		headers: { 'X-CSRF-Token': lpCsrf() } })
+		.then(function (r) { return r.ok ? r.json() : null; })
+		.then(function (d) { if (d && d.stop && lp === mine) { lp.sid = ''; lpClose(); lpStoppedNote(d.message); } })
+		.catch(function () {});
+}
+
+// lpStoppedNote shows an admin's message until it is closed.
+function lpStoppedNote(msg) {
+	var n = document.createElement('div');
+	n.className = 'card shadow border-warning position-fixed end-0 m-3';
+	n.style.zIndex = 2100; n.style.width = 'min(28rem, 92vw)'; n.style.bottom = '5rem'; n.setAttribute('role', 'alert');
+	n.innerHTML = '<div class="card-body d-flex gap-3 align-items-start"><i class="fa-solid fa-circle-stop text-warning fs-4"></i>' +
+		'<div class="flex-grow-1"><div class="fw-semibold mb-1">Playback stopped by an admin</div><div class="lp-stop-msg small"></div></div>' +
+		'<button type="button" class="btn-close" aria-label="Close"></button></div>';
+	n.querySelector('.lp-stop-msg').textContent = msg || '';
+	n.querySelector('.btn-close').addEventListener('click', function () { n.remove(); });
+	document.body.appendChild(n);
 }
 
 function lpFmt(t) {
@@ -2671,9 +2993,47 @@ function lpFmt(t) {
 	return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
 }
 
+// libPlayFirst plays a list where the account left it: the file played
+// last (the next one when that was finished), else the first one not
+// watched yet (series: the next episode), else from the start. Albums
+// always start at the first track.
 function libPlayFirst(list) {
 	var btns = libPlayButtons(list);
-	if (btns.length) { libPlay(btns[0]); }
+	if (!btns.length) { return; }
+	if (btns[0].dataset.playKind === 'track') { libPlay(btns[0]); return; }
+	var start = -1, last = btns.findIndex(function (b) { return b.dataset.last === '1'; });
+	if (last >= 0) { start = btns[last].dataset.watched === '1' ? last + 1 : last; }
+	if (start < 0 || start >= btns.length) { start = btns.findIndex(function (b) { return b.dataset.watched !== '1'; }); }
+	libPlay(btns[Math.max(start, 0)]);
+}
+
+// libContinue plays on from the Continue row: an audiobook with all its
+// parts (one timeline), else the file itself.
+function libContinue(kind, fileID, entryID, label, title, cover) {
+	if (kind !== 'audiobook') { lpPlayList([{ kind: kind, id: String(fileID), label: label }], 0, title, cover); return; }
+	fetch('/api/admin/library/playlist?type=audiobook&id=' + entryID, { credentials: 'same-origin' })
+		.then(function (r) { return r.json().then(function (d) { if (!r.ok) { throw new Error(d.error || ('HTTP ' + r.status)); } return d; }); })
+		.then(function (d) {
+			var list = (d.list || []).map(function (x) { return { kind: x.kind, id: String(x.id), label: x.label }; });
+			var idx = list.findIndex(function (x) { return x.id === String(fileID); });
+			lpPlayList(list.length ? list : [{ kind: kind, id: String(fileID), label: label }], Math.max(idx, 0), d.entry || title, d.cover || cover);
+		})
+		.catch(function (e) { libNotify('error', 'Can\'t play: ' + e.message); });
+}
+
+// libWatched marks a file watched or not watched.
+function libWatched(kind, id, on, btn) {
+	var form = new URLSearchParams({ kind: kind, id: String(id), watched: on ? '1' : '0', csrf_token: libCsrf });
+	fetch('/api/admin/library/watched', { method: 'POST', credentials: 'same-origin', body: form, headers: { 'X-CSRF-Token': libCsrf } })
+		.then(function (r) { if (!r.ok) { throw new Error('HTTP ' + r.status); } })
+		.then(function () {
+			var row = btn.closest('tr'), play = row && row.querySelector('[data-play-id]');
+			if (play) { if (on) { play.dataset.watched = '1'; } else { delete play.dataset.watched; } }
+			btn.outerHTML = on
+				? '<button type="button" class="btn btn-sm btn-success py-0 me-1" title="Watched - click to mark as not watched" onclick="libWatched(\'' + kind + '\', ' + id + ', false, this)"><i class="fa-solid fa-check"></i></button>'
+				: '<button type="button" class="btn btn-sm btn-outline-secondary py-0 me-1" title="Mark as watched" onclick="libWatched(\'' + kind + '\', ' + id + ', true, this)"><i class="fa-regular fa-eye"></i></button>';
+		})
+		.catch(function (e) { libNotify('error', e.message); });
 }
 
 // libPlayGrid plays an episode of the episode view, then the ones after it
@@ -2715,6 +3075,7 @@ function lpPlayList(list, idx, entry, cover) {
 	// The entry the playlist belongs to, for the bar and the media keys.
 	lp.entry = entry || '';
 	lp.cover = cover || '';
+	lp.sid = (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)).replace(/[^a-z0-9]/g, '').slice(0, 24);
 	var box = document.getElementById('libPlayer');
 	box.classList.remove('d-none', 'lp-expanded');
 	var rates = [0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -2752,6 +3113,7 @@ function lpPlayList(list, idx, entry, cover) {
 		'<select class="form-select form-select-sm w-auto lp-audio d-none" style="max-width:14rem" title="Audio track" aria-label="Audio track"></select>' +
 		'<select class="form-select form-select-sm w-auto lp-subs d-none" style="max-width:14rem" title="Subtitles" aria-label="Subtitles"></select>' +
 		'<select class="form-select form-select-sm w-auto lp-quality" style="max-width:22rem" aria-label="Quality"></select>' +
+		(window.gmdCanReport ? lpBtn('lp-report', 'fa-flag', 'Report this file as wrong (quality, language, content)') : '') +
 		lpBtn('lp-show-chapters d-none', 'fa-bookmark', 'Show the chapters') +
 		lpBtn('lp-show-list d-none', 'fa-list', 'Show the playlist') +
 		lpBtn('lp-expand', 'fa-up-right-and-down-left-from-center', 'Bigger or smaller') +
@@ -2759,6 +3121,14 @@ function lpPlayList(list, idx, entry, cover) {
 		'<button type="button" class="btn btn-sm btn-outline-danger lp-close" title="Close the player" aria-label="Close the player"><i class="fa-solid fa-xmark"></i></button>' +
 		'</div></div></div>';
 	lpQ('.lp-entry').textContent = lp.entry && lp.entry !== list[lp.idx].label ? '· ' + lp.entry : '';
+	var rep = lpQ('.lp-report');
+	if (rep) {
+		rep.addEventListener('click', function () {
+			var it = lpItem(), m = (lp.info && lp.info.meta) || {};
+			libReport({ movie: 'movie', episode: 'series', track: 'album', audiobook: 'audiobook' }[it.kind], it.id,
+				[m.title || it.label, m.sub].filter(Boolean).join(' · '));
+		});
+	}
 	lpQ('.lp-expand').addEventListener('click', function () {
 		lp.sized = true;
 		var cur = lpSize();
@@ -2854,9 +3224,8 @@ function lpPlayList(list, idx, entry, cover) {
 
 // ---- Connection speed and quality marks ----
 function lpMeasure(force) {
-	var cached = null;
-	try { cached = JSON.parse(lpStore('lp-net') || 'null'); } catch (e) { cached = null; }
-	if (!force && cached && Date.now() - cached.at < 30 * 60000) { lp.net = cached.kbps; return Promise.resolve(); }
+	var cached = lpNetCookie();
+	if (!force && cached) { lp.net = cached; return Promise.resolve(); }
 	var info = lpQ('.lp-info');
 	if (info) { info.textContent = 'Measuring the connection…'; }
 	var ctrl = new AbortController(), bytes = 0, t0 = 0, t1 = 0;
@@ -2881,7 +3250,7 @@ function lpMeasure(force) {
 			var secs = (t1 - t0) / 1000;
 			if (bytes > 65536 && secs > 0.005) {
 				var kbps = Math.round(bytes * 8 / 1000 / secs);
-				lpStore('lp-net', JSON.stringify({ kbps: kbps, at: Date.now() }));
+				lpNetCookie(kbps);
 				if (lp) { lp.net = kbps; }
 			}
 			if (lp) { lpMarkQualities(); lpShowInfo(); }
@@ -2901,7 +3270,8 @@ function lpMarkQualities() {
 	var best = -1, bestKbps = -1, notes = [];
 	lp.info.qualities.forEach(function (q, i) {
 		var note = '';
-		var netOK = lp.net ? (q.kbps || 0) <= lp.net * 0.75 : null;
+		var net = lpNet();
+		var netOK = net ? (q.kbps || 0) <= net * 0.75 : null;
 		var convOK = q.converted && q.speed ? q.speed >= 1.1 : null;
 		if (netOK === false) { note = ' ⚠ needs a faster connection'; }
 		else if (convOK === false) { note = ' ⚠ server converts at ' + q.speed.toFixed(1) + '×'; }
@@ -2961,7 +3331,7 @@ function lpMakeEl(audio) {
 	el.addEventListener('timeupdate', mine(lpTick));
 	el.addEventListener('ended', mine(lpEnded));
 	el.addEventListener('play', mine(function () { lp.userPaused = false; lp.buffering = null; lpShowInfo(); lpShowState(); }));
-	el.addEventListener('pause', mine(function () { if (!lp.buffering) { lp.userPaused = true; lp.pausedAt = Date.now(); } lpShowState(); }));
+	el.addEventListener('pause', mine(function () { if (!lp.buffering) { lp.userPaused = true; lp.pausedAt = Date.now(); lpReport('pause'); } lpShowState(); }));
 	el.addEventListener('waiting', mine(function () { if (!lp.userPaused && !lp.buffering && !el.ended) { lpBuffer(true); } }));
 	el.addEventListener('progress', mine(lpShowBuffered));
 	el.addEventListener('volumechange', mine(lpShowState));
@@ -2989,13 +3359,26 @@ function lpPlaceEl(el) {
 	var media = lpQ('.lp-media');
 	var old = lp.el;
 	if (old && old !== el) { lpUnfeed(old); old.pause(); old.removeAttribute('src'); old.load(); old.remove(); }
-	if (!media.querySelector('img') && el.tagName === 'AUDIO' && lp.cover) {
-		var img = document.createElement('img'); img.className = 'lp-cover'; img.alt = ''; img.src = lp.cover;
-		media.appendChild(img);
-	}
-	if (el.tagName === 'VIDEO') { var i = media.querySelector('img'); if (i) { i.remove(); } }
 	media.appendChild(el);
 	lp.el = el;
+}
+
+// lpCoverSrc is the playing file's cover (info.meta.cover), else the one of
+// the entry the playlist was started from.
+function lpCoverSrc() {
+	return (lp.info && lp.info.meta && lp.info.meta.cover) || lp.cover || '';
+}
+
+// lpShowCover shows the cover next to audio (tracks of a mixed playlist
+// each get their own album's).
+function lpShowCover() {
+	var media = lpQ('.lp-media'), img = media.querySelector('img'), src = lpCoverSrc();
+	if (!lp.el || lp.el.tagName !== 'AUDIO' || !src) { if (img) { img.remove(); } return; }
+	if (!img) {
+		img = document.createElement('img'); img.className = 'lp-cover'; img.alt = '';
+		media.insertBefore(img, media.firstChild);
+	}
+	if (img.getAttribute('src') !== src) { img.src = src; }
 }
 
 // lpLoad plays entry i, at startAt seconds into it when given (else where
@@ -3054,6 +3437,7 @@ function lpApply(info, preEl, startAt) {
 	} else if (!lp.el || (lp.el.tagName === 'AUDIO') !== info.audio) {
 		lpPlaceEl(lpTake(info.audio));
 	}
+	lpShowCover();
 	var sel = lpQ('.lp-quality');
 	var wanted = lpWantedQuality(info);
 	sel.innerHTML = '';
@@ -3079,6 +3463,8 @@ function lpApply(info, preEl, startAt) {
 	if (preEl) {
 		// Preloaded from the start of the file with the wanted quality.
 		lp.offset = 0;
+		lp.reported = Date.now();
+		lpReport('start', 0);
 		lpApplyRate(lp.el);
 		lpShowInfo();
 		lp.userPaused = false;
@@ -3088,9 +3474,11 @@ function lpApply(info, preEl, startAt) {
 	var t = startAt;
 	if (t === undefined) {
 		// Movies, episodes and audiobooks resume where they stopped; tracks start over.
-		var resume = lp.music ? 0 : +(lpStore(lpPosKey()) || 0);
+		var resume = lp.music ? 0 : +(info.resume || lpLocal(lpPosKey()) || 0);
 		t = resume > 10 && resume < (info.duration || 0) - 30 ? resume : 0;
 	}
+	lp.reported = Date.now();
+	lpReport('start', t);
 	lpStart(t);
 }
 
@@ -3567,6 +3955,7 @@ function lpShowInfo() {
 	if (lp.subNote) { text += ' · ' + lp.subNote; }
 	if (lp.buffering) { text += ' · Buffering…'; }
 	if (lp.net) { text += ' · connection ' + lpFmtKbps(lp.net); }
+	if (lp.info && lp.info.serverKbps && lp.info.serverKbps < (lp.net || Infinity)) { text += ' · server share ' + lpFmtKbps(lp.info.serverKbps); }
 	if (lp.sleep) { text += ' · ' + lpSleepText(); }
 	lpQ('.lp-info').textContent = text;
 }
@@ -3838,7 +4227,7 @@ function lpTick() {
 	lpQ('.lp-pos').textContent = lpFmt(abs);
 	lpShowBuffered();
 	var now = Date.now();
-	if (!lp.music && (!lp.saved || now - lp.saved > 5000)) { lp.saved = now; lpStore(lpPosKey(), String(Math.floor(lpPosition()))); }
+	if (!lp.el.paused && (!lp.reported || now - lp.reported > 10000)) { lp.reported = now; lpReport('play'); }
 	// The chapter being played is highlighted.
 	var cur = null;
 	lpQ('.lp-chapters').querySelectorAll('[data-start]').forEach(function (b) { if (+b.dataset.start <= abs + 0.5) { cur = b; } });
@@ -3852,8 +4241,8 @@ function lpTick() {
 function lpEnded() {
 	// A converted stream that ends well before the file does was cut off.
 	if (!lpDirect() && lp.info && lp.info.duration && lpPosition() < lp.info.duration - 10) { lpRestartBroken(); return; }
+	lpReport('end');
 	if (lp.repeat === 'one') { lpSeek(0); return; }
-	lpStore(lpPosKey(), '0');
 	if (lp.sleep && lp.sleep.mode === 'file') { lpSleepNow(); return; }
 	lpStep(1, true);
 }
@@ -3935,7 +4324,8 @@ function lpSessionHandlers() {
 
 function lpSessionMeta() {
 	if (!('mediaSession' in navigator) || !window.MediaMetadata) { return; }
-	var art = lp.cover ? [{ src: new URL(lp.cover, location.href).href, sizes: '512x512' }] : [];
+	var src = lpCoverSrc();
+	var art = src ? [{ src: new URL(src, location.href).href, sizes: '512x512' }] : [];
 	var m = (lp.info && lp.info.meta) || {};
 	navigator.mediaSession.metadata = new MediaMetadata({ title: m.title || lpItem().label, artist: m.artist || lp.entry || '',
 		album: m.album || lp.entry || '', artwork: art });
@@ -3980,7 +4370,7 @@ document.addEventListener('keydown', function (e) {
 
 // Stopping the media element ends the stream, which stops ffmpeg.
 function lpStop() {
-	if (lp) { lpDiscardPre(); lpStopHLS(); lp.ready = null; }
+	if (lp) { lpReport('stop'); lpDiscardPre(); lpStopHLS(); lp.ready = null; }
 	if (lp && lp.el) { lpUnfeed(lp.el); lp.el.pause(); lp.el.removeAttribute('src'); lp.el.load(); }
 	if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
 	lpFullWindow(false);

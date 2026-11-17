@@ -217,6 +217,9 @@ func collectSchedules() []scheduleSpec {
 		{def.IntervalImdb, def.CronImdb, "Refresh IMDB", worker.QueueFeeds, "RefreshImdb"},
 		{def.IntervalCacheRefresh, def.CronCacheRefresh, "Refresh Cache", worker.QueueData, "RefreshCache"},
 		{downloadCheckInterval(def), def.CronDownloadCheck, "Check Downloads", worker.QueueRSS, "CheckDownloads"},
+		{fileCacheCleanupInterval(def), def.CronFileCacheCleanup, "Cleanup File Cache", worker.QueueData, "CleanupFileCache"},
+		{dailyUnlessSet(def.IntervalMovieCollections, def.CronMovieCollections), def.CronMovieCollections,
+			"Check Movie Collections", worker.QueueFeeds, "CheckMovieCollections"},
 	} {
 		if g.interval == "" && g.cron == "" {
 			continue
@@ -243,6 +246,22 @@ func downloadCheckInterval(def *config.SchedulerConfig) string {
 	}
 
 	return def.IntervalDownloadCheck
+}
+
+// fileCacheCleanupInterval is the Default scheduler's file cache cleanup
+// interval; it runs daily unless an interval or cron is set.
+func fileCacheCleanupInterval(def *config.SchedulerConfig) string {
+	return dailyUnlessSet(def.IntervalFileCacheCleanup, def.CronFileCacheCleanup)
+}
+
+// dailyUnlessSet is a job's interval: daily when neither an interval nor a
+// cron is set.
+func dailyUnlessSet(interval, cron string) string {
+	if interval == "" && cron == "" {
+		return "1d"
+	}
+
+	return interval
 }
 
 func mediaQueue(str string) string {

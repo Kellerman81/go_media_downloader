@@ -199,6 +199,8 @@ type playMeta struct {
 	Sub    string `json:"sub"`
 	Artist string `json:"artist"`
 	Album  string `json:"album"`
+	// Cover of the album, audiobook, movie or series the file belongs to.
+	Cover string `json:"cover,omitempty"`
 }
 
 // playMetaOf takes the metadata from the database and the file's own tags:
@@ -221,6 +223,7 @@ func playMetaOf(kind, id, path string, p playProbe) playMeta {
 		A string `db:"a"`
 		B string `db:"b"`
 		C string `db:"c"`
+		D string `db:"d"` // id of the db* row with the cover
 	}
 
 	one := func(query string) row {
@@ -237,39 +240,56 @@ func playMetaOf(kind, id, path string, p playProbe) playMeta {
 	case "track":
 		r := one(`SELECT COALESCE(t.title, '') AS a, COALESCE(d.title, '') AS b,
 			COALESCE((SELECT ar.name FROM dbalbum_artists daa INNER JOIN dbartists ar ON ar.id = daa.dbartist_id
-				WHERE daa.dbalbum_id = f.dbalbum_id ORDER BY daa.position LIMIT 1), '') AS c
+				WHERE daa.dbalbum_id = f.dbalbum_id ORDER BY daa.position LIMIT 1), '') AS c,
+			COALESCE(CAST(f.dbalbum_id AS TEXT), '') AS d
 			FROM album_files f LEFT JOIN dbtracks t ON t.id = f.dbtrack_id LEFT JOIN dbalbums d ON d.id = f.dbalbum_id WHERE f.id = ?`)
 		m.Title = cmp.Or(p.Tags["title"], r.A, stem)
 		m.Artist = cmp.Or(p.Tags["artist"], r.C, p.Tags["album_artist"])
 		m.Album = cmp.Or(r.B, p.Tags["album"])
 		m.Sub = join(m.Artist, m.Album)
+		m.Cover = playCover("album", r.D)
 	case "audiobook":
 		r := one(`SELECT COALESCE(d.title, '') AS a,
 			COALESCE((SELECT au.name FROM dbaudiobook_authors daa INNER JOIN dbauthors au ON au.id = daa.dbauthor_id
-				WHERE daa.dbaudiobook_id = f.dbaudiobook_id ORDER BY daa.position LIMIT 1), '') AS b, '' AS c
+				WHERE daa.dbaudiobook_id = f.dbaudiobook_id ORDER BY daa.position LIMIT 1), '') AS b, '' AS c,
+			COALESCE(CAST(f.dbaudiobook_id AS TEXT), '') AS d
 			FROM audiobook_files f LEFT JOIN dbaudiobooks d ON d.id = f.dbaudiobook_id WHERE f.id = ?`)
 		m.Title = cmp.Or(p.Tags["title"], stem)
 		m.Artist = cmp.Or(r.B, p.Tags["artist"], p.Tags["album_artist"])
 		m.Album = cmp.Or(r.A, p.Tags["album"])
 		m.Sub = join(m.Artist, m.Album)
+		m.Cover = playCover("audiobook", r.D)
 	case "movie":
-		r := one(`SELECT COALESCE(d.title, '') AS a, COALESCE(CAST(d.year AS TEXT), '') AS b, COALESCE(d.genres, '') AS c
+		r := one(`SELECT COALESCE(d.title, '') AS a, COALESCE(CAST(d.year AS TEXT), '') AS b, COALESCE(d.genres, '') AS c,
+			COALESCE(CAST(f.dbmovie_id AS TEXT), '') AS d
 			FROM movie_files f LEFT JOIN dbmovies d ON d.id = f.dbmovie_id WHERE f.id = ?`)
 		m.Title = cmp.Or(r.A, stem)
 		m.Sub = join(r.B, strings.Join(strings.Fields(strings.ReplaceAll(r.C, ",", ", ")), " "))
 		m.Album = r.B
+		m.Cover = playCover("movie", r.D)
 	case "episode":
-		r := one(`SELECT COALESCE(ds.seriename, '') AS a, COALESCE(dse.title, '') AS b, COALESCE(dse.identifier, '') AS c
+		r := one(`SELECT COALESCE(ds.seriename, '') AS a, COALESCE(dse.title, '') AS b, COALESCE(dse.identifier, '') AS c,
+			COALESCE(CAST(f.dbserie_id AS TEXT), '') AS d
 			FROM serie_episode_files f LEFT JOIN dbserie_episodes dse ON dse.id = f.dbserie_episode_id
 			LEFT JOIN dbseries ds ON ds.id = f.dbserie_id WHERE f.id = ?`)
 		m.Title = cmp.Or(r.B, r.C, stem)
 		m.Sub = join(r.A, r.C)
 		m.Artist, m.Album = r.A, r.C
+		m.Cover = playCover("series", r.D)
 	default:
 		m.Title = stem
 	}
 
 	return m
+}
+
+// playCover is the library cover URL of a db* row ("" without one).
+func playCover(typ, dbID string) string {
+	if dbID == "" || dbID == "0" {
+		return ""
+	}
+
+	return "/api/admin/library/cover/" + typ + "/" + dbID
 }
 
 // playMode decides how the original quality is played.
@@ -410,7 +430,16 @@ func HandlePlayerInfo(c *gin.Context) {
 		}
 	}
 
+	fileID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	resume := 0.0
+
+	if c.Param("kind") != "track" {
+		fid := uint(fileID)
+		resume = database.PlayResume(accName(accessOf(c)), c.Param("kind"), &fid)
+	}
+
 	res := gin.H{
+		"resume": resume, "serverKbps": serverShareKbps(),
 		"duration": p.Duration, "mode": mode, "audio": audioOnly,
 		"qualities": qualities, "chapters": chapters, "name": filepath.Base(path),
 		"meta": playMetaOf(c.Param("kind"), c.Param("id"), path, p),
@@ -760,6 +789,12 @@ func HandlePlayerStream(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+
+	done, ok := streamGuard(c, c.Param("kind"), c.Param("id"))
+	if !ok {
+		return
+	}
+	defer done()
 
 	quality := c.DefaultQuery("q", "original")
 
@@ -1137,6 +1172,10 @@ func HandlePlayerSpeedTest(c *gin.Context) {
 	kb, _ := strconv.Atoi(c.Query("kb"))
 	kb = min(max(kb, 64), 32<<10)
 
+	// Within the total bandwidth: the result is what a stream would get now.
+	done, _ := streamGuard(c, "speedtest", "")
+	defer done()
+
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Cache-Control", "no-store")
 	c.Header("Content-Length", strconv.Itoa(kb<<10))
@@ -1262,6 +1301,8 @@ var hlsFileRe = regexp.MustCompile(`^(index\.m3u8|seg\d{5}\.ts)$`)
 
 type hlsSession struct {
 	owner  string // the account that started it; only it may use and stop it
+	kind   string // the file it converts (player kind and id)
+	id     string
 	dir    string
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -1372,6 +1413,11 @@ func HandlePlayerHLSStart(c *gin.Context) {
 		hlsStop(prev)
 	}
 
+	if streamBlocked(accessOf(c).Name, c.Param("kind"), c.Param("id")) {
+		c.JSON(http.StatusGone, gin.H{"error": "stopped by an admin"})
+		return
+	}
+
 	p, err := probeMedia(c.Request.Context(), path)
 	if err != nil || pk.Audio || p.VCodec == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no video to convert"})
@@ -1446,7 +1492,7 @@ func HandlePlayerHLSStart(c *gin.Context) {
 			return
 		}
 
-		s := &hlsSession{owner: accessOf(c).Name, dir: dir, cancel: cancel, done: make(chan struct{})}
+		s := &hlsSession{owner: accessOf(c).Name, kind: c.Param("kind"), id: c.Param("id"), dir: dir, cancel: cancel, done: make(chan struct{})}
 		s.last.Store(time.Now().Unix())
 
 		go func() {
@@ -1530,6 +1576,12 @@ func HandlePlayerHLSFile(c *gin.Context) {
 
 	s := v.(*hlsSession)
 	s.last.Store(time.Now().Unix())
+
+	done, ok := streamGuard(c, s.kind, s.id)
+	if !ok {
+		return
+	}
+	defer done()
 
 	if file == "index.m3u8" {
 		c.Header("Content-Type", "application/vnd.apple.mpegurl")

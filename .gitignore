@@ -9,3 +9,21 @@
 **/*.log
 backup/**
 temp/**
+cache/**
+# Runtime folders of a local pkg/main run (the repo-root schema/ and
+# databases/ stay tracked: the Dockerfile copies them into the image).
+pkg/main/logs/
+pkg/main/backup/
+pkg/main/databases/
+pkg/main/schema/
+pkg/main/temp/
+pkg/main/tmpdupanalysis/
+
+# Notes and write-ups; README.md stays (GitHub front page, copied into the image).
+*.md
+!/README.md
+
+# Local config data (the Go sources in that folder stay tracked).
+pkg/main/config/*.toml
+pkg/main/config/*.csv
+pkg/main/config/*.json

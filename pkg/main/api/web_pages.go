@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
@@ -1856,6 +1857,13 @@ func faviconLinks() gomponents.Node {
 		),
 		// Fallback used when none of the sized files exist yet.
 		html.Link(html.Rel("icon"), html.Type("image/png"), html.Href(dir+"app-icon.png")),
+		// Installable as an app (home screen, own window).
+		html.Link(html.Rel("manifest"), html.Href("/static/manifest.webmanifest")),
+		html.Meta(html.Name("theme-color"), html.Content("#222e3c")),
+		html.Meta(html.Name("mobile-web-app-capable"), html.Content("yes")),
+		html.Meta(html.Name("apple-mobile-web-app-capable"), html.Content("yes")),
+		html.Meta(html.Name("apple-mobile-web-app-title"), html.Content("Go Media")),
+		html.Script(gomponents.Raw("if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(function () {}); }")),
 	})
 }
 
@@ -1996,11 +2004,19 @@ func pageAs(
 		pageTitle = title + " · Media Downloader"
 	}
 
+	app := acc != nil && acc.App
+	// Not inside gomponents.If below: its arguments are evaluated even when
+	// acc is nil (the admin pages built by page()).
+	canReport := acc != nil && acc.CanReport()
+
 	return html.Doctype(
 		html.HTML(
 			html.Lang("en"),
 			pageHead(pageTitle),
 			html.Body(
+				gomponents.If(app, html.Class("gmd-app")),
+				html.StyleEl(gomponents.Raw(iconSidebarStyle)),
+				gomponents.If(app, html.StyleEl(gomponents.Raw(appStyle))),
 				html.A(
 					html.Href("#main-content"),
 					html.Class("visually-hidden-focusable"),
@@ -2011,7 +2027,11 @@ func pageAs(
 				),
 				html.Div(html.Class("wrapper"),
 					createNavbarFor(acc, activeConfig, activeDatabase, activeManagement),
-					gomponents.If(acc != nil, html.Script(gomponents.Raw("window.gmdUser = "+jsString(accName(acc))+";"))),
+					gomponents.If(acc != nil, html.Script(gomponents.Raw("window.gmdUser = "+jsString(accName(acc))+";"+
+						"window.gmdSettings = "+accountSettingsJS(acc)+";"+
+						"window.gmdNetMinutes = "+strconv.Itoa(config.GetSettingsGeneral().PlayerSpeedTestMinutes)+";"+
+						"window.gmdCanReport = "+strconv.FormatBool(canReport)+";"))),
+					html.Script(gomponents.Raw(sidebarModeScript)),
 					html.Div(
 						html.Class("main"),
 						html.Nav(html.Class("navbar navbar-expand navbar-light navbar-bg"),
@@ -2036,7 +2056,7 @@ func pageAs(
 									append([]gomponents.Node{html.Class("row")}, addcontent...)...),
 							),
 						),
-						html.Footer(
+						gomponents.If(!app, html.Footer(
 							html.Class("content-footer"),
 							// System Status Footer
 							html.Div(
@@ -2079,7 +2099,7 @@ func pageAs(
 									),
 								),
 							),
-						),
+						)),
 					),
 				),
 

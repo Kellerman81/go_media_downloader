@@ -208,6 +208,7 @@ type tmdbVideo struct {
 	Site        string `json:"site"`
 	Size        int    `json:"size"`
 	Type        string `json:"type"`
+	Language    string `json:"iso_639_1"`
 	Official    bool   `json:"official"`
 	PublishedAt string `json:"published_at"`
 }
@@ -571,6 +572,7 @@ func convertVideos(tmdbVideos []tmdbVideo) []apiexternal_v2.Video {
 			Site:        v.Site,
 			Size:        v.Size,
 			Type:        v.Type,
+			Language:    v.Language,
 			Official:    v.Official,
 			PublishedAt: parseDate(v.PublishedAt),
 		}

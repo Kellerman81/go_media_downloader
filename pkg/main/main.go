@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
@@ -538,6 +539,16 @@ func main() {
 	router.Static("/static", "./static")
 	// Serve the browser's default /favicon.ico request with the small app icon.
 	router.StaticFile("/favicon.ico", "./static/img/icons/icon-32x32.png")
+	// The web app manifest's type, which slim images have no mime.types for.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+
+	// The installed web app's service worker: served from the root, so it
+	// may control every page.
+	router.GET("/sw.js", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Content-Type", "text/javascript; charset=utf-8")
+		c.File("./static/sw.js")
+	})
 
 	// Root path redirect
 	router.GET("/", func(c *gin.Context) {

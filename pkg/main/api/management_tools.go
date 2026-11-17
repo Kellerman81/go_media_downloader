@@ -833,6 +833,7 @@ var apiEndpointsGeneral = []apiEndpointDoc{
 	{"POST", "/api/structure", "Test file structure"},
 	{"POST", "/api/album/force-match", "Force-match an album"},
 	{"GET", "/api/cache/refresh", "Refresh in-memory cache"},
+	{"GET", "/api/cache/cleanupfiles", "Clean up cover and subtitle cache"},
 	{"GET", "/api/cache/list", "List cache entries"},
 	{"POST", "/api/cache/add", "Add cache entry"},
 	{"DELETE", "/api/cache/remove/{key}", "Remove cache entry"},
@@ -1023,6 +1024,22 @@ func renderAPITestingPage() gomponents.Node {
 										html.Class("fas fa-database me-2"),
 									),
 									gomponents.Text("DB Backup"),
+								),
+							),
+							html.Div(
+								html.Class("col-md-3"),
+								html.Button(
+									html.Type("button"),
+									html.Class("btn btn-secondary w-100"),
+									html.Title("Remove cached covers and subtitles nothing refers to any more"),
+									gomponents.Attr(
+										"onclick",
+										"executeAPICall('GET', '/api/cache/cleanupfiles', '', 'File Cache Cleanup')",
+									),
+									html.I(
+										html.Class("fas fa-broom me-2"),
+									),
+									gomponents.Text("Clean File Cache"),
 								),
 							),
 						),

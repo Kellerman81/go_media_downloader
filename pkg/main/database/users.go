@@ -20,10 +20,36 @@ const (
 // Roles in the order the user page offers them.
 var Roles = []string{RoleUser, RoleSearchingUser, RoleRequestingUser, RoleAdmin}
 
+// Features an account may have besides viewing and playing (admins have
+// all of them).
+const (
+	FeatureSearch        = "search"        // start searches and downloads
+	FeatureRequest       = "request"       // request new media
+	FeatureDownload      = "download"      // download media files
+	FeatureRequestDelete = "requestdelete" // report files as wrong
+)
+
+// Features in the order the user page offers them.
+var Features = []string{FeatureSearch, FeatureRequest, FeatureDownload, FeatureRequestDelete}
+
+// RoleFeatures are the features a role pre-sets; each can then be switched
+// per account.
+var RoleFeatures = map[string][]string{
+	RoleUser:           nil,
+	RoleSearchingUser:  {FeatureSearch},
+	RoleRequestingUser: {FeatureRequest},
+	RoleAdmin:          Features,
+}
+
+// SystemAdmin is the row holding the built-in admin login's settings: it
+// can't log in (no password matches "!") and isn't listed.
+const SystemAdmin = "admin"
+
 var (
 	ErrUserExists   = errors.New("a user with this name already exists")
 	ErrUserInvalid  = errors.New("username and role are required")
 	ErrUserPassword = errors.New("the password needs at least 8 characters")
+	ErrUserReserved = errors.New(`the name "admin" belongs to the built-in admin login`)
 )
 
 // User is a web UI account (the users table). The built-in admin login is
@@ -34,6 +60,8 @@ type User struct {
 	PasswordHash string `db:"password_hash"`
 	Role         string `db:"role"`
 	MediaGroups  string `db:"media_groups"`
+	Features     string `db:"features"` // comma separated Feature*
+	Settings     string `db:"settings"` // JSON object
 	CreatedAt    string `db:"created_at"`
 	UpdatedAt    string `db:"updated_at"`
 	LastLogin    string `db:"last_login"`
@@ -52,11 +80,26 @@ func (u *User) Groups() []string {
 	return out
 }
 
-const userColumns = "id, username, password_hash, role, media_groups, created_at, updated_at, coalesce(last_login, '') as last_login"
+// FeatureList are the features of the account (Feature*).
+func (u *User) FeatureList() []string {
+	var out []string
 
-// GetUsers returns all accounts by name.
+	for f := range strings.SplitSeq(u.Features, ",") {
+		if f = strings.TrimSpace(f); slices.Contains(Features, f) {
+			out = append(out, f)
+		}
+	}
+
+	return out
+}
+
+const userColumns = "id, username, password_hash, role, media_groups, features, settings, created_at, updated_at, " +
+	"coalesce(last_login, '') as last_login"
+
+// GetUsers returns all accounts by name (not the built-in admin's row).
 func GetUsers() []User {
-	return StructscanT[User](false, 0, "select "+userColumns+" from users order by username collate nocase")
+	return StructscanT[User](false, 0, "select "+userColumns+" from users where not (username = ? and password_hash = '!') "+
+		"order by username collate nocase", SystemAdmin)
 }
 
 // GetUserByName returns the account with this name (case-insensitive).
@@ -95,6 +138,12 @@ func validUser(u *User) error {
 		return ErrUserInvalid
 	}
 
+	if strings.EqualFold(u.Username, SystemAdmin) {
+		return ErrUserReserved
+	}
+
+	u.Features = strings.Join(u.FeatureList(), ",")
+
 	return nil
 }
 
@@ -113,8 +162,8 @@ func InsertUser(u *User, password string) error {
 		return err
 	}
 
-	id, err := ExecNid("insert into users (username, password_hash, role, media_groups) values (?, ?, ?, ?)",
-		&u.Username, &hash, &u.Role, &u.MediaGroups)
+	id, err := ExecNid("insert into users (username, password_hash, role, media_groups, features) values (?, ?, ?, ?, ?)",
+		&u.Username, &hash, &u.Role, &u.MediaGroups, &u.Features)
 	if err != nil {
 		return err
 	}
@@ -124,7 +173,7 @@ func InsertUser(u *User, password string) error {
 	return nil
 }
 
-// UpdateUser saves name, role and media groups of an account.
+// UpdateUser saves name, role, media groups and features of an account.
 func UpdateUser(u *User) error {
 	if err := validUser(u); err != nil {
 		return err
@@ -134,8 +183,8 @@ func UpdateUser(u *User) error {
 		return ErrUserExists
 	}
 
-	return ExecNErr("update users set username = ?, role = ?, media_groups = ?, updated_at = datetime('now','localtime') where id = ?",
-		&u.Username, &u.Role, &u.MediaGroups, &u.ID)
+	return ExecNErr("update users set username = ?, role = ?, media_groups = ?, features = ?, updated_at = datetime('now','localtime') where id = ?",
+		&u.Username, &u.Role, &u.MediaGroups, &u.Features, &u.ID)
 }
 
 // SetUserPassword replaces the password of an account.
@@ -156,4 +205,28 @@ func DeleteUser(id *uint) error {
 // TouchUserLogin records a successful login.
 func TouchUserLogin(id *uint) {
 	ExecN("update users set last_login = datetime('now','localtime') where id = ?", id)
+}
+
+// GetUserSettings returns the settings JSON of an account ("{}" without
+// any); the built-in admin's are in the SystemAdmin row.
+func GetUserSettings(name string) string {
+	s := Getdatarow[string](false, "select settings from users where username = ?", name)
+	if s == "" {
+		return "{}"
+	}
+
+	return s
+}
+
+// SaveUserSettings stores the settings JSON of an account, creating the
+// built-in admin's row on first use.
+func SaveUserSettings(name, settings string) error {
+	if strings.EqualFold(name, SystemAdmin) {
+		if err := ExecNErr("insert or ignore into users (username, password_hash, role) values (?, '!', ?)",
+			SystemAdmin, RoleAdmin); err != nil {
+			return err
+		}
+	}
+
+	return ExecNErr("update users set settings = ?, updated_at = datetime('now','localtime') where username = ?", settings, name)
 }

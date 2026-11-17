@@ -249,6 +249,11 @@ func webStatisticsPage(ctx *gin.Context) {
 				"/api/admin/statistics/quality",
 				"Loading library quality...",
 			),
+			statSectionCard(
+				"text-success",
+				"/api/admin/statistics/plays",
+				"Loading play history...",
+			),
 			// Storage details
 			statSectionCard(
 				"text-info",

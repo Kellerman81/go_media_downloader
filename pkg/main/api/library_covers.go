@@ -118,6 +118,19 @@ func HandleLibraryCover(c *gin.Context) {
 		return
 	}
 
+	// The index can outlive a file deleted by hand: load it again.
+	if _, err := os.Stat(path); err != nil {
+		coverIndex.remove(path)
+		c.Header("Cache-Control", "no-store")
+		c.Data(http.StatusOK, "image/svg+xml", []byte(coverPlaceholder))
+
+		return
+	}
+
+	if c.Query("size") != "full" {
+		path = coverThumb(path)
+	}
+
 	c.Header("Cache-Control", "public, max-age=604800")
 	c.File(path)
 }
@@ -263,8 +276,8 @@ func cachedCoverWith(kind string, id uint64, key string, load func(dir, base str
 	base := fmt.Sprintf("%s-%d-%s", kind, id, hex.EncodeToString(sum[:6]))
 	dir := coverCacheDir()
 
-	if matches, _ := filepath.Glob(filepath.Join(dir, base+".*")); len(matches) > 0 {
-		return matches[0], nil
+	if path, ok := coverIndex.lookup(dir, base); ok {
+		return path, nil
 	}
 
 	if failed, ok := coverFailures.Load(base); ok && time.Since(failed.(time.Time)) < coverRetryAfter {
@@ -275,13 +288,15 @@ func cachedCoverWith(kind string, id uint64, key string, load func(dir, base str
 	lock.(*sync.Mutex).Lock()
 	defer lock.(*sync.Mutex).Unlock()
 
-	if matches, _ := filepath.Glob(filepath.Join(dir, base+".*")); len(matches) > 0 {
-		return matches[0], nil
+	if path, ok := coverIndex.lookup(dir, base); ok {
+		return path, nil
 	}
 
 	path, err := load(dir, base)
 	if err != nil {
 		coverFailures.Store(base, time.Now())
+	} else {
+		coverIndex.add(path)
 	}
 
 	return path, err

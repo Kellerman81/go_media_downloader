@@ -56,6 +56,10 @@ func buildDatabaseTableSelect() gomponents.Node {
 // createNavbarFor is the sidebar of an account: the full one for admins
 // (nil: an admin page), else only the pages of its role.
 func createNavbarFor(acc *userAccess, activeConfig, activeDatabase, activeManagement bool) gomponents.Node {
+	if acc != nil && acc.App {
+		return appNavbar(acc)
+	}
+
 	if acc == nil || acc.Admin() {
 		return createNavbar(activeConfig, activeDatabase, activeManagement)
 	}
@@ -379,6 +383,31 @@ func createNavbar(activeConfig bool, activeDatabase bool, activeManagement bool)
 								html.I(html.Class("align-middle fa-solid fa-inbox")),
 								html.Span(html.Class("align-middle"), gomponents.Text("Requests")),
 								requestsBadge(),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/nowplaying"),
+								html.I(html.Class("align-middle fa-solid fa-circle-play")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Now Playing")),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/reports"),
+								html.I(html.Class("align-middle fa-solid fa-flag")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Reports")),
+								reportsBadge(),
+							),
+						),
+						html.Li(html.Class("sidebar-item"),
+							html.A(
+								html.Class("sidebar-link"),
+								html.Href("/api/admin/exclusions"),
+								html.I(html.Class("align-middle fa-solid fa-ban")),
+								html.Span(html.Class("align-middle"), gomponents.Text("Import Exclusions")),
 							),
 						),
 						html.Li(html.Class("sidebar-item"),

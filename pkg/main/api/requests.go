@@ -10,6 +10,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -43,12 +44,13 @@ func (w *bufferedWriter) Status() int                       { return w.status }
 func (w *bufferedWriter) Written() bool                     { return w.body.Len() > 0 }
 func (w *bufferedWriter) Size() int                         { return w.body.Len() }
 
-// requestable wraps an Add Media handler of one kind: for a requestinguser
-// the entries it creates are held back as requests.
+// requestable wraps an Add Media handler of one kind: for a non-admin
+// (with the request feature) the entries it creates are held back as
+// requests.
 func requestable(kind string, h gin.HandlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		acc := accessOf(c)
-		if acc.Role != database.RoleRequestingUser {
+		if acc.Admin() {
 			h(c)
 			return
 		}
@@ -85,6 +87,8 @@ func requestable(kind string, h gin.HandlerFunc) gin.HandlerFunc {
 				r := database.MediaRequest{Username: acc.Name, Kind: kind, EntryID: id, Listname: listname, Title: title}
 				if err := database.HoldMediaRequest(&r); err == nil {
 					held = append(held, title)
+					notifyAccountEvent(c, providers.EventRequested, "/api/admin/requests",
+						&accountEvent{List: listname, User: acc.Name, Type: kind, Title: title})
 				}
 			}
 		}

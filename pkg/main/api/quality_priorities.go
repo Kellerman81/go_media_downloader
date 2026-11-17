@@ -48,15 +48,10 @@ var qpSingleLists = []struct {
 		func(q *config.QualityConfig) bool { return q.UseForPriorityCodec }},
 	{qpList{"audio", "Audio Codec"}, func() []database.Qualities { return database.DBConnect.GetaudiosIn },
 		func(q *config.QualityConfig) bool { return q.UseForPriorityAudio }},
-	// Audio formats rank music and audiobook releases and have no switch:
-	// shown for profiles without video categories or with audio format rules.
+	// Audio formats rank music and audiobook releases, only with Use Audio
+	// Format For Priority (parser and searcher skip them otherwise).
 	{qpList{"audio_format", "Audio Format"}, func() []database.Qualities { return database.DBConnect.GetaudioformatsIn },
-		func(q *config.QualityConfig) bool {
-			return !(q.UseForPriorityResolution || q.UseForPriorityQuality || q.UseForPriorityCodec || q.UseForPriorityAudio) ||
-				slices.ContainsFunc(q.QualityReorder, func(r config.QualityReorderConfig) bool {
-					return strings.EqualFold(r.ReorderType, "audio_format")
-				})
-		}},
+		func(q *config.QualityConfig) bool { return q.UseForPriorityAudioFormat }},
 }
 
 // qpEntry is one list entry with its effective value in a profile.
@@ -530,6 +525,9 @@ func HandleQualityPrioritiesEditor(c *gin.Context) {
 	}{
 		{q.UseForPriorityResolution, "resolution"}, {q.UseForPriorityQuality, "source"},
 		{q.UseForPriorityCodec, "codec"}, {q.UseForPriorityAudio, "audio"},
+		// Named only for audio profiles (no video switch on).
+		{q.UseForPriorityAudioFormat || q.UseForPriorityResolution || q.UseForPriorityQuality ||
+			q.UseForPriorityCodec || q.UseForPriorityAudio, "audio format"},
 	} {
 		if !s.on {
 			off = append(off, s.label)

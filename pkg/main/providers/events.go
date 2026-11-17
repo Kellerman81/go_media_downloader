@@ -12,17 +12,20 @@ import (
 // Notification events a media config's [[...notification]] entries can
 // subscribe to.
 const (
-	EventAddedDownload = "added_download" // a release was sent to a download client
-	EventAddedData     = "added_data"     // a file was organized into the library
-	EventUpgradedData  = "upgraded_data"  // an organized file replaced older ones
-	EventAddedToList   = "added_to_list"  // an entry was added to a movies/series/... list
-	EventAddedToDB     = "added_to_db"    // a dbmovies/dbseries/... row was created
+	EventAddedDownload = "added_download"  // a release was sent to a download client
+	EventAddedData     = "added_data"      // a file was organized into the library
+	EventUpgradedData  = "upgraded_data"   // an organized file replaced older ones
+	EventAddedToList   = "added_to_list"   // an entry was added to a movies/series/... list
+	EventAddedToDB     = "added_to_db"     // a dbmovies/dbseries/... row was created
+	EventRequested     = "media_requested" // an account requested media (waits for approval)
+	EventReported      = "media_reported"  // an account reported a file as wrong
 )
 
 // NotificationEvents lists every event, in the order the config screens
 // offer them.
 var NotificationEvents = []string{
 	EventAddedDownload, EventAddedData, EventUpgradedData, EventAddedToList, EventAddedToDB,
+	EventRequested, EventReported,
 }
 
 // HasEventNotification reports whether cfgp has a notification for event,

@@ -83,3 +83,32 @@ func TestCheckaddmovieentryNotifiesAddedToList(t *testing.T) {
 		t.Errorf("csv %q, want one added_to_list line", got)
 	}
 }
+
+// TestCheckaddmovieentryExclusion: an excluded movie isn't added to the
+// lists of its media group, but still to another group's.
+func TestCheckaddmovieentryExclusion(t *testing.T) {
+	useTestDB(t)
+
+	if err := database.ExecNErr("insert into dbmovies (id, title, imdb_id) values (1, 'Old', 'tt0001')"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.AddImportExclusion("movie", "movie_DE", new(uint(1)), "Old"); err != nil {
+		t.Fatal(err)
+	}
+
+	count := func(list string) int {
+		return database.Getdatarow[int](false, "select count() from movies where dbmovie_id = 1 and listname = ?", list)
+	}
+
+	de := &config.MediaTypeConfig{Name: "DE", NamePrefix: "movie_DE", Lists: []config.MediaListsConfig{{Name: "DE List"}}}
+	en := &config.MediaTypeConfig{Name: "EN", NamePrefix: "movie_EN", Lists: []config.MediaListsConfig{{Name: "EN List"}}}
+
+	if err := Checkaddmovieentry(new(uint(1)), de, &de.Lists[0], "tt0001"); err != nil || count("DE List") != 0 {
+		t.Errorf("excluded group: %v, %d rows", err, count("DE List"))
+	}
+
+	if err := Checkaddmovieentry(new(uint(1)), en, &en.Lists[0], "tt0001"); err != nil || count("EN List") != 1 {
+		t.Errorf("other group: %v, %d rows", err, count("EN List"))
+	}
+}

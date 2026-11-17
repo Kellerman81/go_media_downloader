@@ -77,11 +77,16 @@ func TestQualityPrioritiesLists(t *testing.T) {
 		t.Errorf("pairs = %v; want 20, 576p bluray first, 1080p sdtv last", pairs)
 	}
 
-	music := &config.QualityConfig{Name: "Music", QualityReorder: []config.QualityReorderConfig{
+	music := &config.QualityConfig{Name: "Music", UseForPriorityAudioFormat: true, QualityReorder: []config.QualityReorderConfig{
 		{Name: "MP3", ReorderType: "audio_format", Newpriority: 110},
 	}}
 	if l := qpLists(music); len(l) != 1 || l[0].Key != "audio_format" {
 		t.Errorf("music lists = %+v; want audio_format", l)
+	}
+
+	// Without the switch the parser ignores audio formats: no list to order.
+	if l := qpLists(&config.QualityConfig{Name: "Off", QualityReorder: music.QualityReorder}); len(l) != 0 {
+		t.Errorf("lists without Use Audio Format For Priority = %+v", l)
 	}
 
 	if got := orderOf(music, "audio_format"); !slices.Equal(got, []string{"MP3", "FLAC", "AAC"}) {

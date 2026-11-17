@@ -1,7 +1,7 @@
 package api
 
 import (
-	"errors"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"strconv"
@@ -17,7 +17,12 @@ import (
 // The user management page (/admin/users, admins only) and the own account
 // page (/admin/account, everyone).
 
-var errUserReserved = errors.New(`the name "admin" belongs to the built-in admin login`)
+var featureLabels = map[string]string{
+	database.FeatureSearch:        "Search and download releases",
+	database.FeatureRequest:       "Request new media (an admin approves)",
+	database.FeatureDownload:      "Download media files",
+	database.FeatureRequestDelete: "Report files as wrong (quality, language, content)",
+}
 
 var roleLabels = map[string]string{
 	database.RoleUser:           "User: view and play",
@@ -61,7 +66,7 @@ func renderUsersContent(csrf string, edit *database.User, alert string) gomponen
 		id := strconv.FormatUint(uint64(u.ID), 10)
 		rows = append(rows, html.Tr(
 			html.Td(html.Strong(gomponents.Text(u.Username))),
-			html.Td(gomponents.Text(roleLabels[u.Role])),
+			html.Td(gomponents.Text(roleLabels[u.Role]), userFeatureBadges(u)),
 			html.Td(html.Class("small"), gomponents.Text(groups)),
 			html.Td(html.Class("small text-muted"), gomponents.Text(orDash(shortTime(u.LastLogin)))),
 			html.Td(html.Class("text-end text-nowrap"),
@@ -116,6 +121,20 @@ func orDash(s string) string {
 	return s
 }
 
+// userFeatureBadges lists the features of a non-admin account.
+func userFeatureBadges(u *database.User) gomponents.Node {
+	if u.Role == database.RoleAdmin {
+		return nil
+	}
+
+	nodes := make([]gomponents.Node, 0, 4)
+	for _, f := range u.FeatureList() {
+		nodes = append(nodes, html.Span(html.Class("badge text-bg-light border ms-1"), gomponents.Text(f)))
+	}
+
+	return gomponents.Group(nodes)
+}
+
 // renderUserForm is the add form, or the edit form of u.
 func renderUserForm(csrf string, u *database.User) gomponents.Node {
 	title, button := "Add an account", "Add"
@@ -129,6 +148,17 @@ func renderUserForm(csrf string, u *database.User) gomponents.Node {
 	for _, r := range database.Roles {
 		roles = append(roles, html.Option(html.Value(r), gomponents.If(r == u.Role, html.Selected()), gomponents.Text(roleLabels[r])))
 	}
+
+	features := make([]gomponents.Node, 0, len(database.Features))
+	for _, f := range database.Features {
+		id := "userFeature_" + f
+		features = append(features, html.Div(html.Class("col-sm-6 col-xl-3"), html.Div(html.Class("form-check"),
+			html.Input(html.Type("checkbox"), html.Class("form-check-input user-feature"), html.ID(id), html.Name("features"), html.Value(f),
+				gomponents.If(slices.Contains(u.FeatureList(), f), html.Checked())),
+			html.Label(html.Class("form-check-label"), html.For(id), gomponents.Text(featureLabels[f])))))
+	}
+
+	presets, _ := json.Marshal(database.RoleFeatures)
 
 	groups := make([]gomponents.Node, 0, 8)
 
@@ -152,7 +182,8 @@ func renderUserForm(csrf string, u *database.User) gomponents.Node {
 						html.Value(u.Username), html.Required(), gomponents.Attr("autocomplete", "off"))),
 				html.Div(html.Class("col-md-4"),
 					html.Label(html.Class("form-label"), html.For("userRole"), gomponents.Text("Role")),
-					html.Select(html.Class("form-select"), html.ID("userRole"), html.Name("role"), gomponents.Group(roles))),
+					html.Select(html.Class("form-select"), html.ID("userRole"), html.Name("role"), gomponents.Group(roles),
+						gomponents.Attr("onchange", "userRolePreset(this.value)"))),
 				gomponents.If(u.ID == 0, html.Div(html.Class("col-md-4"),
 					html.Label(html.Class("form-label"), html.For("userPassword"), gomponents.Text("Password")),
 					html.Input(html.Type("password"), html.Class("form-control"), html.ID("userPassword"), html.Name("password"),
@@ -162,7 +193,16 @@ func renderUserForm(csrf string, u *database.User) gomponents.Node {
 					html.Div(html.Class("form-label"), gomponents.Text("Media groups")),
 					html.Div(html.Class("row g-1"), gomponents.Group(groups)),
 					html.Div(html.Class("form-text"), gomponents.Text("What the account sees in the Library, Calendar and Add Media. Admins always see everything."))),
+				html.Div(html.Class("col-12"),
+					html.Div(html.Class("form-label"), gomponents.Text("Features")),
+					html.Div(html.Class("row g-1"), gomponents.Group(features)),
+					html.Div(html.Class("form-text"), gomponents.Text("Choosing a role ticks its features; switch single ones as needed. Admins may do everything."))),
 			),
+			html.Script(gomponents.Raw(`var userRoleFeatures = `+string(presets)+`;
+function userRolePreset(role) {
+	var on = userRoleFeatures[role] || [];
+	document.querySelectorAll('#userForm .user-feature').forEach(function (c) { c.checked = on.indexOf(c.value) >= 0; });
+}`)),
 			html.Div(html.Class("mt-3"),
 				html.Button(html.Type("submit"), html.Class("btn btn-primary me-2"), gomponents.Text(button)),
 				gomponents.If(u.ID != 0, html.A(html.Class("btn btn-outline-secondary"), html.Href("/api/admin/users"), gomponents.Text("Cancel")))),
@@ -181,6 +221,7 @@ func HandleUserSave(c *gin.Context) {
 		Username:    strings.TrimSpace(c.PostForm("username")),
 		Role:        c.PostForm("role"),
 		MediaGroups: strings.Join(c.PostFormArray("groups"), ","),
+		Features:    strings.Join(c.PostFormArray("features"), ","),
 	}
 
 	if id, err := strconv.ParseUint(c.PostForm("id"), 10, 64); err == nil {
@@ -188,7 +229,7 @@ func HandleUserSave(c *gin.Context) {
 	}
 
 	if strings.EqualFold(u.Username, DefaultUsername) {
-		usersReply(c, &u, errUserReserved.Error(), "danger")
+		usersReply(c, &u, database.ErrUserReserved.Error(), "danger")
 		return
 	}
 

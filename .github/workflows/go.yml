@@ -77,7 +77,7 @@ jobs:
         cp init_imdb-windows-amd64.exe init_imdb.exe
         zip -r packages/gomedia-windows-x64.zip . \
           -x "*.git*" ".github/*" "pkg/*" "Dockerfile*" "go.*" "*.zip" "*.go" \
-             "go_media_downloader-*" "init_imdb-*" "packages/*"
+             "go_media_downloader-*" "init_imdb-*" "go_media_player-*" "packages/*" "docs/screenshots/*"
         rm go_media_downloader.exe init_imdb.exe
         
         # Linux x64
@@ -85,7 +85,7 @@ jobs:
         cp init_imdb-linux-amd64 init_imdb
         zip -r packages/gomedia-linux-x64.zip . \
           -x "*.git*" ".github/*" "pkg/*" "Dockerfile*" "go.*" "*.zip" "*.go" \
-             "go_media_downloader-*" "init_imdb-*" "packages/*"
+             "go_media_downloader-*" "init_imdb-*" "go_media_player-*" "packages/*" "docs/screenshots/*"
         rm go_media_downloader init_imdb
         
         # Linux ARM64
@@ -93,7 +93,7 @@ jobs:
         cp init_imdb-linux-arm64 init_imdb
         zip -r packages/gomedia-linux-arm64.zip . \
           -x "*.git*" ".github/*" "pkg/*" "Dockerfile*" "go.*" "*.zip" "*.go" \
-             "go_media_downloader-*" "init_imdb-*" "packages/*"
+             "go_media_downloader-*" "init_imdb-*" "go_media_player-*" "packages/*" "docs/screenshots/*"
         rm go_media_downloader init_imdb
         
         # Linux ARM7
@@ -101,9 +101,22 @@ jobs:
         cp init_imdb-linux-arm7 init_imdb
         zip -r packages/gomedia-linux-arm7.zip . \
           -x "*.git*" ".github/*" "pkg/*" "Dockerfile*" "go.*" "*.zip" "*.go" \
-             "go_media_downloader-*" "init_imdb-*" "packages/*"
+             "go_media_downloader-*" "init_imdb-*" "go_media_player-*" "packages/*" "docs/screenshots/*"
         rm go_media_downloader init_imdb
     
+    # The desktop player: its own zips, the binary only.
+    - name: Create player packages
+      run: |
+        cp go_media_player-linux-amd64 go_media_player
+        zip -j packages/gomedia-player-linux-x64.zip go_media_player
+        rm go_media_player
+        cp go_media_player-linux-arm64 go_media_player
+        zip -j packages/gomedia-player-linux-arm64.zip go_media_player
+        rm go_media_player
+        cp go_media_player-windows-amd64.exe go_media_player.exe
+        zip -j packages/gomedia-player-windows-x64.zip go_media_player.exe
+        rm go_media_player.exe
+
     - name: Upload release packages
       uses: actions/upload-artifact@v4
       with:

@@ -2,11 +2,13 @@ package tmdb
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -529,9 +531,19 @@ func (p *Provider) GetSeriesImages(
 	return convertImageCollection(&response), nil
 }
 
-// GetMovieVideos retrieves videos for a movie.
-func (p *Provider) GetMovieVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
-	url := fmt.Sprintf("%s/movie/%d/videos", p.baseURL, id)
+// videoLanguages is the query asking for videos in these languages.
+func videoLanguages(languages []string) string {
+	if len(languages) == 0 {
+		return ""
+	}
+
+	return "?include_video_language=" + url.QueryEscape(strings.Join(languages, ","))
+}
+
+// GetMovieVideos retrieves videos for a movie, in the given languages
+// (ISO 639-1; TMDB's default without).
+func (p *Provider) GetMovieVideos(ctx context.Context, id int, languages ...string) ([]apiexternal_v2.Video, error) {
+	url := fmt.Sprintf("%s/movie/%d/videos", p.baseURL, id) + videoLanguages(languages)
 
 	var response struct {
 		Results []tmdbVideo `json:"results"`
@@ -544,9 +556,10 @@ func (p *Provider) GetMovieVideos(ctx context.Context, id int) ([]apiexternal_v2
 	return convertVideos(response.Results), nil
 }
 
-// GetSeriesVideos retrieves videos for a TV series.
-func (p *Provider) GetSeriesVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
-	url := fmt.Sprintf("%s/tv/%d/videos", p.baseURL, id)
+// GetSeriesVideos retrieves videos for a TV series, in the given languages
+// (ISO 639-1; TMDB's default without).
+func (p *Provider) GetSeriesVideos(ctx context.Context, id int, languages ...string) ([]apiexternal_v2.Video, error) {
+	url := fmt.Sprintf("%s/tv/%d/videos", p.baseURL, id) + videoLanguages(languages)
 
 	var response struct {
 		Results []tmdbVideo `json:"results"`
@@ -851,4 +864,53 @@ func extractYear(dateStr string) int {
 	}
 
 	return 0
+}
+
+// MovieCollection is a TMDB collection (a film series) with its movies.
+type MovieCollection struct {
+	ID    int              `json:"id"`
+	Name  string           `json:"name"`
+	Parts []CollectionPart `json:"parts"`
+}
+
+// CollectionPart is a movie of a collection.
+type CollectionPart struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	ReleaseDate string `json:"release_date"`
+}
+
+// GetMovieCollectionID returns the collection a movie belongs to (0: none).
+func (p *Provider) GetMovieCollectionID(ctx context.Context, movieID int) (int, string, error) {
+	var response struct {
+		Collection *struct {
+			ID   int    `json:"id"`
+			Name string `json:"name"`
+		} `json:"belongs_to_collection"`
+	}
+
+	if err := p.makeRequest(ctx, fmt.Sprintf("%s/movie/%d", p.baseURL, movieID), &response); err != nil {
+		return 0, "", err
+	}
+
+	if response.Collection == nil {
+		return 0, "", nil
+	}
+
+	return response.Collection.ID, response.Collection.Name, nil
+}
+
+// GetCollection returns a collection with its movies, oldest first.
+func (p *Provider) GetCollection(ctx context.Context, id int) (*MovieCollection, error) {
+	var response MovieCollection
+	if err := p.makeRequest(ctx, fmt.Sprintf("%s/collection/%d", p.baseURL, id), &response); err != nil {
+		return nil, err
+	}
+
+	slices.SortStableFunc(response.Parts, func(a, b CollectionPart) int {
+		// Unreleased parts (no date yet) go last.
+		return strings.Compare(cmp.Or(a.ReleaseDate, "9999"), cmp.Or(b.ReleaseDate, "9999"))
+	})
+
+	return &response, nil
 }

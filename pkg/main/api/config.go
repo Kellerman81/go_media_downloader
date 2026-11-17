@@ -1124,6 +1124,22 @@ func createSchedulerConfig(index string, c *gin.Context) config.SchedulerConfig 
 		addConfig.CronCacheRefresh = val
 	}
 
+	if val := getFormField(c, prefix, index, "IntervalMovieCollections"); val != "" {
+		addConfig.IntervalMovieCollections = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronMovieCollections"); val != "" {
+		addConfig.CronMovieCollections = val
+	}
+
+	if val := getFormField(c, prefix, index, "IntervalFileCacheCleanup"); val != "" {
+		addConfig.IntervalFileCacheCleanup = val
+	}
+
+	if val := getFormField(c, prefix, index, "CronFileCacheCleanup"); val != "" {
+		addConfig.CronFileCacheCleanup = val
+	}
+
 	return addConfig
 }
 

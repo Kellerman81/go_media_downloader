@@ -413,40 +413,170 @@ var notificationTemplates = []providerTemplate{
 }
 
 // ---- List templates ----
-// A small curated set of ready-to-use ListType combos - the full ListType
-// dropdown already covers everything else.
+// Ready-to-use combinations of ListType and its fields, by media type. The
+// chart and bestseller XPaths are the ones of working lists. Fields that
+// are arrays (TMDB discover/list ids) or personal (user names, list ids,
+// feed URLs with an API key) are left for the user (Required).
+
+// chartList is a chart or bestseller list scraped from a page.
+func chartList(label, listType, url, entry, title, artist, defaultArtist string) providerTemplate {
+	fields := map[string]string{
+		"ListType": listType, "URL": url,
+		"ChartEntryNodeXPath": entry, "ChartTitleXPath": title,
+	}
+	if artist != "" {
+		fields["ChartArtistXPath"] = artist
+	}
+
+	if defaultArtist != "" {
+		fields["ChartDefaultArtist"] = defaultArtist
+	}
+
+	return providerTemplate{Label: label, Fields: fields}
+}
+
+const (
+	offizielleChartsEntry = "//table[contains(@class,'chart-table')]//tr[contains(@class,'drill-down-link')]"
+	spiegelEntry          = "//ol[contains(@class,'list')]/li"
+)
 
 var listTemplates = []providerTemplate{
+	// Movies
 	{
-		Label:  "Trakt Popular Movies",
-		Fields: map[string]string{"ListType": "traktmoviepopular", "Limit": "50"},
+		Label:  "Movies: Trakt Popular",
+		Fields: map[string]string{"ListType": "traktmoviepopular", "Limit": "20", "MinVotes": "200", "MinRating": "4.5"},
 	},
 	{
-		Label:  "Trakt Trending Series",
-		Fields: map[string]string{"ListType": "traktserietrending", "Limit": "50"},
+		Label:  "Movies: Trakt Trending",
+		Fields: map[string]string{"ListType": "traktmovietrending", "Limit": "20", "MinVotes": "200", "MinRating": "4.5"},
 	},
-	{Label: "Plex Watchlist", Fields: map[string]string{"ListType": "plexwatchlist"}},
-	{Label: "Jellyfin Watchlist", Fields: map[string]string{"ListType": "jellyfinwatchlist"}},
+	{Label: "Movies: Trakt Anticipated", Fields: map[string]string{"ListType": "traktmovieanticipated", "Limit": "20"}},
 	{
-		Label: "Rotten Tomatoes - Movies in Theaters",
+		Label:    "Movies: Trakt Watchlist (removes added items)",
+		Fields:   map[string]string{"ListType": "traktpublicmovielist", "TraktListName": "watchlist", "TraktListType": "movie", "RemoveFromList": "true"},
+		Required: []string{"TraktUsername"},
+	},
+	{
+		Label:    "Movies: Trakt public list",
+		Fields:   map[string]string{"ListType": "traktpublicmovielist", "TraktListType": "movie"},
+		Required: []string{"TraktUsername", "TraktListName"},
+	},
+	{Label: "Movies: TMDB Popular", Fields: map[string]string{"ListType": "tmdbmoviepopular", "Limit": "20"}},
+	{Label: "Movies: TMDB Trending", Fields: map[string]string{"ListType": "tmdbmovietrending", "Limit": "20"}},
+	{Label: "Movies: TMDB Upcoming", Fields: map[string]string{"ListType": "tmdbmovieupcoming", "Limit": "20"}},
+	{
+		Label:    "Movies: TMDB Discover (your query, e.g. sort_by=vote_average.desc&vote_count.gte=500)",
+		Fields:   map[string]string{"ListType": "tmdbmoviediscover", "TmdbPages": "5"},
+		Required: []string{"TmdbDiscover"},
+	},
+	{
+		Label:    "Movies/Series: TMDB list (list ids)",
+		Fields:   map[string]string{"ListType": "tmdblist", "TmdbPages": "5"},
+		Required: []string{"TmdbList"},
+	},
+	{
+		Label:    "Movies: IMDb list (export URL)",
+		Fields:   map[string]string{"ListType": "imdbcsv", "URL": "https://www.imdb.com/list/{listid}/export"},
+		Required: []string{"URL"},
+	},
+	{
+		Label:    "Movies: IMDb CSV export file",
+		Fields:   map[string]string{"ListType": "imdbfile", "IMDBCSVFile": "./config/watchlist.csv"},
+		Required: []string{"IMDBCSVFile"},
+	},
+	{
+		Label: "Movies: Rotten Tomatoes - in theaters",
 		Fields: map[string]string{
 			"ListType": "rottentomatoes", "URL": "https://www.rottentomatoes.com/browse/movies_in_theaters/",
 		},
 	},
 	{
-		Label: "Rotten Tomatoes - Best Movies of All Time",
+		Label: "Movies: Rotten Tomatoes - at home (streaming)",
+		Fields: map[string]string{
+			"ListType": "rottentomatoes", "URL": "https://www.rottentomatoes.com/browse/movies_at_home/",
+		},
+	},
+	{
+		Label: "Movies: Rotten Tomatoes - best of all time",
 		Fields: map[string]string{
 			"ListType": "rottentomatoes", "URL": "https://editorial.rottentomatoes.com/guide/best-movies-of-all-time/",
 		},
 	},
 	{
-		Label:    "Letterboxd Watchlist",
+		Label:    "Movies: Letterboxd watchlist",
 		Fields:   map[string]string{"ListType": "letterboxd", "URL": "https://letterboxd.com/{username}/watchlist/"},
 		Required: []string{"URL"},
 	},
 	{
-		Label:    "IMDB CSV Export",
-		Fields:   map[string]string{"ListType": "imdbcsv"},
-		Required: []string{"IMDBCSVFile"},
+		Label:    "Movies: Letterboxd list",
+		Fields:   map[string]string{"ListType": "letterboxd", "URL": "https://letterboxd.com/{username}/list/{list-name}/"},
+		Required: []string{"URL"},
+	},
+
+	// Series
+	{Label: "Series: Trakt Popular", Fields: map[string]string{"ListType": "traktseriepopular", "Limit": "20"}},
+	{Label: "Series: Trakt Trending", Fields: map[string]string{"ListType": "traktserietrending", "Limit": "20"}},
+	{Label: "Series: Trakt Anticipated", Fields: map[string]string{"ListType": "traktserieanticipated", "Limit": "20"}},
+	{
+		Label:    "Series: Trakt public list",
+		Fields:   map[string]string{"ListType": "traktpublicshowlist", "TraktListType": "show"},
+		Required: []string{"TraktUsername", "TraktListName"},
+	},
+	{Label: "Series: TMDB Popular", Fields: map[string]string{"ListType": "tmdbseriepopular", "Limit": "20"}},
+	{Label: "Series: TMDB Trending", Fields: map[string]string{"ListType": "tmdbserietrending", "Limit": "20"}},
+	{
+		Label:    "Series: TMDB Discover (your query, e.g. with_networks=213)",
+		Fields:   map[string]string{"ListType": "tmdbshowdiscover", "TmdbPages": "5"},
+		Required: []string{"TmdbDiscover"},
+	},
+	{
+		Label:  "Series: series config file (Configuration -> Series Config)",
+		Fields: map[string]string{"ListType": "seriesconfig", "ManualConfigFile": "./config/series_en.toml"},
+	},
+
+	// Watchlists of the media server
+	{Label: "Plex Watchlist", Fields: map[string]string{"ListType": "plexwatchlist"}},
+	{Label: "Jellyfin Watchlist", Fields: map[string]string{"ListType": "jellyfinwatchlist"}},
+
+	// Feeds
+	{
+		Label:    "Newznab/Torznab RSS feed (search URL with your API key)",
+		Fields:   map[string]string{"ListType": "newznabrss", "Limit": "20"},
+		Required: []string{"URL"},
+	},
+
+	// Music
+	{Label: "Music: Last.fm top artists", Fields: map[string]string{"ListType": "lastfmtopartists", "Limit": "50"}},
+	chartList("Music: Offizielle Charts - Top 100 albums (DE)", "musiccharts", "https://www.offiziellecharts.de/charts/album",
+		offizielleChartsEntry, ".//span[@class='info-title']", ".//span[@class='info-artist']", ""),
+	chartList("Music: Offizielle Charts - compilations (DE)", "musiccharts", "https://www.offiziellecharts.de/charts/compilation/",
+		offizielleChartsEntry, ".//span[@class='info-artist']", "", "Various Artists"),
+	chartList("Music: Offizielle Charts - compilations of the year (DE)", "musiccharts", "https://www.offiziellecharts.de/charts/compilation-jahr",
+		offizielleChartsEntry, ".//span[@class='info-title']", "", "Various Artists"),
+	{
+		Label:  "Music: music config file",
+		Fields: map[string]string{"ListType": "musicconfig", "ManualConfigFile": "./config/music.toml"},
+	},
+
+	// Books and audiobooks
+	chartList("Books: SPIEGEL bestseller - hardcover fiction (DE)", "bookbestsellers",
+		"https://www.bestsellerliste.de/spiegel-bestseller-hardcover-belletristik/",
+		spiegelEntry, ".//span[@class='title']", ".//span[@class='author']", ""),
+	chartList("Books: SPIEGEL bestseller - paperback fiction (DE)", "bookbestsellers",
+		"https://www.bestsellerliste.de/spiegel-bestseller-paperback-belletristik/",
+		spiegelEntry, ".//span[@class='title']", ".//span[@class='author']", ""),
+	chartList("Books: SPIEGEL bestseller - pocket books fiction (DE)", "bookbestsellers",
+		"https://www.bestsellerliste.de/spiegel-bestseller-taschenbuecher-belletristik/",
+		spiegelEntry, ".//span[@class='title']", ".//span[@class='author']", ""),
+	chartList("Books: SPIEGEL bestseller - hardcover non-fiction (DE)", "bookbestsellers",
+		"https://www.bestsellerliste.de/spiegel-bestseller-hardcover-sachbuch/",
+		spiegelEntry, ".//span[@class='title']", ".//span[@class='author']", ""),
+	{
+		Label:  "Books: book config file",
+		Fields: map[string]string{"ListType": "bookconfig", "ManualConfigFile": "./config/books.toml"},
+	},
+	{
+		Label:  "Audiobooks: audiobook config file",
+		Fields: map[string]string{"ListType": "audiobookconfig", "ManualConfigFile": "./config/audiobooks.toml"},
 	},
 }

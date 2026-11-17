@@ -180,3 +180,23 @@ func TestWizardFindToolInitImdb(t *testing.T) {
 		t.Errorf("music needs init_imdb: %q", need)
 	}
 }
+
+// TestWizardToolFieldValue: a found tool fills its empty path field; the
+// folder for ffprobe and MediaInfo.
+func TestWizardToolFieldValue(t *testing.T) {
+	for _, tc := range []struct {
+		r    wizardToolResult
+		want string
+	}{
+		{wizardToolResult{tool: wizardToolByKey(t, "ffprobe"), path: "/usr/bin/ffprobe"}, "/usr/bin"},
+		{wizardToolResult{tool: wizardToolByKey(t, "mediainfo"), path: "/opt/mi/mediainfo"}, "/opt/mi"},
+		{wizardToolResult{tool: wizardToolByKey(t, "unrar"), path: "/usr/bin/unrar"}, "/usr/bin/unrar"},
+		{wizardToolResult{tool: wizardToolByKey(t, "7zip"), hint: "/usr/bin/7za"}, "/usr/bin/7za"},
+		{wizardToolResult{tool: wizardToolByKey(t, "unrar"), setting: "/own/unrar", path: "/usr/bin/unrar"}, "/own/unrar"},
+		{wizardToolResult{tool: wizardToolByKey(t, "tar")}, ""},
+	} {
+		if got := wizardToolFieldValue(tc.r); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.r.tool.key, got, tc.want)
+		}
+	}
+}

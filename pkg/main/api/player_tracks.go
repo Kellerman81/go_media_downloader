@@ -389,6 +389,24 @@ func HandlePlayerSub(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"cues": cues})
 }
 
+// subSourceExt is the file next to a source's cached subtitles that holds
+// the source path.
+const subSourceExt = ".src"
+
+// subSourceKey names the cache files of one source file.
+func subSourceKey(src string) string {
+	sum := sha1.Sum([]byte(src))
+	return hex.EncodeToString(sum[:8])
+}
+
+// subCacheName is the cache file of stream mapArg of src as modified at
+// mod: <source key>-<mod time ns>-<stream hash>.json, so the cleanup finds
+// the conversions of removed and replaced files.
+func subCacheName(src string, mod time.Time, mapArg string) string {
+	sum := sha1.Sum([]byte(mapArg))
+	return subSourceKey(src) + "-" + strconv.FormatInt(mod.UnixNano(), 10) + "-" + hex.EncodeToString(sum[:6]) + ".json"
+}
+
 // subLocks serialises the conversions of one file, so a second request
 // waits for the first and then reads the cache.
 var subLocks sync.Map // source path -> *sync.Mutex
@@ -404,8 +422,7 @@ func subtitleCues(ctx context.Context, src, want string, all []string) ([]playCu
 	}
 
 	cacheFile := func(mapArg string) string {
-		sum := sha1.Sum([]byte(src + "|" + st.ModTime().UTC().Format(time.RFC3339Nano) + "|" + mapArg))
-		return filepath.Join(subCacheDir(), hex.EncodeToString(sum[:])+".json")
+		return filepath.Join(subCacheDir(), subCacheName(src, st.ModTime(), mapArg))
 	}
 
 	cached := func(mapArg string) ([]playCue, bool) {
@@ -437,6 +454,11 @@ func subtitleCues(ctx context.Context, src, want string, all []string) ([]playCu
 	}
 
 	if err := os.MkdirAll(subCacheDir(), 0o755); err != nil {
+		return nil, err
+	}
+
+	// The source path, for the cache cleanup (the names only hold its hash).
+	if err := os.WriteFile(filepath.Join(subCacheDir(), subSourceKey(src)+subSourceExt), []byte(src), 0o644); err != nil {
 		return nil, err
 	}
 

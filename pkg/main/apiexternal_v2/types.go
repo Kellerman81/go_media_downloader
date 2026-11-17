@@ -263,6 +263,7 @@ type Video struct {
 	Site        string    `json:"site"` // YouTube, Vimeo, etc.
 	Size        int       `json:"size"` // Resolution
 	Type        string    `json:"type"` // Trailer, Teaser, Clip, etc.
+	Language    string    `json:"iso_639_1"`
 	Official    bool      `json:"official"`
 	PublishedAt time.Time `json:"published_at"`
 }

@@ -87,7 +87,7 @@ func TestUserAccessData(t *testing.T) {
 	LibraryPage(c)
 
 	if body := w.Body.String(); !strings.Contains(body, "movie_DE") || strings.Contains(body, "group=movie_EN") ||
-		!strings.Contains(body, ".lib-admin, .lib-search { display: none") {
+		!strings.Contains(body, ".lib-admin, .lib-search, .lib-download, .lib-report { display: none") {
 		t.Errorf("library page: groups or hidden actions wrong")
 	}
 
@@ -130,8 +130,8 @@ func TestUserAccessPaths(t *testing.T) {
 	accessTestData(t)
 
 	user := &userAccess{Name: "u", Role: database.RoleUser, Groups: []string{"movie_DE"}}
-	searcher := &userAccess{Name: "s", Role: database.RoleSearchingUser, Groups: []string{"movie_DE"}}
-	requester := &userAccess{Name: "r", Role: database.RoleRequestingUser, Groups: []string{"movie_DE"}}
+	searcher := &userAccess{Name: "s", Role: database.RoleSearchingUser, Groups: []string{"movie_DE"}, Features: []string{database.FeatureSearch}}
+	requester := &userAccess{Name: "r", Role: database.RoleRequestingUser, Groups: []string{"movie_DE"}, Features: []string{database.FeatureRequest}}
 
 	for _, tc := range []struct {
 		acc          *userAccess
@@ -309,7 +309,7 @@ func TestRequestDefaultList(t *testing.T) {
 	group[0].Data[0].AddFoundList = "de wishes"
 	useMediaConfig(t, config.MediaConfig{Movies: append(group, mediaGroup("EN")...)})
 
-	requester := &userAccess{Name: "r", Role: database.RoleRequestingUser, Groups: []string{"movie_DE", "movie_EN"}}
+	requester := &userAccess{Name: "r", Role: database.RoleRequestingUser, Groups: []string{"movie_DE", "movie_EN"}, Features: []string{database.FeatureRequest}}
 
 	if got := getMediaListsByType(requester, "movie"); strings.Join(got, ",") != "DE Wishes,EN List" {
 		t.Errorf("offered lists: %v", got)

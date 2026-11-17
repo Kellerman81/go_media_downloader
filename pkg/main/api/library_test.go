@@ -595,3 +595,75 @@ func TestLibraryPlayAll(t *testing.T) {
 		t.Fatalf("unknown group: %d", code)
 	}
 }
+
+// TestLibraryWatched: the grid marks what the account watched (from 95%),
+// audiobooks as heard, and the watched filters follow the account.
+func TestLibraryWatched(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	useMediaConfig(t, config.MediaConfig{Movies: mediaGroup("EN"), AudioBooks: mediaGroup("AB")})
+
+	for _, q := range []string{
+		"insert into dbmovies (id, title) values (1, 'Seen'), (2, 'Almost'), (3, 'Not yet')",
+		"insert into movies (id, dbmovie_id, listname) values (1, 1, 'EN List'), (2, 2, 'EN List'), (3, 3, 'EN List')",
+		"insert into movie_files (id, movie_id, dbmovie_id, location) values (11, 1, 1, '/a'), (12, 2, 2, '/b'), (13, 3, 3, '/c')",
+		"insert into dbaudiobooks (id, title) values (1, 'Book')",
+		"insert into audiobooks (id, dbaudiobook_id, listname) values (1, 1, 'AB List')",
+		"insert into audiobook_files (id, audiobook_id, dbaudiobook_id, location) values (21, 1, 1, '/p')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, h := range []database.PlayHistory{
+		{Username: "anna", Kind: "movie", FileID: 11, Position: 5720, Duration: 6000}, // 95.3%: the credits skipped
+		{Username: "anna", Kind: "movie", FileID: 12, Position: 5640, Duration: 6000}, // 94%
+		{Username: "anna", Kind: "audiobook", FileID: 21, Position: 3600, Duration: 3600},
+		{Username: "bob", Kind: "movie", FileID: 13, Position: 6000, Duration: 6000},
+	} {
+		if err := database.PlayProgress(&h, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	groups := libraryGroups()
+	group := func(name string) *libGroup {
+		for i := range groups {
+			if groups[i].Name == name {
+				return &groups[i]
+			}
+		}
+
+		t.Fatalf("no group %s", name)
+
+		return nil
+	}
+
+	titles := func(filter string) string {
+		rows, _ := libraryRows(group("movie_EN"), libQuery{User: "anna", Filter: filter, Sort: "title"})
+
+		var out []string
+		for _, r := range rows {
+			out = append(out, r.Title+map[bool]string{true: "+"}[r.Watched])
+		}
+
+		return strings.Join(out, ",")
+	}
+
+	if got := titles("all"); got != "Almost,Not yet,Seen+" {
+		t.Errorf("all: %s", got)
+	}
+
+	if got := titles("watched"); got != "Seen+" {
+		t.Errorf("watched: %s", got)
+	}
+
+	if got := titles("unwatched"); got != "Almost,Not yet" {
+		t.Errorf("unwatched: %s", got)
+	}
+
+	rows, _ := libraryRows(group("audiobook_AB"), libQuery{User: "anna"})
+	if len(rows) != 1 || !rows[0].Watched || !strings.Contains(renderComponentToString(libStatusBadge(&rows[0])), "Heard") {
+		t.Errorf("audiobook: %+v", rows)
+	}
+}

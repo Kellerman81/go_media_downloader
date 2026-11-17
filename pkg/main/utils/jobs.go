@@ -2657,12 +2657,21 @@ func checkmissingflag(
 	return nil
 }
 
+// extraGlobalJobs are global jobs of packages utils can't import (the api's
+// file cache cleanup), registered from their init.
+var extraGlobalJobs = map[string]func(context.Context) error{}
+
+// RegisterGlobalJob adds a global job; call it from an init function.
+func RegisterGlobalJob(name string, fn func(context.Context) error) {
+	extraGlobalJobs[name] = fn
+}
+
 // LoadGlobalSchedulerConfig initializes the global scheduler job functions that are
 // not media-specific. These jobs include database maintenance, backup operations,
 // and system-wide tasks. The functions are registered in the general settings
 // job map for use by the worker scheduler system.
 func LoadGlobalSchedulerConfig() {
-	config.GetSettingsGeneral().Jobs = map[string]func(uint32, context.Context) error{
+	jobs := map[string]func(uint32, context.Context) error{
 		"RefreshImdb": func(key uint32, _ context.Context) error {
 			FillImdb()
 			worker.RemoveQueueEntry(key)
@@ -2730,6 +2739,16 @@ func LoadGlobalSchedulerConfig() {
 			return nil
 		},
 	}
+
+	for name, fn := range extraGlobalJobs {
+		jobs[name] = func(key uint32, ctx context.Context) error {
+			defer worker.RemoveQueueEntry(key)
+
+			return fn(ctx)
+		}
+	}
+
+	config.GetSettingsGeneral().Jobs = jobs
 }
 
 // LoadSchedulerConfig initializes the media-specific scheduler job functions for each

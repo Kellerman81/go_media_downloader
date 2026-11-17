@@ -117,3 +117,17 @@ func NotifyAdded(cfgp *config.MediaTypeConfig, event, listName string, dbid uint
 
 	providers.NotifyEvent(cfgp, event, e, nil)
 }
+
+// excludedFromImport reports (and logs) whether the media group's imports
+// must not add the metadata row of kind: it was deleted with "don't add
+// again" (import_exclusions).
+func excludedFromImport(kind string, cfgp *config.MediaTypeConfig, dbid *uint) bool {
+	if cfgp == nil || !database.ImportExcluded(kind, cfgp.NamePrefix, dbid) {
+		return false
+	}
+
+	logger.Logtype("debug", 1).Str("type", kind).Str("config", cfgp.NamePrefix).Uint("dbid", *dbid).
+		Msg("Not added: excluded from list imports")
+
+	return true
+}

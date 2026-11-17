@@ -689,6 +689,10 @@ func Checkaddmovieentry(
 		return logger.ErrListnameEmpty
 	}
 
+	if excludedFromImport("movie", cfgp, dbid) {
+		return nil
+	}
+
 	var getcount uint
 	if cfgplist.IgnoreMapListsLen >= 1 {
 		if config.GetSettingsGeneral().UseMediaCache {
@@ -1522,7 +1526,7 @@ func jobImportDBSeries(
 			database.RefreshMediaCacheList(config.MediaTypeSeries, true)
 		}
 
-		if !existsInConfigList("series", "dbserie_id", &dbserie.ID, cfgp) {
+		if !existsInConfigList("series", "dbserie_id", &dbserie.ID, cfgp) && !excludedFromImport("series", cfgp, &dbserie.ID) {
 			logger.Logtype("debug", 2).
 				Str(logger.StrListname, cfgp.Lists[listid].Name).
 				Int(logger.StrTvdb, serieconfig.TvdbID).

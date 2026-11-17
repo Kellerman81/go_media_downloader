@@ -363,7 +363,7 @@ func renderWizardToolTable(c context.Context, state wizardState, values map[stri
 			}
 
 			field = html.Input(html.Type("text"), html.Class("form-control form-control-sm"), html.Name("wizard_tool_"+r.tool.key),
-				html.Value(r.setting), html.Placeholder(placeholder))
+				html.Value(wizardToolFieldValue(r)), html.Placeholder(placeholder))
 		}
 
 		rows = append(rows, html.Tr(
@@ -512,4 +512,28 @@ func wizardSaveToolsStep(c *gin.Context) string {
 // parser.getImdbFilename).
 func wizardInitImdbPath() string {
 	return map[bool]string{true: "init_imdb.exe", false: "./init_imdb"}[runtime.GOOS == "windows"]
+}
+
+// wizardToolFieldValue is a tool's path field: its setting, else what the
+// check found (the folder for ffprobe and MediaInfo, whose setting is the
+// program's folder; 7za/7zz for a missing 7z), so saving keeps it.
+func wizardToolFieldValue(r wizardToolResult) string {
+	if r.setting != "" {
+		return r.setting
+	}
+
+	found := r.path
+	if found == "" {
+		found = r.hint
+	}
+
+	if found == "" {
+		return ""
+	}
+
+	if r.tool.folder {
+		return filepath.Dir(found)
+	}
+
+	return found
 }
