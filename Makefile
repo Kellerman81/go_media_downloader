@@ -97,9 +97,9 @@ buildimdb:
 buildplayer:
 	@echo "Building desktop player (${VERSION}) - ${BUILD_DATE}"
 
-	cd pkg/player && GOARCH=amd64 GOOS=linux go build -ldflags="-s -w" -o ../../${PLAYER_BINARY_NAME}-linux-amd64 .
-	cd pkg/player && GOARCH=arm64 GOOS=linux go build -ldflags="-s -w" -o ../../${PLAYER_BINARY_NAME}-linux-arm64 .
-	cd pkg/player && GOARCH=amd64 GOOS=windows go build -ldflags="-s -w -H=windowsgui" -o ../../${PLAYER_BINARY_NAME}-windows-amd64.exe .
+	cd pkg/player && GOARCH=amd64 GOOS=linux go build -buildvcs=false -ldflags="-s -w" -o ../../${PLAYER_BINARY_NAME}-linux-amd64 .
+	cd pkg/player && GOARCH=arm64 GOOS=linux go build -buildvcs=false -ldflags="-s -w" -o ../../${PLAYER_BINARY_NAME}-linux-arm64 .
+	cd pkg/player && GOARCH=amd64 GOOS=windows go build -buildvcs=false -ldflags="-s -w -H=windowsgui" -o ../../${PLAYER_BINARY_NAME}-windows-amd64.exe .
 
 build-all: buildmain buildimdb buildplayer
 

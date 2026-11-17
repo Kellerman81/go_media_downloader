@@ -367,7 +367,10 @@ func NowPlayingPage(c *gin.Context) {
 	renderPageIn(c, "Now Playing", true, html.Div(html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader("fa-solid fa-circle-play", "Now Playing",
 			"Who is playing what in the Library player. Stop ends the playback; the account sees your message."),
-		html.Div(html.ID("nowPlaying"), hx.Get("/api/admin/nowplaying/list"), hx.Trigger("load, every 5s"), hx.Swap("innerHTML"))))
+		html.Div(html.ID("nowPlaying"), hx.Get("/api/admin/nowplaying/list"), hx.Trigger("load, every 5s"), hx.Swap("innerHTML")),
+		// The play history and viewing stats of the Statistics page, loaded once.
+		html.Div(html.Class("mt-4"), hx.Get("/api/admin/statistics/plays"), hx.Trigger("load"), hx.Swap("innerHTML"),
+			html.P(html.Class("text-muted small"), gomponents.Text("Loading the play history...")))))
 }
 
 // HandleNowPlayingList renders the active players and the latest plays.
@@ -455,7 +458,7 @@ func renderNowPlaying(csrf, alert string) gomponents.Node {
 	return html.Div(gomponents.Raw(alert),
 		html.Div(html.Class("card mb-3"), html.Div(html.Class("card-body"), current)),
 		html.P(html.Class("small text-muted"), gomponents.Text(strconv.Itoa(streamCount())+" streams sending · total bandwidth "+limit+
-			" (player_max_bandwidth). The play history is on the Statistics page.")))
+			" (player_max_bandwidth).")))
 }
 
 // fmtClock shows seconds as h:mm:ss or m:ss.
