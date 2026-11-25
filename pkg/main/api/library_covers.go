@@ -1,14 +1,10 @@
 package api
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -28,8 +24,9 @@ import (
 )
 
 // Covers of the Library page are loaded once from the provider and kept in
-// the cover cache folder (cover_cache_dir). The file name holds a hash of the
-// source URL, so a changed poster is loaded again.
+// the cover cache folder (cover_cache_dir) as <kind>-<id>.jpg. The JPEG
+// names its source in a comment (coverSrcTag), so a changed poster is
+// loaded again over it.
 
 const (
 	defaultCoverCacheDir = "./cache/covers"
@@ -72,10 +69,8 @@ const coverPlaceholder = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2
 
 // HandleLibraryCover serves the cover of a db* row (/admin/library/cover/:type/:id).
 func HandleLibraryCover(c *gin.Context) {
-	src, ok := coverSources[c.Param("type")]
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-
-	if !ok || err != nil {
+	if _, ok := coverSources[c.Param("type")]; !ok || err != nil {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
@@ -85,43 +80,9 @@ func HandleLibraryCover(c *gin.Context) {
 		return
 	}
 
-	stored := database.Getdatarow[string](false,
-		"SELECT COALESCE("+src.Column+", '') FROM "+src.Table+" WHERE id = ?", &id)
-
-	sourceURL := calendarImageURL(&stored, src.Base)
-
-	path, err := cachedCover(c.Param("type"), id, sourceURL, sourceURL)
-	if err != nil && sourceURL != "" {
-		logger.Logtype("debug", 0).Err(err).Str("url", sourceURL).Msg("Cover not loadable")
-	}
-
-	// Without a loadable provider cover: the cover next to or inside the
-	// downloaded files, then the user's Plex/Jellyfin.
-	if err != nil {
-		path, err = localCover(c.Param("type"), &id)
-	}
-
-	if err != nil {
-		path, err = mediaServerCover(c.Param("type"), &id)
-	}
-
-	// Last resort for movies and series (e.g. site series without posters):
-	// a frame of a downloaded file.
-	if err != nil {
-		path, err = frameCover(c.Param("type"), &id)
-	}
-
+	path, err := libraryCoverFile(c.Param("type"), id)
 	if err != nil {
 		c.Header("Cache-Control", "public, max-age=3600")
-		c.Data(http.StatusOK, "image/svg+xml", []byte(coverPlaceholder))
-
-		return
-	}
-
-	// The index can outlive a file deleted by hand: load it again.
-	if _, err := os.Stat(path); err != nil {
-		coverIndex.remove(path)
-		c.Header("Cache-Control", "no-store")
 		c.Data(http.StatusOK, "image/svg+xml", []byte(coverPlaceholder))
 
 		return
@@ -133,6 +94,47 @@ func HandleLibraryCover(c *gin.Context) {
 
 	c.Header("Cache-Control", "public, max-age=604800")
 	c.File(path)
+}
+
+// libraryCoverFile is the cached cover file of a db* row of a library type
+// (movie, series, album, audiobook, book); errNoCover without one.
+func libraryCoverFile(typ string, id uint64) (string, error) {
+	src, ok := coverSources[typ]
+	if !ok {
+		return "", errNoCover
+	}
+
+	stored := database.Getdatarow[string](false,
+		"SELECT COALESCE("+src.Column+", '') FROM "+src.Table+" WHERE id = ?", &id)
+
+	sourceURL := calendarImageURL(&stored, src.Base)
+
+	path, err := cachedCover(typ, id, sourceURL, sourceURL)
+	if err != nil && sourceURL != "" {
+		logger.Logtype("debug", 0).Err(err).Str("url", sourceURL).Msg("Cover not loadable")
+	}
+
+	// Without a loadable provider cover: the cover next to or inside the
+	// downloaded files, then the user's Plex/Jellyfin.
+	if err != nil {
+		path, err = localCover(typ, &id)
+	}
+
+	if err != nil {
+		path, err = mediaServerCover(typ, &id)
+	}
+
+	// Last resort for movies and series (e.g. site series without posters):
+	// a frame of a downloaded file.
+	if err != nil {
+		path, err = frameCover(typ, &id)
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	return path, nil
 }
 
 var errNoCover = errors.New("no cover")
@@ -204,28 +206,25 @@ func localCover(kind string, id *uint64) (string, error) {
 		return "", errNoCover
 	}
 
-	return cachedCoverWith(kind, *id, "local:"+loc, func(dir, base string) (string, error) {
+	return cachedCoverWith(kind, *id, "local:"+loc, func() ([]byte, string, error) {
 		if img := folderCover(filepath.Dir(loc)); img != "" {
 			f, err := os.Open(img)
 			if err != nil {
-				return "", err
+				return nil, "", err
 			}
 			defer f.Close()
 
-			return storeCover(dir, base, strings.ToLower(filepath.Ext(img)), f)
+			data, err := readCover(f)
+
+			return data, filepath.Ext(img), err
 		}
 
 		data, mimeType := tags.ReadCoverData(loc)
 		if len(data) == 0 {
-			return "", errNoCover
+			return nil, "", errNoCover
 		}
 
-		ext := ".jpg"
-		if exts, _ := mime.ExtensionsByType(mimeType); len(exts) > 0 && mimeType != "image/jpeg" {
-			ext = exts[0]
-		}
-
-		return storeCover(dir, base, ext, bytes.NewReader(data))
+		return data, mimeType, nil
 	})
 }
 
@@ -258,29 +257,32 @@ func folderCover(dir string) string {
 }
 
 // cachedCover returns the cache file of a cover, loading it from fetchURL
-// first if needed. key names the source in the cache file name (hashed).
+// first if needed. key names the source (coverSrcTag).
 func cachedCover(kind string, id uint64, key, fetchURL string) (string, error) {
 	if !strings.HasPrefix(fetchURL, "https://") && !strings.HasPrefix(fetchURL, "http://") {
 		return "", errNoCover
 	}
 
-	return cachedCoverWith(kind, id, key, func(dir, base string) (string, error) {
-		return downloadCover(dir, base, fetchURL)
+	return cachedCoverWith(kind, id, key, func() ([]byte, string, error) {
+		return downloadCover(fetchURL)
 	})
 }
 
-// cachedCoverWith returns the cache file of a cover, storing it with load
-// first if needed (one load per file at a time; failures wait coverRetryAfter).
-func cachedCoverWith(kind string, id uint64, key string, load func(dir, base string) (string, error)) (string, error) {
-	sum := sha1.Sum([]byte(key))
-	base := fmt.Sprintf("%s-%d-%s", kind, id, hex.EncodeToString(sum[:6]))
+// cachedCoverWith returns the cache file of an item's cover from the source
+// key, storing what load returns (the image and its content type or file
+// extension) when the cache has none from that source; one load per item
+// at a time, failures wait coverRetryAfter.
+func cachedCoverWith(kind string, id uint64, key string, load func() ([]byte, string, error)) (string, error) {
+	base := kind + "-" + strconv.FormatUint(id, 10)
+	tag := coverSrcTag(key)
 	dir := coverCacheDir()
 
-	if path, ok := coverIndex.lookup(dir, base); ok {
+	if path, ok := cachedFrom(dir, base, tag); ok {
 		return path, nil
 	}
 
-	if failed, ok := coverFailures.Load(base); ok && time.Since(failed.(time.Time)) < coverRetryAfter {
+	failKey := base + ":" + tag
+	if failed, ok := coverFailures.Load(failKey); ok && time.Since(failed.(time.Time)) < coverRetryAfter {
 		return "", errNoCover
 	}
 
@@ -288,43 +290,107 @@ func cachedCoverWith(kind string, id uint64, key string, load func(dir, base str
 	lock.(*sync.Mutex).Lock()
 	defer lock.(*sync.Mutex).Unlock()
 
-	if path, ok := coverIndex.lookup(dir, base); ok {
+	if path, st, ok := cachedFileStat(dir, base); ok && coverSrcOf(path, st) == tag {
 		return path, nil
 	}
 
-	path, err := load(dir, base)
-	if err != nil {
-		coverFailures.Store(base, time.Now())
-	} else {
-		coverIndex.add(path)
+	data, typ, err := load()
+	if err == nil {
+		var path string
+		if path, err = saveCover(dir, base, tag, data, typ); err == nil {
+			return path, nil
+		}
 	}
 
-	return path, err
+	coverFailures.Store(failKey, time.Now())
+
+	return "", err
 }
 
-// downloadCover stores an image into the cache folder as base + extension.
-func downloadCover(dir, base, fetchURL string) (string, error) {
+// cachedFrom returns an item's cached cover when it is from the source tag
+// (or names none: WebP); a large one stored before covers were shrunk is
+// shrunk first.
+func cachedFrom(dir, base, tag string) (string, bool) {
+	path, st, ok := cachedFileStat(dir, base)
+	if !ok {
+		return "", false
+	}
+
+	if src := coverSrcOf(path, st); src != "" && src != tag {
+		return "", false
+	}
+
+	if st.Size() > coverMaxBytes {
+		path = shrinkCachedCover(dir, base, path)
+	}
+
+	return path, true
+}
+
+// shrinkCachedCover shrinks a large cover of the cache (one at a time per
+// item), keeping the source it names.
+func shrinkCachedCover(dir, base, path string) string {
+	lock, _ := coverLocks.LoadOrStore(base, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	defer lock.(*sync.Mutex).Unlock()
+
+	p, st, ok := cachedFileStat(dir, base)
+	if !ok || st.Size() <= coverMaxBytes {
+		return path
+	}
+
+	if _, kept := keptCovers.Load(p); kept {
+		return p
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return p
+	}
+
+	out, err := saveCover(dir, base, coverSrcOf(p, st), data, filepath.Ext(p))
+	if err != nil {
+		return p
+	}
+
+	if st2, err := os.Stat(out); err == nil && st2.Size() >= st.Size() {
+		keptCovers.Store(out, struct{}{})
+	}
+
+	return out
+}
+
+// readCover reads an image of at most maxCoverBytes.
+func readCover(r io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxCoverBytes+1))
+	if err == nil && len(data) > maxCoverBytes {
+		err = errors.New("cover too large")
+	}
+
+	return data, err
+}
+
+// downloadCover loads an image and its content type.
+func downloadCover(fetchURL string) ([]byte, string, error) {
 	resp, err := coverClient.Get(fetchURL)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
 
 	contentType := resp.Header.Get("Content-Type")
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(contentType, "image/") {
-		return "", fmt.Errorf("status %d, type %q", resp.StatusCode, contentType)
+		return nil, "", fmt.Errorf("status %d, type %q", resp.StatusCode, contentType)
 	}
 
-	ext := ".jpg"
-	if exts, _ := mime.ExtensionsByType(strings.TrimSpace(strings.Split(contentType, ";")[0])); len(exts) > 0 {
-		ext = exts[0]
-	}
+	data, err := readCover(resp.Body)
 
-	return storeCover(dir, base, ext, resp.Body)
+	return data, contentType, err
 }
 
-// storeCover writes an image into the cache folder as base + ext.
-func storeCover(dir, base, ext string, r io.Reader) (string, error) {
+// storeCover writes an image into the cache folder as base with the
+// extension of its type (a content type or file extension, coverExt).
+func storeCover(dir, base, typeOrExt string, r io.Reader) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -348,7 +414,14 @@ func storeCover(dir, base, ext string, r io.Reader) (string, error) {
 		return "", err
 	}
 
-	path := filepath.Join(dir, base+ext)
+	// CreateTemp makes it readable by the owner only: the cache is read
+	// over the share too.
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
+
+	path := filepath.Join(dir, base+coverExt(typeOrExt))
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		os.Remove(tmp.Name())
 		return "", err
@@ -376,8 +449,9 @@ func frameCover(kind string, id *uint64) (string, error) {
 		return "", errNoCover
 	}
 
-	return cachedCoverWith(kind, *id, "frame:"+loc, func(dir, base string) (string, error) {
-		return grabFrame(loc, dir, base)
+	return cachedCoverWith(kind, *id, "frame:"+loc, func() ([]byte, string, error) {
+		data, err := grabFrame(loc)
+		return data, ".jpg", err
 	})
 }
 
@@ -390,16 +464,8 @@ func HandleLibraryThumb(c *gin.Context) {
 		return
 	}
 
-	loc := database.Getdatarow[string](false, "SELECT location FROM serie_episode_files WHERE id = ?", &id)
-
-	path := ""
-	if loc != "" {
-		path, err = cachedCoverWith("epthumb", id, "frame:"+loc, func(dir, base string) (string, error) {
-			return grabFrame(loc, dir, base)
-		})
-	}
-
-	if path == "" || err != nil {
+	path, err := episodeThumbFile(id)
+	if err != nil {
 		c.Header("Cache-Control", "public, max-age=3600")
 		c.Data(http.StatusOK, "image/svg+xml", []byte(coverPlaceholder))
 
@@ -410,19 +476,59 @@ func HandleLibraryThumb(c *gin.Context) {
 	c.File(path)
 }
 
+// episodeThumbFile is the thumbnail of an episode file (a
+// serie_episode_files ID): the episode's image from TheTVDB, else a cached
+// frame of the file.
+func episodeThumbFile(id uint64) (string, error) {
+	de := database.Getdatarow[uint64](false, "SELECT COALESCE(dbserie_episode_id, 0) FROM serie_episode_files WHERE id = ?", &id)
+	if p, err := cachedColumnImage("episode", de, "SELECT COALESCE(poster, '') FROM dbserie_episodes WHERE id = ?", tvdbImageBase); err == nil {
+		return p, nil
+	}
+
+	loc := database.Getdatarow[string](false, "SELECT location FROM serie_episode_files WHERE id = ?", &id)
+	if loc == "" {
+		return "", errNoCover
+	}
+
+	return cachedCoverWith("epthumb", id, "frame:"+loc, func() ([]byte, string, error) {
+		data, err := grabFrame(loc)
+		return data, ".jpg", err
+	})
+}
+
+// tvdbImageBase is the base URL of TheTVDB's relative image paths.
+const tvdbImageBase = "https://artworks.thetvdb.com/banners/"
+
+// cachedColumnImage loads an image a db* column names (query by db ID),
+// relative to base, into the cover cache.
+func cachedColumnImage(kind string, db uint64, query, base string) (string, error) {
+	if db == 0 {
+		return "", errNoCover
+	}
+
+	stored := database.Getdatarow[string](false, query, &db)
+
+	u := calendarImageURL(&stored, base)
+	if u == "" {
+		return "", errNoCover
+	}
+
+	return cachedCover(kind, db, u, u)
+}
+
 // frameSlots limits the ffmpeg frame grabs running at once: the first visit
 // of a grid of site series asks for dozens.
 var frameSlots = make(chan struct{}, 2)
 
-// grabFrame stores a frame from 15% into a video (past intros and logos) as
-// a JPEG into the cover cache.
-func grabFrame(loc, dir, base string) (string, error) {
+// grabFrame takes a frame from 15% into a video (past intros and logos) as
+// a JPEG.
+func grabFrame(loc string) ([]byte, error) {
 	frameSlots <- struct{}{}
 	defer func() { <-frameSlots }()
 
 	ffmpeg, err := tags.ResolveFFmpeg()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -431,7 +537,7 @@ func grabFrame(loc, dir, base string) (string, error) {
 	at := 30.0
 	if p, err := probeMedia(ctx, loc); err == nil && p.Duration > 0 {
 		if p.VCodec == "" {
-			return "", errNoCover
+			return nil, errNoCover
 		}
 
 		at = p.Duration * 0.15
@@ -440,12 +546,12 @@ func grabFrame(loc, dir, base string) (string, error) {
 	out, err := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error", "-ss", strconv.FormatFloat(at, 'f', 1, 64),
 		"-i", loc, "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-q:v", "4", "pipe:1").Output()
 	if err != nil {
-		return "", fmt.Errorf("frame of %s: %w", loc, err)
+		return nil, fmt.Errorf("frame of %s: %w", loc, err)
 	}
 
 	if len(out) == 0 {
-		return "", errNoCover
+		return nil, errNoCover
 	}
 
-	return storeCover(dir, base, ".jpg", bytes.NewReader(out))
+	return out, nil
 }

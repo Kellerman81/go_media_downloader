@@ -1,0 +1,11 @@
+DROP TRIGGER IF EXISTS trg_dbalbums_translations;
+DROP TRIGGER IF EXISTS trg_dbnarrators_translations;
+DROP TRIGGER IF EXISTS trg_dbauthors_translations;
+DROP TRIGGER IF EXISTS trg_dbartists_translations;
+DROP TRIGGER IF EXISTS trg_dbbook_series_translations;
+DROP TRIGGER IF EXISTS trg_dbaudiobooks_translations;
+DROP TRIGGER IF EXISTS trg_dbbooks_translations;
+DROP TRIGGER IF EXISTS trg_dbserie_episodes_translations;
+DROP TRIGGER IF EXISTS trg_dbseries_translations;
+DROP TRIGGER IF EXISTS trg_dbmovies_translations;
+DROP TABLE IF EXISTS metadata_translations;

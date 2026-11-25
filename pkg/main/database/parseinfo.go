@@ -874,6 +874,29 @@ func (m *ParseInfo) AddUnmatched(cfgp *config.MediaTypeConfig, listname *string,
 	m.ExecParsed(cfgp, err, listname)
 }
 
+// RemoveUnmatchedUnder drops the unmatched rows of folder and of the
+// files below it, from the table and the cache.
+func RemoveUnmatchedUnder(isType uint, folder string) {
+	table := mtstrings.GetStringsMap(isType, "TableUnmatched")
+	if table == "" || folder == "" {
+		return
+	}
+
+	// length() counts characters like substr(), not bytes like len().
+	folder = strings.TrimRight(folder, `/\`)
+	prefix := folder + string(filepath.Separator)
+	where := " from " + table + " where filepath = ? or substr(filepath, 1, length(?)) = ?"
+
+	if config.GetSettingsGeneral().UseFileCache {
+		cacheKey := mtstrings.GetStringsMap(isType, logger.CacheUnmatched)
+		for _, p := range GetrowsN[string](false, 1000, "select filepath"+where, folder, &prefix, &prefix) {
+			SlicesCacheContainsDelete(cacheKey, p)
+		}
+	}
+
+	ExecN("delete"+where, folder, &prefix, &prefix)
+}
+
 // ExecParsed adds an unmatched file to the database or updates an existing unmatched file record. It constructs a string representation of the parsed file information and inserts a new record or updates an existing record in the appropriate table (movie_file_unmatcheds or serie_file_unmatcheds).
 func (m *ParseInfo) ExecParsed(cfgp *config.MediaTypeConfig, err error, listname *string) {
 	id := Getdatarow[uint](
@@ -1181,6 +1204,13 @@ func (m *ParseInfo) FindDbbookByAuthorFirst() {
 		}
 	}
 
+	// The author at the end: "Title - Author", "Title, by Author".
+	for _, sp := range authorLastSplits(rawTitle) {
+		if m.tryFindAuthorAndBook(cachedResolveAuthor(&authorCache, sp[0]), &sp[1]) {
+			return
+		}
+	}
+
 	// Try "-" without spaces (scene format: "Author-Title-Quality-Year-Group")
 	if before, after, ok := strings.Cut(rawTitle, "-"); ok {
 		potentialAuthor := strings.TrimSpace(before)
@@ -1382,21 +1412,26 @@ func resolveArtistNamesForAlbum(artistName string) []resolvedArtist {
 // tryFindAuthorAndAudiobook, and tryFindAuthorAndAudiobookFromWantedList so that
 // StringToSlug + addPeriodsToInitials + GetrowsN are not repeated per function.
 func resolveAuthorNames(authorName string) []resolvedAuthor {
+	if out := resolveAuthorNamesAsIs(authorName); len(out) > 0 {
+		return out
+	}
+
+	// Catalogue order: "Follett, Ken", "Follett  Ken" (the double space
+	// would otherwise make two authors).
+	if swapped := swappedAuthorName(authorName); swapped != "" {
+		if ids := authorIDsByName(swapped); len(ids) > 0 {
+			return []resolvedAuthor{{name: swapped, ids: ids}}
+		}
+	}
+
+	return nil
+}
+
+func resolveAuthorNamesAsIs(authorName string) []resolvedAuthor {
 	single, parts := splitMultiArtist(authorName)
 
 	if single != "" {
-		slug := logger.StringToSlugCached(single)
-		withPeriods := addPeriodsToInitials(single)
-
-		ids := Getrowssize[uint](
-			false,
-			"select count() from dbauthors where name = ? COLLATE NOCASE or slug = NULLIF(?, '') or name = ? COLLATE NOCASE",
-			"select id from dbauthors where name = ? COLLATE NOCASE or slug = NULLIF(?, '') or name = ? COLLATE NOCASE",
-			&single,
-			&slug,
-			&withPeriods,
-		)
-		if len(ids) > 0 {
+		if ids := authorIDsByName(single); len(ids) > 0 {
 			return []resolvedAuthor{{name: single, ids: ids}}
 		}
 
@@ -1405,29 +1440,130 @@ func resolveAuthorNames(authorName string) []resolvedAuthor {
 
 	out := make([]resolvedAuthor, 0, len(parts))
 
-	var (
-		slug, withPeriods string
-		ids               []uint
-	)
-
 	for i := range parts {
-		slug = logger.StringToSlugCached(parts[i])
-		withPeriods = addPeriodsToInitials(parts[i])
-
-		ids = Getrowssize[uint](
-			false,
-			"select count() from dbauthors where name = ? COLLATE NOCASE or slug = NULLIF(?, '') or name = ? COLLATE NOCASE",
-			"select id from dbauthors where name = ? COLLATE NOCASE or slug = NULLIF(?, '') or name = ? COLLATE NOCASE",
-			&parts[i],
-			&slug,
-			&withPeriods,
-		)
-		if len(ids) > 0 {
+		if ids := authorIDsByName(parts[i]); len(ids) > 0 {
 			out = append(out, resolvedAuthor{name: parts[i], ids: ids})
 		}
 	}
 
 	return out
+}
+
+var (
+	// bookTitleTags are what release names add after a book's title:
+	// "(v5.0)", "[epub]", ".ebook.german.epub", " (Retail)".
+	bookTitleTags = regexp.MustCompile(`(?i)(?:[\s.]*[\(\[]\s*(?:v\d+(?:\.\d+)?[a-z]?|retail|neu|html|epub|mobi|azw3?|pdf|uk|us)\s*[\)\]]` +
+		`|[\s.]+(?:ebook|german|deutsch|epub|mobi|azw3?|pdf|retail|html|rar|yenc|v\d+(?:\.\d+)?))+\s*$`)
+	// bookTitleLead is a series and number, or a year, before a title part:
+	// "[Century Trilogy 02]", "Kingsbridge 01", "021", "1978".
+	bookTitleLead = regexp.MustCompile(`^\s*(?:\[[^\]]*\]|\d+)\s*`)
+)
+
+// bookTitleCandidates are the titles the title part of a release name may
+// name a book by, the whole first: without the tags at its end, then each
+// of its " - " parts (the series and number, the year and the subtitle
+// around the title: "Kingsbridge 03 - Das Fundament der Ewigkeit",
+// "1978 - Die Nadel", "Never - Die letzte Entscheidung"). Each also with
+// and without a leading "The" ("Hammer of Eden The" too). Matched exactly,
+// so a part that is only a series name matches no book unless a book has
+// that title.
+func bookTitleCandidates(title string) []string {
+	out := make([]string, 0, 4)
+	add := func(t string) {
+		t = strings.Join(strings.Fields(stripTrailingBrackets(bookTitleTags.ReplaceAllString(t, ""))), " ")
+		if t == "" || isNumericTitle(t) || slices.Contains(out, t) {
+			return
+		}
+
+		out = append(out, t)
+		if rest, ok := strings.CutSuffix(t, " The"); ok && rest != "" {
+			t = "The " + rest
+			out = append(out, t)
+		}
+
+		// With and without a leading "The": "The Armor of Light" is
+		// "Armor of Light", "Pillars of the Earth" is "The Pillars of the Earth".
+		if rest, ok := strings.CutPrefix(t, "The "); ok || logger.HasPrefixI(t, "the ") {
+			if !ok {
+				rest = t[4:]
+			}
+
+			if !slices.Contains(out, rest) {
+				out = append(out, rest)
+			}
+		} else if !slices.Contains(out, "The "+t) {
+			out = append(out, "The "+t)
+		}
+	}
+
+	add(title)
+	add(bookTitleLead.ReplaceAllString(title, ""))
+
+	if parts := strings.Split(bookTitleTags.ReplaceAllString(title, ""), " - "); len(parts) > 1 {
+		for _, p := range parts {
+			add(p)
+			add(bookTitleLead.ReplaceAllString(p, ""))
+		}
+	}
+
+	return out
+}
+
+// authorLastSplits splits a release name with the author at the end into
+// author and title: at the last " - " and at a last " by ".
+func authorLastSplits(raw string) [][2]string {
+	var out [][2]string
+
+	if i := strings.LastIndex(raw, " - "); i > 0 {
+		out = append(out, [2]string{strings.TrimSpace(raw[i+3:]), strings.TrimSpace(raw[:i])})
+	}
+
+	if i := logger.LastIndexI(raw, " by "); i > 0 {
+		out = append(out, [2]string{strings.TrimSpace(raw[i+4:]), strings.TrimRight(strings.TrimSpace(raw[:i]), " ,")})
+	}
+
+	return out
+}
+
+func isNumericTitle(t string) bool {
+	return strings.Trim(t, "0123456789. ") == ""
+}
+
+// authorIDsByName returns the dbauthors named name (also by slug or with
+// periods after initials).
+func authorIDsByName(name string) []uint {
+	slug := logger.StringToSlugCached(name)
+	withPeriods := addPeriodsToInitials(name)
+
+	return Getrowssize[uint](
+		false,
+		"select count() from dbauthors where name = ? COLLATE NOCASE or slug = NULLIF(?, '') or name = ? COLLATE NOCASE",
+		"select id from dbauthors where name = ? COLLATE NOCASE or slug = NULLIF(?, '') or name = ? COLLATE NOCASE",
+		name,
+		&slug,
+		&withPeriods,
+	)
+}
+
+// swappedAuthorName turns a name in catalogue order into first name, last
+// name: "Follett, Ken", "Follett  Ken" and "Follett Ken" are "Ken Follett".
+// "" for anything else (one word, several commas, three or more words
+// without a comma).
+func swappedAuthorName(name string) string {
+	if last, first, ok := strings.Cut(name, ","); ok {
+		last, first = strings.Join(strings.Fields(last), " "), strings.Join(strings.Fields(first), " ")
+		if last == "" || first == "" || strings.Contains(first, ",") {
+			return ""
+		}
+
+		return first + " " + last
+	}
+
+	if f := strings.Fields(name); len(f) == 2 {
+		return f[1] + " " + f[0]
+	}
+
+	return ""
 }
 
 // tryFindVariousAuthorsBook attempts to find a book with "Various Authors" or similar.
@@ -1496,35 +1632,30 @@ func (m *ParseInfo) tryFindAuthorAndBook(resolved []resolvedAuthor, bookTitle *s
 
 	sluggedTitle := logger.StringToSlugCached(*bookTitle)
 	doPrefixMatch := strings.Count(*bookTitle, " ") >= 2
+	candidates := bookTitleCandidates(*bookTitle)
 
 	for i := range resolved {
 		for j := range resolved[i].ids {
-			// Try main books table with author filter
-			Scanrowsdyn(false,
-				`SELECT b.id FROM dbbooks b
-				 JOIN dbbook_authors ba ON b.id = ba.dbbook_id
-				 WHERE ba.dbauthor_id = ?
-				 AND (b.title = ? COLLATE NOCASE OR b.slug = NULLIF(?, ''))
-				 LIMIT 1`,
-				&m.DbbookID, &resolved[i].ids[j], bookTitle, &sluggedTitle)
+			// The title or one of its parts, by the title or an alternate title.
+			for c := range candidates {
+				slug := logger.StringToSlugCached(candidates[c])
+				Scanrowsdyn(false,
+					`SELECT b.id FROM dbbooks b
+					 JOIN dbbook_authors ba ON b.id = ba.dbbook_id
+					 WHERE ba.dbauthor_id = ?
+					 AND (b.title = ? COLLATE NOCASE OR b.slug = NULLIF(?, ''))
+					 UNION ALL
+					 SELECT bt.dbbook_id FROM dbbook_titles bt
+					 JOIN dbbook_authors ba ON bt.dbbook_id = ba.dbbook_id
+					 WHERE ba.dbauthor_id = ?
+					 AND (bt.title = ? COLLATE NOCASE OR bt.slug = NULLIF(?, ''))
+					 LIMIT 1`,
+					&m.DbbookID, &resolved[i].ids[j], &candidates[c], &slug, &resolved[i].ids[j], &candidates[c], &slug)
 
-			if m.DbbookID != 0 {
-				m.Artist = resolved[i].name
-				return true
-			}
-
-			// Try alternate titles
-			Scanrowsdyn(false,
-				`SELECT bt.dbbook_id FROM dbbook_titles bt
-				 JOIN dbbook_authors ba ON bt.dbbook_id = ba.dbbook_id
-				 WHERE ba.dbauthor_id = ?
-				 AND (bt.title = ? COLLATE NOCASE OR bt.slug = NULLIF(?, ''))
-				 LIMIT 1`,
-				&m.DbbookID, &resolved[i].ids[j], bookTitle, &sluggedTitle)
-
-			if m.DbbookID != 0 {
-				m.Artist = resolved[i].name
-				return true
+				if m.DbbookID != 0 {
+					m.Artist = resolved[i].name
+					return true
+				}
 			}
 
 			// Try word-skipping: fetch all book titles for this author once, then
@@ -1601,6 +1732,13 @@ func (m *ParseInfo) FindDbbookByAuthorFirstFromWantedList(listnames []string) {
 		}
 	}
 
+	// The author at the end: "Title - Author", "Title, by Author".
+	for _, sp := range authorLastSplits(rawTitle) {
+		if m.tryFindAuthorAndBookFromWantedList(cachedResolveAuthor(&authorCache, sp[0]), &sp[1], listnames) {
+			return
+		}
+	}
+
 	// Try "-" without spaces (scene format)
 	if before, after, ok := strings.Cut(rawTitle, "-"); ok {
 		potentialAuthor := strings.TrimSpace(before)
@@ -1635,25 +1773,32 @@ func (m *ParseInfo) tryFindAuthorAndBookFromWantedList(
 
 	sluggedTitle := logger.StringToSlugCached(*bookTitle)
 	doPrefixMatch := strings.Count(*bookTitle, " ") >= 2
+	candidates := bookTitleCandidates(*bookTitle)
 
 	for i := range resolved {
 		for k := range resolved[i].ids {
 			for j := range listnames {
-				// Try exact match in wanted list
-				Scanrowsdyn(false,
-					`SELECT bk.dbbook_id FROM books bk
-					 JOIN dbbook_authors ba ON bk.dbbook_id = ba.dbbook_id
-					 JOIN dbbooks db ON db.id = bk.dbbook_id
-					 WHERE ba.dbauthor_id = ?
-					 AND bk.listname = ? COLLATE NOCASE
-					 AND (db.title = ? COLLATE NOCASE OR db.slug = NULLIF(?, ''))
-					 LIMIT 1`,
-					&m.DbbookID, &resolved[i].ids[k], &listnames[j], bookTitle, &sluggedTitle)
+				// The title or one of its parts, by the title or an alternate
+				// title (the German one of an English book).
+				for c := range candidates {
+					slug := logger.StringToSlugCached(candidates[c])
+					Scanrowsdyn(false,
+						`SELECT bk.dbbook_id FROM books bk
+						 JOIN dbbook_authors ba ON bk.dbbook_id = ba.dbbook_id
+						 JOIN dbbooks db ON db.id = bk.dbbook_id
+						 WHERE ba.dbauthor_id = ?
+						 AND bk.listname = ? COLLATE NOCASE
+						 AND (db.title = ? COLLATE NOCASE OR db.slug = NULLIF(?, '')
+						   OR EXISTS (SELECT 1 FROM dbbook_titles bt WHERE bt.dbbook_id = db.id
+						     AND (bt.title = ? COLLATE NOCASE OR bt.slug = NULLIF(?, ''))))
+						 LIMIT 1`,
+						&m.DbbookID, &resolved[i].ids[k], &listnames[j], &candidates[c], &slug, &candidates[c], &slug)
 
-				if m.DbbookID != 0 {
-					m.Artist = resolved[i].name
-					m.BookID = m.getBookIDByDbbookAndList(&listnames[j])
-					return true
+					if m.DbbookID != 0 {
+						m.Artist = resolved[i].name
+						m.BookID = m.getBookIDByDbbookAndList(&listnames[j])
+						return true
+					}
 				}
 
 				// Try word-skipping: fetch the author's books on this list once,

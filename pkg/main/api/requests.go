@@ -212,6 +212,9 @@ func HandleRequestApprove(c *gin.Context) {
 		where = " (moved to " + listname + ")"
 	}
 
+	providers.NotifyUser(r.Username, providers.EventRequest, "Request approved: "+r.Title,
+		r.Title+" was approved and will be searched. You get another message once it was downloaded.",
+		"/api/admin/library#"+r.Kind+"/"+strconv.FormatUint(uint64(r.EntryID), 10))
 	requestsReply(c, r.Title+" approved"+where+": it is searched with the next scheduled search.", "success")
 }
 
@@ -231,6 +234,7 @@ func HandleRequestReject(c *gin.Context) {
 	}
 
 	_ = database.CloseMediaRequest(&r.ID)
+	providers.NotifyUser(r.Username, providers.EventRequest, "Request declined: "+r.Title, r.Title+" was declined by an admin and removed again.", "")
 	requestsReply(c, r.Title+" rejected and removed from "+r.Listname+".", "success")
 }
 

@@ -27,6 +27,47 @@ func callAs(s *Session, h gin.HandlerFunc, form url.Values) *httptest.ResponseRe
 	return w
 }
 
+// resetNowPlaying empties the players of earlier tests.
+func resetNowPlaying() {
+	nowPlayingMu.Lock()
+	defer nowPlayingMu.Unlock()
+
+	clear(nowPlayingMap)
+}
+
+// playedFor pretends the player played d since its last report.
+func playedFor(t *testing.T, sid string, d time.Duration) {
+	t.Helper()
+
+	nowPlayingMu.Lock()
+	defer nowPlayingMu.Unlock()
+
+	p := nowPlayingMap[sid]
+	if p == nil {
+		t.Fatalf("no player %s", sid)
+	}
+
+	p.lastAt = p.lastAt.Add(-d)
+}
+
+// TestShuffleSkipNotRecorded: files skipped after a moment (shuffling)
+// leave no history and no statistics.
+func TestShuffleSkipNotRecorded(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetNowPlaying()
+	accessTestData(t)
+
+	anna := &Session{UserID: "anna", Role: database.RoleUser, Groups: []string{"movie_DE"}}
+	for _, st := range []struct{ state, pos string }{{"start", "0"}, {"play", "2"}, {"end", "200"}} {
+		callAs(anna, HandlePlayerProgress, url.Values{"sid": {"skip1234"}, "kind": {"movie"}, "id": {"12"}, "state": {st.state},
+			"pos": {st.pos}, "dur": {"6000"}, "title": {"Deutsch"}})
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from play_history") + database.Getdatarow[int](false, "select count() from play_sessions"); n != 0 {
+		t.Errorf("%d history/session rows after skipping", n)
+	}
+}
+
 // TestBandwidthLimiter: with a limit, sending takes as long as the rate
 // says (less the burst); without one it doesn't wait.
 func TestBandwidthLimiter(t *testing.T) {
@@ -83,6 +124,7 @@ func TestBandwidthLimiter(t *testing.T) {
 // its message and keeps the file from streaming for a while.
 func TestPlayerProgressAndStop(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	resetNowPlaying()
 	accessTestData(t)
 
 	anna := &Session{UserID: "anna", Role: database.RoleUser, Groups: []string{"movie_DE"}}
@@ -105,8 +147,24 @@ func TestPlayerProgressAndStop(t *testing.T) {
 		t.Fatalf("start: %v", res)
 	}
 
+	// A few seconds in, the player shows on Now Playing but nothing is
+	// recorded yet (less than 5% played).
+	progress(anna, "play", "3", "12")
+
+	if list := nowPlayingList(); len(list) != 1 || database.PlayResume("anna", "movie", new(uint(12))) != 0 ||
+		database.Getdatarow[int](false, "select count() from play_sessions") != 0 {
+		t.Fatalf("recorded below 5%%: %+v", list)
+	}
+
+	// A minute played (more than 5% of 1000 s): the play counts.
+	playedFor(t, "abcd1234", time.Minute)
+
 	if res := progress(anna, "play", "420", "12"); res["stop"] != false {
 		t.Fatalf("play: %v", res)
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from play_sessions"); n != 1 {
+		t.Errorf("%d play sessions, want 1", n)
 	}
 
 	if got := database.PlayResume("anna", "movie", new(uint(12))); got != 420 {
@@ -161,5 +219,45 @@ func TestAccountSettings(t *testing.T) {
 
 	if js := accountSettingsJS(adminAccess); !strings.Contains(js, `"lp-vol":"0.3"`) || strings.Contains(js, "</script>") {
 		t.Errorf("settings for the page: %s", js)
+	}
+}
+
+// TestContinueIsNotANewPlay: playing an unfinished file again continues
+// its play (one play, the second session marked resumed); a finished one
+// counts again.
+func TestContinueIsNotANewPlay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetNowPlaying()
+	accessTestData(t)
+
+	anna := &Session{UserID: "anna", Role: database.RoleUser, Groups: []string{"movie_DE"}}
+	play := func(sid, pos string) {
+		send := func(state, p string) {
+			callAs(anna, HandlePlayerProgress, url.Values{"sid": {sid}, "kind": {"movie"}, "id": {"12"}, "state": {state},
+				"pos": {p}, "dur": {"1000"}, "title": {"Deutsch"}})
+		}
+
+		send("start", "0")
+		playedFor(t, sid, time.Minute)
+		send("play", pos)
+		send("stop", pos)
+	}
+
+	plays := func() int {
+		return database.Getdatarow[int](false, "select plays from play_history where username = 'anna' and file_id = 12")
+	}
+
+	play("first123", "300")
+	play("second12", "500")
+
+	if plays() != 1 || database.Getdatarow[int](false, "select count() from play_sessions where resumed = 1") != 1 {
+		t.Fatalf("after continuing: %d plays, sessions %v", plays(), database.PlaySessionsSince(1))
+	}
+
+	play("third123", "990") // finished
+	play("fourth12", "100") // watched again from the start
+
+	if plays() != 2 {
+		t.Errorf("after watching again: %d plays, want 2", plays())
 	}
 }

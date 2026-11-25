@@ -57,6 +57,7 @@ var (
 		"DBRemoveUnmatched":        "delete from audiobook_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
 		"DBCacheUnmatched":         "select filepath from audiobook_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
 		"DBCountFilesLocation":     "select count() from audiobook_files where location = ?",
+		"TableUnmatched":           "audiobook_file_unmatcheds",
 		"DBCountUnmatchedPath":     "select count() from audiobook_file_unmatcheds where filepath = ?",
 		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbaudiobook_titles where dbaudiobook_id = ? and title != '')",
 		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbaudiobook_id from dbaudiobook_titles where dbaudiobook_id = ? and title != ''",

@@ -31,6 +31,12 @@ type MovieSearchResult struct {
 }
 
 // MovieDetails represents comprehensive movie information.
+// MovieCollectionRef names the collection a movie belongs to.
+type MovieCollectionRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 type MovieDetails struct {
 	ID                  int                 `json:"id"`
 	IMDbID              string              `json:"imdb_id"`
@@ -53,10 +59,15 @@ type MovieDetails struct {
 	Homepage            string              `json:"homepage"`
 	Status              string              `json:"status"` // Released, Post Production, etc.
 	Genres              []Genre             `json:"genres"`
+	// Collection is the TMDB collection (film series) of the movie, nil: none.
+	Collection *MovieCollectionRef `json:"belongs_to_collection,omitempty"`
 	ProductionCompanies []ProductionCompany `json:"production_companies"`
 	SpokenLanguages     []SpokenLanguage    `json:"spoken_languages"`
 	AlternativeTitles   []AlternativeTitle  `json:"alternative_titles"`
 	Credits             *Credits            `json:"credits"`
+	// Recommendations and Similar come with the details (append_to_response).
+	Recommendations []MovieSearchResult `json:"recommendations,omitempty"`
+	Similar         []MovieSearchResult `json:"similar,omitempty"`
 	ProviderName        string              `json:"provider_name"`
 }
 
@@ -105,6 +116,8 @@ type SeriesDetails struct {
 	Seasons             []Season            `json:"seasons"`
 	AlternativeTitles   []AlternativeTitle  `json:"alternative_titles"`
 	Credits             *Credits            `json:"credits"`
+	Recommendations []SeriesSearchResult `json:"recommendations,omitempty"`
+	Similar         []SeriesSearchResult `json:"similar,omitempty"`
 	ProviderName        string              `json:"provider_name"`
 }
 

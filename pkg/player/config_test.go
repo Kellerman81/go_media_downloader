@@ -21,10 +21,6 @@ func TestNormalizeURL(t *testing.T) {
 		}
 	}
 
-	if got := appURL("https://m.example.com"); got != "https://m.example.com/api/admin/library?app=1" {
-		t.Errorf("app URL %q", got)
-	}
-
 	dir := t.TempDir()
 	if err := saveConfig(dir, config{URL: "https://m.example.com", Browser: "/usr/bin/chromium"}); err != nil {
 		t.Fatal(err)

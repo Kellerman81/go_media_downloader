@@ -312,6 +312,10 @@ func TestCalendarSeriesScraperLink(t *testing.T) {
 
 	links := map[string][]calendarExtLink{}
 	for _, e := range (calendarState{View: "week", Filter: "series", Date: calDate(day)}).Events() {
+		for i := range e.Links {
+			e.Links[i].Label = plain(e.Links[i].Label)
+		}
+
 		links[e.EpTitle] = e.Links
 	}
 
@@ -328,7 +332,7 @@ func TestCalendarLibraryFeatures(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	useMediaConfig(t, config.MediaConfig{Movies: append(mediaGroup("EN"), mediaGroup("DE")...), Series: mediaGroup("X")})
 
-	today := time.Now().UTC()
+	today := time.Now() // local, like the calendar: UTC is a day behind after midnight
 	past, todayS := today.AddDate(0, 0, -2).Format("2006-01-02"), today.Format("2006-01-02")
 
 	for _, q := range []string{
@@ -415,7 +419,7 @@ func TestCalendarLibraryFeatures(t *testing.T) {
 	CalendarContentHandler(c)
 
 	for _, want := range []string{"All media groups", "Any genre", `<option value="Horror">`, "Search overdue (2)", "girlsway ×3", "2 overdue", "1 partly downloaded", `{&#34;type&#34;:&#34;movie&#34;,&#34;id&#34;:3}`, "2 new since yesterday"} {
-		if !strings.Contains(w.Body.String(), want) {
+		if !strings.Contains(plain(w.Body.String()), want) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
@@ -442,5 +446,21 @@ func TestCalendarLibraryFeatures(t *testing.T) {
 
 	if code, _ := play("type=book&id=1"); code != http.StatusNotFound {
 		t.Errorf("books play: %d", code)
+	}
+}
+
+// TestMovieLinksWebsite: the website link is left out when it is a link
+// shown already (often the IMDb page).
+func TestMovieLinksWebsite(t *testing.T) {
+	for _, site := range []string{"https://www.imdb.com/title/tt0092494", "http://imdb.com/title/tt0092494/"} {
+		links := movieLinks("tt0092494", 11548, 0, site)
+		if len(links) != 2 { // IMDb and TMDB
+			t.Errorf("%s shown again: %+v", site, links)
+		}
+	}
+
+	links := movieLinks("tt0092494", 0, 0, "https://example.com/film")
+	if !slices.ContainsFunc(links, func(l calendarExtLink) bool { return l.URL == "https://example.com/film" }) {
+		t.Errorf("own website missing: %+v", links)
 	}
 }

@@ -69,7 +69,7 @@ func TestLibraryCoverCache(t *testing.T) {
 		t.Errorf("cover loaded %d times", loads)
 	}
 
-	if files, _ := filepath.Glob(filepath.Join(defaultCoverCacheDir, "movie-1-*.png")); len(files) != 1 {
+	if files, _ := filepath.Glob(filepath.Join(defaultCoverCacheDir, "movie-1*")); len(files) != 1 || filepath.Base(files[0]) != "movie-1.png" {
 		t.Errorf("cache files = %v", files)
 	}
 

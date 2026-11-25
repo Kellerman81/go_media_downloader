@@ -12,6 +12,7 @@ type MediaRequest struct {
 	Listname  string `db:"listname"`
 	Title     string `db:"title"`
 	CreatedAt string `db:"created_at"`
+	Status    string `db:"status"` // open, approved (waits for its media)
 }
 
 // RequestKinds maps a request kind to its list entry table.
@@ -40,7 +41,15 @@ func RequestEntryQuality(r *MediaRequest) string {
 // GetMediaRequests returns the open requests, oldest first.
 func GetMediaRequests() []MediaRequest {
 	return StructscanT[MediaRequest](false, 0,
-		"select id, username, kind, entry_id, listname, title, created_at from media_requests order by id")
+		"select id, username, kind, entry_id, listname, title, created_at from media_requests where status = 'open' order by id")
+}
+
+// UserMediaRequests are the requests of an account still open or waiting
+// for their media, newest first.
+func UserMediaRequests(username string) []MediaRequest {
+	return StructscanT[MediaRequest](false, 8, "select id, username, kind, entry_id, listname, title, "+
+		"strftime('%Y-%m-%d %H:%M', created_at) as created_at, status from media_requests "+
+		"where username = ? collate nocase order by id desc limit 200", username)
 }
 
 // GetMediaRequest returns one request.
@@ -51,7 +60,7 @@ func GetMediaRequest(id *uint) (*MediaRequest, error) {
 
 // CountMediaRequests is the number of open requests.
 func CountMediaRequests() uint {
-	return Getdatarow[uint](false, "select count() from media_requests")
+	return Getdatarow[uint](false, "select count() from media_requests where status = 'open'")
 }
 
 // HoldMediaRequest records a requested list entry and keeps it from being
@@ -76,7 +85,8 @@ func HoldMediaRequest(r *MediaRequest) error {
 	return err
 }
 
-// ApproveMediaRequest lets the entry be searched and closes the request.
+// ApproveMediaRequest lets the entry be searched; the request waits for
+// its media (status approved).
 // listname and quality ("" keeps the entry's) move it to another list or
 // quality profile first; a series' episodes get the quality too.
 func ApproveMediaRequest(r *MediaRequest, listname, quality string) error {
@@ -113,7 +123,8 @@ func ApproveMediaRequest(r *MediaRequest, listname, quality string) error {
 		return err
 	}
 
-	return CloseMediaRequest(&r.ID)
+	// Kept until its media arrives, to tell the account (TakeApprovedRequests).
+	return ExecNErr("update media_requests set status = 'approved' where id = ?", &r.ID)
 }
 
 // CloseMediaRequest removes a request (approved, rejected, or its entry is

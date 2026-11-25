@@ -18,7 +18,7 @@ import (
 
 const playStatDays = 30
 
-var playKindLabels = map[string]string{"movie": "Movies", "episode": "Episodes", "track": "Music", "audiobook": "Audiobooks"}
+var playKindLabels = map[string]string{"movie": "Movies", "episode": "Episodes", "track": "Music", "audiobook": "Audiobooks", "book": "Books"}
 
 func webStatisticsPlays(ctx *gin.Context) {
 	renderStatHTML(ctx, html.Div(
@@ -74,7 +74,10 @@ func computeViewStats(sessions []database.PlaySession) viewStats {
 			byTitle[s.Title] = t
 		}
 
-		t.Plays++
+		if !s.Resumed {
+			t.Plays++
+		}
+
 		t.Hours += s.Seconds / 3600
 	}
 

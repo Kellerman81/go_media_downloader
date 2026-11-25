@@ -22,3 +22,17 @@ func TestValidateImdbConfigTitleTypes(t *testing.T) {
 		t.Error("unknown type accepted")
 	}
 }
+
+// TestValidateGeneralConfigLogFileSize: 0 is the documented default (10 MB)
+// and must not block saving the general settings; a negative size does.
+func TestValidateGeneralConfigLogFileSize(t *testing.T) {
+	g := config.GeneralConfig{TimeFormat: "rfc3339", LogLevel: "info", WebPort: "9090"}
+	if err := validateGeneralConfig(&g); err != nil {
+		t.Errorf("log_file_size 0: %v", err)
+	}
+
+	g.LogFileSize = -1
+	if err := validateGeneralConfig(&g); err == nil {
+		t.Error("negative log_file_size accepted")
+	}
+}

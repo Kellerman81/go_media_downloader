@@ -6,6 +6,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,8 +16,12 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audible"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/audnex"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/openlibrary"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestAudiobookLanguageAllowed(t *testing.T) {
@@ -793,5 +800,195 @@ func TestFetchGoodreadsAuthorBooksPaginates(t *testing.T) {
 
 	if got := fetchGoodreadsAuthorBooks(context.Background(), f, "a"); len(got) != 1 || f.calls != 2 {
 		t.Errorf("repeating pages: books=%d calls=%d, want 1/2", len(got), f.calls)
+	}
+}
+
+// TestAddBookSeries: a new book stores its series as a dbbook_series row
+// (dbbooks has no series name; the insert used to fail for every book with
+// "no column named series_name"); books of one series share the row, a book
+// without one has none.
+func TestAddBookSeries(t *testing.T) {
+	useTestDB(t)
+
+	cfgp := &config.MediaTypeConfig{}
+
+	for _, b := range []apiexternal_v2.BookSearchResult{
+		{Title: "The Pillars of the Earth", ISBN13: "9780451166890", SeriesName: "Kingsbridge", SeriesPosition: "1"},
+		{Title: "World Without End", ISBN13: "9780451228550", SeriesName: "kingsbridge", SeriesPosition: "2"},
+		{Title: "Never", ISBN13: "9780593300015"},
+	} {
+		// No list: the book is written, then the list entry is refused.
+		if err := addBookToDatabase(context.Background(), &b, cfgp, -1, "Ken Follett"); !errors.Is(err, logger.ErrListnameEmpty) {
+			t.Fatalf("%s: %v", b.Title, err)
+		}
+	}
+
+	type row struct {
+		Title    string `db:"title"`
+		SeriesID uint   `db:"series_id"`
+		Position string `db:"series_position"`
+	}
+
+	rows := database.StructscanT[row](false, 3, "select title, coalesce(dbbook_series_id, 0) as series_id, series_position from dbbooks order by id")
+	if len(rows) != 3 {
+		t.Fatalf("books: %+v", rows)
+	}
+
+	if rows[0].SeriesID == 0 || rows[1].SeriesID != rows[0].SeriesID || rows[0].Position != "1" || rows[1].Position != "2" {
+		t.Errorf("series books: %+v", rows[:2])
+	}
+
+	if rows[2].SeriesID != 0 {
+		t.Errorf("book without a series: %+v", rows[2])
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from dbbook_series"); n != 1 {
+		t.Errorf("%d series rows, want 1", n)
+	}
+}
+
+// TestTranslateBook: a new book of the author feed gets its German title
+// from the German editions of its work, shown as translation and searched
+// as alternate title; a book already there gets it when the feed finds it
+// again.
+func TestTranslateBook(t *testing.T) {
+	useTestDB(t)
+
+	bookTestConfig(t)
+
+	editions := map[string]string{
+		"/works/OL1914022W/editions.json": `{"entries":[{"title":"The Pillars of the Earth","languages":[{"key":"/languages/eng"}]},` +
+			`{"title":"Die Säulen der Erde","languages":[{"key":"/languages/ger"}]},{"title":"Die Säulen der Erde","languages":[{"key":"/languages/ger"}]}]}`,
+		"/works/OL1914053W/editions.json": `{"entries":[{"title":"Eye of the Needle","languages":[{"key":"/languages/eng"}]},` +
+			`{"title":"Die Nadel","languages":[{"key":"/languages/ger"}]}]}`,
+	}
+
+	mockOpenLibrary(t, editions)
+
+	// Imported before titles were fetched.
+	if err := database.ExecNErr("insert into dbbooks (id, title, slug, openlibrary_id) values (7, 'Eye of the Needle', 'eye-of-the-needle', 'OL1914053W')"); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgp := config.GetSettingsMedia("book_Books")
+	for _, b := range []apiexternal_v2.BookSearchResult{
+		{ID: "/works/OL1914022W", Title: "The Pillars of the Earth", ProviderType: apiexternal_v2.ProviderOpenLibrary},
+		{ID: "/works/OL1914053W", Title: "Eye of the Needle", ProviderType: apiexternal_v2.ProviderOpenLibrary},
+	} {
+		if err := addBookToDatabase(context.Background(), &b, cfgp, -1, "Ken Follett"); !errors.Is(err, logger.ErrListnameEmpty) {
+			t.Fatalf("%s: %v", b.Title, err)
+		}
+	}
+
+	type title struct {
+		Book   string `db:"book"`
+		Title  string `db:"title"`
+		Region string `db:"region"`
+	}
+
+	tr := database.StructscanT[title](false, 4, "select d.title as book, m.translation as title, m.language as region from metadata_translations m "+
+		"inner join dbbooks d on d.id = m.media_id where m.media_type = 'dbbook' and m.field = 'title' order by d.title")
+	alt := database.StructscanT[title](false, 4, "select d.title as book, t.title, coalesce(t.region, '') as region from dbbook_titles t "+
+		"inner join dbbooks d on d.id = t.dbbook_id order by d.title")
+
+	want := []title{{"Eye of the Needle", "Die Nadel", "de"}, {"The Pillars of the Earth", "Die Säulen der Erde", "de"}}
+	if len(tr) != 2 || tr[0] != want[0] || tr[1] != want[1] {
+		t.Errorf("translations: %+v", tr)
+	}
+
+	if len(alt) != 2 || alt[0] != want[0] || alt[1] != want[1] {
+		t.Errorf("alternate titles: %+v", alt)
+	}
+}
+
+// bookTestConfig loads a config with a book group "Books" (metadata
+// language de, list "Book Library").
+func bookTestConfig(t *testing.T) {
+	t.Helper()
+
+	oldFile := config.Configfile
+	config.Configfile = filepath.Join(t.TempDir(), "config.toml")
+	t.Cleanup(func() { config.Configfile = oldFile })
+
+	cfg := config.MainConfig{
+		General: config.GeneralConfig{WorkerFiles: 1, WorkerParse: 1, WorkerSearch: 1},
+		Media: config.MediaConfig{Books: []config.MediaTypeConfig{{
+			Name: "Books", MetadataLanguage: "de", TemplateQuality: "Book", TemplateScheduler: "Default",
+			Data:  []config.MediaDataConfig{{TemplatePath: "books"}},
+			Lists: []config.MediaListsConfig{{Name: "Book Library", TemplateList: "BookLibrary", TemplateQuality: "Book", Enabled: true}},
+		}}},
+		Lists:     []config.ListsConfig{{Name: "BookLibrary"}},
+		Paths:     []config.PathsConfig{{Name: "books"}},
+		Quality:   []config.QualityConfig{{Name: "Book"}},
+		Scheduler: []config.SchedulerConfig{{Name: "Default", IntervalImdb: "3d"}},
+	}
+
+	cnt, err := toml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(config.Configfile, cnt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := config.Loadallsettings(true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// mockOpenLibrary serves OpenLibrary requests from paths (path -> JSON)
+// and registers it as the provider.
+func mockOpenLibrary(t *testing.T, paths map[string]string) {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if e, ok := paths[r.URL.Path]; ok {
+			_, _ = w.Write([]byte(e))
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	old := providers.GetOpenLibrary()
+	providers.SetOpenLibrary(openlibrary.NewProviderWithConfig(base.ClientConfig{BaseURL: srv.URL, RateLimitCalls: 100, RateLimitSeconds: 1}))
+	t.Cleanup(func() { providers.SetOpenLibrary(old) })
+}
+
+// TestAddFoundBook: an import with add_found adds the book a file names,
+// found by the German title of an edition and the author, to the list; the
+// file's title becomes an alternate title so the file matches the book.
+func TestAddFoundBook(t *testing.T) {
+	useTestDB(t)
+	bookTestConfig(t)
+
+	mockOpenLibrary(t, map[string]string{
+		"/search.json": `{"docs":[{"key":"/works/OL1914022W","title":"The Pillars of the Earth","author_name":["Ken Follett"],` +
+			`"editions":{"docs":[{"title":"Die Säulen der Erde"}]}}]}`,
+	})
+
+	cfgp := config.GetSettingsMedia("book_Books")
+
+	id := AddFoundBook(context.Background(), "Kingsbridge 01 - Die Säulen der Erde", "Ken Follett", cfgp, 0)
+	if id == 0 {
+		t.Fatal("not added")
+	}
+
+	if title := database.Getdatarow[string](false, "select title from dbbooks where id = ?", &id); title != "The Pillars of the Earth" {
+		t.Errorf("title %q", title)
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from books where dbbook_id = ? and listname = 'Book Library'", &id); n != 1 {
+		t.Errorf("%d list entries", n)
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from dbbook_titles where dbbook_id = ? and title = 'Die Säulen der Erde'", &id); n != 1 {
+		t.Errorf("%d alternate titles", n)
+	}
+
+	if id := AddFoundBook(context.Background(), "Unbekanntes Buch", "", cfgp, 0); id != 0 {
+		t.Errorf("without author: %d", id)
 	}
 }

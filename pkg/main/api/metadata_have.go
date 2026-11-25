@@ -136,8 +136,8 @@ func metaAddButton(have bool, class string, nodes ...gomponents.Node) gomponents
 		}
 
 		return html.Button(html.Type("button"), html.Class(strings.Join(keep, " ")+" btn-outline-secondary"), html.Disabled(),
-			html.Title("Already in a list of this media group"),
-			html.I(html.Class("fas fa-check me-1"), gomponents.Attr("aria-hidden", "true")), gomponents.Text("Have already"))
+			html.Title(t("Already in a list of this media group")),
+			html.I(html.Class("fas fa-check me-1"), gomponents.Attr("aria-hidden", "true")), gomponents.Text(t("Have already")))
 	}
 
 	return html.Button(append([]gomponents.Node{html.Type("button"), html.Class(class)}, nodes...)...)

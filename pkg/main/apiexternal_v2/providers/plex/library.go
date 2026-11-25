@@ -16,6 +16,10 @@ type LibraryItem struct {
 	ParentIndex int    `json:"parentIndex,omitempty"` // season of an episode
 	Index       int    `json:"index,omitempty"`       // episode number
 	Genre       []Tag  `json:"Genre,omitempty"`
+	// The token's account's state: plays, where it stopped (ms).
+	ViewCount            int    `json:"viewCount,omitempty"`
+	ViewOffset           int64  `json:"viewOffset,omitempty"`
+	GrandparentRatingKey string `json:"grandparentRatingKey,omitempty"` // show of an episode
 }
 
 // Tag is a Plex tag such as a genre.
@@ -122,4 +126,41 @@ func (p *Provider) MachineID(ctx context.Context, serverURL, token string) (stri
 	}
 
 	return response.MediaContainer.MachineIdentifier, nil
+}
+
+// AllEpisodes returns the episodes of all show libraries, with their show
+// (grandparentRatingKey) and the token's account's state.
+func (p *Provider) AllEpisodes(ctx context.Context, serverURL, token string) ([]LibraryItem, error) {
+	sections, err := p.get(ctx, serverURL, token, "/library/sections", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []LibraryItem
+
+	for _, dir := range sections.MediaContainer.Directory {
+		if dir.Type != "show" {
+			continue
+		}
+
+		all, err := p.get(ctx, serverURL, token, "/library/sections/"+url.PathEscape(dir.Key)+"/all", url.Values{"type": {"4"}})
+		if err != nil {
+			return nil, err
+		}
+
+		items = append(items, all.MediaContainer.Metadata...)
+	}
+
+	return items, nil
+}
+
+// Scrobble marks an item (ratingKey) watched for the token's account.
+func (p *Provider) Scrobble(ctx context.Context, serverURL, token, ratingKey string) error {
+	if serverURL == "" || token == "" {
+		return errMissingServer
+	}
+
+	params := url.Values{"key": {ratingKey}, "identifier": {"com.plexapp.plugins.library"}, "X-Plex-Token": {token}}
+
+	return p.MakeRequest(ctx, http.MethodGet, strings.TrimSuffix(serverURL, "/")+"/:/scrobble?"+params.Encode(), nil, nil, nil)
 }

@@ -31,3 +31,23 @@ func TestMediaReports(t *testing.T) {
 		t.Errorf("after closing the file's reports: %d, %v", CountMediaReports(), err)
 	}
 }
+
+// TestUserMediaReports: the open reports of one account, newest first.
+func TestUserMediaReports(t *testing.T) {
+	useUsersTestDB(t)
+
+	for _, r := range []MediaReport{
+		{Username: "bea", Kind: "movie", FileID: 1, Title: "first", Reason: "quality"},
+		{Username: "cid", Kind: "movie", FileID: 1, Title: "other", Reason: "quality"},
+		{Username: "bea", Kind: "album", FileID: 2, Title: "second", Reason: "language"},
+	} {
+		if err := AddMediaReport(&r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := UserMediaReports("Bea")
+	if len(got) != 2 || got[0].Title != "second" || got[1].Title != "first" || got[0].CreatedAt == "" {
+		t.Errorf("reports of bea: %+v", got)
+	}
+}

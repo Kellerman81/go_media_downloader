@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	hx "maragu.dev/gomponents-htmx"
@@ -22,13 +23,14 @@ var featureLabels = map[string]string{
 	database.FeatureRequest:       "Request new media (an admin approves)",
 	database.FeatureDownload:      "Download media files",
 	database.FeatureRequestDelete: "Report files as wrong (quality, language, content)",
+	database.FeatureApps:          "Use apps and devices (Jellyfin, WebDAV, Subsonic, OPDS)",
 }
 
 var roleLabels = map[string]string{
-	database.RoleUser:           "User: view and play",
-	database.RoleSearchingUser:  "Searching user: view, play and search",
-	database.RoleRequestingUser: "Requesting user: view, play and request media",
-	database.RoleAdmin:          "Admin: everything",
+	database.RoleUser:           t("User: view and play"),
+	database.RoleSearchingUser:  t("Searching user: view, play and search"),
+	database.RoleRequestingUser: t("Requesting user: view, play and request media"),
+	database.RoleAdmin:          t("Admin: everything"),
 }
 
 // UsersPage renders the user list and the add/edit form (?edit=<id>).
@@ -51,6 +53,7 @@ func UsersPage(c *gin.Context) {
 
 func renderUsersContent(csrf string, edit *database.User, alert string) gomponents.Node {
 	users := database.GetUsers()
+	activity := database.UserActivities()
 
 	rows := make([]gomponents.Node, 0, len(users))
 	for i := range users {
@@ -69,6 +72,7 @@ func renderUsersContent(csrf string, edit *database.User, alert string) gomponen
 			html.Td(gomponents.Text(roleLabels[u.Role]), userFeatureBadges(u)),
 			html.Td(html.Class("small"), gomponents.Text(groups)),
 			html.Td(html.Class("small text-muted"), gomponents.Text(orDash(shortTime(u.LastLogin)))),
+			html.Td(html.Class("text-nowrap"), userActivityButtons(id, u.Username, activity[strings.ToLower(u.Username)])),
 			html.Td(html.Class("text-end text-nowrap"),
 				html.A(html.Class("btn btn-sm btn-outline-primary me-1"), html.Href("/api/admin/users?edit="+id),
 					html.I(html.Class("fa-solid fa-pen me-1")), gomponents.Text("Edit")),
@@ -87,7 +91,7 @@ func renderUsersContent(csrf string, edit *database.User, alert string) gomponen
 	if len(rows) > 0 {
 		list = html.Div(html.Class("table-responsive"), html.Table(html.Class("table table-sm align-middle"),
 			html.THead(html.Tr(html.Th(gomponents.Text("Name")), html.Th(gomponents.Text("Role")),
-				html.Th(gomponents.Text("Media groups")), html.Th(gomponents.Text("Last login")), html.Th())),
+				html.Th(gomponents.Text("Media groups")), html.Th(gomponents.Text("Last login")), html.Th(gomponents.Text("Activity")), html.Th())),
 			html.TBody(gomponents.Group(rows))))
 	}
 
@@ -95,7 +99,19 @@ func renderUsersContent(csrf string, edit *database.User, alert string) gomponen
 		gomponents.Raw(alert),
 		html.Div(html.Class("card mb-4"), html.Div(html.Class("card-body"), list)),
 		renderUserForm(csrf, edit),
-		html.Script(gomponents.Raw(`function usersResetPassword(id, name) {
+		userActivityModal(),
+		html.Script(gomponents.Raw(`function usersActivity(id, what, title) {
+	var modal = document.getElementById('usersActivityModal');
+	modal.querySelector('.modal-title').textContent = title;
+	var body = modal.querySelector('.modal-body');
+	body.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"></div></div>';
+	bootstrap.Modal.getOrCreateInstance(modal).show();
+	fetch('/api/admin/users/activity?id=' + id + '&what=' + what, { credentials: 'same-origin' })
+		.then(function (r) { return r.text().then(function (t) { if (!r.ok) { throw new Error(t || ('HTTP ' + r.status)); } return t; }); })
+		.then(function (html) { body.innerHTML = html; })
+		.catch(function (e) { body.innerHTML = '<div class="alert alert-danger mb-0"></div>'; body.firstChild.textContent = e.message; });
+}
+function usersResetPassword(id, name) {
 	var pw = prompt('New password for ' + name + ' (at least 8 characters):');
 	if (!pw) { return; }
 	htmx.ajax('POST', '/api/admin/users/password', {target: '#usersContent', swap: 'innerHTML', values: {id: id, password: pw}});
@@ -318,14 +334,16 @@ func AccountPage(c *gin.Context) {
 	var body gomponents.Node
 
 	if acc.Name == DefaultUsername {
-		body = gomponents.Raw(renderAlert("This is the built-in admin login. Its password is the web API key: change it under Configuration → General.", "info"))
+		body = gomponents.Raw(renderAlert(t("This is the built-in admin login. Its password is the web API key: change it under Configuration → General."), "info"))
 	} else {
-		body = html.Div(html.ID("accountContent"), renderAccountForm(getCSRFToken(c), ""))
+		body = html.Div(html.Div(html.ID("accountContent"), renderAccountForm(getCSRFToken(c), "")),
+			gomponents.If(providers.MailNotification() != nil, renderEmailForm(getCSRFToken(c), database.GetUserEmail(acc.Name), "")),
+			renderMessagesForm(getCSRFToken(c), acc, ""))
 	}
 
-	renderPageIn(c, "My Account", false, html.Div(html.Class("config-section-enhanced"),
-		renderEnhancedPageHeader("fa-solid fa-user", "My Account", "Signed in as "+acc.Name+" ("+roleLabels[acc.Role]+")."),
-		body))
+	renderPageIn(c, t("My Account"), false, html.Div(html.Class("config-section-enhanced"),
+		renderEnhancedPageHeader("fa-solid fa-user", t("My Account"), tf("Signed in as %s (%s).", acc.Name, roleLabels[acc.Role])),
+		body, renderAccountApps(c, acc)))
 }
 
 func renderAccountForm(csrf, alert string) gomponents.Node {
@@ -338,12 +356,12 @@ func renderAccountForm(csrf, alert string) gomponents.Node {
 
 	return html.Div(gomponents.Raw(alert),
 		html.Div(html.Class("card"), html.Style("max-width: 32rem"), html.Div(html.Class("card-body"),
-			html.H5(html.Class("card-title"), gomponents.Text("Change password")),
+			html.H5(html.Class("card-title"), gomponents.Text(t("Change password"))),
 			html.Form(hx.Post("/api/admin/account"), hx.Headers(wizardCSRFHeader(csrf)), hx.Target("#accountContent"), hx.Swap("innerHTML"),
-				field("current", "Current password"),
-				field("password", "New password (at least 8 characters)"),
-				field("confirm", "New password again"),
-				html.Button(html.Type("submit"), html.Class("btn btn-primary"), gomponents.Text("Change password"))))))
+				field("current", t("Current password")),
+				field("password", t("New password (at least 8 characters)")),
+				field("confirm", t("New password again")),
+				html.Button(html.Type("submit"), html.Class("btn btn-primary"), gomponents.Text(t("Change password")))))))
 }
 
 // HandleAccountPassword changes the own password (POST /admin/account). The
@@ -357,22 +375,22 @@ func HandleAccountPassword(c *gin.Context) {
 
 	u, err := database.GetUserByName(&acc.Name)
 	if err != nil || u.ID == 0 {
-		reply("The built-in admin's password is the web API key (Configuration → General).", "info")
+		reply(t("The built-in admin's password is the web API key (Configuration → General)."), "info")
 		return
 	}
 
 	if !database.CheckPassword(u.PasswordHash, c.PostForm("current")) {
-		reply("The current password is wrong.", "danger")
+		reply(t("The current password is wrong."), "danger")
 		return
 	}
 
 	if c.PostForm("password") != c.PostForm("confirm") {
-		reply("The new passwords differ.", "danger")
+		reply(t("The new passwords differ."), "danger")
 		return
 	}
 
 	if err := database.SetUserPassword(&u.ID, c.PostForm("password")); err != nil {
-		reply("Not changed: "+err.Error(), "danger")
+		reply(tf("Not changed: %s", t(err.Error())), "danger")
 		return
 	}
 
@@ -389,5 +407,5 @@ func HandleAccountPassword(c *gin.Context) {
 	sessionStore.mutex.Unlock()
 
 	setRememberCookie(c, "", -1)
-	reply("Password changed.", "success")
+	reply(t("Password changed."), "success")
 }

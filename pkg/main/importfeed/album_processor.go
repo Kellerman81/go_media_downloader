@@ -2156,6 +2156,7 @@ func replaceExistingAudiobookRelease(
 	}
 
 	updateDbaudiobook(&dbaudiobook)
+	metadata.TranslateAudiobook(ctx, &dbaudiobook)
 
 	// Repopulates authors, narrators, chapters and titles on the existing row
 	// (addAudiobookDetailToDatabase finds it by the new ASIN).

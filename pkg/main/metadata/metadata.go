@@ -98,10 +98,14 @@ func buildLanguageString(languages []apiexternal_v2.SpokenLanguage) string {
 // It finds the TMDb ID if missing using the IMDb ID.
 // It fetches details from the TMDb API and populates Dbmovie fields if empty or overwrite is true.
 // It closes the TMDb response when done.
-func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
+func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool, lang string) error {
 	provider := providers.GetTMDB()
 	if provider == nil {
 		return nil
+	}
+
+	if lang == "" {
+		lang = ListedLanguage("movie", movie.ID, 0)
 	}
 
 	if movie.MoviedbID == 0 {
@@ -109,7 +113,7 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 			return nil
 		}
 
-		moviedb, err := provider.FindMovieByIMDbID(context.Background(), movie.ImdbID)
+		moviedb, err := provider.WithFallbackLanguage(lang).FindMovieByIMDbID(context.Background(), movie.ImdbID)
 		if err != nil || moviedb == nil || len(moviedb.MovieResults) == 0 {
 			if errors.Is(err, logger.ErrNotFound) {
 				return nil
@@ -125,7 +129,7 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 		movie.MoviedbID = moviedb.MovieResults[0].ID
 	}
 
-	moviedbdetails, err := provider.GetMovieByID(context.Background(), movie.MoviedbID)
+	moviedbdetails, err := TmdbMovieDetails(context.Background(), movie.MoviedbID, lang)
 	if err != nil {
 		return err
 	}
@@ -185,7 +189,103 @@ func movieGetTmdbMetadata(movie *database.Dbmovie, overwrite bool) error {
 		movie.MoviedbID = moviedbdetails.ID
 	}
 
+	SaveMovieCollection(movie.ID, moviedbdetails.Collection)
+	SaveMovieExtras(movie.ID, moviedbdetails)
+
 	return nil
+}
+
+// TmdbMovieDetails returns a movie's TMDB details in TMDB's default
+// language (English). When they have no overview, as for a German
+// production without an English translation, the overview and tagline come
+// from lang (a media group's metadata_language) instead of staying empty.
+func TmdbMovieDetails(ctx context.Context, id int, lang string) (*apiexternal_v2.MovieDetails, error) {
+	provider := providers.GetTMDB()
+	if provider == nil {
+		return nil, errTmdbNotFound
+	}
+
+	details, err := provider.WithFallbackLanguage(lang).GetMovieByID(ctx, id)
+	if err != nil || details.Overview != "" || lang == "" || strings.HasPrefix(lang, "en") {
+		return details, err
+	}
+
+	local, err := provider.WithLanguage(lang).GetMovieByID(ctx, id)
+	if err != nil {
+		logger.Logtype("debug", 1).Err(err).Int(logger.StrID, id).Str("language", lang).Msg("tmdb movie details")
+		return details, nil
+	}
+
+	details.Overview = local.Overview
+	if details.Tagline == "" {
+		details.Tagline = local.Tagline
+	}
+
+	return details, nil
+}
+
+// ListedLanguage is the metadata language a TMDB lookup of a title falls
+// back to when TMDB finds nothing in English: the first non-English
+// metadata_language of the media groups whose lists hold the title (typ
+// "movie" or "series"; a series also by its TVDB ID when it has no row
+// yet). "" when there is none.
+func ListedLanguage(typ string, dbID uint, tvdbID int) string {
+	var lists []string
+
+	switch {
+	case typ == "movie" && dbID > 0:
+		lists = database.GetrowsN[string](false, 10, "SELECT DISTINCT listname FROM movies WHERE dbmovie_id = ?", &dbID)
+	case typ == "series" && dbID > 0:
+		lists = database.GetrowsN[string](false, 10, "SELECT DISTINCT listname FROM series WHERE dbserie_id = ?", &dbID)
+	case typ == "series" && tvdbID > 0:
+		lists = database.GetrowsN[string](false, 10,
+			"SELECT DISTINCT listname FROM series WHERE dbserie_id IN (SELECT id FROM dbseries WHERE thetvdb_id = ?)", &tvdbID)
+	}
+
+	var lang string
+
+	config.RangeSettingsMediaBreak(func(_ string, cfgp *config.MediaTypeConfig) bool {
+		if cfgp.MetadataLanguage == "" || strings.HasPrefix(cfgp.MetadataLanguage, "en") {
+			return false
+		}
+
+		for i := range cfgp.Lists {
+			if slices.ContainsFunc(lists, func(l string) bool { return strings.EqualFold(l, cfgp.Lists[i].Name) }) {
+				lang = cfgp.MetadataLanguage
+				return true
+			}
+		}
+
+		return false
+	})
+
+	return lang
+}
+
+// metadataLanguage is a media group's metadata language ("" without one).
+func metadataLanguage(cfgp *config.MediaTypeConfig) string {
+	if cfgp == nil {
+		return ""
+	}
+
+	return cfgp.MetadataLanguage
+}
+
+// SaveMovieCollection keeps the TMDB collection of a dbmovies row (0: in
+// none), which the movie details bring along. It is written here rather
+// than with the other fields: the row's update statements are shared by
+// callers that don't load these columns.
+func SaveMovieCollection(dbmovieID uint, coll *apiexternal_v2.MovieCollectionRef) {
+	if dbmovieID == 0 {
+		return
+	}
+
+	id, name := 0, ""
+	if coll != nil {
+		id, name = coll.ID, coll.Name
+	}
+
+	database.ExecN("UPDATE dbmovies SET collection_id = ?, collection_name = ? WHERE id = ?", &id, &name, dbmovieID)
 }
 
 // movieGetOmdbMetadata retrieves movie metadata from the OMDB API and merges it into the provided Dbmovie struct.
@@ -318,7 +418,7 @@ func MovieGetMetadata(movie *database.Dbmovie, queryimdb, querytmdb, queryomdb, 
 	}
 
 	if querytmdb {
-		movieGetTmdbMetadata(movie, false)
+		movieGetTmdbMetadata(movie, false, "")
 	}
 
 	if queryomdb {
@@ -355,7 +455,7 @@ func Getmoviemetadata(
 		case logger.StrImdb:
 			errImdb = dbmovie.MovieGetImdbMetadata(overwrite)
 		case "tmdb":
-			errTmdb = movieGetTmdbMetadata(dbmovie, overwrite)
+			errTmdb = movieGetTmdbMetadata(dbmovie, overwrite, metadataLanguage(cfgp))
 		case "omdb":
 			movieGetOmdbMetadata(dbmovie, overwrite)
 		case "trakt":
@@ -407,6 +507,8 @@ func Getmoviemetadata(
 		&dbmovie.Slug,
 		&dbmovie.ID,
 	)
+
+	TranslateMovie(context.Background(), dbmovie)
 
 	if cfgp.Name != "" {
 		// size +5
@@ -712,7 +814,7 @@ func collectTitleLanguages() []string {
 // serieGetMetadataTmdb queries TheMovieDB API to get metadata for the given serie.
 // It populates various serie fields like name, slug etc if empty or overwrite is set.
 // It handles API errors and logs them.
-func serieGetMetadataTmdb(serie *database.Dbserie, overwrite bool) error {
+func serieGetMetadataTmdb(serie *database.Dbserie, overwrite bool, lang string) error {
 	if serie.ThetvdbID == 0 {
 		return logger.ErrTvdbEmpty
 	}
@@ -729,7 +831,7 @@ func serieGetMetadataTmdb(serie *database.Dbserie, overwrite bool) error {
 		return errTmdbNotFound
 	}
 
-	moviedb, err := provider.FindSeriesByTVDbID(context.Background(), serie.ThetvdbID)
+	moviedb, err := provider.WithFallbackLanguage(lang).FindSeriesByTVDbID(context.Background(), serie.ThetvdbID)
 	if err != nil {
 		return err
 	}
@@ -914,7 +1016,9 @@ func serieGetMetadataTvdb(
 
 // SerieGetMetadata retrieves metadata for the given serie from various sources like
 // TVDB, TMDB, Trakt etc. based on the provided flags. It takes in a pointer to a
-// Dbserie struct, language string, flags to query TMDB and Trakt APIs, a flag to
+// Dbserie struct, language string (TVDB's texts), fallbackLang (asked at TMDB
+// when it finds nothing in English; "" the title's groups' metadata
+// language), flags to query TMDB and Trakt APIs, a flag to
 // overwrite existing metadata, and a slice of existing aliases.
 // It returns a slice of aliases after querying the different metadata sources. The
 // function handles errors from the API calls and logs them. It progressively
@@ -923,7 +1027,7 @@ func serieGetMetadataTvdb(
 // aliases from Trakt using the IMDB ID.
 func SerieGetMetadata(
 	serie *database.Dbserie,
-	language string,
+	language, fallbackLang string,
 	querytmdb, querytrakt, overwrite bool,
 	aliases []string,
 ) []string {
@@ -933,6 +1037,10 @@ func SerieGetMetadata(
 	defer logger.Logtype("info", 1).
 		Str(logger.StrTitle, serie.Seriename).
 		Msg("ended get metadata for")
+
+	if fallbackLang == "" {
+		fallbackLang = ListedLanguage("series", serie.ID, serie.ThetvdbID)
+	}
 
 	// Sources run in serie_meta_source_priority order (default tvdb, tvmaze,
 	// tmdb, trakt). On a refresh only the first source that delivers data may
@@ -957,7 +1065,7 @@ func SerieGetMetadata(
 				continue
 			}
 
-			err = serieGetMetadataTmdb(serie, ow)
+			err = serieGetMetadataTmdb(serie, ow, fallbackLang)
 		case "trakt":
 			if !querytrakt || serie.ImdbID == "" {
 				continue
@@ -988,6 +1096,8 @@ func SerieGetMetadata(
 
 		delivered = true
 	}
+
+	serieSaveTmdbExtras(serie, fallbackLang)
 
 	return aliases
 }

@@ -903,6 +903,110 @@ func GetTableDefaults(table string) QueryParams {
 		// order) says nothing about whether a feed is still being read.
 		q.DefaultOrderBy = " order by updated_at desc"
 		q.Object = RSSHistory{}
+
+	case "users":
+		q.Table = "users"
+		// password_hash stays out of the grid.
+		q.DefaultColumns = "id,created_at,updated_at,username,role,media_groups,features,email,last_login,settings"
+		q.DefaultQuery = " where id like ? or username like ? or role like ? or email like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by username collate nocase"
+		q.Object = User{}
+
+	case "media_requests":
+		q.Table = "media_requests"
+		q.DefaultColumns = "id,created_at,username,kind,entry_id,listname,title,status"
+		q.DefaultQuery = " where id like ? or username like ? or kind like ? or listname like ? or title like ? or status like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by created_at desc"
+		q.Object = MediaRequest{}
+
+	case "play_history":
+		q.Table = "play_history"
+		q.DefaultColumns = "id,started_at,updated_at,username,kind,file_id,title,position,duration,completion,plays"
+		q.DefaultQuery = " where id like ? or username like ? or kind like ? or title like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by updated_at desc"
+		q.Object = PlayHistory{}
+
+	case "media_reports":
+		q.Table = "media_reports"
+		q.DefaultColumns = "id,created_at,username,kind,file_id,title,reason,note"
+		q.DefaultQuery = " where id like ? or username like ? or kind like ? or title like ? or reason like ? or note like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by created_at desc"
+		q.Object = MediaReport{}
+
+	case "import_exclusions":
+		q.Table = "import_exclusions"
+		q.DefaultColumns = "id,created_at,kind,media_group,db_id,ext_id,title"
+		q.DefaultQuery = " where id like ? or kind like ? or media_group like ? or ext_id like ? or title like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by created_at desc"
+		q.Object = ImportExclusion{}
+
+	case "movie_collections":
+		q.Table = "movie_collections"
+		q.DefaultColumns = "id,created_at,collection_id,name,listname,quality_profile,last_check"
+		q.DefaultQuery = " where id like ? or collection_id like ? or name like ? or listname like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by name collate nocase"
+		q.Object = MonitoredCollection{}
+
+	case "play_sessions":
+		q.Table = "play_sessions"
+		q.DefaultColumns = "id,started_at,ended_at,username,kind,file_id,title,mode,quality,seconds,resumed"
+		q.DefaultQuery = " where id like ? or username like ? or kind like ? or title like ? or mode like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by started_at desc"
+		q.Object = PlaySession{}
+
+	case "user_notifications":
+		q.Table = "user_notifications"
+		q.DefaultColumns = "id,created_at,username,title,message,link,dismissed_at"
+		q.DefaultQuery = " where id like ? or username like ? or title like ? or message like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by created_at desc"
+		q.Object = UserNotification{}
+
+	case "playlists":
+		q.Table = "playlists"
+		q.DefaultColumns = "id,created_at,updated_at,username,name,shared"
+		q.DefaultQuery = " where id like ? or username like ? or name like ?"
+		q.DefaultQueryParamCount = 3
+		q.DefaultOrderBy = " order by username collate nocase, name collate nocase"
+		q.Object = Playlist{}
+
+	case "playlist_items":
+		q.Table = "playlist_items"
+		q.DefaultColumns = "id,added_at,playlist_id,kind,entry_id,item_id,ref_id,title,position"
+		q.DefaultQuery = " where id like ? or playlist_id like ? or kind like ? or title like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by playlist_id, position"
+		q.Object = PlaylistItem{}
+	case "media_cast":
+		q.Table = "media_cast"
+		q.DefaultColumns = "id,created_at,updated_at,kind,db_id,position,person_id,name,character,profile"
+		q.DefaultQuery = " where id like ? or kind like ? or db_id like ? or name like ? or character like ?"
+		q.DefaultQueryParamCount = 5
+		q.DefaultOrderBy = " order by kind, db_id, position"
+		q.Object = MediaCastRow{}
+
+	case "media_related":
+		q.Table = "media_related"
+		q.DefaultColumns = "id,created_at,updated_at,kind,db_id,relation,position,tmdb_id,title,year,rating,poster"
+		q.DefaultQuery = " where id like ? or kind like ? or db_id like ? or relation like ? or tmdb_id like ? or title like ?"
+		q.DefaultQueryParamCount = 6
+		q.DefaultOrderBy = " order by kind, db_id, relation, position"
+		q.Object = MediaRelatedRow{}
+
+	case "metadata_translations":
+		q.Table = "metadata_translations"
+		q.DefaultColumns = "id,created_at,updated_at,media_type,media_id,field,language,translation,manual"
+		q.DefaultQuery = " where id like ? or media_type like ? or media_id like ? or translation like ?"
+		q.DefaultQueryParamCount = 4
+		q.DefaultOrderBy = " order by media_type, media_id, language, field"
+		q.Object = Translation{}
 	}
 
 	return q

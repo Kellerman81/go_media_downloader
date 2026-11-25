@@ -12,6 +12,7 @@ import (
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
 	"maragu.dev/gomponents/html"
@@ -191,7 +192,7 @@ func HandleGenerateAPIKey(c *gin.Context) {
 
 // renderGenerateAPIKeyControl renders a "Generate Random Key" button that
 // fills the named field (via the shared window.gmdGenerateApiKey JS helper,
-// see web.go's adminJavaScript) with a fresh value from HandleGenerateAPIKey.
+// see dbtable_page.go's adminJavaScript) with a fresh value from HandleGenerateAPIKey.
 // Purely client-side - the admin still has to click the form's own Save
 // button afterward, same as typing a value in by hand.
 func renderGenerateAPIKeyControl(fieldName string) gomponents.Node {
@@ -287,7 +288,7 @@ func requireAuth(c *gin.Context) {
 	c.Set("csrf_token", session.CSRFToken)
 
 	// The readable csrf_token cookie lets the shared admin JS (see page() in
-	// web_pages.go) attach the token to every htmx/fetch/jQuery request.
+	// page_frame.go) attach the token to every htmx/fetch/jQuery request.
 	// A cross-site attacker can't read it, and requireCSRF still compares
 	// against the server-side session copy.
 	if v, err := c.Cookie(csrfCookieName); err != nil || v != session.CSRFToken {
@@ -374,7 +375,11 @@ func loginPage(c *gin.Context) {
 		return
 	}
 
+	// The error comes in the URL: only the known ones are translated.
 	errorMsg := c.Query("error")
+	if errorMsg == "Invalid credentials" || errorMsg == "Too many failed attempts. Try again later" {
+		errorMsg = t(errorMsg)
+	}
 
 	page := html.Doctype(
 		html.HTML(
@@ -385,7 +390,8 @@ func loginPage(c *gin.Context) {
 					html.Name("viewport"),
 					html.Content("width=device-width, initial-scale=1, shrink-to-fit=no"),
 				),
-				html.Title("Go Media Downloader - Sign In"),
+				html.Title(t("Go Media Downloader - Sign In")),
+				html.Script(gomponents.Raw(trJS)),
 				faviconLinks(),
 				html.Link(
 					html.Href(
@@ -536,11 +542,11 @@ func loginPage(c *gin.Context) {
 										),
 										html.H1(
 											html.Class("h2"),
-											gomponents.Text("Welcome back!"),
+											gomponents.Text(t("Welcome back!")),
 										),
 										html.P(
 											html.Class("lead"),
-											gomponents.Text("Sign in to Go Media Downloader"),
+											gomponents.Text(t("Sign in to Go Media Downloader")),
 										),
 									),
 
@@ -577,7 +583,7 @@ func loginPage(c *gin.Context) {
 														html.Label(
 															html.Class("form-label"),
 															html.For("username"),
-															gomponents.Text("Username"),
+															gomponents.Text(t("Username")),
 														),
 														html.Input(
 															html.Type("text"),
@@ -586,7 +592,7 @@ func loginPage(c *gin.Context) {
 															),
 															html.Name("username"),
 															html.ID("username"),
-															html.Placeholder("Enter your username"),
+															html.Placeholder(t("Enter your username")),
 															html.Required(),
 															gomponents.Attr(
 																"autocomplete",
@@ -600,7 +606,7 @@ func loginPage(c *gin.Context) {
 														html.Label(
 															html.Class("form-label"),
 															html.For("password"),
-															gomponents.Text("Password"),
+															gomponents.Text(t("Password")),
 														),
 														html.Input(
 															html.Type("password"),
@@ -609,7 +615,7 @@ func loginPage(c *gin.Context) {
 															),
 															html.Name("password"),
 															html.ID("password"),
-															html.Placeholder("Enter your password"),
+															html.Placeholder(t("Enter your password")),
 															html.Required(),
 															gomponents.Attr(
 																"autocomplete",
@@ -635,7 +641,7 @@ func loginPage(c *gin.Context) {
 																	"form-check-label text-small",
 																),
 																html.For("rememberMe"),
-																gomponents.Text("Remember me for 30 days"),
+																gomponents.Text(t("Remember me for 30 days")),
 															),
 														),
 													),
@@ -648,7 +654,7 @@ func loginPage(c *gin.Context) {
 															html.ID("loginBtn"),
 															html.Span(
 																html.ID("loginText"),
-																gomponents.Text("Sign in"),
+																gomponents.Text(t("Sign in")),
 															),
 															html.Span(
 																html.Class(
@@ -678,7 +684,7 @@ func loginPage(c *gin.Context) {
 											html.Target("_blank"),
 											html.Rel("noopener noreferrer"),
 											html.I(html.Class("fab fa-github me-1")),
-											gomponents.Text("View on GitHub"),
+											gomponents.Text(t("View on GitHub")),
 										),
 									),
 								),
@@ -702,7 +708,7 @@ func loginPage(c *gin.Context) {
 						// Enhanced form submission
 						form.addEventListener('submit', function(e) {
 							// Add loading state
-							loginText.textContent = 'Signing in...';
+							loginText.textContent = _t('Signing in...');
 							loginSpinner.classList.remove('d-none');
 							loginBtn.disabled = true;
 						});
@@ -891,6 +897,9 @@ func protectAdminRoutes(c *gin.Context) {
 	// a stricter browser or proxy default strip the origin.
 	c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
+	// The links in mails from background jobs point here.
+	providers.SetPortalURL(adminPageURL(c, ""))
+
 	if setAppMode(c) {
 		return
 	}
@@ -1019,19 +1028,19 @@ func NotFoundPage(c *gin.Context) {
 										),
 										html.P(
 											html.Class("h2"),
-											gomponents.Text("Page not found."),
+											gomponents.Text(t("Page not found.")),
 										),
 										html.P(
 											html.Class("lead fw-normal mt-3 mb-4"),
 											gomponents.Text(
-												"The page you are looking for might have been removed or is temporarily unavailable.",
+												t("The page you are looking for might have been removed or is temporarily unavailable."),
 											),
 										),
 										html.A(
 											html.Href("/api/admin"),
 											html.Class("btn btn-primary btn-lg"),
 											html.I(html.Class("fas fa-home me-2")),
-											gomponents.Text("Return to Home"),
+											gomponents.Text(t("Return to Home")),
 										),
 									),
 								),

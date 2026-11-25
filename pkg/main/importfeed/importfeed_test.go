@@ -1,8 +1,12 @@
 package importfeed
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tmdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
@@ -110,5 +114,49 @@ func TestCheckaddmovieentryExclusion(t *testing.T) {
 
 	if err := Checkaddmovieentry(new(uint(1)), en, &en.Lists[0], "tt0001"); err != nil || count("EN List") != 1 {
 		t.Errorf("other group: %v, %d rows", err, count("EN List"))
+	}
+}
+
+// TestMovieOfNewImdb: a list's new IMDb id of a film the library has under
+// an old one (same TMDB id) finds that row and switches it to the new id;
+// an IMDb id of an unknown film finds nothing.
+func TestMovieOfNewImdb(t *testing.T) {
+	useTestDB(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/3/find/tt35775356":
+			w.Write([]byte(`{"movie_results":[{"id":1474447,"title":"To Barcelona, with Love"}]}`))
+		case "/3/find/tt99999999":
+			w.Write([]byte(`{"movie_results":[{"id":5}]}`))
+		default:
+			w.Write([]byte(`{"movie_results":[]}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	providers.SetTMDB(tmdb.NewProviderWithConfig(base.ClientConfig{Name: "tmdb", BaseURL: srv.URL + "/3"}, "key"))
+	t.Cleanup(func() { providers.SetTMDB(nil) })
+
+	if err := database.ExecNErr("insert into dbmovies (id, title, year, imdb_id, moviedb_id) values (9538, 'To Barcelona, with Love', 2025, 'tt36778003', 1474447)"); err != nil {
+		t.Fatal(err)
+	}
+
+	if id := movieOfNewImdb("tt35775356", "de"); id != 9538 {
+		t.Fatalf("known film: %d, want 9538", id)
+	}
+
+	if imdb := database.Getdatarow[string](false, "select imdb_id from dbmovies where id = 9538"); imdb != "tt35775356" {
+		t.Errorf("imdb id %q, want the new tt35775356", imdb)
+	}
+
+	for _, imdb := range []string{"tt99999999", "tt00000001"} {
+		if id := movieOfNewImdb(imdb, ""); id != 0 {
+			t.Errorf("%s: %d, want 0", imdb, id)
+		}
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from dbmovies"); n != 1 {
+		t.Errorf("%d dbmovies rows", n)
 	}
 }

@@ -57,6 +57,7 @@ var (
 		"DBRemoveUnmatched":        "delete from album_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
 		"DBCacheUnmatched":         "select filepath from album_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
 		"DBCountFilesLocation":     "select count() from album_files where location = ?",
+		"TableUnmatched":           "album_file_unmatcheds",
 		"DBCountUnmatchedPath":     "select count() from album_file_unmatcheds where filepath = ?",
 		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbalbum_titles where dbalbum_id = ? and title != '')",
 		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbalbum_id from dbalbum_titles where dbalbum_id = ? and title != ''",

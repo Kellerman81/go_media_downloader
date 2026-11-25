@@ -77,8 +77,3 @@ func normalizeURL(raw string) (string, error) {
 
 	return strings.TrimRight(u.String(), "/"), nil
 }
-
-// appURL is the portal's start page in app mode.
-func appURL(portal string) string {
-	return portal + "/api/admin/library?app=1"
-}

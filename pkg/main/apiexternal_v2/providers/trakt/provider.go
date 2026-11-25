@@ -599,14 +599,63 @@ func (*Provider) GetSeriesImages(
 	return nil, errors.New("trakt does not provide image listings")
 }
 
-// GetMovieVideos - Trakt doesn't provide videos.
-func (p *Provider) GetMovieVideos(_ context.Context, _ int) ([]apiexternal_v2.Video, error) {
-	return nil, errors.New("trakt does not provide video listings")
+// GetMovieVideos retrieves the videos (trailers, clips, ...) of a movie.
+func (p *Provider) GetMovieVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
+	return p.videos(ctx, fmt.Sprintf("/movies/%d/videos", id))
 }
 
-// GetSeriesVideos - Trakt doesn't provide videos.
-func (p *Provider) GetSeriesVideos(_ context.Context, _ int) ([]apiexternal_v2.Video, error) {
-	return nil, errors.New("trakt does not provide video listings")
+// GetSeriesVideos retrieves the videos (trailers, clips, ...) of a show.
+func (p *Provider) GetSeriesVideos(ctx context.Context, id int) ([]apiexternal_v2.Video, error) {
+	return p.videos(ctx, fmt.Sprintf("/shows/%d/videos", id))
+}
+
+// videos reads Trakt's video list; YouTube links become video keys.
+func (p *Provider) videos(ctx context.Context, endpoint string) ([]apiexternal_v2.Video, error) {
+	var response []struct {
+		Title       string    `json:"title"`
+		URL         string    `json:"url"`
+		Site        string    `json:"site"`
+		Type        string    `json:"type"`
+		Official    bool      `json:"official"`
+		Language    string    `json:"language"`
+		PublishedAt time.Time `json:"published_at"`
+	}
+
+	if err := p.MakeRequest(ctx, "GET", endpoint, nil, &response); err != nil {
+		return nil, err
+	}
+
+	out := make([]apiexternal_v2.Video, 0, len(response))
+	for _, v := range response {
+		key := youTubeKey(v.URL)
+		if key == "" {
+			continue
+		}
+
+		// Trakt's types are lower case ("trailer"); TMDB's capitalized.
+		typ := strings.ToUpper(v.Type[:min(1, len(v.Type))]) + v.Type[min(1, len(v.Type)):]
+		out = append(out, apiexternal_v2.Video{Key: key, Name: v.Title, Site: "YouTube", Type: typ, Language: v.Language,
+			Official: v.Official, PublishedAt: v.PublishedAt})
+	}
+
+	return out, nil
+}
+
+// youTubeKey is the video id of a YouTube link ("" for other sites).
+func youTubeKey(link string) string {
+	u, err := url.Parse(link)
+	if err != nil {
+		return ""
+	}
+
+	switch strings.TrimPrefix(u.Hostname(), "www.") {
+	case "youtube.com", "m.youtube.com":
+		return u.Query().Get("v")
+	case "youtu.be":
+		return strings.Trim(u.Path, "/")
+	}
+
+	return ""
 }
 
 //

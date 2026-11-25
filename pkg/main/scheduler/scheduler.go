@@ -220,6 +220,7 @@ func collectSchedules() []scheduleSpec {
 		{fileCacheCleanupInterval(def), def.CronFileCacheCleanup, "Cleanup File Cache", worker.QueueData, "CleanupFileCache"},
 		{dailyUnlessSet(def.IntervalMovieCollections, def.CronMovieCollections), def.CronMovieCollections,
 			"Check Movie Collections", worker.QueueFeeds, "CheckMovieCollections"},
+		{watchedSyncInterval(), "", "Sync Watched State", worker.QueueFeeds, "SyncWatchedState"},
 	} {
 		if g.interval == "" && g.cron == "" {
 			continue
@@ -256,6 +257,16 @@ func fileCacheCleanupInterval(def *config.SchedulerConfig) string {
 
 // dailyUnlessSet is a job's interval: daily when neither an interval nor a
 // cron is set.
+// watchedSyncInterval runs the watched state sync every 6 hours while an
+// account is set for it (watched_sync_user).
+func watchedSyncInterval() string {
+	if strings.TrimSpace(config.GetSettingsGeneral().WatchedSyncUser) == "" {
+		return ""
+	}
+
+	return "6h"
+}
+
 func dailyUnlessSet(interval, cron string) string {
 	if interval == "" && cron == "" {
 		return "1d"

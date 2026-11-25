@@ -29,9 +29,10 @@ func episodeKey(season, episode int) string {
 	return strconv.Itoa(season) + "-" + strconv.Itoa(episode)
 }
 
-// collectTvdbSeriesEpisodes fetches all episodes of a series from TVDB,
-// keyed by "season-episode".
-func collectTvdbSeriesEpisodes(id int, language string) (map[string]*collectedEpisode, error) {
+// collectTvdbSeriesEpisodes fetches all episodes of a series from TVDB in
+// its default language (English; other languages are translations), keyed
+// by "season-episode".
+func collectTvdbSeriesEpisodes(id int) (map[string]*collectedEpisode, error) {
 	episodes := make(map[string]*collectedEpisode)
 
 	provider := providers.GetTVDB()
@@ -39,7 +40,7 @@ func collectTvdbSeriesEpisodes(id int, language string) (map[string]*collectedEp
 		return episodes, errTvdbNotInitialized
 	}
 
-	apiEpisodes, err := provider.GetAllEpisodes(context.Background(), id, language)
+	apiEpisodes, err := provider.GetAllEpisodes(context.Background(), id, "")
 	if err != nil {
 		logger.Logtype("error", 1).
 			Int("series_id", id).

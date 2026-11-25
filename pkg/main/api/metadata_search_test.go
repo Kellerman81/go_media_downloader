@@ -10,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/tmdb"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -22,13 +25,17 @@ func useMediaConfig(t *testing.T, media config.MediaConfig) {
 	useTestConfig(t, config.MainConfig{Media: media})
 }
 
+// testSchemaDir is the migrations folder, resolved at package start so a
+// test may change its working directory first (t.Chdir).
+var testSchemaDir, _ = filepath.Abs("../schema/db")
+
 // useTestConfig loads cfg, with the general, list, path, quality and
 // scheduler entries the media groups of mediaGroup refer to, and a migrated
 // test DB.
 func useTestConfig(t *testing.T, cfg config.MainConfig) {
 	t.Helper()
 
-	restore, err := database.UseMigratedTestDB("../schema/db")
+	restore, err := database.UseMigratedTestDB(testSchemaDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,5 +130,49 @@ func TestMetadataSearchPageOnlyConfiguredTypes(t *testing.T) {
 	tabs, active, _ := metadataSearchBody(t, "?type=movies")
 	if !slices.Equal(tabs, []string{"audiobooks", "music"}) || active != "audiobooks" {
 		t.Errorf("tabs %v, active %q; want audiobooks and music, audiobooks active", tabs, active)
+	}
+}
+
+// TestAddMovieExistingByImdb: Add Media reuses a movie imported from a list
+// before TMDB linked its IMDb id (no TMDB id yet) instead of adding it a
+// second time.
+func TestAddMovieExistingByImdb(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	useMediaConfig(t, config.MediaConfig{Movies: append(mediaGroup("EN"), mediaGroup("DE")...)})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"id":1592019,"imdb_id":"tt39096136","title":"Missing the Boat","release_date":"2026-02-14"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	providers.SetTMDB(tmdb.NewProviderWithConfig(base.ClientConfig{Name: "tmdb", BaseURL: srv.URL + "/3"}, "key"))
+	t.Cleanup(func() { providers.SetTMDB(nil) })
+
+	for _, q := range []string{
+		"insert into dbmovies (id, title, imdb_id, moviedb_id) values (9719, 'Missing the Boat', 'tt39096136', 0)",
+		"insert into movies (dbmovie_id, listname) values (9719, 'DE List')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	asAdmin(c)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader("tmdb_id=1592019&movie_list=EN+List&movie_quality_profile=HD"))
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	AddMovieToDatabase(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("add: %d %s", w.Code, w.Body)
+	}
+
+	if n := database.Getdatarow[int](false, "select count() from dbmovies"); n != 1 {
+		t.Errorf("%d dbmovies rows, want the existing one only", n)
+	}
+
+	if lists := database.GetrowsN[string](false, 5, "select listname from movies where dbmovie_id = 9719 order by listname"); !slices.Equal(lists, []string{"DE List", "EN List"}) {
+		t.Errorf("lists of the existing movie: %v", lists)
 	}
 }

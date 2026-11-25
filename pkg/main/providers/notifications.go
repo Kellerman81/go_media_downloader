@@ -412,6 +412,11 @@ func buildNotificationProviders() map[string]apiexternal_v2.NotificationProvider
 	return set
 }
 
+// sendContext limits one send to a notification service.
+func sendContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Second)
+}
+
 // SendNotification sends message/title through the registered provider of a
 // notification entry of any type but csv. The limits are those of the
 // respective services.
@@ -445,7 +450,7 @@ func SendNotification(cfg *config.NotificationConfig, message, title string) err
 		return errNotificationNotRegistered
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := sendContext()
 	defer cancel()
 
 	_, err := provider.SendNotification(ctx, apiexternal_v2.NotificationRequest{

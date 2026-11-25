@@ -51,8 +51,14 @@ func (p *Provider) SendNotification(
 	ctx context.Context,
 	req apiexternal_v2.NotificationRequest,
 ) (*apiexternal_v2.NotificationResponse, error) {
+	// Options["topic"] publishes to another topic (an account's own).
+	topic := p.topic
+	if t := req.Options["topic"]; t != "" {
+		topic = t
+	}
+
 	// JSON publishing keeps non-ASCII titles intact; the Title header would not.
-	body, err := json.Marshal(map[string]string{"topic": p.topic, "title": req.Title, "message": req.Message})
+	body, err := json.Marshal(map[string]string{"topic": topic, "title": req.Title, "message": req.Message})
 	if err != nil {
 		return nil, err
 	}

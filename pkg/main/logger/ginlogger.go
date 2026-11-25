@@ -291,11 +291,11 @@ func (o *Options) isExcluded(field string) bool {
 
 // isSensitiveParam reports whether a query/form parameter name likely holds a
 // credential. Substring matches catch config form names such as
-// "general_WebAPIKey" or "downloader_Password". "r" is the newznab RSS API key
-// and "client" the AcoustID application key.
+// "general_WebAPIKey" or "downloader_Password". "r" is the newznab RSS API key,
+// "client" the AcoustID application key and "p" the Subsonic password.
 func isSensitiveParam(name string) bool {
 	n := strings.ToLower(name)
-	if n == "key" || n == "r" || n == "client" || strings.HasSuffix(n, "_key") {
+	if n == "key" || n == "r" || n == "client" || n == "p" || strings.HasSuffix(n, "_key") {
 		return true
 	}
 
@@ -318,6 +318,10 @@ func RedactQuery(raw string) string {
 	parts := strings.Split(raw, "&")
 	changed := false
 
+	// With a salt (s), t is a Subsonic login token; alone it is e.g. the
+	// newznab search type.
+	salted := slices.ContainsFunc(parts, func(p string) bool { return strings.HasPrefix(p, "s=") })
+
 	for i, p := range parts {
 		k, _, hasValue := strings.Cut(p, "=")
 		if !hasValue {
@@ -329,7 +333,7 @@ func RedactQuery(raw string) string {
 			name = k
 		}
 
-		if isSensitiveParam(name) {
+		if isSensitiveParam(name) || salted && name == "t" {
 			parts[i] = k + "=REDACTED"
 			changed = true
 		}

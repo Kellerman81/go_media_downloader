@@ -169,7 +169,7 @@ type BookHistory struct {
 // GetDbbookByIDP retrieves a Dbbook by ID.
 func (book *Dbbook) GetDbbookByIDP(id *uint) error {
 	return structscan1(
-		"select id,created_at,updated_at,title,original_title,isbn_13,isbn_10,asin,openlibrary_id,goodreads_id,description,publisher,publish_date,page_count,language,genres,cover_url,dbauthor_id,dbbook_series_id,series_position,average_rating,ratings_count,year,slug from dbbooks where id = ?",
+		"select id,created_at,updated_at,title,original_title,isbn_13,isbn_10,asin,openlibrary_id,goodreads_id,description,publisher,publish_date,page_count,language,genres,cover_url,dbauthor_id,COALESCE(dbbook_series_id, 0) AS dbbook_series_id,series_position,average_rating,ratings_count,year,slug from dbbooks where id = ?",
 		book,
 		id,
 	)

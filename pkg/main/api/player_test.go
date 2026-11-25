@@ -579,10 +579,10 @@ func TestPlayMetaOf(t *testing.T) {
 		"insert into dbalbums (id, title) values (901, 'Bravo Hits 22')",
 		"insert into dbalbum_artists (dbalbum_id, dbartist_id, position) values (901, 901, 0)",
 		"insert into album_files (id, location, dbalbum_id) values (901, '/m/01 - x.mp3', 901), (902, '/m/02 - Plain Name.mp3', 0)",
-		"insert into dbmovies (id, title, year, genres) values (901, 'Monster und Mythen', 2018, 'Documentary,History')",
+		"insert into dbmovies (id, title, year, genres, overview, vote_average) values (901, 'Monster und Mythen', 2018, 'Documentary,History', 'Myths explained', 7.5)",
 		"insert into movie_files (id, location, dbmovie_id) values (901, '/v/m.mkv', 901)",
-		"insert into dbseries (id, seriename) values (901, 'Terra X')",
-		"insert into dbserie_episodes (id, dbserie_id, identifier, title) values (901, 901, 'S2018E32', 'Der große Bluff')",
+		"insert into dbseries (id, seriename, firstaired) values (901, 'Terra X', '1982-01-17')",
+		"insert into dbserie_episodes (id, dbserie_id, identifier, title, first_aired, overview) values (901, 901, 'S2018E32', 'Der große Bluff', '2018-11-04', 'About bluffing')",
 		"insert into serie_episode_files (id, location, dbserie_id, dbserie_episode_id) values (901, '/v/e.mkv', 901, 901)",
 	} {
 		if err := database.ExecNErr(q); err != nil {
@@ -597,14 +597,33 @@ func TestPlayMetaOf(t *testing.T) {
 		tags           map[string]string
 		want           playMeta
 	}{
-		{"track", "901", "/m/01 - x.mp3", tags, playMeta{"Wannabe", "Spice Girls · Bravo Hits 22", "Spice Girls", "Bravo Hits 22", "/api/admin/library/cover/album/901"}},
+		{"track", "901", "/m/01 - x.mp3", tags, playMeta{Title: "Wannabe", Sub: "Spice Girls · Bravo Hits 22", Artist: "Spice Girls", Album: "Bravo Hits 22",
+			Cover: "/api/admin/library/cover/album/901"}},
 		{"track", "902", "/m/02 - Plain Name.mp3", nil, playMeta{Title: "02 - Plain Name"}},
-		{"movie", "901", "/v/m.mkv", nil, playMeta{"Monster und Mythen", "2018 · Documentary, History", "", "2018", "/api/admin/library/cover/movie/901"}},
-		{"episode", "901", "/v/e.mkv", nil, playMeta{"Der große Bluff", "Terra X · S2018E32", "Terra X", "S2018E32", "/api/admin/library/cover/series/901"}},
+		{"movie", "901", "/v/m.mkv", nil, playMeta{Title: "Monster und Mythen", Sub: "2018 · Documentary, History", Album: "2018",
+			Cover: "/api/admin/library/cover/movie/901", Year: "2018", Overview: "Myths explained", Rating: "7.5"}},
+		{"episode", "901", "/v/e.mkv", nil, playMeta{Title: "Der große Bluff", Sub: "Terra X · S2018E32", Artist: "Terra X", Album: "S2018E32",
+			Cover: "/api/admin/library/cover/series/901", Year: "1982", EpisodeTitle: "Der große Bluff", Aired: "2018-11-04",
+			EpisodeOverview: "About bluffing"}},
 	} {
-		if got := playMetaOf(tc.kind, tc.id, tc.path, playProbe{Tags: tc.tags}); got != tc.want {
+		if got := playMetaOf(tc.kind, tc.id, tc.path, "", playProbe{Tags: tc.tags}); got != tc.want {
 			t.Errorf("%s %s: got %+v, want %+v", tc.kind, tc.id, got, tc.want)
 		}
+	}
+
+	// In the account's language where there are translations.
+	database.SetTranslation("dbserie", 901, "title", "en", "Terra X Docs", "Terra X")
+	database.SetTranslation("dbserie_episode", 901, "title", "en", "The Big Bluff", "Der große Bluff")
+	database.SetTranslation("dbserie_episode", 901, "overview", "en", "Bluffing explained", "About bluffing")
+	database.SetTranslation("dbmovie", 901, "title", "en", "Monsters and Myths", "Monster und Mythen")
+
+	if got := playMetaOf("episode", "901", "/v/e.mkv", "en", playProbe{}); got.Title != "The Big Bluff" || got.EpisodeTitle != "The Big Bluff" ||
+		got.Sub != "Terra X Docs · S2018E32" || got.Artist != "Terra X Docs" || got.EpisodeOverview != "Bluffing explained" {
+		t.Errorf("translated episode %+v", got)
+	}
+
+	if got := playMetaOf("movie", "901", "/v/m.mkv", "en", playProbe{}); got.Title != "Monsters and Myths" || got.Overview != "Myths explained" {
+		t.Errorf("translated movie %+v", got)
 	}
 }
 

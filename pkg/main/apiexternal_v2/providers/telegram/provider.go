@@ -60,8 +60,14 @@ func (p *Provider) SendNotification(
 	ctx context.Context,
 	req apiexternal_v2.NotificationRequest,
 ) (*apiexternal_v2.NotificationResponse, error) {
+	// Options["chat_id"] sends to another chat (an account's own).
+	chatID := p.chatID
+	if c := req.Options["chat_id"]; c != "" {
+		chatID = c
+	}
+
 	body, err := json.Marshal(map[string]string{
-		"chat_id":    p.chatID,
+		"chat_id":    chatID,
 		"text":       messageText(req.Title, req.Message),
 		"parse_mode": "HTML",
 	})

@@ -27,7 +27,7 @@ func calendarModalsAndScripts() gomponents.Node {
 							html.H5(
 								html.ID("eventDetailsModalLabel"),
 								html.Class("modal-title"),
-								gomponents.Text("Event Details"),
+								gomponents.Text(t("Event Details")),
 							),
 							html.Div(html.ID("eventDetailsSubtitle"), html.Class("small text-muted mt-1")),
 						),
@@ -35,7 +35,7 @@ func calendarModalsAndScripts() gomponents.Node {
 							html.Type("button"),
 							html.Class("btn-close"),
 							html.Data("bs-dismiss", "modal"),
-							gomponents.Attr("aria-label", "Close"),
+							gomponents.Attr("aria-label", t("Close")),
 						),
 					),
 					html.Div(
@@ -63,13 +63,13 @@ func calendarModalsAndScripts() gomponents.Node {
 						html.H5(
 							html.ID("moreEventsModalLabel"),
 							html.Class("modal-title"),
-							gomponents.Text("All Events"),
+							gomponents.Text(t("All Events")),
 						),
 						html.Button(
 							html.Type("button"),
 							html.Class("btn-close"),
 							html.Data("bs-dismiss", "modal"),
-							gomponents.Attr("aria-label", "Close"),
+							gomponents.Attr("aria-label", t("Close")),
 						),
 					),
 					html.Div(
@@ -82,7 +82,7 @@ func calendarModalsAndScripts() gomponents.Node {
 							html.Type("button"),
 							html.Class("btn btn-secondary"),
 							html.Data("bs-dismiss", "modal"),
-							gomponents.Text("Close"),
+							gomponents.Text(t("Close")),
 						),
 					),
 				),
@@ -130,14 +130,16 @@ function escapeCalendarHtml(value) {
 }
 
 var calendarTypes = {
-	movie: { label: 'Movie', icon: 'fa-film' },
-	series: { label: 'Episode', icon: 'fa-tv' },
-	album: { label: 'Album', icon: 'fa-compact-disc' },
-	audiobook: { label: 'Audiobook', icon: 'fa-headphones' },
-	book: { label: 'Book', icon: 'fa-book' }
+	movie: { label: _t('Movie'), icon: 'fa-film' },
+	series: { label: _t('Episode'), icon: 'fa-tv' },
+	album: { label: _t('Album'), icon: 'fa-compact-disc' },
+	audiobook: { label: _t('Audiobook'), icon: 'fa-headphones' },
+	book: { label: _t('Book'), icon: 'fa-book' }
 };
 
 var calendarStatusClass = { Downloaded: 'bg-success', 'Partly downloaded': 'bg-info text-dark', Monitored: 'bg-warning text-dark', Unmonitored: 'bg-secondary' };
+// The events carry the status in English (the key above); this is what is shown.
+var calendarStatusText = { Downloaded: _t('Downloaded'), 'Partly downloaded': _t('Partly downloaded'), Monitored: _t('Monitored'), Unmonitored: _t('Unmonitored') };
 
 // showEventDetails opens the details dialog for an event object (the JSON of
 // a calendarEvent). All text is escaped before it goes into innerHTML.
@@ -152,8 +154,8 @@ function showEventDetails(ev) {
 	if (date) {
 		var today = new Date(); today.setHours(0, 0, 0, 0);
 		var days = Math.round((date - today) / 86400000);
-		when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : days === -1 ? 'yesterday' :
-			days > 0 ? 'in ' + days + ' days' : Math.abs(days) + ' days ago';
+		when = days === 0 ? _t('today') : days === 1 ? _t('tomorrow') : days === -1 ? _t('yesterday') :
+			days > 0 ? _tf('in %s days', days) : _tf('%s days ago', Math.abs(days));
 	}
 
 	var episode = '';
@@ -164,13 +166,13 @@ function showEventDetails(ev) {
 	document.getElementById('eventDetailsModalLabel').innerHTML =
 		'<i class="fa-solid ' + type.icon + ' me-2 text-primary"></i>' + esc(ev.show || ev.title);
 	document.getElementById('eventDetailsSubtitle').textContent =
-		(date ? date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '') +
+		(date ? date.toLocaleDateString(document.documentElement.lang || undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '') +
 		(when ? ' · ' + when : '');
 
 	var badges = '<span class="badge bg-primary me-1"><i class="fa-solid ' + type.icon + ' me-1"></i>' + esc(type.label) + '</span>' +
-		'<span class="badge ' + (calendarStatusClass[ev.status] || 'bg-secondary') + ' me-1">' + esc(ev.status) + '</span>' +
-		(ev.overdue ? '<span class="badge bg-danger me-1">Overdue</span>' : '') +
-		(ev.new ? '<span class="badge bg-info me-1">New since yesterday</span>' : '') +
+		'<span class="badge ' + (calendarStatusClass[ev.status] || 'bg-secondary') + ' me-1">' + esc(calendarStatusText[ev.status] || ev.status) + '</span>' +
+		(ev.overdue ? '<span class="badge bg-danger me-1">' + _t('Overdue') + '</span>' : '') +
+		(ev.new ? '<span class="badge bg-info me-1">' + _t('New since yesterday') + '</span>' : '') +
 		(episode ? '<span class="badge bg-light text-dark border me-1">' + episode + '</span>' : '');
 
 	var facts = [];
@@ -204,7 +206,7 @@ function showEventDetails(ev) {
 			var st = en.downloaded ? 'Downloaded' : en.monitored ? 'Monitored' : 'Unmonitored';
 			return '<div class="list-group-item d-flex flex-wrap align-items-center gap-2">' +
 				'<span class="fw-semibold me-1">' + esc(en.list || en.group || '') + '</span>' +
-				'<span class="badge ' + calendarStatusClass[st] + '">' + st + '</span>' +
+				'<span class="badge ' + calendarStatusClass[st] + '">' + calendarStatusText[st] + '</span>' +
 				'<span class="flex-grow-1"></span>' + calendarEntryActions(ev.type, en, true) + '</div>';
 		}).join('') + '</div>';
 	}
@@ -220,7 +222,7 @@ function showEventDetails(ev) {
 		(facts.length ? '<div class="d-flex flex-wrap gap-3 text-muted small mb-2">' + facts.map(function (f) { return '<span>' + f + '</span>'; }).join('') + '</div>' : '') +
 		(groupRows || (lists ? '<div class="mb-3">' + lists + '</div>' : '')) +
 		(ev.thumbUrl ? '<img src="' + esc(ev.thumbUrl) + '" alt="" class="rounded mb-3 d-block calendar-frame">' : '') +
-		(ev.overview ? '<p class="mb-0" style="white-space:pre-line">' + esc(ev.overview) + '</p>' : '<p class="text-muted fst-italic mb-0">No description available.</p>') +
+		(ev.overview ? '<p class="mb-0" style="white-space:pre-line">' + esc(ev.overview) + '</p>' : '<p class="text-muted fst-italic mb-0">' + _t('No description available.') + '</p>') +
 		'</div></div>';
 
 	if (links.length || actions) {
@@ -239,22 +241,22 @@ function showEventDetails(ev) {
 function calendarEntryActions(type, en, short) {
 	var esc = escapeCalendarHtml, a = '';
 	if (en.downloaded && en.id > 0 && type !== 'book') {
-		a += '<button class="btn btn-sm btn-success" onclick="calendarPlay(\'' + type + '\', ' + en.id + ')"><i class="fa-solid fa-play me-1"></i>Play</button>';
+		a += '<button class="btn btn-sm btn-success" onclick="calendarPlay(\'' + type + '\', ' + en.id + ')"><i class="fa-solid fa-play me-1"></i>' + _t('Play') + '</button>';
 	}
 	if (en.libraryUrl) {
-		a += '<a class="btn btn-sm btn-outline-primary" href="' + esc(en.libraryUrl) + '"><i class="fa-solid fa-photo-film me-1"></i>' + (short ? 'Library' : 'Open in Library') + '</a>';
+		a += '<a class="btn btn-sm btn-outline-primary" href="' + esc(en.libraryUrl) + '"><i class="fa-solid fa-photo-film me-1"></i>' + (short ? _t('Library') : _t('Open in Library')) + '</a>';
 	}
 	// Held back from searching (not monitored: dont_search): no search.
 	if (en.downloaded || !(en.id > 0) || !en.monitored || !window.calendarCanSearch) { return a; }
 	function search(byTitle, cls, icon, label) {
-		a += '<button class="btn btn-sm ' + cls + '" title="' + label + '" onclick="searchCalendarEvent(' + en.id + ', \'' + type + '\', ' + byTitle + ')"><i class="fa-solid ' + icon + ' me-1"></i>' + (short ? label.replace('Search by ', '') : label) + '</button>';
+		a += '<button class="btn btn-sm ' + cls + '" title="' + label + '" onclick="searchCalendarEvent(' + en.id + ', \'' + type + '\', ' + byTitle + ')"><i class="fa-solid ' + icon + ' me-1"></i>' + (short ? label.replace(_t('Search by '), '') : label) + '</button>';
 	}
 	if (calendarSearchTypes[type]) {
 		// Albums, audiobooks and books are always searched by artist/author and title.
-		search(false, 'btn-primary', 'fa-magnifying-glass', 'Search');
+		search(false, 'btn-primary', 'fa-magnifying-glass', _t('Search'));
 	} else if (type === 'movie' || type === 'series') {
-		search(false, 'btn-primary', 'fa-magnifying-glass', 'Search by ' + (type === 'movie' ? 'IMDb ID' : 'TVDB ID'));
-		search(true, 'btn-outline-primary', 'fa-magnifying-glass-plus', 'Search by title');
+		search(false, 'btn-primary', 'fa-magnifying-glass', _t('Search by ') + (type === 'movie' ? 'IMDb ID' : 'TVDB ID'));
+		search(true, 'btn-outline-primary', 'fa-magnifying-glass-plus', _t('Search by title'));
 	}
 	return a;
 }
@@ -271,16 +273,16 @@ function searchCalendarEvent(id, type, searchByTitle) {
 	var confirmMsg;
 	if (calendarSearchTypes[type]) {
 		url = calendarSearchTypes[type].path + id + '?download=true';
-		confirmMsg = 'Start search for this ' + calendarSearchTypes[type].noun + '?';
+		confirmMsg = _t('Start search for this ') + calendarSearchTypes[type].noun + '?';
 	} else if (type === 'movie') {
 		url = '/api/movies/search/list/' + id + '?searchByTitle=' + searchByTitle + '&download=true';
-		confirmMsg = searchByTitle ? 'Start search for this movie by Title?' : 'Start search for this movie by IMDB ID?';
+		confirmMsg = searchByTitle ? _t('Start search for this movie by Title?') : _t('Start search for this movie by IMDB ID?');
 	} else {
 		url = '/api/series/episodes/search/list/' + id + '?searchByTitle=' + searchByTitle + '&download=true';
-		confirmMsg = searchByTitle ? 'Start search for this episode by Title?' : 'Start search for this episode by TVDB ID?';
+		confirmMsg = searchByTitle ? _t('Start search for this episode by Title?') : _t('Start search for this episode by TVDB ID?');
 	}
 
-	confirmAction('Please confirm', confirmMsg, function() {
+	confirmAction(_t('Please confirm'), confirmMsg, function() {
 		gmdApiProxyFetch(url)
 		.then(response => response.json().catch(() => ({})).then(data => {
 			if (!response.ok) {
@@ -289,16 +291,16 @@ function searchCalendarEvent(id, type, searchByTitle) {
 			return data;
 		}))
 		.then(data => {
-			var msg = 'Search completed!\n';
-			msg += 'Accepted: ' + (data.accepted ? data.accepted.length : 0) + '\n';
-			msg += 'Denied: ' + (data.denied ? data.denied.length : 0);
+			var msg = _t('Search completed!\n');
+			msg += _t('Accepted: ') + (data.accepted ? data.accepted.length : 0) + '\n';
+			msg += _t('Denied: ') + (data.denied ? data.denied.length : 0);
 			alert(msg);
 			// Close the modal
 			var modal = bootstrap.Modal.getInstance(document.getElementById('eventDetailsModal'));
 			if (modal) modal.hide();
 		})
 		.catch(error => {
-			alert('Error starting search: ' + error.message);
+			alert(_t('Error starting search: ') + error.message);
 		});
 	})
 }
@@ -310,8 +312,8 @@ function showMoreEvents(date, query) {
 	const modalBody = document.getElementById('moreEventsBody');
 	const parts = date.split('-');
 
-	modalTitle.textContent = 'Events on ' + new Date(+parts[0], +parts[1] - 1, +parts[2]).toLocaleDateString();
-	modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+	modalTitle.textContent = _t('Events on ') + new Date(+parts[0], +parts[1] - 1, +parts[2]).toLocaleDateString(document.documentElement.lang || undefined);
+	modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">' + _t('Loading...') + '</span></div></div>';
 
 	const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('moreEventsModal'));
 	modal.show();
@@ -341,12 +343,16 @@ function calendarSearchURL(type, id, byTitle) {
 // calendarBulkSearch searches overdue items one after the other.
 function calendarBulkSearch(items, byTitle) {
 	if (!items || !items.length) { return; }
-	confirmAction('Please confirm', 'Search ' + items.length + (items.length === 1 ? ' missing item' : ' missing items') + (byTitle ? ' by title' : ' by ID') + '? They are searched one after the other.', function () {
+	var question = items.length === 1
+		? (byTitle ? _t('Search 1 missing item by title?') : _t('Search 1 missing item by ID?'))
+		: (byTitle ? _tf('Search %s missing items by title? They are searched one after the other.', items.length)
+			: _tf('Search %s missing items by ID? They are searched one after the other.', items.length));
+	confirmAction(_t('Please confirm'), question, function () {
 		var ok = 0, failed = 0, accepted = 0, i = 0;
-		libNotify('info', 'Searching ' + items.length + ' items…');
+		libNotify('info', _tf('Searching %d items…', items.length));
 		(function next() {
 			if (i >= items.length) {
-				libNotify(failed ? 'error' : 'success', 'Search done: ' + ok + ' searched, ' + accepted + ' accepted' + (failed ? ', ' + failed + ' failed' : ''));
+				libNotify(failed ? 'error' : 'success', _tf('Search done: %d searched, %d accepted', ok, accepted) + (failed ? _tf(', %d failed', failed) : ''));
 				return;
 			}
 			var it = items[i++];
@@ -363,10 +369,10 @@ function calendarPlay(type, id) {
 	fetch('/api/admin/library/playlist?type=' + encodeURIComponent(type) + '&id=' + id, { credentials: 'same-origin' })
 		.then(function (r) { return r.json().then(function (d) { if (!r.ok) { throw new Error(d.error || ('HTTP ' + r.status)); } return d; }); })
 		.then(function (d) {
-			if (!d.list || !d.list.length) { throw new Error('no file to play'); }
+			if (!d.list || !d.list.length) { throw new Error(_t('no file to play')); }
 			lpPlayList(d.list.map(function (x) { return { kind: x.kind, id: String(x.id), label: x.label }; }), 0, d.entry, d.cover);
 		})
-		.catch(function (e) { libNotify('error', 'Can\'t play: ' + e.message); });
+		.catch(function (e) { libNotify('error', _t('Can\'t play: ') + e.message); });
 }
 		`)),
 	})

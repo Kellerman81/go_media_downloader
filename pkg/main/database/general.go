@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -150,6 +151,16 @@ func InitCfg() {
 func DBClose() {
 	if dbData != nil {
 		_, _ = dbData.ExecContext(sqlCTX, "PRAGMA optimize")
+
+		// Fold the WAL into data.db and empty it, so data.db alone is the
+		// whole database when the process is gone (closing the last
+		// connection would do it too, but not while one is still busy).
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if _, err := dbData.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+			logger.Logtype("warn", 0).Err(err).Msg("WAL checkpoint at shutdown")
+		}
+
+		cancel()
 		dbData.Close()
 	}
 
@@ -175,7 +186,10 @@ func checkFile(fpath string) bool {
 //     connection (migrations, VACUUM INTO backups) holds the lock
 //   - journal_mode(wal): concurrent readers alongside a single writer
 //   - synchronous(normal): safe in WAL mode and substantially faster
-const dataDBDSN = "file:./databases/data.db?mode=rwc&_pragma=busy_timeout(10000)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)"
+//   - journal_size_limit(64 MB): a checkpoint shrinks the -wal file back to
+//     this, instead of it keeping its largest size ever (it reached 900 MB)
+const dataDBDSN = "file:./databases/data.db?mode=rwc&_pragma=busy_timeout(10000)&_pragma=journal_mode(wal)&_pragma=synchronous(normal)" +
+	"&_pragma=journal_size_limit(67108864)"
 
 // imdbDBDSN is the connection string for imdb.db. No WAL here - the file is
 // swapped wholesale by ExchangeImdbDB and WAL sidecar files would complicate

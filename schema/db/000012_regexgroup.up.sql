@@ -1,0 +1,1 @@
+ALTER TABLE qualities ADD COLUMN regexgroup numeric default 0;

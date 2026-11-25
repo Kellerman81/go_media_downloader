@@ -39,6 +39,12 @@ func TestSendNotification(t *testing.T) {
 		t.Errorf("got %s %s", path, body)
 	}
 
+	// An account's own chat.
+	if _, err := p.SendNotification(context.Background(), apiexternal_v2.NotificationRequest{Message: "M",
+		Options: map[string]string{"chat_id": "77"}}); err != nil || !strings.Contains(body, `"chat_id":"77"`) {
+		t.Errorf("chat_id option: %v %s", err, body)
+	}
+
 	_, err := p.SendNotification(context.Background(), apiexternal_v2.NotificationRequest{Message: "fail"})
 	if err == nil || !strings.Contains(err.Error(), "chat not found") {
 		t.Errorf("ok=false not reported: %v", err)

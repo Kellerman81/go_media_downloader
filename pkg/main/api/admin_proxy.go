@@ -2,7 +2,7 @@
 // JavaScript trigger the small set of apikey-gated external API actions it
 // needs (starting a search, cancelling a queue item, etc.) without ever
 // embedding the real WebAPIKey in a rendered page. Previously wanted.go,
-// calendar.go, and web_grids.go each concatenated
+// calendar.go, and the queue page (now queue_page.go) each concatenated
 // config.GetSettingsGeneral().WebAPIKey directly into client-side <script>
 // blocks - since that key doubles as the login-password fallback (auth.go),
 // every page view leaked the effective admin credential into plaintext HTML.
@@ -34,7 +34,7 @@ type adminProxyRoute struct {
 // adminProxyRoutes is a fixed allowlist of external-API path patterns this
 // proxy will forward. This is NOT a general-purpose SSRF proxy - only the
 // exact actions the admin UI's own JS already needs (see
-// wanted.go/calendar_modals.go/web_grids.go) are reachable through it, each
+// wanted.go/calendar_modals.go/queue_page.go) are reachable through it, each
 // pinned to the real media types/routes/methods this app actually registers.
 var adminProxyRoutes = []adminProxyRoute{
 	{regexp.MustCompile(`^/api/movies/search/list/\d+$`), http.MethodGet},

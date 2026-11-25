@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
@@ -62,9 +63,17 @@ type StorageStatistics struct {
 	TotalPaths     int                      `json:"total_paths"`
 	ByPath         map[string]PathStatistic `json:"by_path"`
 	TotalFileCount int64                    `json:"total_file_count"`
-	// Partial is set when at least one path walk hit the request deadline,
+	// Partial is set when at least one path walk hit the scan's time limit,
 	// so the counts are lower bounds.
 	Partial bool `json:"partial,omitempty"`
+	// ScannedAt is when the scan finished (zero: never scanned since the
+	// start); Took how long it ran.
+	ScannedAt time.Time     `json:"scanned_at,omitzero"`
+	Took      time.Duration `json:"took_ns,omitempty"`
+	// Scanning is set while a scan runs; ScannedFiles counts its media
+	// files so far.
+	Scanning     bool  `json:"scanning,omitempty"`
+	ScannedFiles int64 `json:"scanned_files,omitempty"`
 }
 
 // PathStatistic contains statistics for a single storage path.
@@ -74,6 +83,10 @@ type PathStatistic struct {
 	FolderCount int64  `json:"folder_count"`
 	TotalSize   int64  `json:"total_size"`
 	Partial     bool   `json:"partial,omitempty"`
+	// Error is why the path couldn't be walked (missing, no access);
+	// Unreadable counts the entries below it that couldn't be read.
+	Error      string `json:"error,omitempty"`
+	Unreadable int64  `json:"unreadable,omitempty"`
 }
 
 // HTTPStatistics contains HTTP client statistics.
@@ -389,43 +402,87 @@ func mediaTypeConfigured(kind string) bool {
 	return false
 }
 
-// getStorageStatistics retrieves storage statistics by walking configured media paths.
+// The storage statistics walk every configured media folder, which on a
+// large library over network shares takes minutes. So they never run inside
+// a request: a scan starts on demand (the Scan button, or the JSON API when
+// the last one is too old) and runs in the background; the requests answer
+// with the last finished scan and the progress of a running one.
 //
-// Each unique path is walked concurrently. Walking sequentially let one very
-// large path (e.g. an audiobook library with tens of thousands of files) consume
-// the whole request deadline, after which every remaining path's walk started
-// with an already-expired context, returned nothing, and was dropped — so only
-// the first big path showed up. Running them in parallel gives every path the
-// full deadline window independently.
-//
-// Complete results are cached for storageStatsCacheTTL; walking every library
-// on each dashboard refresh is expensive.
-func getStorageStatistics(ctx context.Context) StorageStatistics {
-	storageStatsCache.mu.Lock()
-	defer storageStatsCache.mu.Unlock()
+// Each unique path is walked concurrently, so one very large path doesn't
+// take the time of the others.
 
-	if !storageStatsCache.at.IsZero() && time.Since(storageStatsCache.at) < storageStatsCacheTTL {
-		return storageStatsCache.stats
+// storageScanTimeout ends a scan that hangs (a dead mount); its counts are
+// then partial.
+const storageScanTimeout = 30 * time.Minute
+
+// storageScanMaxAge is how old the last scan may be before the JSON API
+// starts a new one.
+const storageScanMaxAge = time.Hour
+
+var storageScan struct {
+	mu      sync.Mutex
+	running bool
+	last    StorageStatistics // the last finished scan
+	files   atomic.Int64      // media files the running scan counted
+}
+
+// startStorageScan starts a scan unless one runs; it reports whether it
+// started one.
+func startStorageScan() bool {
+	storageScan.mu.Lock()
+	defer storageScan.mu.Unlock()
+
+	if storageScan.running {
+		return false
 	}
 
-	stats := collectStorageStatistics(ctx)
-	if !stats.Partial {
-		storageStatsCache.stats = stats
-		storageStatsCache.at = time.Now()
+	storageScan.running = true
+	storageScan.files.Store(0)
+
+	go func() {
+		defer logger.HandlePanic()
+
+		start := time.Now()
+
+		ctx, cancel := context.WithTimeout(context.Background(), storageScanTimeout)
+		defer cancel()
+
+		stats := collectStorageStatistics(ctx, &storageScan.files)
+		stats.ScannedAt, stats.Took = time.Now(), time.Since(start).Round(time.Second)
+
+		storageScan.mu.Lock()
+		storageScan.last, storageScan.running = stats, false
+		storageScan.mu.Unlock()
+	}()
+
+	return true
+}
+
+// storageStatus is the last finished scan, with the progress of a running
+// one.
+func storageStatus() StorageStatistics {
+	storageScan.mu.Lock()
+	defer storageScan.mu.Unlock()
+
+	stats := storageScan.last
+	if storageScan.running {
+		stats.Scanning, stats.ScannedFiles = true, storageScan.files.Load()
 	}
 
 	return stats
 }
 
-const storageStatsCacheTTL = 5 * time.Minute
+// getStorageStatistics is the last scan for the JSON API, starting a new one
+// when there is none or it is older than storageScanMaxAge.
+func getStorageStatistics() StorageStatistics {
+	if st := storageStatus(); st.ScannedAt.IsZero() || time.Since(st.ScannedAt) > storageScanMaxAge {
+		startStorageScan()
+	}
 
-var storageStatsCache struct {
-	mu    sync.Mutex
-	at    time.Time
-	stats StorageStatistics
+	return storageStatus()
 }
 
-func collectStorageStatistics(ctx context.Context) StorageStatistics {
+func collectStorageStatistics(ctx context.Context, progress *atomic.Int64) StorageStatistics {
 	stats := StorageStatistics{
 		ByPath: make(map[string]PathStatistic),
 	}
@@ -488,7 +545,7 @@ func collectStorageStatistics(ctx context.Context) StorageStatistics {
 			defer wg.Done()
 			defer logger.HandlePanic()
 
-			results[i] = walkPath(ctx, jobs[i].path, jobs[i].mediaType)
+			results[i] = walkPath(ctx, jobs[i].path, jobs[i].mediaType, progress)
 		}(i)
 	}
 
@@ -500,11 +557,10 @@ func collectStorageStatistics(ctx context.Context) StorageStatistics {
 			stats.Partial = true
 		}
 
-		if ps.FileCount > 0 || ps.FolderCount > 0 {
-			stats.ByPath[jobs[i].key] = ps
-			stats.TotalFileCount += ps.FileCount
-			stats.TotalPaths++
-		}
+		// Paths that failed stay in, with the reason.
+		stats.ByPath[jobs[i].key] = ps
+		stats.TotalFileCount += ps.FileCount
+		stats.TotalPaths++
 	}
 
 	return stats
@@ -545,14 +601,19 @@ func dropNestedPathJobs[T any](jobs []T, key func(T) (string, uint)) []T {
 }
 
 // walkPath walks a filesystem path and returns statistics, counting files that
-// match the media type stored at that path (video, audio, audiobook or ebook).
-func walkPath(ctx context.Context, rootPath string, mediaType uint) PathStatistic {
+// match the media type stored at that path (video, audio, audiobook or ebook);
+// progress counts them as they're found.
+func walkPath(ctx context.Context, rootPath string, mediaType uint, progress *atomic.Int64) PathStatistic {
 	stat := PathStatistic{
 		Path: rootPath,
 	}
 
-	// Check if path exists
-	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
+	if _, err := os.Stat(rootPath); err != nil {
+		stat.Error = err.Error()
+		if errors.Is(err, fs.ErrNotExist) {
+			stat.Error = "folder not found"
+		}
+
 		return stat
 	}
 
@@ -566,7 +627,8 @@ func walkPath(ctx context.Context, rootPath string, mediaType uint) PathStatisti
 		}
 
 		if err != nil {
-			// Log but continue on errors
+			stat.Unreadable++
+
 			logger.Logtype(logger.StatusDebug, 3).
 				Str("path", path).
 				Err(err).
@@ -582,6 +644,7 @@ func walkPath(ctx context.Context, rootPath string, mediaType uint) PathStatisti
 			ext := strings.ToLower(filepath.Ext(d.Name()))
 			if isMediaFileForType(ext, mediaType) {
 				stat.FileCount++
+				progress.Add(1)
 				if info, err := d.Info(); err == nil {
 					stat.TotalSize += info.Size()
 				}
@@ -594,6 +657,7 @@ func walkPath(ctx context.Context, rootPath string, mediaType uint) PathStatisti
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		stat.Partial = true
 	} else if err != nil {
+		stat.Error = err.Error()
 		logger.Logtype(logger.StatusError, 1).
 			Str("path", rootPath).
 			Err(err).
@@ -910,7 +974,7 @@ func gatherAllStatistics(ctx context.Context) (OverallStatistics, error) {
 	overall.Music = getMusicStatistics()
 	overall.Books = getBookStatistics()
 	overall.Audiobooks = getAudiobookStatistics()
-	overall.Storage = getStorageStatistics(ctx)
+	overall.Storage = getStorageStatistics()
 	overall.HTTP = getHTTPStatistics()
 	overall.Workers = worker.GetStats()
 	overall.System = getSystemStatistics()
@@ -921,7 +985,7 @@ func gatherAllStatistics(ctx context.Context) (OverallStatistics, error) {
 // API Handlers
 
 // @Summary      All statistics
-// @Description  Returns all statistics in one response: movies, series, music, books, audiobooks, storage, HTTP requests, workers and system. Gathered with a 30 second limit.
+// @Description  Returns all statistics in one response: movies, series, music, books, audiobooks, storage, HTTP requests, workers and system. Gathered with a 30 second limit. Storage is the last scan of the media folders, which runs in the background: a new one starts when there is none or it is older than an hour, and scanning is set while it runs.
 // @Tags         statistics
 // @Produce      json
 // @Param        apikey query string true "API key: the webapikey setting from [general] in config.toml"
@@ -1155,11 +1219,15 @@ func webStatisticsAudiobooks(ctx *gin.Context) {
 	_ = component.Render(ctx.Writer)
 }
 
+// webStatisticsStorage shows the last storage scan (?type=summary the card,
+// else the details); ?scan=1 starts a scan first, which the other part
+// follows (the storageScan event).
 func webStatisticsStorage(ctx *gin.Context) {
-	requestCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
+	if ctx.Query("scan") == "1" && startStorageScan() {
+		ctx.Header("HX-Trigger", "storageScan")
+	}
 
-	stats := getStorageStatistics(requestCtx)
+	stats := storageStatus()
 
 	cardType := ctx.Query("type")
 	if cardType == "" {

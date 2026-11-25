@@ -124,3 +124,18 @@ func TestPopularAcceptsBareAndWrappedItems(t *testing.T) {
 		})
 	}
 }
+
+// TestYouTubeKey: the video id of Trakt's YouTube links; other sites none.
+func TestYouTubeKey(t *testing.T) {
+	for link, want := range map[string]string{
+		"https://youtube.com/watch?v=abc123":    "abc123",
+		"http://www.youtube.com/watch?v=x&t=10": "x",
+		"https://youtu.be/short1":               "short1",
+		"https://vimeo.com/12345":               "",
+		"not a url":                             "",
+	} {
+		if got := youTubeKey(link); got != want {
+			t.Errorf("%s: %q, want %q", link, got, want)
+		}
+	}
+}

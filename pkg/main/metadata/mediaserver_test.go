@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
@@ -30,7 +31,7 @@ func fakePlex(t *testing.T, requests *int) *httptest.Server {
 		case "/library/sections":
 			w.Write([]byte(`{"MediaContainer":{"Directory":[{"key":"1","type":"movie"},{"key":"2","type":"show"}]}}`))
 		case "/library/sections/1/all":
-			w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"10","title":"Inception","summary":"Plex plot","year":2010,
+			w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"10","title":"Inception","summary":"Plex plot","year":2010,"rating":8.8,"userRating":9.0,
 				"duration":8880000,"originallyAvailableAt":"2010-07-16","Guid":[{"id":"imdb://tt1375666"},{"id":"tmdb://27205"}],
 				"Genre":[{"tag":"Action"},{"tag":"Sci-Fi"}]}]}}`))
 		case "/library/sections/2/all":
@@ -132,7 +133,7 @@ func TestMediaServerMovieAndSeries(t *testing.T) {
 
 	// The series priority loop uses Plex, and it may overwrite on refresh.
 	serie := database.Dbserie{ThetvdbID: 81189, Overview: "old"}
-	SerieGetMetadata(&serie, "de", false, false, true, nil)
+	SerieGetMetadata(&serie, "de", "", false, false, true, nil)
 
 	if serie.Overview != "Show plot" {
 		t.Errorf("serie overview = %q", serie.Overview)
@@ -146,6 +147,42 @@ func TestMediaServerMovieAndSeries(t *testing.T) {
 	// Unknown items are no error.
 	if err := movieGetMediaServerMetadata(&database.Dbmovie{ImdbID: "tt0"}, sourcePlex, false); err != nil {
 		t.Errorf("unknown movie: %v", err)
+	}
+}
+
+// TestMediaServerIndexFailure: a failed listing isn't repeated for every
+// item of a refresh.
+func TestMediaServerIndexFailure(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	useMediaServerConfig(t, config.GeneralConfig{PlexServerURL: srv.URL, PlexToken: "tok", MovieMetaSourcePlex: true})
+
+	if err := movieGetMediaServerMetadata(&database.Dbmovie{ImdbID: "tt1375666"}, sourcePlex, false); err == nil {
+		t.Fatal("no error from a failing server")
+	}
+
+	before := requests
+	if err := movieGetMediaServerMetadata(&database.Dbmovie{ImdbID: "tt0816692"}, sourcePlex, false); err == nil {
+		t.Error("cached failure returned no error")
+	}
+
+	if requests != before {
+		t.Errorf("listing repeated: %d requests", requests-before)
+	}
+
+	msIndexMu.Lock()
+	msIndexes[sourcePlex+"/"+msMovie].built = time.Now().Add(-msIndexRetry)
+	msIndexMu.Unlock()
+
+	movieGetMediaServerMetadata(&database.Dbmovie{ImdbID: "tt0816692"}, sourcePlex, false)
+
+	if requests == before {
+		t.Error("no retry after msIndexRetry")
 	}
 }
 

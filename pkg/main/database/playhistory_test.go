@@ -106,7 +106,7 @@ func TestWatchedAndContinue(t *testing.T) {
 func TestPlaySessions(t *testing.T) {
 	useUsersTestDB(t)
 
-	id := StartPlaySession("bea", "movie", 11, "A", "direct", "original")
+	id := StartPlaySession("bea", "movie", 11, "A", "direct", "original", false)
 	if id == 0 {
 		t.Fatal("no session row")
 	}
@@ -226,5 +226,30 @@ func TestContinueAudiobook(t *testing.T) {
 	// Part 2 at 30 of 60 minutes: 1.5 h of 2.5 h done, 1 h left.
 	if it := items[0]; it.FileID != 2 || it.Part != 2 || it.Parts != 3 || it.Left != 3600 || it.Progress != 0.6 {
 		t.Errorf("item %+v", it)
+	}
+}
+
+// TestUserPlayTotals: files, plays, hours and finished files of one
+// account only.
+func TestUserPlayTotals(t *testing.T) {
+	useUsersTestDB(t)
+
+	if got := UserPlayTotals("bea"); got != (PlayTotals{}) {
+		t.Fatalf("totals without plays: %+v", got)
+	}
+
+	for _, h := range []PlayHistory{
+		{Username: "bea", Kind: "movie", FileID: 1, Duration: 3600, Position: 3600},
+		{Username: "bea", Kind: "episode", FileID: 2, Duration: 3600, Position: 1800},
+		{Username: "cid", Kind: "movie", FileID: 1, Duration: 3600, Position: 3600},
+	} {
+		if err := PlayProgress(&h, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := UserPlayTotals("BEA")
+	if got.Titles != 2 || got.Plays != 2 || got.Hours != 1.5 || got.Finished != 1 || got.Last == "" {
+		t.Errorf("totals: %+v", got)
 	}
 }

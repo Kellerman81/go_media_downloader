@@ -1388,3 +1388,43 @@ func waitRuns(t *testing.T, runs *atomic.Int32, want int32) {
 		t.Fatalf("ran %d jobs, want %d", got, want)
 	}
 }
+
+// TestShutdownCancelsRunningJobs: at process shutdown a running job doesn't
+// get the maintenance pause's 30 s: it is cancelled after shutdownWait and
+// the pools are closed within the grace period, so the database closes
+// before Docker's stop timeout kills the process.
+func TestShutdownCancelsRunningJobs(t *testing.T) {
+	freshWorkerState(t)
+
+	started, cancelled := make(chan struct{}), atomic.Bool{}
+
+	if err := Dispatch("w1_long_search", func(_ uint32, ctx context.Context) error {
+		close(started)
+		select {
+		case <-ctx.Done():
+			cancelled.Store(true)
+		case <-time.After(time.Minute):
+		}
+
+		return nil
+	}, QueueSearch); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+
+	<-started
+
+	begin := time.Now()
+	pauseWorkerPools(context.Background(), 100*time.Millisecond, 2*time.Second)
+
+	if took := time.Since(begin); took > 2*time.Second {
+		t.Errorf("pools closed after %v", took)
+	}
+
+	if !cancelled.Load() {
+		t.Error("running job not cancelled")
+	}
+
+	if shutdownWait+shutdownGrace > 6*time.Second {
+		t.Errorf("shutdown budget %v leaves no room in Docker's 10 s", shutdownWait+shutdownGrace)
+	}
+}

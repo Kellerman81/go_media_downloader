@@ -19,6 +19,7 @@ type LibraryItem struct {
 	IndexNumber       int      `json:"IndexNumber,omitempty"`       // episode number
 	ParentIndexNumber int      `json:"ParentIndexNumber,omitempty"` // season of an episode
 	Genres            []string `json:"Genres,omitempty"`
+	SeriesID          string   `json:"SeriesId,omitempty"` // series of an episode
 }
 
 // RuntimeMinutes converts the item's runtime ticks to minutes.
@@ -94,4 +95,32 @@ func (p *Provider) ServerID(ctx context.Context, serverURL, apiKey string) (stri
 	}
 
 	return info.ID, nil
+}
+
+// UserItems returns all items of a type ("Movie", "Series", "Episode")
+// with the user's state (UserData) and provider IDs.
+func (p *Provider) UserItems(ctx context.Context, serverURL, apiKey, username, itemType string) ([]LibraryItem, error) {
+	uid, err := p.userID(ctx, strings.TrimSuffix(serverURL, "/"), apiKey, username)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.items(ctx, serverURL, apiKey, "/Users/"+url.PathEscape(uid)+"/Items", url.Values{
+		"Recursive":        {"true"},
+		"IncludeItemTypes": {itemType},
+		"Fields":           {"ProviderIds"},
+	})
+}
+
+// MarkPlayed marks an item played for a user.
+func (p *Provider) MarkPlayed(ctx context.Context, serverURL, apiKey, username, itemID string) error {
+	serverURL = strings.TrimSuffix(serverURL, "/")
+
+	uid, err := p.userID(ctx, serverURL, apiKey, username)
+	if err != nil {
+		return err
+	}
+
+	return p.MakeRequest(ctx, http.MethodPost, serverURL+"/Users/"+url.PathEscape(uid)+"/PlayedItems/"+url.PathEscape(itemID)+
+		"?api_key="+url.QueryEscape(apiKey), nil, nil, nil)
 }

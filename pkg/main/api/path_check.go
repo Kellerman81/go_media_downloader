@@ -10,7 +10,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
+
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 
 	"github.com/gin-gonic/gin"
 	"maragu.dev/gomponents"
@@ -121,6 +125,108 @@ func renderPathCheckResult(readable, writable bool) gomponents.Node {
 	)
 }
 
+// pathBrowseMax bounds the folders one listing returns.
+const pathBrowseMax = 2000
+
+// pathBrowseResult is a folder's subfolders for the path browser.
+type pathBrowseResult struct {
+	Path   string   `json:"path"`
+	Parent string   `json:"parent"` // "" at the root
+	Dirs   []string `json:"dirs"`
+	More   bool     `json:"more"`   // more than pathBrowseMax folders
+	Places []string `json:"places"` // starting points: the configured paths' top folders
+	Note   string   `json:"note,omitempty"`
+}
+
+// HandlePathBrowse lists the subfolders of a folder for the path fields'
+// browser (/admin/paths/browse?path=). A path that doesn't exist (yet) shows
+// its nearest existing parent; nothing is changed on disk.
+func HandlePathBrowse(c *gin.Context) {
+	p := strings.TrimSpace(c.Query("path"))
+	if p == "" {
+		p = string(filepath.Separator)
+	}
+
+	p = filepath.Clean(p)
+	res := pathBrowseResult{Dirs: []string{}, Places: pathBrowsePlaces()}
+
+	// Up to the nearest folder that exists.
+	for {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			break
+		}
+
+		parent := filepath.Dir(p)
+		if parent == p {
+			break
+		}
+
+		if res.Note == "" {
+			res.Note = "The folder doesn't exist (yet): showing the nearest existing one."
+		}
+
+		p = parent
+	}
+
+	res.Path = p
+	if parent := filepath.Dir(p); parent != p {
+		res.Parent = parent
+	}
+
+	entries, err := os.ReadDir(p)
+	if err != nil {
+		res.Note = "Can't read this folder: " + err.Error()
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() && e.Type()&os.ModeSymlink != 0 {
+			// A link to a folder counts as one.
+			if info, err := os.Stat(filepath.Join(p, e.Name())); err != nil || !info.IsDir() {
+				continue
+			}
+		} else if !e.IsDir() {
+			continue
+		}
+
+		if len(res.Dirs) == pathBrowseMax {
+			res.More = true
+			break
+		}
+
+		res.Dirs = append(res.Dirs, e.Name())
+	}
+
+	slices.SortFunc(res.Dirs, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
+
+	c.JSON(http.StatusOK, res)
+}
+
+// pathBrowsePlaces are the top folders of the configured paths (/data,
+// /downloads, ...), the browser's starting points.
+func pathBrowsePlaces() []string {
+	var places []string
+
+	for _, pc := range config.GetSettingsPathAll() {
+		p := filepath.Clean(pc.Path)
+		if pc.Path == "" || !filepath.IsAbs(p) {
+			continue
+		}
+
+		top := p
+		for filepath.Dir(top) != filepath.Dir(filepath.Dir(top)) {
+			top = filepath.Dir(top)
+		}
+
+		if !slices.Contains(places, top) {
+			places = append(places, top)
+		}
+	}
+
+	slices.Sort(places)
+
+	return places
+}
+
 // renderPathCheckControl renders a "Check Path" button that live-validates
 // whatever value currently sits in the path <input> named fieldName, plus an
 // empty result span for the response. fieldName must be the exact "name"
@@ -151,6 +257,15 @@ func renderPathCheckControl(csrfToken, fieldName string) gomponents.Node {
 			),
 			hx.Headers(wizardCSRFHeader(csrfToken)),
 		),
+		// Optional to typing the path: pick it in a folder browser.
+		html.Button(
+			html.Class("btn btn-sm btn-outline-secondary"),
+			html.Type("button"),
+			gomponents.Attr("onclick", "gmdPathBrowse("+string(fieldNameJSON)+")"),
+			html.I(html.Class("fa-solid fa-folder-tree me-1")),
+			gomponents.Text("Browse…"),
+		),
+		html.Script(html.Src("/static/js/path-browser.js")),
 		html.Span(),
 	)
 }

@@ -558,6 +558,8 @@ func handleMovieMetadataLookup(imdbID, provider string, updateDB bool) string {
 			&dbmovie.ID,
 		); err != nil {
 			result["db_error"] = err.Error()
+		} else {
+			metadata.TranslateMovie(context.Background(), &dbmovie)
 		}
 	}
 
@@ -922,7 +924,7 @@ func updateSeriesMetadataDB(imdbID, tvdbID, provider string) error {
 		querytrakt = config.GetSettingsGeneral().SerieMetaSourceTrakt
 	}
 
-	metadata.SerieGetMetadata(&dbserie, "", querytmdb, querytrakt, true, nil)
+	metadata.SerieGetMetadata(&dbserie, "", "", querytmdb, querytrakt, true, nil)
 
 	if dbserie.Seriename == "" {
 		return errors.New("no provider returned series data; database left unchanged")
@@ -942,7 +944,7 @@ func updateSeriesMetadataDB(imdbID, tvdbID, provider string) error {
 		dbserie.ID = logger.Int64ToUint(inres)
 	}
 
-	return database.ExecNErr(
+	if err := database.ExecNErr(
 		"update dbseries SET Seriename = ?, Season = ?, Status = ?, Firstaired = ?, Network = ?, Runtime = ?, Language = ?, Genre = ?, Overview = ?, Rating = ?, Siterating = ?, Siterating_Count = ?, Slug = ?, Trakt_ID = ?, Imdb_ID = ?, Thetvdb_ID = ?, Freebase_M_ID = ?, Freebase_ID = ?, Tvrage_ID = ?, Facebook = ?, Instagram = ?, Twitter = ?, Banner = ?, Poster = ?, Fanart = ?, Identifiedby = ? where id = ?",
 		&dbserie.Seriename,
 		&dbserie.Season,
@@ -971,7 +973,13 @@ func updateSeriesMetadataDB(imdbID, tvdbID, provider string) error {
 		&dbserie.Fanart,
 		&dbserie.Identifiedby,
 		&dbserie.ID,
-	)
+	); err != nil {
+		return err
+	}
+
+	metadata.TranslateSerie(context.Background(), &dbserie)
+
+	return nil
 }
 
 // updateEpisodeMetadataDB writes the looked-up episode fields into the
@@ -1212,7 +1220,7 @@ func handleBookMetadataLookup(isbn string, updateDB bool) string {
 			}
 
 			if book.DbbookSeriesID == 0 {
-				book.DbbookSeriesID = database.Getdatarow[uint](false, "SELECT dbbook_series_id FROM dbbooks WHERE id = ?", &id)
+				book.DbbookSeriesID = database.Getdatarow[uint](false, "SELECT COALESCE(dbbook_series_id, 0) FROM dbbooks WHERE id = ?", &id)
 			}
 
 			err := database.ExecNErr(
@@ -1337,6 +1345,7 @@ func handleAudiobookMetadataLookup(asin *string, updateDB bool) string {
 			if err != nil {
 				heading = "Audiobook (database update failed: " + err.Error() + ")"
 			} else {
+				metadata.TranslateAudiobook(context.Background(), &ab)
 				heading = fmt.Sprintf("Audiobook (saved to database, id %d)", id)
 			}
 		} else {

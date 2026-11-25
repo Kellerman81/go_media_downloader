@@ -27,17 +27,18 @@ const (
 	FeatureRequest       = "request"       // request new media
 	FeatureDownload      = "download"      // download media files
 	FeatureRequestDelete = "requestdelete" // report files as wrong
+	FeatureApps          = "apps"          // log in from apps and devices (WebDAV, Jellyfin, Subsonic, OPDS)
 )
 
 // Features in the order the user page offers them.
-var Features = []string{FeatureSearch, FeatureRequest, FeatureDownload, FeatureRequestDelete}
+var Features = []string{FeatureSearch, FeatureRequest, FeatureDownload, FeatureRequestDelete, FeatureApps}
 
 // RoleFeatures are the features a role pre-sets; each can then be switched
 // per account.
 var RoleFeatures = map[string][]string{
-	RoleUser:           nil,
-	RoleSearchingUser:  {FeatureSearch},
-	RoleRequestingUser: {FeatureRequest},
+	RoleUser:           {FeatureApps},
+	RoleSearchingUser:  {FeatureSearch, FeatureApps},
+	RoleRequestingUser: {FeatureRequest, FeatureApps},
 	RoleAdmin:          Features,
 }
 
@@ -60,6 +61,7 @@ type User struct {
 	PasswordHash string `db:"password_hash"`
 	Role         string `db:"role"`
 	MediaGroups  string `db:"media_groups"`
+	Email        string `db:"email"`
 	Features     string `db:"features"` // comma separated Feature*
 	Settings     string `db:"settings"` // JSON object
 	CreatedAt    string `db:"created_at"`
@@ -93,7 +95,7 @@ func (u *User) FeatureList() []string {
 	return out
 }
 
-const userColumns = "id, username, password_hash, role, media_groups, features, settings, created_at, updated_at, " +
+const userColumns = "id, username, password_hash, role, media_groups, email, features, settings, created_at, updated_at, " +
 	"coalesce(last_login, '') as last_login"
 
 // GetUsers returns all accounts by name (not the built-in admin's row).
@@ -110,6 +112,40 @@ func GetUserByName(name *string) (*User, error) {
 // GetUserByID returns the account with this id.
 func GetUserByID(id *uint) (*User, error) {
 	return Structscan[User]("select "+userColumns+" from users where id = ?", false, id)
+}
+
+// UserActivity counts what an account did: files played, open reports,
+// requests open or waiting for their media.
+type UserActivity struct {
+	Plays, Reports, Requests int
+}
+
+// UserActivities are the activity counts by lower-case account name.
+func UserActivities() map[string]UserActivity {
+	rows := StructscanT[struct {
+		Username string `db:"username"`
+		What     string `db:"what"`
+		N        int    `db:"n"`
+	}](false, 16, "select lower(username) as username, 'plays' as what, count() as n from play_history where plays > 0 group by 1 "+
+		"union all select lower(username), 'reports', count() from media_reports group by 1 "+
+		"union all select lower(username), 'requests', count() from media_requests group by 1")
+
+	out := make(map[string]UserActivity, len(rows))
+	for _, r := range rows {
+		a := out[r.Username]
+		switch r.What {
+		case "plays":
+			a.Plays = r.N
+		case "reports":
+			a.Reports = r.N
+		case "requests":
+			a.Requests = r.N
+		}
+
+		out[r.Username] = a
+	}
+
+	return out
 }
 
 // HashPassword returns the bcrypt hash of a password of at least 8
@@ -221,12 +257,37 @@ func GetUserSettings(name string) string {
 // SaveUserSettings stores the settings JSON of an account, creating the
 // built-in admin's row on first use.
 func SaveUserSettings(name, settings string) error {
-	if strings.EqualFold(name, SystemAdmin) {
-		if err := ExecNErr("insert or ignore into users (username, password_hash, role) values (?, '!', ?)",
-			SystemAdmin, RoleAdmin); err != nil {
-			return err
-		}
+	if err := ensureSettingsRow(name); err != nil {
+		return err
 	}
 
 	return ExecNErr("update users set settings = ?, updated_at = datetime('now','localtime') where username = ?", settings, name)
+}
+
+// GetUserSetting is one string value of an account's settings JSON ("" when
+// it isn't set).
+func GetUserSetting(name, key string) string {
+	return Getdatarow[string](false, "select coalesce(json_extract(case when json_valid(settings) then settings else '{}' end, "+
+		"'$.\"' || ? || '\"'), '') from users where username = ?", key, name)
+}
+
+// SetUserSetting stores one string value in the settings JSON of an
+// account and keeps the others (pages without the whole settings, such as
+// the admin pages, change single values).
+func SetUserSetting(name, key, value string) error {
+	if err := ensureSettingsRow(name); err != nil {
+		return err
+	}
+
+	return ExecNErr("update users set settings = json_set(case when json_valid(settings) then settings else '{}' end, "+
+		"'$.\"' || ? || '\"', ?), updated_at = datetime('now','localtime') where username = ?", key, value, name)
+}
+
+// ensureSettingsRow creates the built-in admin's settings row on first use.
+func ensureSettingsRow(name string) error {
+	if !strings.EqualFold(name, SystemAdmin) {
+		return nil
+	}
+
+	return ExecNErr("insert or ignore into users (username, password_hash, role) values (?, '!', ?)", SystemAdmin, RoleAdmin)
 }

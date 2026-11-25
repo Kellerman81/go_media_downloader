@@ -171,6 +171,95 @@ func TestStripTrailingBrackets(t *testing.T) {
 	}
 }
 
+// TestFindDbbookReleaseNames: the release names books are posted under
+// (from the production search log): author in catalogue order or at the
+// end, series and number, year or subtitle around the title, tags at the
+// end, the German title of an English book; in the wanted list as well.
+func TestFindDbbookReleaseNames(t *testing.T) {
+	db := useMigratedMainDB(t)
+
+	mustExec(t, db, "insert into dbauthors (id, name, slug) values (1, 'Ken Follett', 'ken-follett')")
+	mustExec(t, db, "insert into dbbooks (id, title, slug) values (1, 'The Pillars of the Earth', 'the-pillars-of-the-earth'), "+
+		"(2, 'Eye of the Needle', 'eye-of-the-needle'), (3, 'Never', 'never'), (4, 'Armor of Light', 'armor-of-light'), "+
+		"(5, 'Edge of Eternity', 'edge-of-eternity'), (6, 'The Hammer of Eden', 'the-hammer-of-eden'), (7, 'Kingsbridge', 'kingsbridge')")
+	mustExec(t, db, "insert into dbbook_titles (dbbook_id, title, slug, region) values (1, 'Die Säulen der Erde', 'die-saeulen-der-erde', 'de'), "+
+		"(2, 'Die Nadel', 'die-nadel', 'de')")
+	mustExec(t, db, "insert into dbbook_authors (dbbook_id, dbauthor_id) values (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1)")
+	mustExec(t, db, "insert into books (id, dbbook_id, listname) values (101, 1, 'Book Library'), (102, 2, 'Book Library'), (103, 3, 'Book Library')")
+
+	for raw, want := range map[string]uint{
+		"Follett, Ken - Kingsbridge 01 - Die Saeulen der Erde":                      1,
+		"Ken.Follett.-.Kingsbridge.01.-.Die.Säulen.der.Erde":                        1,
+		"Ken Follett - [Kingsbridge 01] - The Pillars of the Earth (retail) (epub)": 1,
+		"Follett Ken-Pillars of the Earth":                                          1,
+		"The Pillars of the Earth - Follett  Ken":                                   1,
+		"Follett, Ken - 1978 - Die Nadel":                                           2,
+		"Follett  Ken - Die Nadel.ebook.german.epub":                                2,
+		"021 Eye of the Needle - Ken Follett":                                       2,
+		"Ken Follett - The Eye of the Needle (retail) (epub)":                       2,
+		"Ken Follett - Never - Die letzte Entscheidung":                             3,
+		"Never by Ken Follett":                                                      3,
+		"Ken Follett - The Armor of Light (epub)":                                   4,
+		"EDGE OF ETERNITY, by Ken Follett":                                          5,
+		"Follett, Ken - Century 03 - Edge of Eternity (Retail)":                     5,
+		"Follett Ken-Hammer of Eden The":                                            6,
+		"Follett, Ken - The Hammer of Eden (v5.0) [epub]":                           6,
+		"Ken Follett - Kingsbridge 03 - Das Fundament der Ewigkeit":                 0,
+		"Ken Follett - Kingsbridge 03 - A Column of Fire":                           0,
+		"Robert Jordan - The Pillars of the Earth":                                  0,
+	} {
+		m := ParseInfo{File: raw}
+		m.FindDbbookByAuthorFirst()
+
+		if m.DbbookID != want {
+			t.Errorf("%q: DbbookID = %d, want %d", raw, m.DbbookID, want)
+		}
+	}
+
+	for raw, want := range map[string][2]uint{
+		"Follett, Ken - Kingsbridge 01 - Die Saeulen der Erde": {1, 101},
+		"Ken Follett - Die Nadel":                              {2, 102},
+		"Never - Ken Follett":                                  {3, 103},
+		"Ken Follett - The Armor of Light":                     {0, 0},
+	} {
+		m := ParseInfo{File: raw}
+		m.FindDbbookByAuthorFirstFromWantedList([]string{"Book Library"})
+
+		if m.DbbookID != want[0] || m.BookID != want[1] {
+			t.Errorf("wanted list %q: DbbookID = %d, BookID = %d, want %v", raw, m.DbbookID, m.BookID, want)
+		}
+	}
+}
+
+// TestBookTitleCandidates: the titles a release's title part is tried as.
+func TestBookTitleCandidates(t *testing.T) {
+	for in, want := range map[string][]string{
+		"Kingsbridge 03 - Das Fundament der Ewigkeit": {
+			"Kingsbridge 03 - Das Fundament der Ewigkeit", "The Kingsbridge 03 - Das Fundament der Ewigkeit",
+			"Kingsbridge 03", "The Kingsbridge 03", "Das Fundament der Ewigkeit", "The Das Fundament der Ewigkeit",
+		},
+		"Hammer of Eden The (v5.0) [epub]": {"Hammer of Eden The", "The Hammer of Eden", "Hammer of Eden"},
+		"Die Nadel.ebook.german.epub":      {"Die Nadel", "The Die Nadel"},
+		"1978":                             nil,
+	} {
+		if got := bookTitleCandidates(in); !slices.Equal(got, want) {
+			t.Errorf("bookTitleCandidates(%q) =\n %q\nwant\n %q", in, got, want)
+		}
+	}
+
+	if got := swappedAuthorName("Follett, Ken"); got != "Ken Follett" {
+		t.Errorf("Follett, Ken: %q", got)
+	}
+
+	if got := swappedAuthorName("Follett  Ken"); got != "Ken Follett" {
+		t.Errorf("Follett  Ken: %q", got)
+	}
+
+	if got := swappedAuthorName("Ursula K. Le Guin"); got != "" {
+		t.Errorf("three words: %q", got)
+	}
+}
+
 func TestFindDbbookByAuthorFirst(t *testing.T) {
 	db := useMigratedMainDB(t)
 

@@ -61,6 +61,7 @@ var (
 		"DBRemoveUnmatched":        "delete from movie_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
 		"DBCacheUnmatched":         "select filepath from movie_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
 		"DBCountFilesLocation":     "select count() from movie_files where location = ?",
+		"TableUnmatched":           "movie_file_unmatcheds",
 		"DBCountUnmatchedPath":     "select count() from movie_file_unmatcheds where filepath = ?",
 		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbmovie_titles where dbmovie_id = ? and title != '')",
 		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbmovie_id from dbmovie_titles where dbmovie_id = ? and title != ''",

@@ -1030,6 +1030,38 @@ func stringRemoveAllRunes(s string, r byte) string {
 	return out.String()
 }
 
+// translateNamingData puts the group's metadata language translations of
+// the movie title, series name and episode title into the naming data: the
+// stored texts are English (the source default), a German group names its
+// files with the German ones. Without a translation the stored text stays.
+func translateNamingData(lang string, d *mediatype.NamingData) {
+	if lang == "" {
+		return
+	}
+
+	set := func(field *string, mediaType string, id uint) {
+		if id == 0 {
+			return
+		}
+
+		tr := database.TranslationsIn(mediaType, lang, []uint{id})[id]["title"]
+		if tr == "" {
+			return
+		}
+
+		logger.StringRemoveAllRunesP(&tr, '/')
+		logger.Path(&tr, false)
+
+		if tr != "" {
+			*field = tr
+		}
+	}
+
+	set(&d.Dbmovie.Title, "dbmovie", d.Dbmovie.ID)
+	set(&d.Dbserie.Seriename, "dbserie", d.Dbserie.ID)
+	set(&d.DbserieEpisode.Title, "dbserie_episode", d.DbserieEpisode.ID)
+}
+
 // GenerateNamingTemplate generates the folder name and file name for a movie or TV show file
 // based on the configured naming template. It looks up metadata from the database and parses
 // the naming template to replace placeholders with actual values. It handles movies and shows
@@ -1085,6 +1117,8 @@ func (s *Organizer) GenerateNamingTemplate(o *Organizerdata, m *database.ParseIn
 
 		return
 	}
+
+	translateNamingData(s.Cfgp.MetadataLanguage, namingData)
 
 	// Copy naming data to forparser
 	forparser.Dbmovie = namingData.Dbmovie
@@ -2116,6 +2150,20 @@ func (s *Organizer) notify(
 	namingID, id *uint,
 	oldfiles []string,
 ) {
+	// Accounts waiting for this title (approved requests) are told it arrived.
+	switch s.Cfgp.IsType {
+	case config.MediaTypeMovie:
+		providers.RequestMediaArrived("movie", m.MovieID)
+	case config.MediaTypeSeries:
+		providers.RequestMediaArrived("series", m.SerieID)
+	case config.MediaTypeMusic:
+		providers.RequestMediaArrived("album", m.AlbumID)
+	case config.MediaTypeAudiobook:
+		providers.RequestMediaArrived("audiobook", m.AudiobookID)
+	case config.MediaTypeBook:
+		providers.RequestMediaArrived("book", m.BookID)
+	}
+
 	notify := inputNotifier{
 		Targetpath:    filepath.Join(o.TargetPath, o.Filename),
 		SourcePath:    o.MediaFile,
@@ -2429,6 +2477,7 @@ func OrganizeSingleFolder(
 		if err != nil && reason != "" && data.MoveUnprocessed != "" &&
 			scanner.CheckFileExist(folder) {
 			moveUnprocessedFolder(
+				cfgp.IsType,
 				folder,
 				data.MoveUnprocessed,
 				reason,
@@ -2458,17 +2507,34 @@ func OrganizeSingleFolder(
 		lastMoveReason                    string
 	)
 
+	// The files first, then each: books best format first, so the best one
+	// is organized and the others of the same book are lower (not moved in
+	// and replaced again, as in name order: azw3 before epub).
+	var files []string
+
 	walkErr := filepath.WalkDir(folder, func(fpath string, info fs.DirEntry, errw error) error {
 		if errw != nil {
 			return errw
 		}
 
-		if err := ctx.Err(); err != nil {
-			return err
+		if !info.IsDir() {
+			files = append(files, fpath)
 		}
 
-		if info.IsDir() {
-			return nil
+		return ctx.Err()
+	})
+
+	if cfgp.IsType == config.MediaTypeBook {
+		sortBookFilesBestFirst(files)
+	}
+
+	for _, fpath := range files {
+		if err := ctx.Err(); err != nil {
+			if walkErr == nil {
+				walkErr = err
+			}
+
+			break
 		}
 
 		switch mediaFileSkipReason(cfgp, s.sourcepathCfg, fpath) {
@@ -2478,19 +2544,19 @@ func OrganizeSingleFolder(
 				Str(logger.StrFile, fpath).
 				Msg("skipped - unpacking")
 
-			return nil
+			continue
 		case skipDisallowed:
 			logger.Logtype("warn", 1).
 				Str(logger.StrFile, fpath).
 				Msg("skipped - disallowed")
 
-			return nil
+			continue
 		default:
-			return nil
+			continue
 		}
 
 		if isUnmatchedFile(cfgp, fpath) {
-			return nil
+			continue
 		}
 
 		organized, moveReason, result := s.walkorganizefolder(
@@ -2512,14 +2578,14 @@ func OrganizeSingleFolder(
 			anySkippedTemporary = true
 		}
 
-		// A single file's failure must not stop the rest of the walk; it
-		// has already been logged and recorded as unmatched.
-		return nil
-	})
+		// A single file's failure must not stop the rest; it has already
+		// been logged and recorded as unmatched.
+	}
 
 	if !anyOrganized && !anySkippedTemporary && data.MoveUnprocessed != "" &&
 		lastMoveReason != "" && scanner.CheckFileExist(folder) {
 		moveUnprocessedFolder(
+			cfgp.IsType,
 			folder,
 			data.MoveUnprocessed,
 			lastMoveReason,
@@ -2531,6 +2597,91 @@ func OrganizeSingleFolder(
 	}
 
 	return walkErr
+}
+
+// sortBookFilesBestFirst orders book files by format, the best first
+// (epub, azw3, mobi, pdf, ...); files of one format keep their order.
+func sortBookFilesBestFirst(files []string) {
+	slices.SortStableFunc(files, func(a, b string) int {
+		return parser.BookFormatPriority(logger.ExtToFormat(filepath.Ext(b))) -
+			parser.BookFormatPriority(logger.ExtToFormat(filepath.Ext(a)))
+	})
+}
+
+// looseFileMinAge: loose files changed more recently may still be written.
+const looseFileMinAge = 2 * time.Minute
+
+// WrapLooseBookFiles puts the book files lying loose in an import folder
+// (not in a folder of their own, as downloads usually are) into a folder
+// each, named after the file without its extension: the structure job
+// organizes folders. The formats of one book and its cover or .opf with the
+// same name go into the same folder. Files changed in the last two minutes
+// are left alone. Returns how many folders got files.
+func WrapLooseBookFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+
+	groups := map[string][]string{}
+	books := map[string]bool{}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+
+		info, err := e.Info()
+		if err != nil || !info.Mode().IsRegular() || time.Since(info.ModTime()) < looseFileMinAge {
+			continue
+		}
+
+		ext := filepath.Ext(e.Name())
+		base := strings.TrimSpace(strings.TrimSuffix(e.Name(), ext))
+		if base == "" || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+
+		groups[base] = append(groups[base], e.Name())
+		if parser_v2.IsBookExtension(ext) {
+			books[base] = true
+		}
+	}
+
+	wrapped := 0
+
+	for base, names := range groups {
+		if !books[base] {
+			continue
+		}
+
+		target := filepath.Join(dir, base)
+		if err := os.MkdirAll(target, 0o777); err != nil {
+			logger.Logtype("error", 1).Str(logger.StrPath, target).Err(err).Msg("loose book files")
+			continue
+		}
+
+		moved := false
+
+		for _, name := range names {
+			if err := os.Rename(filepath.Join(dir, name), filepath.Join(target, name)); err != nil {
+				logger.Logtype("error", 1).Str(logger.StrFile, filepath.Join(dir, name)).Err(err).Msg("loose book files")
+				continue
+			}
+
+			moved = true
+		}
+
+		if moved {
+			wrapped++
+		}
+	}
+
+	if wrapped > 0 {
+		logger.Logtype("info", 1).Str(logger.StrPath, dir).Int("folders", wrapped).Msg("Put loose book files into folders")
+	}
+
+	return wrapped
 }
 
 // walkorganizefolder is a method of the Organizer struct that processes a file path, parses the file, and organizes the media item based on the configuration settings.

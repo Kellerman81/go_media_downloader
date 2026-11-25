@@ -1,6 +1,9 @@
 package database
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // PlayHistory is what an account played of a file (play_history).
 type PlayHistory struct {
@@ -59,6 +62,28 @@ func RecentPlays(username string, limit int) []PlayHistory {
 		from play_history where plays > 0 and (? = '' or username = ?) order by updated_at desc limit ?`, username, username, limit)
 }
 
+// PlayTotals sum up what an account played.
+type PlayTotals struct {
+	Titles   int     `db:"titles"`   // files started
+	Plays    int     `db:"plays"`    // plays counted
+	Hours    float64 `db:"hours"`    // played time
+	Finished int     `db:"finished"` // files watched/heard to the end
+	Last     string  `db:"last"`
+}
+
+// UserPlayTotals sums the play history of an account.
+func UserPlayTotals(username string) PlayTotals {
+	r := StructscanT[PlayTotals](false, 1, "select count() as titles, coalesce(sum(plays), 0) as plays, "+
+		"coalesce(sum(completion * duration) / 3600.0, 0) as hours, "+
+		"coalesce(sum(completion >= ?), 0) as finished, coalesce(strftime('%Y-%m-%d %H:%M', max(updated_at)), '') as last "+
+		"from play_history where username = ? and plays > 0", Watched, username)
+	if len(r) == 0 {
+		return PlayTotals{}
+	}
+
+	return r[0]
+}
+
 // PlayStat is a count of plays by a key (account, kind or day).
 type PlayStat struct {
 	Key   string  `db:"key"`
@@ -88,10 +113,18 @@ func PlayStatsBy(column string, days int) []PlayStat {
 		"where updated_at >= datetime('now','localtime', '-' || ? || ' days') group by 1 order by "+order, days)
 }
 
-// StartPlaySession records a play (play_sessions) and returns its row.
-func StartPlaySession(username, kind string, fileID uint, title, mode, quality string) uint {
-	id, err := ExecNid("insert into play_sessions (username, kind, file_id, title, mode, quality) values (?, ?, ?, ?, ?, ?)",
-		username, kind, fileID, title, mode, quality)
+// ContinuesPlay reports whether the account started the file before and
+// didn't finish it: playing it again continues that play.
+func ContinuesPlay(username, kind string, fileID *uint) bool {
+	return Getdatarow[bool](false, "select exists(select 1 from play_history where username = ? and kind = ? and file_id = ? "+
+		"and plays > 0 and completion < ?)", username, kind, fileID, Watched)
+}
+
+// StartPlaySession records a play (play_sessions; resumed: it continues an
+// unfinished one) and returns its row.
+func StartPlaySession(username, kind string, fileID uint, title, mode, quality string, resumed bool) uint {
+	id, err := ExecNid("insert into play_sessions (username, kind, file_id, title, mode, quality, resumed) values (?, ?, ?, ?, ?, ?, ?)",
+		username, kind, fileID, title, mode, quality, resumed)
 	if err != nil {
 		return 0
 	}
@@ -114,12 +147,13 @@ type PlaySession struct {
 	StartedAt string  `db:"started_at"`
 	EndedAt   string  `db:"ended_at"`
 	Seconds   float64 `db:"seconds"`
+	Resumed   bool    `db:"resumed"`
 }
 
 // PlaySessionsSince returns the plays of the last days, oldest first.
 func PlaySessionsSince(days int) []PlaySession {
 	return StructscanT[PlaySession](false, 256, "select username, kind, title, mode, "+
-		"strftime('%Y-%m-%d %H:%M:%S', started_at) as started_at, strftime('%Y-%m-%d %H:%M:%S', ended_at) as ended_at, seconds "+
+		"strftime('%Y-%m-%d %H:%M:%S', started_at) as started_at, strftime('%Y-%m-%d %H:%M:%S', ended_at) as ended_at, seconds, resumed "+
 		"from play_sessions where started_at >= datetime('now','localtime', '-' || ? || ' days') order by started_at", days)
 }
 
@@ -154,6 +188,77 @@ func SetWatched(username, kind string, fileID *uint, watched bool) error {
 	return ExecNErr(`insert into play_history (username, kind, file_id, completion, plays) values (?, ?, ?, 1, 0)
 		on conflict (username, kind, file_id) do update set completion = 1, position = 0, updated_at = datetime('now','localtime')`,
 		username, kind, fileID)
+}
+
+// PlayStaleDays: what an account last played longer ago than this isn't
+// offered to continue (Continue, Next up) any more.
+const PlayStaleDays = "60"
+
+// DropContinue clears where the account stopped in the unfinished files of
+// a list entry: it leaves the Continue row and plays from the start.
+func DropContinue(username, kind, filesTable, entryColumn string, entryID *uint64) error {
+	return ExecNErr("update play_history set position = 0 where username = ? and kind = ? and completion < ? and file_id in "+
+		"(select id from "+filesTable+" where "+entryColumn+" = ?)", username, kind, Watched, entryID)
+}
+
+// nextUpHidden is the settings key of the series an account removed from
+// Next up: series id -> its last play then.
+const nextUpHidden = "nextup_hidden"
+
+// NextUpSeries returns the series the account watched in the last
+// PlayStaleDays, latest first, without those it removed from Next up and
+// didn't play since.
+func NextUpSeries(username string, limit int) []uint64 {
+	rows := StructscanT[struct {
+		ID   uint64 `db:"serie_id"`
+		Last string `db:"last"`
+	}](false, uint(max(limit, 0)), //nolint:gosec // limit is not negative
+		"select f.serie_id, max(h.updated_at) as last from play_history h inner join serie_episode_files f on f.id = h.file_id "+
+			"where h.username = ? and h.kind = 'episode' group by f.serie_id "+
+			"having max(h.updated_at) >= datetime('now', 'localtime', '-"+PlayStaleDays+" days') order by last desc limit ?", username, limit)
+
+	hidden := nextUpHiddenOf(username)
+	out := make([]uint64, 0, len(rows))
+
+	for _, r := range rows {
+		if h, ok := hidden[r.ID]; !ok || r.Last > h {
+			out = append(out, r.ID)
+		}
+	}
+
+	return out
+}
+
+// HideNextUp removes a series from the account's Next up until it plays an
+// episode of it again.
+func HideNextUp(username string, serieID uint64) error {
+	hidden := nextUpHiddenOf(username)
+	hidden[serieID] = Getdatarow[string](false, "select coalesce(max(h.updated_at), datetime('now', 'localtime')) from play_history h "+
+		"inner join serie_episode_files f on f.id = h.file_id where h.username = ? and h.kind = 'episode' and f.serie_id = ?", username, serieID)
+
+	// Series not played for PlayStaleDays are gone from Next up anyway.
+	cut := Getdatarow[string](false, "select datetime('now', 'localtime', '-"+PlayStaleDays+" days')")
+	for id, last := range hidden {
+		if last < cut {
+			delete(hidden, id)
+		}
+	}
+
+	b, err := json.Marshal(hidden)
+	if err != nil {
+		return err
+	}
+
+	return SetUserSetting(username, nextUpHidden, string(b))
+}
+
+func nextUpHiddenOf(username string) map[uint64]string {
+	hidden := map[uint64]string{}
+	if s := GetUserSetting(username, nextUpHidden); s != "" {
+		_ = json.Unmarshal([]byte(s), &hidden)
+	}
+
+	return hidden
 }
 
 // ContinueItem is a file the account started and didn't finish.
@@ -210,6 +315,7 @@ func ContinuePlaying(username, kind string, lists []string, limit int) []Continu
 
 	rows := StructscanT[ContinueItem](false, uint(max(limit, 0)), query+ //nolint:gosec // limit is not negative
 		" where h.username = ? and h.kind = ? and h.completion > 0.02 and h.completion < ? and h.position > 30"+
+		" and h.updated_at >= datetime('now', 'localtime', '-"+PlayStaleDays+" days')"+
 		" and e.listname collate nocase in (?"+strings.Repeat(", ?", len(lists)-1)+") order by h.updated_at desc, h.id desc limit ?", args...)
 
 	seen := map[uint]bool{}
@@ -304,4 +410,17 @@ func SetEntryWatched(username, kind, filesTable, entryColumn string, entryID *ui
 	return ExecNErr("insert into play_history (username, kind, file_id, completion, plays) select ?, ?, id, 1, 0 from "+filesTable+
 		" where "+entryColumn+" = ? on conflict (username, kind, file_id) do update set completion = 1, position = 0, "+
 		"updated_at = datetime('now','localtime')", username, kind, entryID)
+}
+
+// ImportPlayPosition takes over where an account stopped in a file
+// elsewhere (a media server): only when it has no history of the file, and
+// not as a play of its own.
+func ImportPlayPosition(username, kind string, fileID *uint, position, duration float64) error {
+	completion := 0.0
+	if duration > 0 {
+		completion = min(max(position/duration, 0), 1)
+	}
+
+	return ExecNErr(`insert or ignore into play_history (username, kind, file_id, position, duration, completion, plays)
+		values (?, ?, ?, ?, ?, ?, 0)`, username, kind, fileID, position, duration, completion)
 }

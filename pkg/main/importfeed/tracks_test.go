@@ -14,6 +14,8 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/base"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2/providers/musicbrainz"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/parser_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
@@ -842,6 +844,44 @@ func TestVDGGDiagnostic(t *testing.T) {
 					relRuntimeMs,
 				)
 			}
+		}
+	}
+}
+
+// TestAddFilesClearsMissing: adding the files of a folder clears the
+// entry's missing flag (it stayed set, and the entry was searched again).
+func TestAddFilesClearsMissing(t *testing.T) {
+	useTestDB(t)
+
+	for _, q := range []string{
+		"insert into dbalbums (id, title) values (1, 'Album')",
+		"insert into albums (id, dbalbum_id, listname, missing) values (5, 1, 'Music Library', 1)",
+		"insert into dbaudiobooks (id, title) values (1, 'Book')",
+		"insert into audiobooks (id, dbaudiobook_id, listname, missing) values (6, 1, 'Audiobook Library', 1)",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	music := &config.MediaTypeConfig{IsType: config.MediaTypeMusic, Lists: []config.MediaListsConfig{{Name: "Music Library"}},
+		ListsNames: []string{"Music Library"}, ListsLen: 1}
+	books := &config.MediaTypeConfig{IsType: config.MediaTypeAudiobook, Lists: []config.MediaListsConfig{{Name: "Audiobook Library"}},
+		ListsNames: []string{"Audiobook Library"}, ListsLen: 1}
+
+	album := &parser_v2.AlbumInfo{DatabaseID: 1, Tracks: []parser_v2.TrackInfo{{Filepath: "/m/01.flac", Filename: "01.flac", TrackNumber: 1}}}
+	if !addAlbumFilesToDatabase(context.Background(), "/m", album, music, 0) {
+		t.Fatal("album files not added")
+	}
+
+	book := &parser_v2.AlbumInfo{DatabaseID: 1, Tracks: []parser_v2.TrackInfo{{Filepath: "/b/book.m4b", Filename: "book.m4b"}}}
+	if !addAudiobookFilesToDatabase(context.Background(), "/b", book, books, 0) {
+		t.Fatal("audiobook files not added")
+	}
+
+	for _, table := range []string{"albums", "audiobooks"} {
+		if got := database.Getdatarow[int](false, "select missing from "+table); got != 0 {
+			t.Errorf("%s: missing = %d, want 0", table, got)
 		}
 	}
 }

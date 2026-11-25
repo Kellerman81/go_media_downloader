@@ -15,6 +15,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
 	"github.com/gin-gonic/gin"
@@ -31,23 +32,23 @@ type metadataSearchTab struct {
 }
 
 var metadataSearchTabs = []metadataSearchTab{
-	{"movies", "Movies", "fa-film", func(m *config.MediaConfig) bool { return len(m.Movies) > 0 },
+	{"movies", t("Movies"), "fa-film", func(m *config.MediaConfig) bool { return len(m.Movies) > 0 },
 		func(csrf string, acc *userAccess) gomponents.Node {
 			return movieMetadataSearchContent(getMediaListsByType(acc, "movie"), getQualityProfileNames(), csrf)
 		}, "movie"},
-	{"series", "Series", "fa-tv", func(m *config.MediaConfig) bool { return len(m.Series) > 0 },
+	{"series", t("Series"), "fa-tv", func(m *config.MediaConfig) bool { return len(m.Series) > 0 },
 		func(csrf string, acc *userAccess) gomponents.Node {
 			return seriesMetadataSearchContent(getMediaListsByType(acc, "series"), getQualityProfileNames(), csrf)
 		}, "series"},
-	{"books", "Books", "fa-book", func(m *config.MediaConfig) bool { return len(m.Books) > 0 },
+	{"books", t("Books"), "fa-book", func(m *config.MediaConfig) bool { return len(m.Books) > 0 },
 		func(csrf string, acc *userAccess) gomponents.Node {
 			return bookMetadataSearchContent(getMediaListsByType(acc, "book"), getQualityProfileNames(), csrf)
 		}, "book"},
-	{"audiobooks", "Audiobooks", "fa-headphones", func(m *config.MediaConfig) bool { return len(m.AudioBooks) > 0 },
+	{"audiobooks", t("Audiobooks"), "fa-headphones", func(m *config.MediaConfig) bool { return len(m.AudioBooks) > 0 },
 		func(csrf string, acc *userAccess) gomponents.Node {
 			return audiobookMetadataSearchContent(getMediaListsByType(acc, "audiobook"), getQualityProfileNames(), csrf)
 		}, "audiobook"},
-	{"music", "Music", "fa-music", func(m *config.MediaConfig) bool { return len(m.Music) > 0 },
+	{"music", t("Music"), "fa-music", func(m *config.MediaConfig) bool { return len(m.Music) > 0 },
 		func(csrf string, acc *userAccess) gomponents.Node {
 			return musicMetadataSearchContent(getMediaListsByType(acc, "music"), csrf)
 		}, "music"},
@@ -70,7 +71,7 @@ func MetadataSearchPage(c *gin.Context) {
 		}
 	}
 
-	var content gomponents.Node = gomponents.Raw(renderAlert("No media configuration yet - add one under Configuration → Media first.", "info"))
+	var content gomponents.Node = gomponents.Raw(renderAlert(t("No media configuration yet - add one under Configuration → Media first."), "info"))
 
 	if len(tabs) > 0 {
 		active := tabs[0]
@@ -81,15 +82,15 @@ func MetadataSearchPage(c *gin.Context) {
 		}
 
 		items := make([]gomponents.Node, 0, len(tabs))
-		for _, t := range tabs {
+		for _, tab := range tabs {
 			class := "nav-link"
-			if t.Key == active.Key {
+			if tab.Key == active.Key {
 				class += " active"
 			}
 
 			items = append(items, html.Li(html.Class("nav-item"),
-				html.A(html.Class(class), html.Href("/api/admin/metadata-search?type="+t.Key),
-					html.I(html.Class("fa-solid "+t.Icon+" me-1")), gomponents.Text(t.Label)),
+				html.A(html.Class(class), html.Href("/api/admin/metadata-search?type="+tab.Key),
+					html.I(html.Class("fa-solid "+tab.Icon+" me-1")), gomponents.Text(t(tab.Label))),
 			))
 		}
 
@@ -109,7 +110,7 @@ func MetadataSearchPage(c *gin.Context) {
 	}
 
 	pageNode := pageAs(acc,
-		"Add Media",
+		t("Add Media"),
 		false, // activeConfig
 		false, // activeDatabase
 		true,  // activeManagement
@@ -242,7 +243,7 @@ func configuredListQuality(c *gin.Context, listName, kind, quality string) bool 
 		}
 	}
 
-	c.JSON(http.StatusBadRequest, gin.H{"error": "Quality profile '" + quality + "' is not configured for list '" + listName + "'"})
+	c.JSON(http.StatusBadRequest, gin.H{"error": tf("Quality profile '%s' is not configured for list '%s'", quality, listName)})
 
 	return false
 }
@@ -270,7 +271,7 @@ func listQualityScript(kind string, lists []string, pairs map[string]string) gom
 		}
 	}
 
-	return qualitySelectScript(byList, pairs, "Select a list first")
+	return qualitySelectScript(byList, pairs, t("Select a list first"))
 }
 
 // selectQuality is the quality profiles offered for one value of a source
@@ -343,11 +344,11 @@ func movieMetadataSearchContent(
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Movie Metadata Search")),
+					html.H2(html.Class("header-title"), gomponents.Text(t("Movie Metadata Search"))),
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Search for movies across metadata sources and add them to your library",
+							t("Search for movies across metadata sources and add them to your library"),
 						),
 					),
 				),
@@ -369,7 +370,7 @@ func movieMetadataSearchContent(
 							html.H5(
 								html.Class("mb-0"),
 								html.I(html.Class("fas fa-search me-2")),
-								gomponents.Text("Search Movies"),
+								gomponents.Text(t("Search Movies")),
 							),
 						),
 						html.Div(
@@ -387,14 +388,14 @@ func movieMetadataSearchContent(
 									html.Label(
 										html.For("movie_title"),
 										html.Class("form-label"),
-										gomponents.Text("Movie Title"),
+										gomponents.Text(t("Movie Title")),
 									),
 									html.Input(
 										html.Type("text"),
 										html.Class("form-control"),
 										html.ID("movie_title"),
 										html.Name("movie_title"),
-										html.Placeholder("Enter movie title to search..."),
+										html.Placeholder(t("Enter movie title to search...")),
 										gomponents.Attr("required", "true"),
 									),
 								),
@@ -406,7 +407,7 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("movie_list"),
 											html.Class("form-label"),
-											gomponents.Text("Add to List"),
+											gomponents.Text(t("Add to List")),
 										),
 										html.Select(
 											html.Class("form-select"),
@@ -421,7 +422,7 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("movie_quality_profile"),
 											html.Class("form-label"),
-											gomponents.Text("Quality Profile"),
+											gomponents.Text(t("Quality Profile")),
 										),
 										html.Select(
 											html.Class("form-select"),
@@ -439,7 +440,7 @@ func movieMetadataSearchContent(
 										html.Type("submit"),
 										html.Class("btn btn-primary"),
 										html.I(html.Class("fas fa-search me-2")),
-										gomponents.Text("Search Movies"),
+										gomponents.Text(t("Search Movies")),
 									),
 								),
 							),
@@ -457,7 +458,7 @@ func movieMetadataSearchContent(
 							html.H5(
 								html.Class("mb-0"),
 								html.I(html.Class("fas fa-edit me-2")),
-								gomponents.Text("Manual Entry"),
+								gomponents.Text(t("Manual Entry")),
 							),
 						),
 						html.Div(
@@ -477,14 +478,14 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("manualMovie_title"),
 											html.Class("form-label"),
-											gomponents.Text("Movie Title *"),
+											gomponents.Text(t("Movie Title *")),
 										),
 										html.Input(
 											html.Type("text"),
 											html.Class("form-control"),
 											html.ID("manualMovie_title"),
 											html.Name("manualMovie_title"),
-											html.Placeholder("Enter movie title"),
+											html.Placeholder(t("Enter movie title")),
 											gomponents.Attr("required", "true"),
 										),
 									),
@@ -493,14 +494,14 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("manualMovie_year"),
 											html.Class("form-label"),
-											gomponents.Text("Year"),
+											gomponents.Text(t("Year")),
 										),
 										html.Input(
 											html.Type("number"),
 											html.Class("form-control"),
 											html.ID("manualMovie_year"),
 											html.Name("manualMovie_year"),
-											html.Placeholder("YYYY"),
+											html.Placeholder(t("YYYY")),
 											gomponents.Attr("min", "1900"),
 											gomponents.Attr("max", "2030"),
 										),
@@ -514,7 +515,7 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("manualMovie_list"),
 											html.Class("form-label"),
-											gomponents.Text("Add to List *"),
+											gomponents.Text(t("Add to List *")),
 										),
 										html.Select(
 											html.Class("form-select"),
@@ -529,7 +530,7 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("manualMovie_quality_profile"),
 											html.Class("form-label"),
-											gomponents.Text("Quality Profile *"),
+											gomponents.Text(t("Quality Profile *")),
 										),
 										html.Select(
 											html.Class("form-select"),
@@ -548,14 +549,14 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("manualMovie_imdb_id"),
 											html.Class("form-label"),
-											gomponents.Text("IMDB ID"),
+											gomponents.Text(t("IMDB ID")),
 										),
 										html.Input(
 											html.Type("text"),
 											html.Class("form-control"),
 											html.ID("manualMovie_imdb_id"),
 											html.Name("manualMovie_imdb_id"),
-											html.Placeholder("tt1234567"),
+											html.Placeholder(t("tt1234567")),
 											gomponents.Attr("pattern", "tt[0-9]+"),
 										),
 									),
@@ -564,13 +565,13 @@ func movieMetadataSearchContent(
 										html.Label(
 											html.For("manualMovie_overview"),
 											html.Class("form-label"),
-											gomponents.Text("Overview"),
+											gomponents.Text(t("Overview")),
 										),
 										html.Textarea(
 											html.Class("form-control"),
 											html.ID("manualMovie_overview"),
 											html.Name("manualMovie_overview"),
-											html.Placeholder("Movie description (optional)"),
+											html.Placeholder(t("Movie description (optional)")),
 											html.Rows("2"),
 										),
 									),
@@ -582,7 +583,7 @@ func movieMetadataSearchContent(
 										html.Type("submit"),
 										html.Class("btn btn-secondary"),
 										html.I(html.Class("fas fa-plus me-2")),
-										gomponents.Text("Add Movie Manually"),
+										gomponents.Text(t("Add Movie Manually")),
 									),
 								),
 							),
@@ -624,11 +625,11 @@ func seriesMetadataSearchContent(
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Series Metadata Search")),
+					html.H2(html.Class("header-title"), gomponents.Text(t("Series Metadata Search"))),
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Search for TV series across metadata sources and add them to your library",
+							t("Search for TV series across metadata sources and add them to your library"),
 						),
 					),
 				),
@@ -650,7 +651,7 @@ func seriesMetadataSearchContent(
 							html.H5(
 								html.Class("mb-0"),
 								html.I(html.Class("fas fa-search me-2")),
-								gomponents.Text("Search Series"),
+								gomponents.Text(t("Search Series")),
 							),
 						),
 						html.Div(
@@ -668,14 +669,14 @@ func seriesMetadataSearchContent(
 									html.Label(
 										html.For("series_title"),
 										html.Class("form-label"),
-										gomponents.Text("Series Title"),
+										gomponents.Text(t("Series Title")),
 									),
 									html.Input(
 										html.Type("text"),
 										html.Class("form-control"),
 										html.ID("series_title"),
 										html.Name("series_title"),
-										html.Placeholder("Enter series title to search..."),
+										html.Placeholder(t("Enter series title to search...")),
 										gomponents.Attr("required", "true"),
 									),
 								),
@@ -685,7 +686,7 @@ func seriesMetadataSearchContent(
 									html.Label(
 										html.For("series_list"),
 										html.Class("form-label"),
-										gomponents.Text("Add to List"),
+										gomponents.Text(t("Add to List")),
 									),
 									html.Select(
 										html.Class("form-select"),
@@ -701,7 +702,7 @@ func seriesMetadataSearchContent(
 									html.Label(
 										html.For("series_quality_profile"),
 										html.Class("form-label"),
-										gomponents.Text("Quality Profile"),
+										gomponents.Text(t("Quality Profile")),
 									),
 									html.Select(
 										html.Class("form-select"),
@@ -712,7 +713,7 @@ func seriesMetadataSearchContent(
 									html.Small(
 										html.Class("form-text text-muted"),
 										gomponents.Text(
-											"Leave to use the list's default quality.",
+											t("Leave to use the list's default quality."),
 										),
 									),
 								),
@@ -723,7 +724,7 @@ func seriesMetadataSearchContent(
 										html.Type("submit"),
 										html.Class("btn btn-primary"),
 										html.I(html.Class("fas fa-search me-2")),
-										gomponents.Text("Search Series"),
+										gomponents.Text(t("Search Series")),
 									),
 								),
 							),
@@ -741,7 +742,7 @@ func seriesMetadataSearchContent(
 							html.H5(
 								html.Class("mb-0"),
 								html.I(html.Class("fas fa-edit me-2")),
-								gomponents.Text("Manual Entry"),
+								gomponents.Text(t("Manual Entry")),
 							),
 						),
 						html.Div(
@@ -761,14 +762,14 @@ func seriesMetadataSearchContent(
 										html.Label(
 											html.For("manualSeries_seriename"),
 											html.Class("form-label"),
-											gomponents.Text("Series Name *"),
+											gomponents.Text(t("Series Name *")),
 										),
 										html.Input(
 											html.Type("text"),
 											html.Class("form-control"),
 											html.ID("manualSeries_seriename"),
 											html.Name("manualSeries_seriename"),
-											html.Placeholder("Enter series name"),
+											html.Placeholder(t("Enter series name")),
 											gomponents.Attr("required", "true"),
 										),
 									),
@@ -777,7 +778,7 @@ func seriesMetadataSearchContent(
 										html.Label(
 											html.For("manualSeries_list"),
 											html.Class("form-label"),
-											gomponents.Text("Add to List *"),
+											gomponents.Text(t("Add to List *")),
 										),
 										html.Select(
 											html.Class("form-select"),
@@ -796,7 +797,7 @@ func seriesMetadataSearchContent(
 										html.Label(
 											html.For("manualSeries_thetvdb_id"),
 											html.Class("form-label"),
-											gomponents.Text("TVDB ID"),
+											gomponents.Text(t("TVDB ID")),
 										),
 										html.Input(
 											html.Type("number"),
@@ -812,7 +813,7 @@ func seriesMetadataSearchContent(
 										html.Label(
 											html.For("manualSeries_firstaired"),
 											html.Class("form-label"),
-											gomponents.Text("First Aired"),
+											gomponents.Text(t("First Aired")),
 										),
 										html.Input(
 											html.Type("date"),
@@ -826,14 +827,14 @@ func seriesMetadataSearchContent(
 										html.Label(
 											html.For("manualSeries_network"),
 											html.Class("form-label"),
-											gomponents.Text("Network"),
+											gomponents.Text(t("Network")),
 										),
 										html.Input(
 											html.Type("text"),
 											html.Class("form-control"),
 											html.ID("manualSeries_network"),
 											html.Name("manualSeries_network"),
-											html.Placeholder("ABC, NBC, etc."),
+											html.Placeholder(t("ABC, NBC, etc.")),
 										),
 									),
 								),
@@ -843,13 +844,13 @@ func seriesMetadataSearchContent(
 									html.Label(
 										html.For("manualSeries_overview"),
 										html.Class("form-label"),
-										gomponents.Text("Overview"),
+										gomponents.Text(t("Overview")),
 									),
 									html.Textarea(
 										html.Class("form-control"),
 										html.ID("manualSeries_overview"),
 										html.Name("manualSeries_overview"),
-										html.Placeholder("Series description (optional)"),
+										html.Placeholder(t("Series description (optional)")),
 										html.Rows("3"),
 									),
 								),
@@ -860,7 +861,7 @@ func seriesMetadataSearchContent(
 										html.Type("submit"),
 										html.Class("btn btn-secondary"),
 										html.I(html.Class("fas fa-plus me-2")),
-										gomponents.Text("Add Series Manually"),
+										gomponents.Text(t("Add Series Manually")),
 									),
 								),
 							),
@@ -885,7 +886,7 @@ func seriesMetadataSearchContent(
 func renderSelectOptions(options []string, selectedValue string) gomponents.Node {
 	nodes := make([]gomponents.Node, 0, len(options)+1)
 
-	nodes = append(nodes, html.Option(html.Value(""), gomponents.Text("Select...")))
+	nodes = append(nodes, html.Option(html.Value(""), gomponents.Text(t("Select..."))))
 
 	for _, opt := range options {
 		if opt == selectedValue {
@@ -909,7 +910,7 @@ func renderSelectOptions(options []string, selectedValue string) gomponents.Node
 func SearchMovieMetadata(c *gin.Context) {
 	title := c.PostForm("movie_title")
 	if title == "" {
-		c.String(http.StatusBadRequest, renderAlert("Title is required", "warning"))
+		c.String(http.StatusBadRequest, renderAlert(t("Title is required"), "warning"))
 		return
 	}
 
@@ -928,7 +929,7 @@ func SearchMovieMetadata(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(
 			http.StatusInternalServerError,
-			renderAlert("Failed to search movies: "+err.Error(), "danger"),
+			renderAlert(t("Failed to search movies: ")+err.Error(), "danger"),
 		)
 
 		return
@@ -940,7 +941,7 @@ func SearchMovieMetadata(c *gin.Context) {
 		var buf strings.Builder
 		html.Div(
 			html.Class("alert alert-warning text-center"),
-			gomponents.Text("No movies found for: "+title),
+			gomponents.Text(tf("No movies found for: %s", title)),
 		).Render(&buf)
 		c.String(http.StatusOK, buf.String())
 
@@ -951,7 +952,7 @@ func SearchMovieMetadata(c *gin.Context) {
 
 	resultNodes = append(resultNodes, html.H5(
 		html.Class("mb-3"),
-		gomponents.Text(fmt.Sprintf("Search Results (%d movies found)", len(results))),
+		gomponents.Text(tf("Search Results (%d movies found)", len(results))),
 	))
 
 	lists := haveLists(c, "movie")
@@ -970,7 +971,7 @@ func SearchMovieMetadata(c *gin.Context) {
 func SearchSeriesMetadata(c *gin.Context) {
 	title := c.PostForm("series_title")
 	if title == "" {
-		c.String(http.StatusBadRequest, renderAlert("Title is required", "warning"))
+		c.String(http.StatusBadRequest, renderAlert(t("Title is required"), "warning"))
 		return
 	}
 
@@ -989,7 +990,7 @@ func SearchSeriesMetadata(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(
 			http.StatusInternalServerError,
-			renderAlert("Failed to search series: "+err.Error(), "danger"),
+			renderAlert(t("Failed to search series: ")+err.Error(), "danger"),
 		)
 
 		return
@@ -1001,7 +1002,7 @@ func SearchSeriesMetadata(c *gin.Context) {
 		var buf strings.Builder
 		html.Div(
 			html.Class("alert alert-warning text-center"),
-			gomponents.Text("No series found for: "+title),
+			gomponents.Text(tf("No series found for: %s", title)),
 		).Render(&buf)
 		c.String(http.StatusOK, buf.String())
 
@@ -1012,7 +1013,7 @@ func SearchSeriesMetadata(c *gin.Context) {
 
 	resultNodes = append(resultNodes, html.H5(
 		html.Class("mb-3"),
-		gomponents.Text(fmt.Sprintf("Search Results (%d series found)", len(results))),
+		gomponents.Text(tf("Search Results (%d series found)", len(results))),
 	))
 
 	lists := haveLists(c, "serie")
@@ -1060,7 +1061,7 @@ func createMovieResultCard(movie apiexternal_v2.MovieSearchResult, have bool) go
 						if movie.OriginalTitle != "" && movie.OriginalTitle != movie.Title {
 							return html.Small(
 								html.Class("text-muted d-block mb-2"),
-								gomponents.Text("Original: "+movie.OriginalTitle),
+								gomponents.Text(t("Original: ")+movie.OriginalTitle),
 							)
 						}
 
@@ -1087,7 +1088,7 @@ func createMovieResultCard(movie apiexternal_v2.MovieSearchResult, have bool) go
 					gomponents.Attr("data-tmdb-id", strconv.Itoa(movie.ID)),
 					gomponents.Attr("data-title", movie.Title),
 					html.I(html.Class("fas fa-plus me-1")),
-					gomponents.Text("Add Movie"),
+					gomponents.Text(t("Add Movie")),
 				),
 			),
 		),
@@ -1127,7 +1128,7 @@ func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult, have bool)
 						if series.OriginalName != "" && series.OriginalName != series.Name {
 							return html.Small(
 								html.Class("text-muted d-block mb-2"),
-								gomponents.Text("Original: "+series.OriginalName),
+								gomponents.Text(t("Original: ")+series.OriginalName),
 							)
 						}
 
@@ -1154,7 +1155,7 @@ func createSeriesResultCard(series apiexternal_v2.SeriesSearchResult, have bool)
 					gomponents.Attr("data-tmdb-id", strconv.Itoa(series.ID)),
 					gomponents.Attr("data-title", series.Name),
 					html.I(html.Class("fas fa-plus me-1")),
-					gomponents.Text("Add Series"),
+					gomponents.Text(t("Add Series")),
 				),
 			),
 		),
@@ -1170,7 +1171,7 @@ func AddMovieToDatabase(c *gin.Context) {
 	if tmdbIDStr == "" || listName == "" || qualityProfile == "" {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "TMDB ID, list name, and quality profile are required"},
+			gin.H{"error": t("TMDB ID, list name, and quality profile are required")},
 		)
 
 		return
@@ -1187,36 +1188,42 @@ func AddMovieToDatabase(c *gin.Context) {
 
 	tmdbID, err := strconv.Atoi(tmdbIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid TMDB ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Invalid TMDB ID")})
 		return
 	}
 
 	provider := providers.GetTMDB()
 	if provider == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "TMDB provider not initialized"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("TMDB provider not initialized")})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	movieDetails, err := provider.GetMovieByID(ctx, tmdbID)
+	var lang string
+	if cfgp := mediaConfigForList("movie", listName); cfgp != nil {
+		lang = cfgp.MetadataLanguage
+	}
+
+	movieDetails, err := metadata.TmdbMovieDetails(ctx, tmdbID, lang)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Msg("Failed to get movie details")
 		c.JSON(
 			http.StatusInternalServerError,
-			gin.H{"error": "Failed to get movie details: " + err.Error()},
+			gin.H{"error": t("Failed to get movie details: ") + err.Error()},
 		)
 
 		return
 	}
 
-	// Check if movie already exists in dbmovies
+	// Check if movie already exists in dbmovies: by TMDB id, or by its IMDb
+	// id (a row imported from a list may not have its TMDB id yet).
 	movieExists := database.GetrowsN[int](
 		false,
 		1,
-		"SELECT id FROM dbmovies WHERE moviedb_id = ?",
-		&tmdbID,
+		"SELECT id FROM dbmovies WHERE moviedb_id = ? OR (? != '' AND imdb_id = ?) ORDER BY id LIMIT 1",
+		&tmdbID, &movieDetails.IMDbID, &movieDetails.IMDbID,
 	)
 
 	var dbMovieID int
@@ -1262,13 +1269,16 @@ func AddMovieToDatabase(c *gin.Context) {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert movie")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to add movie to database: " + err.Error()},
+				gin.H{"error": t("Failed to add movie to database: ") + err.Error()},
 			)
 
 			return
 		}
 
 		dbMovieID = int(newID)
+		newMovie := uint(newID) //nolint:gosec // a rowid
+		metadata.SaveMovieCollection(newMovie, movieDetails.Collection)
+		metadata.SaveMovieExtras(newMovie, movieDetails)
 	} else {
 		dbMovieID = movieExists[0]
 	}
@@ -1284,7 +1294,7 @@ func AddMovieToDatabase(c *gin.Context) {
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
 			http.StatusConflict,
-			gin.H{"error": "Movie already exists in list '" + listName + "'"},
+			gin.H{"error": tf("Movie already exists in list '%s'", listName)},
 		)
 
 		return
@@ -1304,13 +1314,13 @@ func AddMovieToDatabase(c *gin.Context) {
 		// constraint violation, disk full) was reported to the user as
 		// success even though the movie was never actually linked into the
 		// requested list.
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add movie: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("movie", listName, uint(dbMovieID), len(movieExists) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Movie added successfully to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Movie added successfully to ") + listName})
 }
 
 // AddSeriesToDatabase handles adding a series to the database.
@@ -1319,7 +1329,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 	listName := c.PostForm("series_list")
 
 	if tmdbIDStr == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "TMDB ID and list name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("TMDB ID and list name are required")})
 		return
 	}
 
@@ -1334,25 +1344,30 @@ func AddSeriesToDatabase(c *gin.Context) {
 
 	tmdbID, err := strconv.Atoi(tmdbIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid TMDB ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Invalid TMDB ID")})
 		return
 	}
 
 	provider := providers.GetTMDB()
 	if provider == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "TMDB provider not initialized"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("TMDB provider not initialized")})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	series, err := provider.GetSeriesByID(ctx, tmdbID)
+	var lang string
+	if cfgp, _ := findSeriesCfgpAndListID(listName); cfgp != nil {
+		lang = cfgp.MetadataLanguage
+	}
+
+	series, err := provider.WithFallbackLanguage(lang).GetSeriesByID(ctx, tmdbID)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Msg("Failed to get series details")
 		c.JSON(
 			http.StatusInternalServerError,
-			gin.H{"error": "Failed to get series details: " + err.Error()},
+			gin.H{"error": t("Failed to get series details: ") + err.Error()},
 		)
 
 		return
@@ -1360,7 +1375,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 
 	tvdbID := series.TVDbID
 	if tvdbID == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "TVDB ID not found for this series"})
+		c.JSON(http.StatusNotFound, gin.H{"error": t("TVDB ID not found for this series")})
 		return
 	}
 
@@ -1412,7 +1427,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert series")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to add series to database: " + err.Error()},
+				gin.H{"error": t("Failed to add series to database: ") + err.Error()},
 			)
 
 			return
@@ -1434,7 +1449,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
 			http.StatusConflict,
-			gin.H{"error": "Series already exists in list '" + listName + "'"},
+			gin.H{"error": tf("Series already exists in list '%s'", listName)},
 		)
 
 		return
@@ -1466,7 +1481,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 		// ExecN (the fire-and-forget variant previously used here) has no
 		// return value - a write failure here was reported to the user as
 		// success even though the series was never linked into the list.
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add series: ") + err.Error()})
 		return
 	}
 
@@ -1499,7 +1514,7 @@ func AddSeriesToDatabase(c *gin.Context) {
 
 	notifyManualAdd("serie", listName, uint(dbSeriesID), len(seriesExists) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Series added successfully to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Series added successfully to ") + listName})
 }
 
 // findSeriesCfgpAndListID resolves a series list name to its media config and list index.
@@ -1524,7 +1539,7 @@ func AddMovieManual(c *gin.Context) {
 	if title == "" || listName == "" || qualityProfile == "" {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "Title, list name, and quality profile are required"},
+			gin.H{"error": t("Title, list name, and quality profile are required")},
 		)
 
 		return
@@ -1569,7 +1584,7 @@ func AddMovieManual(c *gin.Context) {
 		inList := database.GetrowsN[int](false, 1,
 			"SELECT count() FROM movies WHERE dbmovie_id = ? AND listname = ? COLLATE NOCASE", &dbMovieID, &listName)
 		if len(inList) > 0 && inList[0] > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "Movie already exists in list '" + listName + "'"})
+			c.JSON(http.StatusConflict, gin.H{"error": tf("Movie already exists in list '%s'", listName)})
 			return
 		}
 	} else {
@@ -1609,7 +1624,7 @@ func AddMovieManual(c *gin.Context) {
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual movie")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie to database"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add movie to database")})
 			return
 		}
 
@@ -1624,13 +1639,13 @@ func AddMovieManual(c *gin.Context) {
 		&nowTime,
 		&nowTime,
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add movie: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add movie: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("movie", listName, uint(dbMovieID), len(existing) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Movie added manually to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Movie added manually to ") + listName})
 }
 
 // Lookups of AddSeriesManual for an existing dbseries row.
@@ -1650,7 +1665,7 @@ func AddSeriesManual(c *gin.Context) {
 	overview := c.PostForm("manualSeries_overview")
 
 	if seriename == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Series name and list name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Series name and list name are required")})
 		return
 	}
 
@@ -1690,7 +1705,7 @@ func AddSeriesManual(c *gin.Context) {
 		inList := database.GetrowsN[int](false, 1,
 			"SELECT count() FROM series WHERE dbserie_id = ? AND listname = ? COLLATE NOCASE", &dbSerieID, &listName)
 		if len(inList) > 0 && inList[0] > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "Series already exists in list '" + listName + "'"})
+			c.JSON(http.StatusConflict, gin.H{"error": tf("Series already exists in list '%s'", listName)})
 			return
 		}
 	} else {
@@ -1727,7 +1742,7 @@ func AddSeriesManual(c *gin.Context) {
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual series")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series to database"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add series to database")})
 			return
 		}
 
@@ -1750,13 +1765,13 @@ func AddSeriesManual(c *gin.Context) {
 		&nowTime,
 		&nowTime,
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add series: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add series: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("serie", listName, uint(dbSerieID), len(existing) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Series added manually to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Series added manually to ") + listName})
 }
 
 // Helper functions
@@ -1836,12 +1851,12 @@ document.getElementById('movieSearchForm').addEventListener('submit', function(e
 	const qualityProfile = document.getElementById('movie_quality_profile').value;
 
 	if (!title || !list || !qualityProfile) {
-		alert('Please fill in all fields including quality profile');
+		alert(_t('Please fill in all fields including quality profile'));
 		return;
 	}
 
 	const resultsDiv = document.getElementById('movieSearchResults');
-	resultsDiv.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Searching movies...</p></div>';
+	resultsDiv.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">' + _t('Loading...') + '</span></div><p class="mt-2">' + _t('Searching movies...') + '</p></div>';
 
 	fetch('/api/admin/search/movies', {
 		method: 'POST',
@@ -1863,14 +1878,14 @@ document.getElementById('movieSearchForm').addEventListener('submit', function(e
 				const selectedQualityProfile = document.getElementById('movie_quality_profile').value;
 
 				if (!selectedList || !selectedQualityProfile) {
-					alert('Please select both a list and quality profile');
+					alert(_t('Please select both a list and quality profile'));
 					return;
 				}
 
 				// confirmAction calls the callback without a receiver, so "this"
 				// is not the button there.
 				const addBtn = this;
-				confirmAction('Please confirm', 'Add "' + metaSearchEscape(movieTitle) + '" to list "' + metaSearchEscape(selectedList) + '" with quality profile "' + metaSearchEscape(selectedQualityProfile) + '"?', function() {
+				confirmAction(_t('Please confirm'), _t('Add "') + metaSearchEscape(movieTitle) + '" to list "' + metaSearchEscape(selectedList) + '" with quality profile "' + metaSearchEscape(selectedQualityProfile) + '"?', function() {
 					addMovieToDatabase(tmdbId, selectedList, selectedQualityProfile, addBtn);
 				})
 			});
@@ -1878,13 +1893,13 @@ document.getElementById('movieSearchForm').addEventListener('submit', function(e
 	})
 	.catch(error => {
 		console.error('Error:', error);
-		resultsDiv.innerHTML = '<div class="alert alert-danger">Error searching for movies. Please try again.</div>';
+		resultsDiv.innerHTML = '<div class="alert alert-danger">' + _t('Error searching for movies. Please try again.') + '</div>';
 	});
 });
 
 function addMovieToDatabase(tmdbId, listName, qualityProfile, button) {
 	const originalText = button.innerHTML;
-	button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+	button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 	button.disabled = true;
 
 	fetch('/api/admin/add/movie', {
@@ -1898,7 +1913,7 @@ function addMovieToDatabase(tmdbId, listName, qualityProfile, button) {
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			button.innerHTML = '<i class="fas fa-check me-1"></i>Added!';
+			button.innerHTML = '<i class="fas fa-check me-1"></i>' + _t('Added!');
 			button.classList.remove('btn-success');
 			button.classList.add('btn-outline-success');
 			setTimeout(() => {
@@ -1908,14 +1923,14 @@ function addMovieToDatabase(tmdbId, listName, qualityProfile, button) {
 				button.classList.remove('btn-outline-success');
 			}, 2000);
 		} else {
-			alert('Error: ' + (data.error || 'Failed to add movie'));
+			alert(_t('Error: ') + (data.error || _t('Failed to add movie')));
 			button.innerHTML = originalText;
 			button.disabled = false;
 		}
 	})
 	.catch(error => {
 		console.error('Error:', error);
-		alert('Error adding movie to database');
+		alert(_t('Error adding movie to database'));
 		button.innerHTML = originalText;
 		button.disabled = false;
 	});
@@ -1929,7 +1944,7 @@ document.getElementById('movieManualForm').addEventListener('submit', function(e
 
 	const submitBtn = this.querySelector('button[type="submit"]');
 	const originalText = submitBtn.innerHTML;
-	submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Adding...';
+	submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + _t('Adding...');
 	submitBtn.disabled = true;
 
 	fetch('/api/admin/add/movie/manual', {
@@ -1943,22 +1958,22 @@ document.getElementById('movieManualForm').addEventListener('submit', function(e
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			alert('Success: ' + data.success);
+			alert(_t('Success: ') + data.success);
 			this.reset();
-			submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>Added!';
+			submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>' + _t('Added!');
 			setTimeout(() => {
 				submitBtn.innerHTML = originalText;
 				submitBtn.disabled = false;
 			}, 2000);
 		} else {
-			alert('Error: ' + (data.error || 'Failed to add movie'));
+			alert(_t('Error: ') + (data.error || _t('Failed to add movie')));
 			submitBtn.innerHTML = originalText;
 			submitBtn.disabled = false;
 		}
 	})
 	.catch(error => {
 		console.error('Error:', error);
-		alert('Error adding movie manually');
+		alert(_t('Error adding movie manually'));
 		submitBtn.innerHTML = originalText;
 		submitBtn.disabled = false;
 	});
@@ -1982,12 +1997,12 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 	const list = document.getElementById('series_list').value;
 
 	if (!title || !list) {
-		alert('Please fill in all fields');
+		alert(_t('Please fill in all fields'));
 		return;
 	}
 
 	const resultsDiv = document.getElementById('seriesSearchResults');
-	resultsDiv.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Searching series...</p></div>';
+	resultsDiv.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">' + _t('Loading...') + '</span></div><p class="mt-2">' + _t('Searching series...') + '</p></div>';
 
 	fetch('/api/admin/search/series', {
 		method: 'POST',
@@ -2009,7 +2024,7 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 				const selectedQualityProfile = document.getElementById('series_quality_profile').value;
 				const addBtn = this;
 
-				confirmAction('Please confirm', 'Add "' + metaSearchEscape(seriesTitle) + '" to list "' + metaSearchEscape(selectedList) + '"?', function() {
+				confirmAction(_t('Please confirm'), _t('Add "') + metaSearchEscape(seriesTitle) + '" to list "' + metaSearchEscape(selectedList) + '"?', function() {
 					addSeriesToDatabase(tmdbId, selectedList, selectedQualityProfile, addBtn);
 				})
 			});
@@ -2017,13 +2032,13 @@ document.getElementById('seriesSearchForm').addEventListener('submit', function(
 	})
 	.catch(error => {
 		console.error('Error:', error);
-		resultsDiv.innerHTML = '<div class="alert alert-danger">Error searching for series. Please try again.</div>';
+		resultsDiv.innerHTML = '<div class="alert alert-danger">' + _t('Error searching for series. Please try again.') + '</div>';
 	});
 });
 
 function addSeriesToDatabase(tmdbId, listName, qualityProfile, button) {
 	const originalText = button.innerHTML;
-	button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+	button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 	button.disabled = true;
 
 	fetch('/api/admin/add/series', {
@@ -2037,7 +2052,7 @@ function addSeriesToDatabase(tmdbId, listName, qualityProfile, button) {
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			button.innerHTML = '<i class="fas fa-check me-1"></i>Added!';
+			button.innerHTML = '<i class="fas fa-check me-1"></i>' + _t('Added!');
 			button.classList.remove('btn-success');
 			button.classList.add('btn-outline-success');
 			setTimeout(() => {
@@ -2047,14 +2062,14 @@ function addSeriesToDatabase(tmdbId, listName, qualityProfile, button) {
 				button.classList.remove('btn-outline-success');
 			}, 2000);
 		} else {
-			alert('Error: ' + (data.error || 'Failed to add series'));
+			alert(_t('Error: ') + (data.error || _t('Failed to add series')));
 			button.innerHTML = originalText;
 			button.disabled = false;
 		}
 	})
 	.catch(error => {
 		console.error('Error:', error);
-		alert('Error adding series to database');
+		alert(_t('Error adding series to database'));
 		button.innerHTML = originalText;
 		button.disabled = false;
 	});
@@ -2068,7 +2083,7 @@ document.getElementById('seriesManualForm').addEventListener('submit', function(
 
 	const submitBtn = this.querySelector('button[type="submit"]');
 	const originalText = submitBtn.innerHTML;
-	submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Adding...';
+	submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + _t('Adding...');
 	submitBtn.disabled = true;
 
 	fetch('/api/admin/add/series/manual', {
@@ -2082,22 +2097,22 @@ document.getElementById('seriesManualForm').addEventListener('submit', function(
 	.then(response => response.json())
 	.then(data => {
 		if (data.success) {
-			alert('Success: ' + data.success);
+			alert(_t('Success: ') + data.success);
 			this.reset();
-			submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>Added!';
+			submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>' + _t('Added!');
 			setTimeout(() => {
 				submitBtn.innerHTML = originalText;
 				submitBtn.disabled = false;
 			}, 2000);
 		} else {
-			alert('Error: ' + (data.error || 'Failed to add series'));
+			alert(_t('Error: ') + (data.error || _t('Failed to add series')));
 			submitBtn.innerHTML = originalText;
 			submitBtn.disabled = false;
 		}
 	})
 	.catch(error => {
 		console.error('Error:', error);
-		alert('Error adding series manually');
+		alert(_t('Error adding series manually'));
 		submitBtn.innerHTML = originalText;
 		submitBtn.disabled = false;
 	});
@@ -2120,5 +2135,5 @@ func mediaConfigQualityScript(configID, qualityID string) gomponents.Node {
 		return nil
 	})
 
-	return qualitySelectScript(byConfig, map[string]string{configID: qualityID}, "Select a media config first")
+	return qualitySelectScript(byConfig, map[string]string{configID: qualityID}, t("Select a media config first"))
 }

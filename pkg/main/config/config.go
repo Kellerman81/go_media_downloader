@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,27 +24,13 @@ const (
 )
 
 var (
-	Configfile       = "./config/config.toml"
-	RandomizerSource = rand.NewSource(time.Now().UnixNano())
-	mu               = sync.RWMutex{}
+	Configfile = "./config/config.toml"
+	mu         = sync.RWMutex{}
 )
 
 // GetConfigDir returns the directory path where configuration files are stored.
 func GetConfigDir() string {
 	return "./config"
-}
-
-// Slepping sleeps for a random or fixed number of seconds. If random is true,
-// it will sleep for a random number of seconds between 1 and seconds. If random
-// is false, it will sleep for the specified number of seconds. It uses the
-// rand and time packages to generate the random sleep duration and sleep.
-func Slepping(random bool, seconds int) {
-	if random {
-		n := rand.New(RandomizerSource).Intn(seconds) + 1 // n will be between 0 and 10
-		time.Sleep(time.Duration(n) * time.Second)
-	} else {
-		time.Sleep(time.Duration(seconds) * time.Second)
-	}
 }
 
 // LoadCfgDB loads the application configuration from a database file.
@@ -96,6 +81,13 @@ func Loadallsettings(_ bool) error {
 	if err != nil {
 		fmt.Println(err) //nolint:forbidigo // logger not initialized yet during config loading
 		return err
+	}
+
+	// metadata_language once allowed names ("German"); the file gets codes.
+	if normalizeMetadataLanguages(defaultConfig) {
+		if err := rewriteConfigFile(defaultConfig); err != nil {
+			fmt.Println("Config warning: rewriting metadata_language as codes:", err) //nolint:forbidigo // logger may not be initialized yet
+		}
 	}
 
 	snapshot, err := buildConfigSnapshot(defaultConfig)
@@ -175,6 +167,7 @@ func setupMediaTypeConfig(
 	mediaConfig.CfgScheduler = resolveRef(refs, snapshot.Scheduler, "scheduler", mediaConfig.TemplateScheduler, owner)
 	mediaConfig.NamePrefix = owner
 	mediaConfig.IsType = isMediaType
+	mediaConfig.MetadataLanguage = LanguageCode(mediaConfig.MetadataLanguage)
 
 	// Setup Lists maps and related fields
 	mediaConfig.ListsMap = make(map[string]*MediaListsConfig, len(mediaConfig.Lists))
@@ -886,6 +879,20 @@ func WriteCfg() error {
 	}
 
 	return nil
+}
+
+// rewriteConfigFile writes cfg to the config file after a backup of it.
+func rewriteConfigFile(cfg *MainConfig) error {
+	if _, err := BackupConfig(); err != nil {
+		return err
+	}
+
+	cnt, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	return writeConfigFile(cnt)
 }
 
 // BackupConfig copies the current config.toml to ./backup/ with a timestamp

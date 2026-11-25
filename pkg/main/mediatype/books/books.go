@@ -11,6 +11,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/importfeed"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype/mtstrings"
@@ -52,6 +53,7 @@ var (
 		"DBRemoveUnmatched":        "delete from book_file_unmatcheds where (last_checked < datetime('now','-'||?||' hours') and last_checked is not null)",
 		"DBCacheUnmatched":         "select filepath from book_file_unmatcheds where (last_checked > datetime('now','-'||?||' hours') or last_checked is null)",
 		"DBCountFilesLocation":     "select count() from book_files where location = ?",
+		"TableUnmatched":           "book_file_unmatcheds",
 		"DBCountUnmatchedPath":     "select count() from book_file_unmatcheds where filepath = ?",
 		"DBCountDBTitlesDBID":      "select count() from (select distinct title, slug from dbbook_titles where dbbook_id = ? and title != '')",
 		"DBDistinctDBTitlesDBID":   "select distinct title, slug, dbbook_id from dbbook_titles where dbbook_id = ? and title != ''",
@@ -167,7 +169,7 @@ func (h *handler) GetDBIDsFull(
 	m *database.ParseInfo,
 	cfgp *config.MediaTypeConfig,
 	allowSearchTitle bool,
-	_ bool,
+	addFound bool,
 ) error {
 	// Handle ISBN lookup
 	if m.ISBN != "" {
@@ -202,6 +204,13 @@ func (h *handler) GetDBIDsFull(
 		if m.DbbookID == 0 {
 			m.FindDbbookByTitle()
 		}
+
+		// An import with add_found adds the book the file names.
+		if m.DbbookID == 0 && addFound {
+			if listid := addFoundListID(cfgp); listid != -1 {
+				m.DbbookID = importfeed.AddFoundBook(context.Background(), m.Title, m.Artist, cfgp, listid)
+			}
+		}
 	}
 
 	if m.DbbookID == 0 {
@@ -219,6 +228,18 @@ func (h *handler) GetDBIDsFull(
 	}
 
 	return h.findInLists(m, cfgp)
+}
+
+// addFoundListID is the list of the group's import with add_found that
+// found books go to; -1 without one.
+func addFoundListID(cfgp *config.MediaTypeConfig) int {
+	for i := range cfgp.DataImport {
+		if cfgp.DataImport[i].AddFound && cfgp.DataImport[i].AddFoundList != "" {
+			return cfgp.GetMediaListsEntryListID(cfgp.DataImport[i].AddFoundList)
+		}
+	}
+
+	return -1
 }
 
 // findInLists attempts to locate a book in configured media lists by its database ID.

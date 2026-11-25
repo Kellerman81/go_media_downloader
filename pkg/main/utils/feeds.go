@@ -423,7 +423,7 @@ func (d *feedResults) processTmdbSeriesResults(
 // gettmdbmoviediscover retrieves a list of movies from The Movie Database (TMDb) based on the specified configuration.
 // It checks the database for existing movies and adds new movies to the `d.Movies` slice if they are allowed to be imported.
 // The function returns an error if there is a problem retrieving the movie list from TMDb.
-func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) error {
+func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig, lang string) error {
 	if len(cfglist.CfgList.TmdbDiscover) == 0 {
 		return nil
 	}
@@ -463,7 +463,7 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 		allowed bool
 	)
 
-	tmdbp := providers.GetTMDB()
+	tmdbp := providers.GetTMDB().WithFallbackLanguage(lang)
 	tmdbLimiter := tmdbp.GetRateLimiter()
 
 	pages := cfglist.CfgList.GetTmdbPages()
@@ -544,14 +544,14 @@ func (d *feedResults) gettmdbmoviediscover(cfglist *config.MediaListsConfig) err
 
 // gettmdbshowdiscover retrieves a list of TV shows from The Movie Database (TMDb) based on the configuration settings in the provided MediaListsConfig.
 // It iterates through the TmdbDiscover configuration, fetching the TV show details from TMDb and adding them to the d.Series slice if they are not already in the database.
-func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig) error {
+func (d *feedResults) gettmdbshowdiscover(cfglist *config.MediaListsConfig, lang string) error {
 	if len(cfglist.CfgList.TmdbDiscover) == 0 {
 		return nil
 	}
 
 	var imdbid string
 
-	tmdbp := providers.GetTMDB()
+	tmdbp := providers.GetTMDB().WithFallbackLanguage(lang)
 	tmdbLimiter := tmdbp.GetRateLimiter()
 
 	pages := cfglist.CfgList.GetTmdbPages()
@@ -1212,9 +1212,9 @@ func Feeds(
 	case "traktserietrending":
 		return d, d.gettraktserielist(2, list)
 	case "tmdbmoviediscover":
-		return d, d.gettmdbmoviediscover(list)
+		return d, d.gettmdbmoviediscover(list, cfgp.MetadataLanguage)
 	case "tmdbshowdiscover":
-		return d, d.gettmdbshowdiscover(list)
+		return d, d.gettmdbshowdiscover(list, cfgp.MetadataLanguage)
 	case "tmdbmoviepopular":
 		return d, d.gettmdbmoviepopular(list)
 	case "tmdbseriepopular":

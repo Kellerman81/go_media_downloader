@@ -57,3 +57,58 @@ func TestUserFeaturesAndSettings(t *testing.T) {
 		t.Errorf("account named Admin: %v", err)
 	}
 }
+
+// TestUserActivities: plays, open reports and requests are counted per
+// account, whatever case its name was stored in.
+func TestUserActivities(t *testing.T) {
+	useUsersTestDB(t)
+
+	for _, h := range []PlayHistory{
+		{Username: "Bea", Kind: "movie", FileID: 1, Duration: 100, Position: 50},
+		{Username: "bea", Kind: "track", FileID: 2, Duration: 100, Position: 50},
+		{Username: "cid", Kind: "movie", FileID: 1, Duration: 100, Position: 50},
+	} {
+		if err := PlayProgress(&h, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := AddMediaReport(&MediaReport{Username: "bea", Kind: "movie", FileID: 1, Reason: "quality"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ExecN("insert into media_requests (username, kind, entry_id, title) values ('BEA', 'movie', 3, 'x'), ('bea', 'album', 4, 'y')")
+
+	got := UserActivities()
+	if got["bea"] != (UserActivity{Plays: 2, Reports: 1, Requests: 2}) || got["cid"] != (UserActivity{Plays: 1}) {
+		t.Errorf("activities: %+v", got)
+	}
+}
+
+// TestSetUserSetting: one value changes, the others stay; the built-in
+// admin's row is created on first use; a broken JSON starts over.
+func TestSetUserSetting(t *testing.T) {
+	useUsersTestDB(t)
+
+	if err := InsertUser(&User{Username: "bea", Role: RoleUser}, "password123"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SaveUserSettings("bea", `{"lp-vol":"0.5"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetUserSetting("bea", "theme", "dark"); err != nil || GetUserSettings("bea") != `{"lp-vol":"0.5","theme":"dark"}` {
+		t.Fatalf("settings of bea: %s, %v", GetUserSettings("bea"), err)
+	}
+
+	if err := SetUserSetting(SystemAdmin, "theme", "auto"); err != nil || GetUserSettings(SystemAdmin) != `{"theme":"auto"}` {
+		t.Fatalf("admin settings: %s, %v", GetUserSettings(SystemAdmin), err)
+	}
+
+	ExecN("update users set settings = 'broken' where username = 'bea'")
+
+	if err := SetUserSetting("bea", "theme", "light"); err != nil || GetUserSettings("bea") != `{"theme":"light"}` {
+		t.Errorf("after broken settings: %s, %v", GetUserSettings("bea"), err)
+	}
+}

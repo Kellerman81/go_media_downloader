@@ -393,6 +393,7 @@ func main() {
 	logger.Logtype("info", 0).Msg("Starting go_media_downloader")
 	logger.Logtype("info", 0).Msg("Version: " + version + " " + githash)
 	logger.Logtype("info", 0).Msg("Build Date: " + buildstamp)
+	api.SetBuildInfo(version, githash, buildstamp)
 	logger.Logtype("info", 0).Msg("Programmer: kellerman81")
 
 	if !strings.EqualFold(general.LogLevel, logger.StrDebug) {
@@ -564,6 +565,9 @@ func main() {
 	api.AddBooksRoutes(routerapi.Group("/books"))
 	api.AddAudiobooksRoutes(routerapi.Group("/audiobooks"))
 	api.AddMusicRoutes(routerapi.Group("/music"))
+	api.AddClientRoutes(router)
+	api.StartDLNAAnnouncements()
+	api.StartJellyfinWeb()
 
 	// 404 handler for unmatched routes
 	router.NoRoute(api.NotFoundPage)
@@ -632,7 +636,9 @@ func main() {
 
 	// Stop accepting requests first so no handler touches the workers or the
 	// DB while they are being torn down.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Short: open streams (the player, WebDAV) would use up all of it, and
+	// the whole shutdown has to fit Docker's stop timeout (10 s by default).
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Logtype("error", 0).Err(err).Msg("server shutdown")
 	}
@@ -645,7 +651,8 @@ func main() {
 
 	logger.Logtype("info", 0).Msg("Queues stopped")
 
-	config.Slepping(true, 5)
+	// A moment for cancelled jobs' last writes before the database closes.
+	time.Sleep(time.Second)
 	database.StopCache()
 	database.DBClose()
 	logger.Logtype("info", 0).Msg("Databases and cache stopped")

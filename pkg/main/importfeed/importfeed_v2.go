@@ -750,6 +750,7 @@ func JobImportAudiobooks(
 		} else {
 			metadata.AudiobookGetMetadata(ctx, cfgp, &dbaudiobook, true)
 			updateDbaudiobook(&dbaudiobook)
+			metadata.TranslateAudiobook(ctx, &dbaudiobook)
 		}
 	}
 

@@ -452,8 +452,21 @@ func parseGeneralConfig(c *gin.Context) (config.GeneralConfig, error) {
 		SetInt(&updatedConfig.PlayerMaxTranscodes, "PlayerMaxTranscodes").
 		SetInt(&updatedConfig.PlayerMaxBandwidth, "PlayerMaxBandwidth").
 		SetInt(&updatedConfig.PlayerSpeedTestMinutes, "PlayerSpeedTestMinutes").
+		SetString(&updatedConfig.UserMailNotification, "UserMailNotification").
+		SetString(&updatedConfig.UserPushNotification, "UserPushNotification").
 		SetString(&updatedConfig.PlayerHWAccel, "PlayerHWAccel").
 		SetString(&updatedConfig.PlayerHWDevice, "PlayerHWDevice").
+		SetBool(&updatedConfig.ServeWebDAV, "ServeWebDAV").
+		SetBool(&updatedConfig.ServeJellyfin, "ServeJellyfin").
+		SetBool(&updatedConfig.ServeSubsonic, "ServeSubsonic").
+		SetBool(&updatedConfig.ServeOPDS, "ServeOPDS").
+		SetBool(&updatedConfig.ServeDLNA, "ServeDLNA").
+		SetString(&updatedConfig.DLNAUser, "DLNAUser").
+		SetString(&updatedConfig.DLNAURL, "DLNAURL").
+		SetString(&updatedConfig.ServerName, "ServerName").
+		SetString(&updatedConfig.WatchedSyncUser, "WatchedSyncUser").
+		SetBool(&updatedConfig.WatchedSyncPlex, "WatchedSyncPlex").
+		SetString(&updatedConfig.WatchedSyncJellyfinUser, "WatchedSyncJellyfinUser").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceTrakt, "SerieAlternateTitleMetaSourceTrakt").
 		SetBool(&updatedConfig.SerieAlternateTitleMetaSourceImdb, "SerieAlternateTitleMetaSourceImdb").
 		SetBool(&updatedConfig.MovieAlternateTitleMetaSourceTrakt, "MovieAlternateTitleMetaSourceTrakt").

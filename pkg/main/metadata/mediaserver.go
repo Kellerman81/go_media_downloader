@@ -19,7 +19,9 @@ import (
 
 // The user's own Plex and Jellyfin servers as metadata sources. Neither
 // server can be searched by external ID, so each library is listed once and
-// kept as an index (IMDB/TMDb/TVDB ID -> item) for msIndexTTL.
+// kept as an index (IMDB/TMDb/TVDB ID -> item) for msIndexTTL. A failed
+// listing is kept for msIndexRetry: a refresh asks once per item, and
+// listing a big library again for each of them costs seconds every time.
 
 const (
 	sourcePlex     = "plex"
@@ -28,7 +30,8 @@ const (
 	msMovie = "movie"
 	msShow  = "show"
 
-	msIndexTTL = time.Hour
+	msIndexTTL   = time.Hour
+	msIndexRetry = 10 * time.Minute
 )
 
 var errMediaServerOff = errors.New("media server source is not enabled or not configured")
@@ -50,6 +53,7 @@ type msItem struct {
 
 type msIndex struct {
 	built  time.Time
+	err    error
 	byIMDb map[string]*msItem
 	byTMDb map[int]*msItem
 	byTVDb map[int]*msItem
@@ -141,8 +145,13 @@ func mediaServerIndex(ctx context.Context, server, kind string) (*msIndex, error
 	msIndexMu.Lock()
 	defer msIndexMu.Unlock()
 
-	if idx := msIndexes[key]; idx != nil && time.Since(idx.built) < msIndexTTL {
-		return idx, nil
+	if idx := msIndexes[key]; idx != nil {
+		switch age := time.Since(idx.built); {
+		case idx.err != nil && age < msIndexRetry:
+			return nil, idx.err
+		case idx.err == nil && age < msIndexTTL:
+			return idx, nil
+		}
 	}
 
 	g := config.GetSettingsGeneral()
@@ -166,7 +175,7 @@ func mediaServerIndex(ctx context.Context, server, kind string) (*msIndex, error
 	case sourcePlex:
 		items, err := providers.GetPlex().LibraryItems(ctx, g.PlexServerURL, g.PlexToken, kind)
 		if err != nil {
-			return nil, err
+			return nil, msIndexFailed(key, err)
 		}
 
 		for i := range items {
@@ -180,7 +189,7 @@ func mediaServerIndex(ctx context.Context, server, kind string) (*msIndex, error
 
 		items, err := providers.GetJellyfin().LibraryItems(ctx, g.JellyfinServerURL, g.JellyfinToken, itemType)
 		if err != nil {
-			return nil, err
+			return nil, msIndexFailed(key, err)
 		}
 
 		for i := range items {
@@ -191,6 +200,14 @@ func mediaServerIndex(ctx context.Context, server, kind string) (*msIndex, error
 	msIndexes[key] = idx
 
 	return idx, nil
+}
+
+// msIndexFailed keeps a failed listing so it isn't repeated right away.
+// Called with msIndexMu held.
+func msIndexFailed(key string, err error) error {
+	msIndexes[key] = &msIndex{built: time.Now(), err: err}
+
+	return err
 }
 
 // mediaServerLookup finds an item by any of its IDs; nil if the server

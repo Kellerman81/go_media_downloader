@@ -24,6 +24,9 @@ type userAccess struct {
 	// App: the request comes from the desktop player (app mode, gmd_app
 	// cookie): only the end-user pages, compact layout.
 	App bool
+	// TV: a TV's browser (TV mode, gmd_tv cookie): app mode for the remote
+	// control.
+	TV bool
 }
 
 var adminAccess = &userAccess{Name: DefaultUsername, Role: database.RoleAdmin}
@@ -40,6 +43,7 @@ func accessOf(c *gin.Context) *userAccess {
 	}
 
 	acc.App = appMode(c)
+	acc.TV = tvMode(c)
 
 	return acc
 }
@@ -59,6 +63,9 @@ func (a *userAccess) CanRequest() bool { return a.Has(database.FeatureRequest) }
 
 // CanDownload: may download media files.
 func (a *userAccess) CanDownload() bool { return a.Has(database.FeatureDownload) }
+
+// CanUseApps: may log in from apps and devices.
+func (a *userAccess) CanUseApps() bool { return a.Has(database.FeatureApps) }
 
 // CanReport: may report files as wrong (requestdelete).
 func (a *userAccess) CanReport() bool { return a.Has(database.FeatureRequestDelete) }
@@ -184,10 +191,12 @@ func (a *userAccess) allowsEpisode(episodeID any) bool {
 var userPaths = []string{
 	"/api/admin/library", "/api/admin/library/grid", "/api/admin/library/item", "/api/admin/library/random",
 	"/api/admin/library/filters", "/api/admin/library/links", "/api/admin/library/playlist", "/api/admin/library/trailer",
-	"/api/admin/library/playall", "/api/admin/library/cover/", "/api/admin/library/thumb/", "/api/admin/library/play/",
+	"/api/admin/library/extras", "/api/admin/library/playlists", "/api/admin/library/playlists/",
+	"/api/admin/library/playall", "/api/admin/library/cover/", "/api/admin/library/thumb/", "/api/admin/library/artist-image/", "/api/admin/library/read/", "/api/admin/library/play/",
 	"/api/admin/library/download/", "/api/admin/library/download-entry/", // the handlers check the download feature
 	"/api/admin/calendar", "/api/admin/calendar/content", "/api/admin/calendar/events",
 	"/api/admin/calendar/day-events", "/api/admin/calendar/ical",
+	"/api/admin/help",
 }
 
 // requestPaths are the "Add media" page and its search and add calls.
@@ -251,11 +260,14 @@ func (a *userAccess) allowsPath(method, path string) bool {
 	switch {
 	case a.Admin():
 		return true
-	case path == "/api/admin/account", path == "/api/admin/account/settings":
-		return true // own password and settings
+	case path == "/api/admin/account", strings.HasPrefix(path, "/api/admin/account/"):
+		return true // own password, settings, messages and mail address
 	case method == http.MethodPost && (path == "/api/admin/library/play/progress" || path == "/api/admin/library/watched" ||
-		path == "/api/admin/library/watched-entry"):
+		path == "/api/admin/library/watched-entry" || path == "/api/admin/library/read/progress" ||
+		path == "/api/admin/library/continue-drop"):
 		return true
+	case method == http.MethodPost && strings.HasPrefix(path, "/api/admin/library/playlists/"):
+		return true // own playlists only: the handlers check the owner and the entries
 	case method == http.MethodPost && path == "/api/admin/library/report":
 		return a.CanReport()
 	case method == http.MethodGet && pathIn(path, userPaths):
@@ -327,7 +339,7 @@ func (a *userAccess) calendarEvents(events []calendarEvent) []calendarEvent {
 }
 
 // playLibKinds are the media kinds of the player's file kinds.
-var playLibKinds = map[string]string{"movie": "movie", "episode": "series", "track": "album", "audiobook": "audiobook"}
+var playLibKinds = map[string]string{"movie": "movie", "episode": "series", "track": "album", "audiobook": "audiobook", "book": "book"}
 
 // playFileFor is playFile for the request's :kind/:id, when the file
 // belongs to one of the account's media groups.

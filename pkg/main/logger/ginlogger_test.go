@@ -23,6 +23,8 @@ func TestRedactQuery(t *testing.T) {
 		{"r=s&i=1&t=search", "r=REDACTED&i=1&t=search"},
 		{"client=s&meta=x", "client=REDACTED&meta=x"},
 		{"X-Plex-Token=s&type=15", "X-Plex-Token=REDACTED&type=15"},
+		{"u=admin&p=secret&id=tr1", "u=admin&p=REDACTED&id=tr1"},
+		{"u=admin&t=26719a1196d2a940705a59634eb18eab&s=c19b2d&v=1.16.1", "u=admin&t=REDACTED&s=c19b2d&v=1.16.1"},
 	}
 
 	for _, tt := range tests {

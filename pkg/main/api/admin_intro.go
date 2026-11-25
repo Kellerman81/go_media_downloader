@@ -570,6 +570,8 @@ func dashboardGuide() gomponents.Node {
 				{"fas fa-clock", "Scheduler", "Recurring jobs - start, stop or run one now", "/api/admin/grid/scheduler"},
 				{"fas fa-chart-line", "Statistics", "Downloads, backlog, job runtimes, library quality", "/api/admin/statistics"},
 				{"fas fa-file-lines", "Logs", "Read the application log", "/api/admin/logviewer"},
+				{"fas fa-code-commit", "Changelog", "What changed on GitHub, and what this build contains", "/api/admin/changelog"},
+				{"fas fa-book", "API docs", "The REST API, to try out with your API key", "/swagger/"},
 			},
 		},
 		{
@@ -600,6 +602,8 @@ func dashboardGuide() gomponents.Node {
 			links = append(links, html.A(
 				html.Href(l.href),
 				html.Class("dash-guide-item"),
+				// The API docs are a page of their own, without the menu.
+				gomponents.If(strings.HasPrefix(l.href, "/swagger"), gomponents.Group([]gomponents.Node{html.Target("_blank"), html.Rel("noopener")})),
 				html.I(html.Class(l.icon+" mt-1 text-muted"), html.Style("width:1.1rem"), gomponents.Attr("aria-hidden", "true")),
 				html.Div(
 					html.Div(html.Class("fw-semibold small"), gomponents.Text(l.label)),

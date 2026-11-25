@@ -135,16 +135,21 @@ func coverOwnerIDs(kind string) (map[uint64]struct{}, bool) {
 	return set, true
 }
 
-// parseCoverName splits <kind>-<id>-<hash>.<ext> (cachedCoverWith).
+// parseCoverName splits <kind>-<id>.<ext> and its thumbnail
+// <kind>-<id>-t400.jpg (cachedCoverWith, coverThumb).
 func parseCoverName(name string) (string, uint64, bool) {
-	parts := strings.SplitN(strings.TrimSuffix(name, filepath.Ext(name)), "-", 3)
-	if len(parts) != 3 || filepath.Ext(name) == ".tmp" {
+	if filepath.Ext(name) == ".tmp" {
 		return "", 0, false
 	}
 
-	id, err := strconv.ParseUint(parts[1], 10, 64)
+	kind, id, ok := strings.Cut(strings.TrimSuffix(strings.TrimSuffix(name, filepath.Ext(name)), "-t400"), "-")
+	if !ok {
+		return "", 0, false
+	}
 
-	return parts[0], id, err == nil
+	n, err := strconv.ParseUint(id, 10, 64)
+
+	return kind, n, err == nil
 }
 
 func cleanupCovers(ctx context.Context, res *cacheCleanupResult) error {
@@ -199,7 +204,6 @@ func cleanupCovers(ctx context.Context, res *cacheCleanupResult) error {
 		}
 
 		if _, used := set[id]; !used && removeCached(path, info, res) {
-			coverIndex.remove(path)
 			res.Covers++
 		}
 	}

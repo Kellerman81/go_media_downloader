@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -49,7 +47,7 @@ func libGet(t *testing.T, h gin.HandlerFunc, query string) (int, string) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/?"+query, nil)
 	h(c)
 
-	return w.Code, w.Body.String()
+	return w.Code, plain(w.Body.String())
 }
 
 func TestLibraryGrid(t *testing.T) {
@@ -124,181 +122,6 @@ func TestLibraryGrid(t *testing.T) {
 
 	if _, out = libGet(t, HandleLibraryGrid, "group=nope"); !strings.Contains(out, "Unknown media group") {
 		t.Errorf("unknown group: %s", out)
-	}
-}
-
-func TestLibraryItemAndDelete(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	libraryTestData(t)
-
-	dir := t.TempDir()
-	keep, gone := filepath.Join(dir, "keep.mkv"), filepath.Join(dir, "gone.mkv")
-
-	for _, f := range []string{keep, gone} {
-		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for _, s := range []string{
-		"insert into movie_files (movie_id, dbmovie_id, location, quality_profile) values (2, 2, '" + gone + "', 'HD')",
-		"insert into movie_files (movie_id, dbmovie_id, location) values (4, 4, '" + keep + "')",
-		"insert into movie_histories (movie_id, dbmovie_id, title, indexer) values (2, 2, 'Movie.02.1080p', 'nzbgeek')",
-	} {
-		if err := database.ExecNErr(s); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	_, out := libGet(t, HandleLibraryItem, "type=movie&id=2")
-	for _, want := range []string{`data-title="Movie 02"`, gone, "Movie.02.1080p", "Delete entry and file",
-		`libAction(&#39;refresh&#39;, &#34;/api/movies/refresh/2&#34;)`,
-		`data-entry-table="movies" data-entry-id="2" data-db-table="dbmovies" data-db-id="2"`} {
-		if !strings.Contains(out, want) {
-			t.Errorf("item lacks %s", want)
-		}
-	}
-
-	_, out = libGet(t, HandleLibraryItem, "type=series&id=1")
-	if !strings.Contains(out, "S01E01") || !strings.Contains(out, "/api/series/search/id/1") ||
-		!strings.Contains(out, "/api/series/episodes/search/list/1") ||
-		!strings.Contains(out, `libEdit(&#34;serie_episodes&#34;, 1, &#34;dbserie_episodes&#34;, 1, &#34;S01E01&#34;)`) {
-		t.Errorf("series item:\n%.800s", out)
-	}
-
-	// The grid filter applies to the episodes; S01E01 is missing, not downloaded.
-	if _, out = libGet(t, HandleLibraryItem, "type=series&id=1&filter=have"); strings.Contains(out, "Pilot") ||
-		!strings.Contains(out, "Showing the 0 downloaded of 1 episodes") {
-		t.Errorf("series item, downloaded episodes:\n%.800s", out)
-	}
-
-	if _, out = libGet(t, HandleLibraryItem, "type=series&id=1&filter=missing"); !strings.Contains(out, "Pilot") {
-		t.Error("series item, missing episodes: no Pilot")
-	}
-
-	del := func(form url.Values) (int, string) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		asAdmin(c)
-		c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
-		c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		HandleLibraryDelete(c)
-
-		return w.Code, w.Body.String()
-	}
-
-	// With files: the file and the entry go, other entries' files stay.
-	if code, body := del(url.Values{"type": {"movie"}, "id": {"2"}, "files": {"1"}}); code != http.StatusOK || !strings.Contains(body, `"files":1`) {
-		t.Fatalf("delete with files: %d %s", code, body)
-	}
-
-	if _, err := os.Stat(gone); !os.IsNotExist(err) {
-		t.Error("file not deleted")
-	}
-
-	if _, err := os.Stat(keep); err != nil {
-		t.Error("other file touched")
-	}
-
-	if n := database.Getdatarow[int](false, "select count() from movie_histories where movie_id = 2"); n != 0 ||
-		database.Getdatarow[int](false, "select count() from movies where id = 2") != 0 {
-		t.Error("entry or history kept")
-	}
-
-	// Without files: the file on disk stays.
-	if code, _ := del(url.Values{"type": {"movie"}, "id": {"4"}}); code != http.StatusOK {
-		t.Fatal("delete entry failed")
-	}
-
-	if _, err := os.Stat(keep); err != nil {
-		t.Error("file deleted without files=1")
-	}
-
-	if code, _ := del(url.Values{"type": {"movie"}, "id": {"999"}}); code != http.StatusNotFound {
-		t.Error("unknown entry accepted")
-	}
-}
-
-func TestLibraryDeletePart(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	libraryTestData(t)
-
-	dir := t.TempDir()
-	ep, track := filepath.Join(dir, "ep.mkv"), filepath.Join(dir, "track.mp3")
-
-	for _, f := range []string{ep, track} {
-		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for _, s := range []string{
-		"insert into dbserie_episodes (id, dbserie_id, identifier, title, season, episode) values (2, 1, 'S01E02', 'Second', '1', '2')",
-		"insert into serie_episodes (id, serie_id, dbserie_id, dbserie_episode_id) values (2, 1, 1, 2)",
-		"insert into serie_episode_files (serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, location) values (1, 2, 1, 2, '" + ep + "')",
-		"insert into serie_episode_histories (serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, title) values (1, 2, 1, 2, 'S01E02.rel')",
-		"insert into album_files (id, location) values (7, '" + track + "')",
-	} {
-		if err := database.ExecNErr(s); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	_, out := libGet(t, HandleLibraryItem, "type=series&id=1")
-	if !strings.Contains(out, `libDeletePart(&#34;episode&#34;, &#34;series&#34;, 2, true, this)`) ||
-		!strings.Contains(out, `libDeletePart(&#34;episode&#34;, &#34;series&#34;, 1, false, this)`) ||
-		strings.Contains(out, `libDeletePart(&#34;episode&#34;, &#34;series&#34;, 1, true, this)`) {
-		t.Errorf("episode delete buttons:\n%.1500s", out)
-	}
-
-	del := func(form url.Values) (int, string) {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		asAdmin(c)
-		c.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
-		c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		HandleLibraryDeletePart(c)
-
-		return w.Code, w.Body.String()
-	}
-
-	// An episode with its file: rows and file gone, the other episode stays.
-	if code, body := del(url.Values{"part": {"episode"}, "type": {"series"}, "id": {"2"}, "files": {"1"}}); code != http.StatusOK ||
-		!strings.Contains(body, `"files":1`) {
-		t.Fatalf("delete episode: %d %s", code, body)
-	}
-
-	if _, err := os.Stat(ep); !os.IsNotExist(err) {
-		t.Error("episode file not deleted")
-	}
-
-	if database.Getdatarow[int](false, "select count() from serie_episodes where serie_id = 1") != 1 ||
-		database.Getdatarow[int](false, "select count() from serie_episode_histories") != 0 ||
-		database.Getdatarow[int](false, "select count() from serie_episode_files") != 0 {
-		t.Error("episode rows kept or wrong episode deleted")
-	}
-
-	// A track row without its file: the file on disk stays.
-	if code, _ := del(url.Values{"part": {"file"}, "type": {"album"}, "id": {"7"}}); code != http.StatusOK {
-		t.Fatal("delete track row failed")
-	}
-
-	if _, err := os.Stat(track); err != nil {
-		t.Error("track deleted without files=1")
-	}
-
-	if database.Getdatarow[int](false, "select count() from album_files where id = 7") != 0 {
-		t.Error("track row kept")
-	}
-
-	for _, form := range []url.Values{
-		{"part": {"file"}, "type": {"album"}, "id": {"7"}},
-		{"part": {"episode"}, "type": {"movie"}, "id": {"1"}},
-		{"part": {"entry"}, "type": {"series"}, "id": {"1"}},
-	} {
-		if code, _ := del(form); code != http.StatusNotFound {
-			t.Errorf("%v accepted", form)
-		}
 	}
 }
 
@@ -484,42 +307,6 @@ func TestLibraryFolderTitle(t *testing.T) {
 	}
 }
 
-func TestLibraryExtLinks(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	libraryTestData(t)
-
-	for _, q := range []string{
-		"update dbmovies set imdb_id = 'tt1375666', moviedb_id = 27205, trakt_id = 16662, url = 'https://inception.example/' where id = 1",
-		"update dbseries set thetvdb_id = 81189, trakt_id = 1388 where id = 1",
-		"update dbserie_episodes set scraper_url = 'https://site.example/video/1/Pilot' where id = 1",
-	} {
-		if err := database.ExecNErr(q); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	_, out := libGet(t, HandleLibraryItem, "type=movie&id=1")
-	for _, want := range []string{"https://www.imdb.com/title/tt1375666", "https://www.themoviedb.org/movie/27205",
-		"https://trakt.tv/movies/16662", `href="https://inception.example/"`, "fa-brands fa-imdb"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("movie lacks %s", want)
-		}
-	}
-
-	_, out = libGet(t, HandleLibraryItem, "type=series&id=1&filter=all")
-	for _, want := range []string{"https://thetvdb.com/dereferrer/series/81189", "https://trakt.tv/shows/1388",
-		`href="https://site.example/"`, `href="https://site.example/video/1/Pilot"`} {
-		if !strings.Contains(out, want) {
-			t.Errorf("series lacks %s", want)
-		}
-	}
-
-	// Movie 2 has no IDs: no links, no empty row.
-	if _, out = libGet(t, HandleLibraryItem, "type=movie&id=2"); strings.Contains(out, "imdb.com") || strings.Contains(out, "themoviedb.org") {
-		t.Error("links without IDs")
-	}
-}
-
 // TestCommonGenres: spellings that differ only in case are one genre, shown
 // capitalised when any spelling is, the most common first within the limit,
 // sorted by name.
@@ -556,7 +343,7 @@ func TestLibSearchGroups(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 
-	if w, _ := libSearchWhere("  |  "); w != "" {
+	if w, _ := libSearchWhere("  |  ", nil, ""); w != "" {
 		t.Fatalf("empty search: %q", w)
 	}
 }
@@ -600,7 +387,7 @@ func TestLibraryPlayAll(t *testing.T) {
 // audiobooks as heard, and the watched filters follow the account.
 func TestLibraryWatched(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	useMediaConfig(t, config.MediaConfig{Movies: mediaGroup("EN"), AudioBooks: mediaGroup("AB")})
+	useMediaConfig(t, config.MediaConfig{Movies: mediaGroup("EN"), AudioBooks: mediaGroup("AB"), Music: mediaGroup("MU")})
 
 	for _, q := range []string{
 		"insert into dbmovies (id, title) values (1, 'Seen'), (2, 'Almost'), (3, 'Not yet')",
@@ -665,5 +452,122 @@ func TestLibraryWatched(t *testing.T) {
 	rows, _ := libraryRows(group("audiobook_AB"), libQuery{User: "anna"})
 	if len(rows) != 1 || !rows[0].Watched || !strings.Contains(renderComponentToString(libStatusBadge(&rows[0])), "Heard") {
 		t.Errorf("audiobook: %+v", rows)
+	}
+
+	// An album is heard when every track was played.
+	for _, q := range []string{
+		"insert into dbalbums (id, title) values (1, 'Half'), (2, 'Whole')",
+		"insert into albums (id, dbalbum_id, listname) values (1, 1, 'MU List'), (2, 2, 'MU List')",
+		"insert into album_files (id, album_id, dbalbum_id, location) values (31, 1, 1, '/1a'), (32, 1, 1, '/1b'), (33, 2, 2, '/2a'), (34, 2, 2, '/2b')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, id := range []uint{31, 33, 34} {
+		if err := database.PlayProgress(&database.PlayHistory{Username: "anna", Kind: "track", FileID: id, Position: 200, Duration: 200}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for filter, want := range map[string]string{"watched": "Whole", "unwatched": "Half"} {
+		rows, _ := libraryRows(group("music_MU"), libQuery{User: "anna", Filter: filter})
+		if len(rows) != 1 || rows[0].Title != want {
+			t.Errorf("music %s: %+v", filter, rows)
+		}
+	}
+
+	rows, _ = libraryRows(group("music_MU"), libQuery{User: "anna", Filter: "watched"})
+	if len(rows) == 1 && !strings.Contains(renderComponentToString(libStatusBadge(&rows[0])), "Heard") {
+		t.Error("heard album without the Heard mark")
+	}
+}
+
+// TestLibrarySearchTranslations: the search finds entries by their
+// translations, in any language, and -word excludes by them too.
+func TestLibrarySearchTranslations(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	libraryTestData(t)
+
+	database.SetTranslation("dbmovie", 1, "title", "de", "Unterseeboot", "Movie 01")
+	database.SetTranslation("dbmovie", 2, "overview", "fr", "Un sous-marin", "Plot 2")
+	database.SetTranslation("dbserie", 1, "title", "de", "Die Küstenwache", "Site Show")
+	database.SetTranslation("dbserie_episode", 1, "title", "de", "Pilotfolge", "Pilot")
+
+	for _, tc := range []struct{ query, want, not string }{
+		{"group=movie_EN&filter=all&q=unterseeboot", "Movie 01", "Movie 02"},
+		{"group=movie_EN&filter=all&q=sous-marin", "Movie 02", "Movie 01"},
+		{"group=movie_EN&filter=all&q=movie+-unterseeboot", "Movie 02", "Movie 01"},
+		{"group=serie_X&filter=all&q=K%C3%BCstenwache", "Site Show", "Nothing found"},
+		{"group=serie_X&view=episodes&filter=all&q=pilotfolge", "Pilot", "Nothing found"},
+		{"group=serie_X&view=episodes&filter=all&q=K%C3%BCstenwache", "Pilot", "Nothing found"},
+	} {
+		if _, out := libGet(t, HandleLibraryGrid, tc.query); !strings.Contains(out, tc.want) || strings.Contains(out, tc.not) {
+			t.Errorf("%s: want %q, not %q:\n%.800s", tc.query, tc.want, tc.not, out)
+		}
+	}
+}
+
+// TestLibraryProgress: series show watched of their episodes under the
+// grid filter, audiobooks heard of their parts.
+func TestLibraryProgress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	useMediaConfig(t, config.MediaConfig{Series: mediaGroup("X"), AudioBooks: mediaGroup("AB"), Movies: mediaGroup("EN")})
+
+	for _, q := range []string{
+		"insert into dbseries (id, seriename) values (1, 'Show')",
+		"insert into series (id, dbserie_id, listname) values (1, 1, 'X List')",
+		"insert into dbserie_episodes (id, dbserie_id, identifier, season, episode) values (1, 1, 'S01E01', '1', '1'), (2, 1, 'S01E02', '1', '2'), (3, 1, 'S01E03', '1', '3')",
+		"insert into serie_episodes (id, serie_id, dbserie_id, dbserie_episode_id, missing) values (1, 1, 1, 1, 0), (2, 1, 1, 2, 0), (3, 1, 1, 3, 1)",
+		"insert into serie_episode_files (id, serie_id, serie_episode_id, dbserie_id, dbserie_episode_id, location) values (11, 1, 1, 1, 1, '/e1'), (12, 1, 2, 1, 2, '/e2')",
+		"insert into dbaudiobooks (id, title) values (1, 'Book')",
+		"insert into audiobooks (id, dbaudiobook_id, listname) values (1, 1, 'AB List')",
+		"insert into audiobook_files (id, audiobook_id, dbaudiobook_id, location) values (21, 1, 1, '/p1'), (22, 1, 1, '/p2')",
+		"insert into dbmovies (id, title) values (1, 'Film')",
+		"insert into movies (id, dbmovie_id, listname) values (1, 1, 'EN List')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, h := range []database.PlayHistory{
+		{Username: "anna", Kind: "episode", FileID: 11, Position: 1800, Duration: 1800},
+		{Username: "anna", Kind: "episode", FileID: 12, Position: 60, Duration: 1800}, // started only
+		{Username: "anna", Kind: "audiobook", FileID: 21, Position: 3600, Duration: 3600},
+		{Username: "bob", Kind: "audiobook", FileID: 22, Position: 3600, Duration: 3600},
+	} {
+		if err := database.PlayProgress(&h, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	group := func(name string) *libGroup {
+		for _, g := range libraryGroups() {
+			if g.Name == name {
+				return &g
+			}
+		}
+
+		t.Fatalf("no group %s", name)
+
+		return nil
+	}
+
+	for filter, want := range map[string]string{"have": "1 / 2", "all": "1 / 3", "missing": "0 / 1"} {
+		rows, _ := libraryRows(group("serie_X"), libQuery{User: "anna", Filter: filter})
+		if len(rows) != 1 || !strings.Contains(renderComponentToString(libProgressBadge(&rows[0])), want) {
+			t.Errorf("series %s: %+v, want %s", filter, rows, want)
+		}
+	}
+
+	rows, _ := libraryRows(group("audiobook_AB"), libQuery{User: "anna"})
+	if badge := renderComponentToString(libProgressBadge(&rows[0])); len(rows) != 1 || !strings.Contains(badge, "1 / 2") || !strings.Contains(badge, "fa-headphones") {
+		t.Errorf("audiobook: %s", badge)
+	}
+
+	if rows, _ := libraryRows(group("movie_EN"), libQuery{User: "anna"}); len(rows) != 1 || libProgressBadge(&rows[0]) != nil {
+		t.Errorf("movie got a progress badge: %+v", rows)
 	}
 }

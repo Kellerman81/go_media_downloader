@@ -201,12 +201,80 @@ type playMeta struct {
 	Album  string `json:"album"`
 	// Cover of the album, audiobook, movie or series the file belongs to.
 	Cover string `json:"cover,omitempty"`
+
+	// For the player's Info panel: the movie, series, album or audiobook,
+	// and for episodes the episode.
+	Year            string `json:"year,omitempty"`
+	Overview        string `json:"overview,omitempty"`
+	Rating          string `json:"rating,omitempty"`
+	EpisodeTitle    string `json:"episodeTitle,omitempty"`
+	Aired           string `json:"aired,omitempty"`
+	EpisodeOverview string `json:"episodeOverview,omitempty"`
+
+	// The Library entry the file belongs to, for the Info panel's link to
+	// its details.
+	EntryType string `json:"entryType,omitempty"`
+	EntryID   uint   `json:"entryId,omitempty"`
+}
+
+// playDetailQueries select the Info panel's details of a file: year,
+// overview, rating, and the episode's title, air date and overview.
+var playDetailQueries = map[string]string{
+	"movie": `SELECT COALESCE(f.movie_id, 0) AS entry_id, COALESCE(CAST(d.year AS TEXT), '') AS year, COALESCE(d.overview, '') AS overview,
+		COALESCE(CAST(NULLIF(d.vote_average, 0) AS TEXT), '') AS rating, '' AS ep_title, '' AS aired, '' AS ep_overview
+		FROM movie_files f INNER JOIN dbmovies d ON d.id = f.dbmovie_id WHERE f.id = ?`,
+	"episode": `SELECT COALESCE(f.serie_id, 0) AS entry_id, COALESCE(substr(d.firstaired, 1, 4), '') AS year, COALESCE(d.overview, '') AS overview,
+		COALESCE(d.rating, '') AS rating, COALESCE(de.title, '') AS ep_title, COALESCE(substr(de.first_aired, 1, 10), '') AS aired,
+		COALESCE(de.overview, '') AS ep_overview
+		FROM serie_episode_files f INNER JOIN dbseries d ON d.id = f.dbserie_id
+		LEFT JOIN dbserie_episodes de ON de.id = f.dbserie_episode_id WHERE f.id = ?`,
+	"track": `SELECT COALESCE(f.album_id, 0) AS entry_id, COALESCE(CAST(NULLIF(d.year, 0) AS TEXT), '') AS year, '' AS overview, '' AS rating,
+		'' AS ep_title, COALESCE(d.release_date, '') AS aired, '' AS ep_overview
+		FROM album_files f INNER JOIN dbalbums d ON d.id = f.dbalbum_id WHERE f.id = ?`,
+	"audiobook": `SELECT COALESCE(f.audiobook_id, 0) AS entry_id, COALESCE(CAST(NULLIF(d.year, 0) AS TEXT), '') AS year, COALESCE(d.description, '') AS overview,
+		'' AS rating, '' AS ep_title, '' AS aired, '' AS ep_overview
+		FROM audiobook_files f INNER JOIN dbaudiobooks d ON d.id = f.dbaudiobook_id WHERE f.id = ?`,
+}
+
+// playEntryTypes are the Library entry types of the player's file kinds.
+var playEntryTypes = map[string]string{"movie": "movie", "episode": "series", "track": "album", "audiobook": "audiobook"}
+
+// addPlayDetails fills the Info panel's details of a file into m.
+func addPlayDetails(m *playMeta, kind, id string) {
+	q, ok := playDetailQueries[kind]
+	if !ok {
+		return
+	}
+
+	rows := database.StructscanT[struct {
+		Year       string `db:"year"`
+		Overview   string `db:"overview"`
+		Rating     string `db:"rating"`
+		EpTitle    string `db:"ep_title"`
+		Aired      string `db:"aired"`
+		EpOverview string `db:"ep_overview"`
+		EntryID    uint   `db:"entry_id"`
+	}](false, 1, q, id)
+	if len(rows) == 0 {
+		return
+	}
+
+	r := rows[0]
+	m.Year, m.Overview, m.EpisodeTitle, m.Aired, m.EpisodeOverview = r.Year, r.Overview, r.EpTitle, r.Aired, r.EpOverview
+
+	if r.EntryID > 0 {
+		m.EntryType, m.EntryID = playEntryTypes[kind], r.EntryID
+	}
+
+	if v, err := strconv.ParseFloat(r.Rating, 64); err == nil && v > 0 {
+		m.Rating = strconv.FormatFloat(v, 'f', 1, 64)
+	}
 }
 
 // playMetaOf takes the metadata from the database and the file's own tags:
 // for music the tags name the track and its performer (compilations list
 // "Various Artists" for the album), the database the album.
-func playMetaOf(kind, id, path string, p playProbe) playMeta {
+func playMetaOf(kind, id, path, lang string, p playProbe) playMeta {
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	join := func(parts ...string) string {
 		out := make([]string, 0, len(parts))
@@ -224,6 +292,7 @@ func playMetaOf(kind, id, path string, p playProbe) playMeta {
 		B string `db:"b"`
 		C string `db:"c"`
 		D string `db:"d"` // id of the db* row with the cover
+		E string `db:"e"` // episode: the dbserie_episodes id
 	}
 
 	one := func(query string) row {
@@ -234,14 +303,18 @@ func playMetaOf(kind, id, path string, p playProbe) playMeta {
 		return row{}
 	}
 
-	var m playMeta
+	var (
+		m    playMeta
+		dbID string
+		epID string
+	)
 
 	switch kind {
 	case "track":
 		r := one(`SELECT COALESCE(t.title, '') AS a, COALESCE(d.title, '') AS b,
 			COALESCE((SELECT ar.name FROM dbalbum_artists daa INNER JOIN dbartists ar ON ar.id = daa.dbartist_id
 				WHERE daa.dbalbum_id = f.dbalbum_id ORDER BY daa.position LIMIT 1), '') AS c,
-			COALESCE(CAST(f.dbalbum_id AS TEXT), '') AS d
+			COALESCE(CAST(f.dbalbum_id AS TEXT), '') AS d, '' AS e
 			FROM album_files f LEFT JOIN dbtracks t ON t.id = f.dbtrack_id LEFT JOIN dbalbums d ON d.id = f.dbalbum_id WHERE f.id = ?`)
 		m.Title = cmp.Or(p.Tags["title"], r.A, stem)
 		m.Artist = cmp.Or(p.Tags["artist"], r.C, p.Tags["album_artist"])
@@ -252,33 +325,39 @@ func playMetaOf(kind, id, path string, p playProbe) playMeta {
 		r := one(`SELECT COALESCE(d.title, '') AS a,
 			COALESCE((SELECT au.name FROM dbaudiobook_authors daa INNER JOIN dbauthors au ON au.id = daa.dbauthor_id
 				WHERE daa.dbaudiobook_id = f.dbaudiobook_id ORDER BY daa.position LIMIT 1), '') AS b, '' AS c,
-			COALESCE(CAST(f.dbaudiobook_id AS TEXT), '') AS d
+			COALESCE(CAST(f.dbaudiobook_id AS TEXT), '') AS d, '' AS e
 			FROM audiobook_files f LEFT JOIN dbaudiobooks d ON d.id = f.dbaudiobook_id WHERE f.id = ?`)
 		m.Title = cmp.Or(p.Tags["title"], stem)
 		m.Artist = cmp.Or(r.B, p.Tags["artist"], p.Tags["album_artist"])
 		m.Album = cmp.Or(r.A, p.Tags["album"])
 		m.Sub = join(m.Artist, m.Album)
 		m.Cover = playCover("audiobook", r.D)
+		dbID = r.D
 	case "movie":
 		r := one(`SELECT COALESCE(d.title, '') AS a, COALESCE(CAST(d.year AS TEXT), '') AS b, COALESCE(d.genres, '') AS c,
-			COALESCE(CAST(f.dbmovie_id AS TEXT), '') AS d
+			COALESCE(CAST(f.dbmovie_id AS TEXT), '') AS d, '' AS e
 			FROM movie_files f LEFT JOIN dbmovies d ON d.id = f.dbmovie_id WHERE f.id = ?`)
 		m.Title = cmp.Or(r.A, stem)
 		m.Sub = join(r.B, strings.Join(strings.Fields(strings.ReplaceAll(r.C, ",", ", ")), " "))
 		m.Album = r.B
 		m.Cover = playCover("movie", r.D)
+		dbID = r.D
 	case "episode":
 		r := one(`SELECT COALESCE(ds.seriename, '') AS a, COALESCE(dse.title, '') AS b, COALESCE(dse.identifier, '') AS c,
-			COALESCE(CAST(f.dbserie_id AS TEXT), '') AS d
+			COALESCE(CAST(f.dbserie_id AS TEXT), '') AS d, COALESCE(CAST(f.dbserie_episode_id AS TEXT), '') AS e
 			FROM serie_episode_files f LEFT JOIN dbserie_episodes dse ON dse.id = f.dbserie_episode_id
 			LEFT JOIN dbseries ds ON ds.id = f.dbserie_id WHERE f.id = ?`)
 		m.Title = cmp.Or(r.B, r.C, stem)
 		m.Sub = join(r.A, r.C)
 		m.Artist, m.Album = r.A, r.C
 		m.Cover = playCover("series", r.D)
+		dbID, epID = r.D, r.E
 	default:
 		m.Title = stem
 	}
+
+	addPlayDetails(&m, kind, id)
+	translatePlayMeta(&m, kind, lang, dbID, epID)
 
 	return m
 }
@@ -364,13 +443,13 @@ type playChapter struct {
 func HandlePlayerInfo(c *gin.Context) {
 	path, pk, ok := playFileFor(c)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": t("file not found")})
 		return
 	}
 
 	p, err := probeMedia(c.Request.Context(), path)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "the file can't be read: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("the file can't be read: ") + err.Error()})
 		return
 	}
 
@@ -390,7 +469,7 @@ func HandlePlayerInfo(c *gin.Context) {
 		}
 	}
 
-	orig.Label = map[string]string{"direct": "Original", "remux": "Original (repackaged)", "transcode": "Original (converted)"}[mode] +
+	orig.Label = map[string]string{"direct": t("Original"), "remux": t("Original (repackaged)"), "transcode": t("Original (converted)")}[mode] +
 		kbpsLabel(orig.Kbps)
 	qualities := []playQuality{orig}
 
@@ -442,7 +521,7 @@ func HandlePlayerInfo(c *gin.Context) {
 		"resume": resume, "serverKbps": serverShareKbps(),
 		"duration": p.Duration, "mode": mode, "audio": audioOnly,
 		"qualities": qualities, "chapters": chapters, "name": filepath.Base(path),
-		"meta": playMetaOf(c.Param("kind"), c.Param("id"), path, p),
+		"meta": playMetaOf(c.Param("kind"), c.Param("id"), path, requestLanguage(c), p),
 	}
 
 	if !audioOnly {
@@ -784,6 +863,12 @@ func markHWFailed() {
 
 // HandlePlayerStream streams a file (/admin/library/play/:kind/:id/stream?q=&start=).
 func HandlePlayerStream(c *gin.Context) {
+	streamPlayFile(c, c.DefaultQuery("q", "original"))
+}
+
+// streamPlayFile streams the file of the kind and id parameters in a
+// quality ("original", a video profile, an audio bitrate).
+func streamPlayFile(c *gin.Context, quality string) {
 	path, pk, ok := playFileFor(c)
 	if !ok {
 		c.AbortWithStatus(http.StatusNotFound)
@@ -796,11 +881,9 @@ func HandlePlayerStream(c *gin.Context) {
 	}
 	defer done()
 
-	quality := c.DefaultQuery("q", "original")
-
 	p, err := probeMedia(c.Request.Context(), path)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "the file can't be read")
+		c.String(http.StatusInternalServerError, t("the file can't be read"))
 		return
 	}
 
@@ -832,7 +915,7 @@ func HandlePlayerStream(c *gin.Context) {
 	defer claimPlayerStream(c.Query("pid"), cancel)()
 
 	if !acquireTranscodeWait(ctx, transcodeWait) {
-		c.String(http.StatusServiceUnavailable, "too many streams are converted right now (player_max_transcodes)")
+		c.String(http.StatusServiceUnavailable, t("too many streams are converted right now (player_max_transcodes)"))
 		return
 	}
 	defer releaseTranscode()
@@ -1405,7 +1488,7 @@ func hlsPlaylistReady(dir string, done <-chan struct{}) bool {
 func HandlePlayerHLSStart(c *gin.Context) {
 	path, pk, ok := playFileFor(c)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": t("file not found")})
 		return
 	}
 
@@ -1414,23 +1497,15 @@ func HandlePlayerHLSStart(c *gin.Context) {
 	}
 
 	if streamBlocked(accessOf(c).Name, c.Param("kind"), c.Param("id")) {
-		c.JSON(http.StatusGone, gin.H{"error": "stopped by an admin"})
+		c.JSON(http.StatusGone, gin.H{"error": t("stopped by an admin")})
 		return
 	}
 
 	p, err := probeMedia(c.Request.Context(), path)
 	if err != nil || pk.Audio || p.VCodec == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no video to convert"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("no video to convert")})
 		return
 	}
-
-	ffmpeg, err := tags.ResolveFFmpeg()
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
-		return
-	}
-
-	hlsStartJanitor()
 
 	quality := c.DefaultQuery("q", "original")
 	start, _ := strconv.ParseFloat(c.Query("start"), 64)
@@ -1441,11 +1516,33 @@ func HandlePlayerHLSStart(c *gin.Context) {
 		return
 	}
 
-	shown, start := streamStart(c.Request.Context(), path, pk, p, quality, sel, start)
+	id, shown, status, err := startHLS(c.Request.Context(), accessOf(c).Name, c.Param("kind"), c.Param("id"), path, pk, p, quality, start, sel)
+	if err != nil {
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"session": id, "url": "/api/admin/library/play/hls/" + id + "/index.m3u8", "start": shown})
+}
+
+// startHLS starts an HLS conversion of a file for an account (kind and id
+// name the file for Now Playing and the admin's stop); it returns the
+// session, the position it really starts at, and the HTTP status of an
+// error.
+func startHLS(ctx context.Context, owner, kind, fileID, path string, pk playKind, p playProbe, quality string, start float64,
+	sel playSel,
+) (string, float64, int, error) {
+	ffmpeg, err := tags.ResolveFFmpeg()
+	if err != nil {
+		return "", 0, http.StatusServiceUnavailable, err
+	}
+
+	hlsStartJanitor()
+
+	shown, start := streamStart(ctx, path, pk, p, quality, sel, start)
 
 	if !acquireTranscode() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "too many streams are converted right now (player_max_transcodes)"})
-		return
+		return "", 0, http.StatusServiceUnavailable, errors.New(t("too many streams are converted right now (player_max_transcodes)"))
 	}
 
 	idBytes := make([]byte, 12)
@@ -1455,9 +1552,7 @@ func HandlePlayerHLSStart(c *gin.Context) {
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		releaseTranscode()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-
-		return
+		return "", 0, http.StatusInternalServerError, err
 	}
 
 	hw := playerHWAccel()
@@ -1469,9 +1564,8 @@ func HandlePlayerHLSStart(c *gin.Context) {
 		if err != nil {
 			releaseTranscode()
 			os.RemoveAll(dir)
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 
-			return
+			return "", 0, http.StatusBadRequest, err
 		}
 
 		if !usedHW {
@@ -1487,12 +1581,11 @@ func HandlePlayerHLSStart(c *gin.Context) {
 			cancel()
 			releaseTranscode()
 			os.RemoveAll(dir)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 
-			return
+			return "", 0, http.StatusInternalServerError, err
 		}
 
-		s := &hlsSession{owner: accessOf(c).Name, kind: c.Param("kind"), id: c.Param("id"), dir: dir, cancel: cancel, done: make(chan struct{})}
+		s := &hlsSession{owner: owner, kind: kind, id: fileID, dir: dir, cancel: cancel, done: make(chan struct{})}
 		s.last.Store(time.Now().Unix())
 
 		go func() {
@@ -1510,9 +1603,8 @@ func HandlePlayerHLSStart(c *gin.Context) {
 			go func() { <-s.done; releaseTranscode() }()
 
 			hlsSessions.Store(id, s)
-			c.JSON(http.StatusOK, gin.H{"session": id, "url": "/api/admin/library/play/hls/" + id + "/index.m3u8", "start": shown})
 
-			return
+			return id, shown, http.StatusOK, nil
 		}
 
 		cancel()
@@ -1521,9 +1613,8 @@ func HandlePlayerHLSStart(c *gin.Context) {
 		if hw == "none" {
 			releaseTranscode()
 			os.RemoveAll(dir)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "the conversion didn't start: " + strings.TrimSpace(stderr.messages())})
 
-			return
+			return "", 0, http.StatusInternalServerError, errors.New(t("the conversion didn't start: ") + strings.TrimSpace(stderr.messages()))
 		}
 
 		markHWFailed()
@@ -1537,8 +1628,6 @@ func HandlePlayerHLSStart(c *gin.Context) {
 	}
 }
 
-// HandlePlayerHLSFile serves the playlist and segments of a session
-// (/admin/library/play/hls/:sid/:file); file "stop" ends the session.
 // hlsOwnedBy reports whether the account of the request started the HLS
 // session (admins may use every session); unknown sessions count as owned,
 // stopping them does nothing.

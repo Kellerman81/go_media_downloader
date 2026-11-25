@@ -66,3 +66,57 @@ func TestMonitoredCollections(t *testing.T) {
 		t.Errorf("still monitored: %v", err)
 	}
 }
+
+// TestSearchExclusionCandidates: by title part or whole external id,
+// exact titles first, with whether the row is excluded in the group or in
+// one of its lists; ExclusionTitle tells a missing row apart.
+func TestSearchExclusionCandidates(t *testing.T) {
+	useUsersTestDB(t)
+
+	for _, q := range []string{
+		"insert into dbmovies (id, title, year, imdb_id) values (1, 'The Matrix Reloaded', 2003, 'tt0234215'), " +
+			"(2, 'The Matrix', 1999, 'tt0133093'), (3, 'Other', 2000, 'tt0000003'), (4, 'Matrix copy', 0, 'tt0133093')",
+		"insert into movies (dbmovie_id, listname) values (1, 'EN Watch')",
+		"insert into dbseries (id, seriename, firstaired, thetvdb_id) values (5, 'The Matrix Show', '2010-01-01', 77)",
+	} {
+		if err := ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := AddImportExclusion("movie", "movie_EN", new(uint(2)), "The Matrix"); err != nil {
+		t.Fatal(err)
+	}
+
+	got := SearchExclusionCandidates("movie", "movie_EN", []string{"en watch"}, "the matrix", 10)
+	if len(got) != 2 || got[0].DBID != 2 || !got[0].Excluded || got[0].Year != 1999 || got[0].Listed ||
+		got[1].DBID != 1 || got[1].Excluded || !got[1].Listed {
+		t.Errorf("by title: %+v", got)
+	}
+
+	// The copy shares the excluded IMDb ID; another group has no exclusion.
+	if got := SearchExclusionCandidates("movie", "movie_DE", nil, "tt0133093", 10); len(got) != 2 || got[0].Excluded || got[1].Excluded {
+		t.Errorf("by id in another group: %+v", got)
+	}
+
+	if got := SearchExclusionCandidates("movie", "movie_EN", nil, "tt0133093", 10); len(got) != 2 || !got[0].Excluded || !got[1].Excluded {
+		t.Errorf("by id: %+v", got)
+	}
+
+	if got := SearchExclusionCandidates("series", "serie_EN", nil, "77", 10); len(got) != 1 || got[0].Title != "The Matrix Show" ||
+		got[0].Year != 2010 || got[0].ExtID != "77" {
+		t.Errorf("series by TVDB ID: %+v", got)
+	}
+
+	if got := SearchExclusionCandidates("movie", "movie_EN", nil, "  ", 10); got != nil {
+		t.Errorf("empty search: %+v", got)
+	}
+
+	if title, ok := ExclusionTitle("movie", new(uint(3))); !ok || title != "Other" {
+		t.Errorf("title of 3: %q %v", title, ok)
+	}
+
+	if _, ok := ExclusionTitle("movie", new(uint(99))); ok {
+		t.Error("title of a missing row")
+	}
+}

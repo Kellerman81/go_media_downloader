@@ -1350,6 +1350,15 @@ const (
 	closeCancelGrace = 5 * time.Second
 )
 
+// shutdownWait and shutdownGrace are the same for process shutdown: short,
+// so the database is closed (and its WAL checkpointed) before Docker's stop
+// timeout (10 s by default) kills the process. Cancelled searches and
+// imports run again on their next schedule.
+const (
+	shutdownWait  = 2 * time.Second
+	shutdownGrace = 3 * time.Second
+)
+
 // StopIntervalSchedules cancels the ticker goroutines of all interval-based
 // schedules so they stop submitting jobs, permanently: nothing restarts them,
 // so this is for process shutdown only (see CloseWorkerPools). Cron schedules
@@ -1369,7 +1378,7 @@ func StopIntervalSchedules() {
 // interval schedules cannot be restarted once stopped here.
 func CloseWorkerPools() {
 	StopIntervalSchedules()
-	PauseWorkerPools(context.Background())
+	pauseWorkerPools(context.Background(), shutdownWait, shutdownGrace)
 }
 
 // PauseWorkerPools stops all worker pools for a maintenance cycle and waits
@@ -1388,6 +1397,12 @@ func CloseWorkerPools() {
 // BackupDatabase job) waited for itself until the timeout and then cancelled
 // every running job.
 func PauseWorkerPools(ctx context.Context) {
+	pauseWorkerPools(ctx, closeWaitTimeout, closeCancelGrace)
+}
+
+// pauseWorkerPools is PauseWorkerPools with the wait before cancelling and
+// the grace period after it.
+func pauseWorkerPools(ctx context.Context, wait, grace time.Duration) {
 	self, inJob := ctx.Value(jobCtxKey{}).(jobCtxInfo)
 
 	poolsMu.Lock()
@@ -1428,7 +1443,7 @@ func PauseWorkerPools(ctx context.Context) {
 	select {
 	case <-done:
 		return
-	case <-time.After(closeWaitTimeout):
+	case <-time.After(wait):
 	}
 
 	// Jobs still running after the wait: cancel their contexts and allow a
@@ -1445,7 +1460,7 @@ func PauseWorkerPools(ctx context.Context) {
 
 	select {
 	case <-done:
-	case <-time.After(closeCancelGrace):
+	case <-time.After(grace):
 		logger.Logtype("error", 0).
 			Msg("worker pools did not shut down cleanly within the timeout")
 	}

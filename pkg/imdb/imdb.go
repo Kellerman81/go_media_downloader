@@ -57,6 +57,10 @@ func (c *imdbConfig) Validate() error {
 	return nil
 }
 
+// datasetFiles are the unpacked IMDb dumps in the working directory, about
+// 4 GB together. They are only needed during a run.
+var datasetFiles = []string{"title.basics.tsv", "title.akas.tsv", "title.ratings.tsv"}
+
 const (
 	configfile = "./config/config.toml"
 	tempDBPath = "./databases/imdbtemp.db"
@@ -260,6 +264,13 @@ func run() error {
 		logger.Error("Error closing processor", "error", closeErr)
 		if runErr == nil {
 			runErr = closeErr
+		}
+	}
+
+	// Also after a failed run: the next run downloads fresh copies anyway.
+	for _, name := range datasetFiles {
+		if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+			logger.Warn("Failed to remove dataset file", "file", name, "error", err)
 		}
 	}
 	if runErr != nil {

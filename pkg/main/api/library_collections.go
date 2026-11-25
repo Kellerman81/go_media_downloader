@@ -28,6 +28,7 @@ const collectionCheckJob = "CheckMovieCollections"
 func init() {
 	utils.RegisterGlobalJob(collectionCheckJob, func(ctx context.Context) error {
 		checkMonitoredCollections(ctx)
+
 		return nil
 	})
 }
@@ -74,14 +75,31 @@ func movieCollectionOf(ctx context.Context, dbID *uint64, listname string) (*tmd
 
 	listid := slices.IndexFunc(cfgp.Lists, func(l config.MediaListsConfig) bool { return strings.EqualFold(l.Name, listname) })
 
-	tmdbID := database.Getdatarow[int](false, "SELECT COALESCE(moviedb_id, 0) FROM dbmovies WHERE id = ?", dbID)
-	if tmdbID == 0 {
+	row := database.StructscanT[struct {
+		TMDB int  `db:"moviedb_id"`
+		Coll *int `db:"collection_id"` // nil: not looked up yet
+	}](false, 1, "SELECT COALESCE(moviedb_id, 0) AS moviedb_id, collection_id FROM dbmovies WHERE id = ?", dbID)
+	if len(row) == 0 || row[0].TMDB == 0 {
 		return nil, cfgp, listid, nil
 	}
 
-	collID, _, err := p.GetMovieCollectionID(ctx, tmdbID)
-	if err != nil || collID == 0 {
-		return nil, cfgp, listid, err
+	// The import saves the collection; a movie from before that is looked
+	// up once here and saved.
+	var collID int
+	if row[0].Coll != nil {
+		collID = *row[0].Coll
+	} else {
+		id, name, err := p.GetMovieCollectionID(ctx, row[0].TMDB)
+		if err != nil {
+			return nil, cfgp, listid, err
+		}
+
+		collID = id
+		database.ExecN("UPDATE dbmovies SET collection_id = ?, collection_name = ? WHERE id = ?", &collID, &name, dbID)
+	}
+
+	if collID == 0 {
+		return nil, cfgp, listid, nil
 	}
 
 	coll, err := p.GetCollection(ctx, collID)
@@ -107,6 +125,8 @@ func HandleLibraryCollection(c *gin.Context) {
 		return
 	}
 
+	saveCollectionParts(coll)
+
 	parts := make([]collectionPart, 0, len(coll.Parts))
 	for _, p := range coll.Parts {
 		year, _, _ := strings.Cut(p.ReleaseDate, "-")
@@ -116,6 +136,22 @@ func HandleLibraryCollection(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"id": coll.ID, "name": coll.Name, "parts": parts,
 		"monitored": database.CollectionMonitored(coll.ID, c.Query("list"))})
+}
+
+// saveCollectionParts saves the collection of its movies in the database
+// that aren't looked up yet: one dialog fills in the whole film series.
+func saveCollectionParts(coll *tmdb.MovieCollection) {
+	if len(coll.Parts) == 0 {
+		return
+	}
+
+	args := []any{coll.ID, coll.Name}
+	for _, p := range coll.Parts {
+		args = append(args, p.ID)
+	}
+
+	database.ExecN("UPDATE dbmovies SET collection_id = ?, collection_name = ? WHERE collection_id IS NULL AND moviedb_id IN (?"+
+		strings.Repeat(", ?", len(coll.Parts)-1)+")", args...)
 }
 
 // collectionAdding keeps one background add per collection and list.

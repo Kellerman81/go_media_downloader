@@ -18,10 +18,15 @@ const (
 	appHome   = "/api/admin/library"
 )
 
-// appMode reports whether the request comes from the desktop player.
+// appMode reports whether the request comes from the desktop player or a
+// browser in TV mode.
 func appMode(c *gin.Context) bool {
 	if q := c.Query("app"); q != "" {
 		return q == "1"
+	}
+
+	if tvMode(c) {
+		return true
 	}
 
 	v, _ := c.Cookie(appCookie)
@@ -32,6 +37,8 @@ func appMode(c *gin.Context) bool {
 // setAppMode stores ?app=1/0 in the cookie and sends the player from the
 // dashboard to its start page; true when it answered the request.
 func setAppMode(c *gin.Context) bool {
+	setTVMode(c)
+
 	switch c.Query("app") {
 	case "1":
 		c.SetSameSite(http.SameSiteLaxMode)
@@ -65,11 +72,12 @@ func appNavbar(acc *userAccess) gomponents.Node {
 			html.A(html.Class("sidebar-brand"), html.Href(appHome), html.Title("Go Media"),
 				html.Img(html.Src("/static/img/icons/icon-48x48.png"), html.Alt("Go Media"), html.Width("32"), html.Height("32"))),
 			html.Ul(html.Class("sidebar-nav"),
-				link("/api/admin/library", "fa-photo-film", "Library"),
-				link("/api/admin/calendar", "fa-calendar-alt", "Calendar"),
-				gomponents.If(acc.CanRequest(), link("/api/admin/metadata-search", "fa-plus", "Add Media")),
-				link("/api/admin/account", "fa-user", "My Account"),
-				link("/api/logout", "fa-right-from-bracket", "Log out"),
+				link("/api/admin/library", "fa-photo-film", t("Library")),
+				link("/api/admin/calendar", "fa-calendar-alt", t("Calendar")),
+				gomponents.If(acc.CanRequest(), link("/api/admin/metadata-search", "fa-plus", t("Add Media"))),
+				link("/api/admin/account", "fa-user", t("My Account")),
+				link("/api/admin/help", "fa-circle-question", t("Help")),
+				link("/api/logout", "fa-right-from-bracket", t("Log out")),
 			)))
 }
 

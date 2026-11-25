@@ -39,30 +39,43 @@ type tmdbSeriesSearchResult struct {
 }
 
 type tmdbMovieDetails struct {
-	ID                  int                        `json:"id"`
-	IMDbID              string                     `json:"imdb_id"`
-	Title               string                     `json:"title"`
-	OriginalTitle       string                     `json:"original_title"`
-	OriginalLanguage    string                     `json:"original_language"`
-	Tagline             string                     `json:"tagline"`
-	Overview            string                     `json:"overview"`
-	ReleaseDate         string                     `json:"release_date"`
-	Runtime             int                        `json:"runtime"`
-	Budget              int64                      `json:"budget"`
-	Revenue             int64                      `json:"revenue"`
-	VoteAverage         float64                    `json:"vote_average"`
-	VoteCount           int                        `json:"vote_count"`
-	Popularity          float64                    `json:"popularity"`
-	Adult               bool                       `json:"adult"`
-	PosterPath          string                     `json:"poster_path"`
-	BackdropPath        string                     `json:"backdrop_path"`
-	Homepage            string                     `json:"homepage"`
-	Status              string                     `json:"status"`
-	Genres              []tmdbGenre                `json:"genres"`
-	ProductionCompanies []tmdbProductionCompany    `json:"production_companies"`
-	SpokenLanguages     []tmdbSpokenLanguage       `json:"spoken_languages"`
-	AlternativeTitles   *tmdbAlternativeTitlesResp `json:"alternative_titles"`
-	Credits             *tmdbCredits               `json:"credits"`
+	ID                  int                                `json:"id"`
+	IMDbID              string                             `json:"imdb_id"`
+	Title               string                             `json:"title"`
+	OriginalTitle       string                             `json:"original_title"`
+	OriginalLanguage    string                             `json:"original_language"`
+	Tagline             string                             `json:"tagline"`
+	Overview            string                             `json:"overview"`
+	ReleaseDate         string                             `json:"release_date"`
+	Runtime             int                                `json:"runtime"`
+	Budget              int64                              `json:"budget"`
+	Revenue             int64                              `json:"revenue"`
+	VoteAverage         float64                            `json:"vote_average"`
+	VoteCount           int                                `json:"vote_count"`
+	Popularity          float64                            `json:"popularity"`
+	Adult               bool                               `json:"adult"`
+	PosterPath          string                             `json:"poster_path"`
+	BackdropPath        string                             `json:"backdrop_path"`
+	Homepage            string                             `json:"homepage"`
+	Status              string                             `json:"status"`
+	Genres              []tmdbGenre                        `json:"genres"`
+	Collection          *apiexternal_v2.MovieCollectionRef `json:"belongs_to_collection"`
+	ProductionCompanies []tmdbProductionCompany            `json:"production_companies"`
+	SpokenLanguages     []tmdbSpokenLanguage               `json:"spoken_languages"`
+	AlternativeTitles   *tmdbAlternativeTitlesResp         `json:"alternative_titles"`
+	Credits             *tmdbCredits                       `json:"credits"`
+	Recommendations     *tmdbMovieResults                  `json:"recommendations"`
+	Similar             *tmdbMovieResults                  `json:"similar"`
+}
+
+// tmdbMovieResults and tmdbSeriesResults are a page of titles appended to
+// the details (recommendations, similar).
+type tmdbMovieResults struct {
+	Results []tmdbMovieSearchResult `json:"results"`
+}
+
+type tmdbSeriesResults struct {
+	Results []tmdbSeriesSearchResult `json:"results"`
 }
 
 type tmdbSeriesDetails struct {
@@ -91,6 +104,8 @@ type tmdbSeriesDetails struct {
 	AlternativeTitles   *tmdbAlternativeTitlesResp `json:"alternative_titles"`
 	Credits             *tmdbCredits               `json:"credits"`
 	ExternalIDs         *tmdbExternalIDs           `json:"external_ids"`
+	Recommendations     *tmdbSeriesResults         `json:"recommendations"`
+	Similar             *tmdbSeriesResults         `json:"similar"`
 }
 
 type tmdbGenre struct {
@@ -316,6 +331,7 @@ func convertMovieDetails(tmdb *tmdbMovieDetails) *apiexternal_v2.MovieDetails {
 		Homepage:            tmdb.Homepage,
 		Status:              tmdb.Status,
 		Genres:              convertGenres(tmdb.Genres),
+		Collection:          tmdb.Collection,
 		ProductionCompanies: convertProductionCompanies(tmdb.ProductionCompanies),
 		SpokenLanguages:     convertSpokenLanguages(tmdb.SpokenLanguages),
 		ProviderName:        "tmdb",
@@ -327,6 +343,14 @@ func convertMovieDetails(tmdb *tmdbMovieDetails) *apiexternal_v2.MovieDetails {
 
 	if tmdb.Credits != nil {
 		details.Credits = convertCredits(tmdb.Credits)
+	}
+
+	if tmdb.Recommendations != nil {
+		details.Recommendations = convertMovieSearchResults(tmdb.Recommendations.Results)
+	}
+
+	if tmdb.Similar != nil {
+		details.Similar = convertMovieSearchResults(tmdb.Similar.Results)
 	}
 
 	return details
@@ -380,6 +404,14 @@ func convertSeriesDetails(tmdb *tmdbSeriesDetails) *apiexternal_v2.SeriesDetails
 
 	if tmdb.Credits != nil {
 		details.Credits = convertCredits(tmdb.Credits)
+	}
+
+	if tmdb.Recommendations != nil {
+		details.Recommendations = convertSeriesSearchResults(tmdb.Recommendations.Results)
+	}
+
+	if tmdb.Similar != nil {
+		details.Similar = convertSeriesSearchResults(tmdb.Similar.Results)
 	}
 
 	return details

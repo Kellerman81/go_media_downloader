@@ -63,6 +63,63 @@ func statSectionCard(spinnerClass, url, loadingText string) gomponents.Node {
 	)
 }
 
+// statSectionInfo is a section of the statistics page and its entry in the
+// jump menu.
+type statSectionInfo struct {
+	id, label, icon string
+}
+
+// statCollapsedKey is the localStorage key prefix that remembers a collapsed
+// section, per browser.
+const statCollapsedKey = "statCollapsed-"
+
+// statJumpMenu links to the sections; it stays at the top while scrolling.
+// A link opens its section when it is collapsed; the last button collapses or
+// expands all sections.
+func statJumpMenu(sections []statSectionInfo) gomponents.Node {
+	links := make([]gomponents.Node, 0, len(sections)+1)
+	for _, sec := range sections {
+		links = append(links, html.A(html.Class("btn btn-sm btn-outline-secondary"), html.Href("#stat-"+sec.id),
+			gomponents.Attr("onclick", "var d=document.getElementById('stat-"+sec.id+"');if(d)d.open=true"),
+			html.I(html.Class("fa-solid "+sec.icon+" me-1")), gomponents.Text(sec.label)))
+	}
+	links = append(links, html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-secondary ms-auto"),
+		gomponents.Attr("onclick", "var s=document.querySelectorAll('details.stat-part'),o=!Array.prototype.some.call(s,function(d){return d.open});s.forEach(function(d){d.open=o})"),
+		gomponents.Attr("aria-label", "Collapse or expand all sections"), html.TitleAttr("Collapse or expand all sections"),
+		html.I(html.Class("fa-solid fa-up-down"), gomponents.Attr("aria-hidden", "true"))))
+
+	// The template's .main hides its overflow, which turns sticky off; clip
+	// cuts the same way without that.
+	return gomponents.Group([]gomponents.Node{
+		html.StyleEl(gomponents.Raw(".main:has(#statJump){overflow:clip}" +
+			"details.stat-part>summary{list-style:none;cursor:pointer}" +
+			"details.stat-part>summary::-webkit-details-marker{display:none}" +
+			"details.stat-part .stat-chevron{transition:transform .15s}" +
+			"details.stat-part:not([open]) .stat-chevron{transform:rotate(-90deg)}")),
+		html.Nav(html.ID("statJump"), html.Class("d-flex flex-wrap gap-2 py-2 mb-3 bg-body border-bottom"), gomponents.Attr("aria-label", "Sections"),
+			html.Style("position:sticky;top:0;z-index:1020"), gomponents.Group(links)),
+	})
+}
+
+// statPart is a collapsible section of the statistics page under its heading.
+// Its content still loads while collapsed; the browser remembers the state.
+func statPart(sec statSectionInfo, children ...gomponents.Node) gomponents.Node {
+	return html.Details(html.ID("stat-"+sec.id), html.Class("stat-part mb-3"), html.Style("scroll-margin-top:4rem"),
+		gomponents.Attr("open", ""),
+		gomponents.Attr("ontoggle", "try{localStorage.setItem('"+statCollapsedKey+"'+this.id,this.open?'0':'1')}catch(e){}"),
+		html.Summary(html.Class("mb-3"),
+			html.H5(html.Class("d-inline text-muted mb-0"),
+				html.I(html.Class("fa-solid fa-chevron-down stat-chevron me-2 small"), gomponents.Attr("aria-hidden", "true")),
+				html.I(html.Class("fa-solid "+sec.icon+" me-2")), gomponents.Text(sec.label))),
+		gomponents.Group(children))
+}
+
+// statRestoreCollapsed closes the sections this browser collapsed last time.
+func statRestoreCollapsed() gomponents.Node {
+	return html.Script(gomponents.Raw("(function(){try{document.querySelectorAll('details.stat-part').forEach(function(d){" +
+		"if(localStorage.getItem('" + statCollapsedKey + "'+d.id)==='1')d.open=false})}catch(e){}})();"))
+}
+
 // @Summary      [Web only] Statistics page (HTML)
 // @Description  Returns the statistics dashboard of the web interface as HTML. Web interface only: needs a login session cookie from /api/login and does not accept the apikey, so it cannot be called from Swagger or with ?apikey=.
 // @Tags         web-only
@@ -185,6 +242,17 @@ func webStatisticsPage(ctx *gin.Context) {
 		)
 	}
 
+	sections := []statSectionInfo{
+		{"overview", "Overview", "fa-gauge"},
+		{"libraries", "Libraries", "fa-photo-film"},
+		{"downloads", "Downloads & Wanted", "fa-download"},
+		{"quality", "Quality", "fa-star"},
+		{"playback", "Playback", "fa-play"},
+		{"storage", "Storage", "fa-hdd"},
+		{"jobs", "Jobs & Workers", "fa-gears"},
+		{"providers", "Providers", "fa-plug"},
+	}
+
 	AdminPageAny(ctx, "Statistics - Go Media Downloader", html.Div(
 		html.Class("config-section-enhanced"),
 
@@ -225,73 +293,33 @@ func webStatisticsPage(ctx *gin.Context) {
 			),
 		),
 
+		statJumpMenu(sections),
 		html.Div(
 			html.Class("container-fluid"),
-			// Summary KPI row
-			html.Div(append([]gomponents.Node{html.Class("row mb-4")}, summaryCards...)...),
-			// Library details
-			html.H5(html.Class("mb-3 text-muted"), gomponents.Text("Library Breakdown")),
-			html.Div(append([]gomponents.Node{html.Class("row")}, detailCards...)...),
-			// Activity and library health
-			html.H5(html.Class("mb-3 mt-2 text-muted"), gomponents.Text("Activity & Library Health")),
-			statSectionCard(
-				"text-primary",
-				"/api/admin/statistics/activity",
-				"Loading download activity...",
-			),
-			statSectionCard(
-				"text-warning",
-				"/api/admin/statistics/backlog",
-				"Loading wanted backlog...",
-			),
-			statSectionCard(
-				"text-success",
-				"/api/admin/statistics/quality",
-				"Loading library quality...",
-			),
-			statSectionCard(
-				"text-success",
-				"/api/admin/statistics/plays",
-				"Loading play history...",
-			),
-			// Storage details
-			statSectionCard(
-				"text-info",
-				"/api/admin/statistics/storage?type=detail",
-				"Loading storage details...",
-			),
-			// Operational sections
-			html.H5(html.Class("mb-3 mt-2 text-muted"), gomponents.Text("System & Providers")),
-			statSectionCard(
-				"text-info",
-				"/api/admin/statistics/jobs",
-				"Loading job runtimes...",
-			),
-			statSectionCard(
-				"text-dark",
-				"/api/admin/statistics/workers",
-				"Loading worker statistics...",
-			),
-			statSectionCard(
-				"text-secondary",
-				"/api/admin/statistics/http",
-				"Loading HTTP client statistics...",
-			),
-			statSectionCard(
-				"text-primary",
-				"/api/admin/statistics/metadata",
-				"Loading metadata provider statistics...",
-			),
-			statSectionCard(
-				"text-info",
-				"/api/admin/statistics/notification",
-				"Loading notification provider statistics...",
-			),
-			statSectionCard(
-				"text-success",
-				"/api/admin/statistics/downloader",
-				"Loading downloader provider statistics...",
-			),
+			statPart(sections[0], html.Div(append([]gomponents.Node{html.Class("row")}, summaryCards...)...)),
+			statPart(sections[1], html.Div(append([]gomponents.Node{html.Class("row")}, detailCards...)...)),
+			statPart(sections[2],
+				statSectionCard("text-primary", "/api/admin/statistics/activity", "Loading download activity..."),
+				statSectionCard("text-warning", "/api/admin/statistics/backlog", "Loading wanted backlog...")),
+			statPart(sections[3],
+				statSectionCard("text-success", "/api/admin/statistics/quality", "Loading library quality...")),
+			statPart(sections[4],
+				statSectionCard("text-success", "/api/admin/statistics/plays", "Loading play history...")),
+			// Storage: shows the last scan; a scan only runs on demand.
+			statPart(sections[5], html.Div(html.Class("row"), html.Div(html.Class("col-12 mb-4"),
+				html.Div(html.Class("card"), html.ID("statStorage"),
+					gomponents.Attr("hx-get", storageStatsURL+"?type=detail"), gomponents.Attr("hx-trigger", "load, storageScan from:body"),
+					gomponents.Attr("hx-swap", "innerHTML"),
+					html.Div(html.Class("card-body text-center"), html.Div(html.Class("spinner-border text-info"))))))),
+			statPart(sections[6],
+				statSectionCard("text-info", "/api/admin/statistics/jobs", "Loading job runtimes..."),
+				statSectionCard("text-dark", "/api/admin/statistics/workers", "Loading worker statistics...")),
+			statPart(sections[7],
+				statSectionCard("text-secondary", "/api/admin/statistics/http", "Loading HTTP client statistics..."),
+				statSectionCard("text-primary", "/api/admin/statistics/metadata", "Loading metadata provider statistics..."),
+				statSectionCard("text-info", "/api/admin/statistics/notification", "Loading notification provider statistics..."),
+				statSectionCard("text-success", "/api/admin/statistics/downloader", "Loading downloader provider statistics...")),
 		),
+		statRestoreCollapsed(),
 	))
 }

@@ -53,6 +53,13 @@ func GetMediaReports() []MediaReport {
 	return StructscanT[MediaReport](false, 0, "select "+reportColumns+" from media_reports order by id")
 }
 
+// UserMediaReports are the open reports of an account, newest first.
+func UserMediaReports(username string) []MediaReport {
+	return StructscanT[MediaReport](false, 8, "select id, username, kind, file_id, title, reason, note, "+
+		"strftime('%Y-%m-%d %H:%M', created_at) as created_at from media_reports "+
+		"where username = ? collate nocase order by id desc limit 200", username)
+}
+
 // GetMediaReport returns one report.
 func GetMediaReport(id *uint) (*MediaReport, error) {
 	return Structscan[MediaReport]("select "+reportColumns+" from media_reports where id = ?", false, id)

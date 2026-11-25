@@ -31,11 +31,11 @@ func libFileButtons(k *libKind, fileID uint, label string) gomponents.Node {
 	id := strconv.FormatUint(uint64(fileID), 10)
 
 	return gomponents.Group([]gomponents.Node{
-		html.A(html.Class("btn btn-sm btn-outline-secondary py-0 me-1 lib-download"), html.Title("Download"),
+		html.A(html.Class("btn btn-sm btn-outline-secondary py-0 me-1 lib-download"), html.Title(t("Download")),
 			html.Href("/api/admin/library/download/"+k.Type+"/"+id), gomponents.Attr("download"),
 			html.I(html.Class("fa-solid fa-download"))),
 		html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-warning py-0 me-1 lib-report"),
-			html.Title("Report this file as wrong (quality, language, content)"),
+			html.Title(t("Report this file as wrong (quality, language, content)")),
 			gomponents.Attr("onclick", "libReport("+jsString(k.Type)+", "+id+", "+jsString(label)+")"),
 			html.I(html.Class("fa-solid fa-flag"))),
 	})
@@ -47,9 +47,9 @@ func libEntryDownload(k *libKind, entryID uint, files int) gomponents.Node {
 		return nil
 	}
 
-	return html.A(html.Class("btn btn-sm btn-outline-secondary lib-download"), html.Title("All files as one ZIP"),
+	return html.A(html.Class("btn btn-sm btn-outline-secondary lib-download"), html.Title(t("All files as one ZIP")),
 		html.Href("/api/admin/library/download-entry/"+k.Type+"/"+strconv.FormatUint(uint64(entryID), 10)),
-		gomponents.Attr("download"), html.I(html.Class("fa-solid fa-file-zipper me-1")), gomponents.Text("Download all"))
+		gomponents.Attr("download"), html.I(html.Class("fa-solid fa-file-zipper me-1")), gomponents.Text(t("Download all")))
 }
 
 // libFileOf returns the kind, id and location of the request's :type/:id
@@ -75,18 +75,18 @@ func attachment(name string) string {
 // HandleLibraryDownload sends one file (/admin/library/download/:type/:id).
 func HandleLibraryDownload(c *gin.Context) {
 	if !accessOf(c).CanDownload() {
-		c.String(http.StatusForbidden, "downloads are not enabled for this account")
+		c.String(http.StatusForbidden, t("downloads are not enabled for this account"))
 		return
 	}
 
 	k, id, loc, ok := libFileOf(c, c.Param("type"), c.Param("id"))
 	if !ok {
-		c.String(http.StatusNotFound, "file not found")
+		c.String(http.StatusNotFound, t("file not found"))
 		return
 	}
 
 	if st, err := os.Stat(loc); err != nil || st.IsDir() {
-		c.String(http.StatusNotFound, "the file is not on disk")
+		c.String(http.StatusNotFound, t("the file is not on disk"))
 		return
 	}
 
@@ -183,13 +183,13 @@ func zipFile(zw *zip.Writer, loc, name string) error {
 func HandleLibraryReport(c *gin.Context) {
 	acc := accessOf(c)
 	if !acc.CanReport() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "reports are not enabled for this account"})
+		c.JSON(http.StatusForbidden, gin.H{"error": t("reports are not enabled for this account")})
 		return
 	}
 
 	k, id, loc, ok := libFileOf(c, c.PostForm("type"), c.PostForm("id"))
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": t("file not found")})
 		return
 	}
 
@@ -220,8 +220,7 @@ func HandleLibraryReport(c *gin.Context) {
 // ReportsPage lists the reported files (/admin/reports, admins).
 func ReportsPage(c *gin.Context) {
 	renderPageIn(c, "Reports", true, html.Div(html.Class("config-section-enhanced"),
-		renderEnhancedPageHeader("fa-solid fa-flag", "Reported Files",
-			"Files accounts reported as wrong. Delete a file to have it searched again, or dismiss the report."),
+		renderEnhancedPageHeader("fa-solid fa-flag", t("Reported Files"), t("Files accounts reported as wrong. Delete a file to have it searched again, or dismiss the report.")),
 		html.Div(html.ID("reportsContent"), renderReports(getCSRFToken(c), ""))))
 }
 
@@ -252,18 +251,18 @@ func renderReports(csrf, alert string) gomponents.Node {
 			html.Td(html.Div(gomponents.Text(r.Title)),
 				html.Div(html.Class("small text-muted font-monospace text-break"), gomponents.Text(orDash(loc)))),
 			html.Td(html.Class("text-end"),
-				gomponents.If(loc != "", action("research", "Delete & search again", "btn-danger",
-					"Delete this file from disk and search the entry again?")),
-				gomponents.If(loc != "", action("delete", "Delete file", "btn-outline-danger", "Delete this file from disk?")),
-				action("dismiss", "Dismiss", "btn-outline-secondary", "")),
+				gomponents.If(loc != "", action("research", t("Delete & search again"), "btn-danger",
+					t("Delete this file from disk and search the entry again?"))),
+				gomponents.If(loc != "", action("delete", t("Delete file"), "btn-outline-danger", t("Delete this file from disk?"))),
+				action("dismiss", t("Dismiss"), "btn-outline-secondary", "")),
 		))
 	}
 
-	list := gomponents.Node(html.P(html.Class("text-muted mb-0"), gomponents.Text("No reported files.")))
+	list := gomponents.Node(html.P(html.Class("text-muted mb-0"), gomponents.Text(t("No reported files."))))
 	if len(rows) > 0 {
 		list = html.Div(html.Class("table-responsive"), html.Table(html.Class("table table-sm align-middle mb-0"),
-			html.THead(html.Tr(html.Th(gomponents.Text("Reported")), html.Th(gomponents.Text("By")), html.Th(gomponents.Text("Reason")),
-				html.Th(gomponents.Text("File")), html.Th())),
+			html.THead(html.Tr(html.Th(gomponents.Text(t("Reported"))), html.Th(gomponents.Text(t("By"))), html.Th(gomponents.Text(t("Reason"))),
+				html.Th(gomponents.Text(t("File"))), html.Th())),
 			html.TBody(gomponents.Group(rows))))
 	}
 
@@ -284,21 +283,23 @@ func HandleReportResolve(c *gin.Context) {
 
 	r, err2 := database.GetMediaReport(&rid)
 	if err != nil || err2 != nil || r.ID == 0 {
-		reply("The report no longer exists.", "warning")
+		reply(t("The report no longer exists."), "warning")
 		return
 	}
 
 	action := c.PostForm("action")
 	if action == "dismiss" {
 		database.CloseMediaReport(&rid)
-		reply("Report dismissed.", "success")
+		providers.NotifyUser(r.Username, providers.EventReport, "Report reviewed: "+r.Title,
+			"An admin checked "+r.Title+" you reported and kept the file.", "")
+		reply(t("Report dismissed."), "success")
 
 		return
 	}
 
 	k := libKindByType(r.Kind)
 	if k == nil || (action != "delete" && action != "research") {
-		reply("Unknown action.", "danger")
+		reply(t("Unknown action."), "danger")
 		return
 	}
 
@@ -306,7 +307,7 @@ func HandleReportResolve(c *gin.Context) {
 	if loc != "" {
 		if _, err := scanner.RemoveFile(loc); err != nil {
 			logger.Logtype("error", 0).Err(err).Str("file", loc).Msg("Reports: delete file")
-			reply("The file could not be deleted: "+err.Error(), "danger")
+			reply(t("The file could not be deleted: ")+err.Error(), "danger")
 
 			return
 		}
@@ -320,6 +321,13 @@ func HandleReportResolve(c *gin.Context) {
 	database.CloseMediaReports(r.Kind, &r.FileID)
 
 	logger.Logtype("info", 0).Str("type", k.Type).Str("file", loc).Str("action", action).Msg("Reports: file deleted")
+
+	told := r.Title + " you reported was removed."
+	if action == "research" {
+		told = r.Title + " you reported was removed and is searched again."
+	}
+
+	providers.NotifyUser(r.Username, providers.EventReport, "Report handled: "+r.Title, told, "")
 
 	msg := "Deleted " + filepath.Base(loc) + "."
 	if action == "research" {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/gin-gonic/gin"
 )
 
@@ -80,5 +81,22 @@ func TestParseConfigFromFormNames(t *testing.T) {
 	})
 	if _, err := parseConfigFromForm(c, "downloader", createDownloaderConfig); err == nil {
 		t.Fatal("unparseable port must produce an error")
+	}
+}
+
+// TestParseGeneralClientSettings: the Apps and Devices fields are read
+// from the form; unchecked boxes switch a protocol off.
+func TestParseGeneralClientSettings(t *testing.T) {
+	useMediaConfig(t, config.MediaConfig{Movies: mediaGroup("EN")})
+
+	c := newFormContext(t, url.Values{
+		"general_ServerName": {"Home"}, "general_ServeWebDAV": {"on"}, "general_ServeJellyfin": {"on"},
+		"general_ServeDLNA": {"on"}, "general_DLNAUser": {"family"}, "general_DLNAURL": {"http://192.168.1.10:9090"},
+	})
+
+	got, _ := parseGeneralConfig(c)
+	if got.ServerName != "Home" || !got.ServeWebDAV || !got.ServeJellyfin || got.ServeSubsonic || got.ServeOPDS || !got.ServeDLNA ||
+		got.DLNAUser != "family" || got.DLNAURL != "http://192.168.1.10:9090" {
+		t.Fatalf("parsed: %+v", got)
 	}
 }

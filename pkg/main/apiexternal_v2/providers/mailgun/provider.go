@@ -59,7 +59,14 @@ func (p *Provider) SendNotification(
 	ctx context.Context,
 	req apiexternal_v2.NotificationRequest,
 ) (*apiexternal_v2.NotificationResponse, error) {
-	form := url.Values{"from": {p.from}, "to": p.to, "subject": {req.Title}, "text": {req.Message}}
+	// Options["to"] sends to another address than the configured one (a
+	// user's update mails).
+	to := p.to
+	if addr := strings.TrimSpace(req.Options["to"]); addr != "" && !strings.ContainsAny(addr, "\r\n") {
+		to = []string{addr}
+	}
+
+	form := url.Values{"from": {p.from}, "to": to, "subject": {req.Title}, "text": {req.Message}}
 
 	err := p.MakeRequestWithHeaders(ctx, http.MethodPost, "/"+p.domain+"/messages", strings.NewReader(form.Encode()),
 		nil, nil, map[string]string{"Content-Type": "application/x-www-form-urlencoded"})

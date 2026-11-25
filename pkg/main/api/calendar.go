@@ -93,8 +93,8 @@ func CalendarPageHandler(c *gin.Context) {
 		html.Class("config-section-enhanced"),
 		renderEnhancedPageHeader(
 			"fas fa-calendar-alt",
-			"Calendar",
-			"Release dates of the movies, episodes, albums, audiobooks and books in your lists",
+			t("Calendar"),
+			t("Release dates of the movies, episodes, albums, audiobooks and books in your lists"),
 		),
 		html.Div(
 			html.Class("card border-0 shadow-sm"),
@@ -107,7 +107,7 @@ func CalendarPageHandler(c *gin.Context) {
 					html.Div(
 						html.Class("text-center py-5"),
 						html.Div(html.Class("spinner-border text-secondary"), gomponents.Attr("role", "status")),
-						html.P(html.Class("mt-2 text-muted"), gomponents.Text("Loading calendar events...")),
+						html.P(html.Class("mt-2 text-muted"), gomponents.Text(t("Loading calendar events..."))),
 					),
 				),
 			),
@@ -121,7 +121,7 @@ func CalendarPageHandler(c *gin.Context) {
 	)
 
 	pageNode := pageAs(accessOf(c),
-		"Calendar",
+		t("Calendar"),
 		false, // activeConfig
 		false, // activeDatabase
 		false, // activeManagement
@@ -165,6 +165,7 @@ func getCalendarEventsFromQuery(c *gin.Context) []calendarEvent {
 	}
 
 	events := accessOf(c).calendarEvents(getCalendarEvents(startDate, endDate, eventType))
+	translateCalendarEvents(events, requestLanguage(c))
 
 	if events == nil {
 		events = []calendarEvent{}
@@ -186,6 +187,7 @@ type calendarState struct {
 	OnlyMissing  bool
 	Group, Genre string // a media group (e.g. movie_EN) and a genre, "" for all
 	access       *userAccess
+	lang         string // the account's language (metadata translations)
 }
 
 var (
@@ -198,7 +200,7 @@ const agendaDays = 60
 
 func calendarStateFromQuery(c *gin.Context) calendarState {
 	st := calendarState{View: c.Query("view"), Filter: c.Query("filter"), OnlyMissing: c.Query("missing") == "1",
-		Group: c.Query("group"), Genre: strings.TrimSpace(c.Query("genre")), access: accessOf(c)}
+		Group: c.Query("group"), Genre: strings.TrimSpace(c.Query("genre")), access: accessOf(c), lang: requestLanguage(c)}
 	if st.Group != "" && (libGroupByName(st.Group) == nil || !st.access.AllowsGroup(st.Group)) {
 		st.Group = ""
 	}
@@ -273,7 +275,13 @@ func (st calendarState) Query(change func(*calendarState)) string {
 // Events returns the events the state shows.
 func (st calendarState) Events() []calendarEvent {
 	start, end := st.Range()
-	return st.filter(getCalendarEvents(start, end, st.Filter), true)
+	events := st.filter(getCalendarEvents(start, end, st.Filter), true)
+
+	if st.lang != "" {
+		translateCalendarEvents(events, st.lang)
+	}
+
+	return events
 }
 
 // filter applies the account's media groups, "only missing", the media
@@ -754,7 +762,7 @@ func getSeriesCalendarEvents(startDate, endDate time.Time) []calendarEvent {
 
 		// Episodes of scraper lists link the page they were scraped from.
 		if libHTTPURL(series.ScraperURL) {
-			event.Links = append(event.Links, calendarExtLink{Label: "Source", URL: series.ScraperURL, Icon: "fa-solid fa-globe"})
+			event.Links = append(event.Links, calendarExtLink{Label: t("Source"), URL: series.ScraperURL, Icon: "fa-solid fa-globe"})
 		}
 
 		events = append(events, event)
@@ -1044,11 +1052,25 @@ func movieLinks(imdb string, tmdb, trakt int, website string) []calendarExtLink 
 		add("Trakt", "fa-solid fa-circle-play", "https://trakt.tv/movies/"+strconv.Itoa(trakt))
 	}
 
-	if libHTTPURL(website) {
-		add("Website", "fa-solid fa-globe", website)
+	// The website is often the IMDb page again.
+	if libHTTPURL(website) && !slices.ContainsFunc(links, func(l calendarExtLink) bool { return sameURL(l.URL, website) }) {
+		add(t("Website"), "fa-solid fa-globe", website)
 	}
 
 	return links
+}
+
+// sameURL reports whether two links lead to the same page (scheme, "www."
+// and a trailing slash aside).
+func sameURL(a, b string) bool {
+	norm := func(u string) string {
+		u = strings.ToLower(strings.TrimSpace(u))
+		u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+
+		return strings.TrimSuffix(strings.TrimPrefix(u, "www."), "/")
+	}
+
+	return norm(a) == norm(b)
 }
 
 // seriesLinks are a series' pages on IMDb, TheTVDB and Trakt.

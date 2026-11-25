@@ -37,3 +37,13 @@ func TestComputeViewStats(t *testing.T) {
 		t.Errorf("heat Monday 20h %d, 21h %d", v.Heat[1][20], v.Heat[1][21])
 	}
 }
+
+// TestPlayKindLabels: every kind the play history holds (the player's and
+// the reader's) has a label in the play statistics.
+func TestPlayKindLabels(t *testing.T) {
+	for _, kind := range watchKinds {
+		if playKindLabels[kind] == "" {
+			t.Errorf("play kind %q has no label", kind)
+		}
+	}
+}

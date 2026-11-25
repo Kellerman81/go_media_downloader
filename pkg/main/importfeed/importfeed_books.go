@@ -13,6 +13,7 @@ import (
 	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/metadata"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/syncops"
 )
@@ -205,9 +206,11 @@ func importBooksByAuthor(
 		}
 	}
 
-	// Fallback to OpenLibrary search by author name
+	// Fallback to OpenLibrary: all the author's works (not just the first
+	// 100 search hits), with an edition in English or the group's metadata
+	// language, each title once.
 	if authorName != "" {
-		books, err := olProvider.SearchBooks(ctx, "", authorName, 100)
+		books, err := olProvider.AuthorWorks(ctx, authorName, authorWorkLanguages(cfgp))
 		if err == nil {
 			for i := range books {
 				if err := logger.CheckContextEnded(ctx); err != nil {
@@ -232,6 +235,92 @@ func importBooksByAuthor(
 	}
 
 	return logger.ErrNotFound
+}
+
+// AddFoundBook adds the book a file names (an import with add_found) to
+// the list listid: the OpenLibrary work found by its title, also an
+// edition's, and author. A "Series 02 - Title" is also tried by its parts
+// (three searches at most). The file's title becomes an alternate title of
+// the book, so the file matches it. Returns the dbbook id, 0 when nothing
+// was found.
+func AddFoundBook(ctx context.Context, title, author string, cfgp *config.MediaTypeConfig, listid int) uint {
+	ol := providers.GetOpenLibrary()
+	if ol == nil || listid < 0 || strings.TrimSpace(author) == "" {
+		return 0
+	}
+
+	tries := []string{title}
+	if parts := strings.Split(title, " - "); len(parts) > 1 {
+		for i := len(parts) - 1; i >= 0 && len(tries) < 3; i-- {
+			if p := strings.TrimSpace(parts[i]); p != "" && p != title {
+				tries = append(tries, p)
+			}
+		}
+	}
+
+	for _, t := range tries {
+		book, err := ol.FindBook(ctx, t, author)
+		if err != nil {
+			logger.Logtype("debug", 1).Err(err).Str("book", t).Msg("add found book")
+			return 0
+		}
+
+		if book == nil {
+			continue
+		}
+
+		if err := addBookToDatabase(ctx, book, cfgp, listid, author); err != nil && !errors.Is(err, logger.ErrListnameEmpty) {
+			logger.Logtype("error", 1).Err(err).Str("book", book.Title).Msg("add found book")
+			return 0
+		}
+
+		olid, slug := book.ID[strings.LastIndexByte(book.ID, '/')+1:], logger.StringToSlugCached(book.Title)
+		id := database.Getdatarow[uint](false,
+			"select id from dbbooks where openlibrary_id = ? or slug = ? order by openlibrary_id = ? desc limit 1", &olid, &slug, &olid)
+		if id == 0 {
+			return 0
+		}
+
+		if !strings.EqualFold(t, book.Title) {
+			addAlternateTitle(config.MediaTypeBook, &id, &t)
+		}
+
+		TranslateBook(ctx, id)
+
+		logger.Logtype("info", 0).Str("file title", title).Str("book", book.Title).Uint("id", id).Msg("Added found book")
+
+		return id
+	}
+
+	return 0
+}
+
+// TranslateBook fetches a book's titles in the group languages
+// (metadata.TranslateBook) and adds them as alternate titles, which the
+// release search and matching use: German releases carry the German title.
+func TranslateBook(ctx context.Context, id uint) {
+	var b database.Dbbook
+	if b.GetDbbookByIDP(&id) != nil {
+		return
+	}
+
+	for lang, title := range metadata.TranslateBook(ctx, &b) {
+		if title != "" && !strings.EqualFold(title, b.Title) {
+			addAlternateTitle(config.MediaTypeBook, &id, &title, &lang)
+		}
+	}
+}
+
+// authorWorkLanguages are the languages an author's works need an edition
+// in to be imported: English (the book data's language) and the group's
+// metadata language.
+func authorWorkLanguages(cfgp *config.MediaTypeConfig) []string {
+	langs := []string{"en"}
+	if l := config.LanguageCode(cfgp.MetadataLanguage); l != "" && l != "en" {
+		langs = append(langs, l)
+	}
+
+	return langs
 }
 
 // importBooksBySeries imports all books in a series.
@@ -346,8 +435,30 @@ func bestBookMatch(books []apiexternal_v2.BookSearchResult, title, author string
 }
 
 // addBookToDatabase adds a book search result to the database.
+// bookSeriesID is the dbbook_series row of a series name, created when it
+// doesn't exist yet (found by name or slug); 0 without a name.
+func bookSeriesID(name string) uint {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0
+	}
+
+	slug := logger.StringToSlugCached(name)
+
+	var id uint
+	database.Scanrowsdyn(false, "SELECT id FROM dbbook_series WHERE name = ? COLLATE NOCASE OR slug = ?", &id, &name, &slug)
+
+	if id == 0 {
+		if res, err := database.ExecNid("INSERT INTO dbbook_series (name, slug) VALUES (?, ?)", &name, &slug); err == nil {
+			id = logger.Int64ToUint(res)
+		}
+	}
+
+	return id
+}
+
 func addBookToDatabase(
-	_ context.Context,
+	ctx context.Context,
 	book *apiexternal_v2.BookSearchResult,
 	cfgp *config.MediaTypeConfig,
 	listid int,
@@ -429,9 +540,16 @@ func addBookToDatabase(
 			// Other providers don't map to goodreads/openlibrary IDs
 		}
 
+		// The series is a dbbook_series row (dbbooks has no series name);
+		// NULL without one.
+		var seriesID any
+		if id := bookSeriesID(book.SeriesName); id > 0 {
+			seriesID = id
+		}
+
 		// Insert new dbbook with all available metadata
 		result, err := database.ExecNid(
-			`INSERT INTO dbbooks (title, isbn_13, isbn_10, slug, year, description, cover_url, goodreads_id, openlibrary_id, series_name, series_position)
+			`INSERT INTO dbbooks (title, isbn_13, isbn_10, slug, year, description, cover_url, goodreads_id, openlibrary_id, dbbook_series_id, series_position)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			&book.Title,
 			&book.ISBN13,
@@ -442,7 +560,7 @@ func addBookToDatabase(
 			&book.CoverURL,
 			&goodreadsID,
 			&openlibraryID,
-			&book.SeriesName,
+			seriesID,
 			&book.SeriesPosition,
 		)
 		if err != nil {
@@ -535,6 +653,13 @@ func addBookToDatabase(
 				&dbbookID, &fullTitle, &fullSlug,
 			)
 		}
+	}
+
+	// Its titles in the group languages; a book imported before gets them
+	// the first time the feed finds it again.
+	if existingID == 0 || database.Getdatarow[int](false,
+		"select count() from metadata_translations where media_type = 'dbbook' and media_id = ? and field = 'title'", &dbbookID) == 0 {
+		TranslateBook(ctx, dbbookID)
 	}
 
 	// Get or create tracked authors for authors on the book.

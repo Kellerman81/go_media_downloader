@@ -58,11 +58,11 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Add Music")),
+					html.H2(html.Class("header-title"), gomponents.Text(t("Add Music"))),
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Search configured music metadata providers and add albums, artists or compilations to your library",
+							t("Search configured music metadata providers and add albums, artists or compilations to your library"),
 						),
 					),
 				),
@@ -78,10 +78,10 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 			html.Ul(
 				html.Class("nav nav-tabs mb-3"),
 				html.Role("tablist"),
-				musicTab("m1", "fas fa-compact-disc", "Single Album", true),
-				musicTab("m2", "fas fa-user-plus", "Full Artist", false),
-				musicTab("m3", "fas fa-list-check", "Selected Albums", false),
-				musicTab("m4", "fas fa-layer-group", "Series / Compilation", false),
+				musicTab("m1", "fas fa-compact-disc", t("Single Album"), true),
+				musicTab("m2", "fas fa-user-plus", t("Full Artist"), false),
+				musicTab("m3", "fas fa-list-check", t("Selected Albums"), false),
+				musicTab("m4", "fas fa-layer-group", t("Series / Compilation"), false),
 			),
 
 			html.Div(
@@ -90,27 +90,27 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 				// --- Mode 1: Single Album ---
 				musicTabPane("m1", true,
 					musicCardWrap(
-						"Search for a single album",
-						"Enter an album title (and optionally an artist), pick a provider, then add any match.",
+						t("Search for a single album"),
+						t("Enter an album title (and optionally an artist), pick a provider, then add any match."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
 							musicProviderSelectCol("m1_provider", albumProviders),
 							musicInputCol(
 								"m1_title",
-								"Album Title",
-								"Enter album title...",
+								t("Album Title"),
+								t("Enter album title..."),
 								3,
 								true,
 							),
 							musicInputCol(
 								"m1_artist",
-								"Artist (optional)",
-								"Enter artist...",
+								t("Artist (optional)"),
+								t("Enter artist..."),
 								3,
 								false,
 							),
 							musicListSelectCol("m1_list", mediaConfigs, 2),
-							musicButtonCol("Search", "fas fa-search", "musicSearchAlbum()"),
+							musicButtonCol(t("Search"), "fas fa-search", "musicSearchAlbum()"),
 						),
 					),
 					html.Div(html.ID("m1_results"), html.Class("mt-3")),
@@ -119,20 +119,20 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 				// --- Mode 2: Full Artist ---
 				musicTabPane("m2", false,
 					musicCardWrap(
-						"Add a complete artist",
-						"Search for an artist, confirm the correct match using the album previews, then add the whole catalogue. Only releases matching the selected types and formats are imported.",
+						t("Add a complete artist"),
+						t("Search for an artist, confirm the correct match using the album previews, then add the whole catalogue. Only releases matching the selected types and formats are imported."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
 							musicProviderSelectCol("m2_provider", artistProviders),
 							musicInputCol(
 								"m2_artist",
-								"Artist Name",
-								"Enter artist name...",
+								t("Artist Name"),
+								t("Enter artist name..."),
 								4,
 								true,
 							),
 							musicListSelectCol("m2_list", mediaConfigs, 3),
-							musicButtonCol("Search", "fas fa-search", "musicSearchArtist('m2')"),
+							musicButtonCol(t("Search"), "fas fa-search", "musicSearchArtist('m2')"),
 						),
 						musicFilterRow("m2"),
 					),
@@ -142,20 +142,20 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 				// --- Mode 3: Selected Albums ---
 				musicTabPane("m3", false,
 					musicCardWrap(
-						"Add selected albums of an artist",
-						"Search for an artist, list their releases, then pick exactly which albums to add.",
+						t("Add selected albums of an artist"),
+						t("Search for an artist, list their releases, then pick exactly which albums to add."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
 							musicProviderSelectCol("m3_provider", artistProviders),
 							musicInputCol(
 								"m3_artist",
-								"Artist Name",
-								"Enter artist name...",
+								t("Artist Name"),
+								t("Enter artist name..."),
 								4,
 								true,
 							),
 							musicListSelectCol("m3_list", mediaConfigs, 3),
-							musicButtonCol("Search", "fas fa-search", "musicSearchArtist('m3')"),
+							musicButtonCol(t("Search"), "fas fa-search", "musicSearchArtist('m3')"),
 						),
 						musicFilterRow("m3"),
 					),
@@ -167,19 +167,19 @@ func musicMetadataSearchContent(mediaConfigs []string, csrfToken string) gompone
 					"m4",
 					false,
 					musicCardWrap(
-						"Series / Compilation (e.g. Bravo Hits, Now That's What I Call Music)",
-						"Search for a compilation/series name to preview its releases, then import all of them at once.",
+						t("Series / Compilation (e.g. Bravo Hits, Now That's What I Call Music)"),
+						t("Search for a compilation/series name to preview its releases, then import all of them at once."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
 							musicInputCol(
 								"series_name",
-								"Series / Compilation Name",
+								t("Series / Compilation Name"),
 								"e.g. Bravo Hits, Now 100",
 								5,
 								true,
 							),
 							musicListSelectCol("series_list", mediaConfigs, 4),
-							musicButtonCol("Preview", "fas fa-search", "musicSearchSeries()"),
+							musicButtonCol(t("Preview"), "fas fa-search", "musicSearchSeries()"),
 						),
 					),
 					html.Div(html.ID("m4_results"), html.Class("mt-3")),
@@ -256,7 +256,7 @@ func musicProviderSelectCol(id string, providerKeys []string) gomponents.Node {
 	if len(providerKeys) == 0 {
 		opts = append(
 			opts,
-			html.Option(html.Value(""), gomponents.Text("(no provider configured)")),
+			html.Option(html.Value(""), gomponents.Text(t("(no provider configured)"))),
 		)
 	}
 
@@ -266,7 +266,7 @@ func musicProviderSelectCol(id string, providerKeys []string) gomponents.Node {
 
 	return html.Div(
 		html.Class("col-md-2"),
-		html.Label(html.For(id), html.Class("form-label"), gomponents.Text("Provider")),
+		html.Label(html.For(id), html.Class("form-label"), gomponents.Text(t("Provider"))),
 		html.Select(append([]gomponents.Node{
 			html.Class("form-select"), html.ID(id), html.Name(id),
 		}, opts...)...),
@@ -294,7 +294,7 @@ func musicInputCol(id, label, placeholder string, mdCols int, required bool) gom
 func musicListSelectCol(id string, lists []string, mdCols int) gomponents.Node {
 	return html.Div(
 		html.Class(fmt.Sprintf("col-md-%d", mdCols)),
-		html.Label(html.For(id), html.Class("form-label"), gomponents.Text("Add to List")),
+		html.Label(html.For(id), html.Class("form-label"), gomponents.Text(t("Add to List"))),
 		html.Select(
 			html.Class("form-select"), html.ID(id), html.Name(id),
 			gomponents.Attr("required", "true"),
@@ -320,15 +320,16 @@ func musicButtonCol(label, icon, onclick string) gomponents.Node {
 // musicFilterRow renders the release-type and media-format filter checkboxes (modes 2/3).
 func musicFilterRow(prefix string) gomponents.Node {
 	typeChecks := make([]gomponents.Node, 0, len(musicReleaseTypeOptions))
-	for _, t := range musicReleaseTypeOptions {
-		typeChecks = append(typeChecks, musicCheck(prefix+"_type_"+t, prefix+"_type", t, t, false))
+	// The values stay MusicBrainz' names; only the labels are translated.
+	for _, rt := range musicReleaseTypeOptions {
+		typeChecks = append(typeChecks, musicCheck(prefix+"_type_"+rt, prefix+"_type", rt, t(rt), false))
 	}
 
 	formatChecks := make([]gomponents.Node, 0, len(musicFormatOptions))
 	for _, f := range musicFormatOptions {
 		formatChecks = append(
 			formatChecks,
-			musicCheck(prefix+"_fmt_"+f, prefix+"_format", f, f, musicFormatDefaults[f]),
+			musicCheck(prefix+"_fmt_"+f, prefix+"_format", f, t(f), musicFormatDefaults[f]),
 		)
 	}
 
@@ -338,24 +339,24 @@ func musicFilterRow(prefix string) gomponents.Node {
 			html.Class("col-md-6"),
 			html.Label(
 				html.Class("form-label fw-semibold d-block"),
-				gomponents.Text("Release types"),
+				gomponents.Text(t("Release types")),
 			),
 			html.Div(html.Class("d-flex flex-wrap gap-3"), gomponents.Group(typeChecks)),
 			html.Small(
 				html.Class("text-muted"),
-				gomponents.Text("Leave all unchecked to allow any type."),
+				gomponents.Text(t("Leave all unchecked to allow any type.")),
 			),
 		),
 		html.Div(
 			html.Class("col-md-6"),
 			html.Label(
 				html.Class("form-label fw-semibold d-block"),
-				gomponents.Text("Media formats"),
+				gomponents.Text(t("Media formats")),
 			),
 			html.Div(html.Class("d-flex flex-wrap gap-3"), gomponents.Group(formatChecks)),
 			html.Small(
 				html.Class("text-muted"),
-				gomponents.Text("Leave all unchecked to allow any format."),
+				gomponents.Text(t("Leave all unchecked to allow any format.")),
 			),
 		),
 	)
@@ -420,7 +421,7 @@ func releaseBadges(r *apiexternal_v2.ReleaseSearchResult) gomponents.Node {
 			badges,
 			html.Span(
 				html.Class("badge bg-info me-1"),
-				gomponents.Textf("%d tracks", r.TrackCount),
+				gomponents.Text(tf("%d tracks", r.TrackCount)),
 			),
 		)
 	}
@@ -487,7 +488,7 @@ func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult, have boo
 						if release.Label != "" {
 							return html.Small(
 								html.Class("text-muted d-block"),
-								gomponents.Text("Label: "+release.Label),
+								gomponents.Text(t("Label: ")+release.Label),
 							)
 						}
 
@@ -498,7 +499,7 @@ func createMusicResultCard(release *apiexternal_v2.ReleaseSearchResult, have boo
 				metaAddButton(have, "btn btn-success btn-sm add-album-btn ms-3",
 					html.Data("release", releaseJSON(release)),
 					html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
-					gomponents.Text("Add Album"),
+					gomponents.Text(t("Add Album")),
 				),
 			),
 		),
@@ -516,7 +517,7 @@ func SearchMusicMetadata(c *gin.Context) {
 	artist := c.PostForm("m1_artist")
 
 	if title == "" && artist == "" {
-		renderMusicAlert(c, "Please enter an album title or artist", "warning")
+		renderMusicAlert(c, t("Please enter an album title or artist"), "warning")
 		return
 	}
 
@@ -529,15 +530,15 @@ func SearchMusicMetadata(c *gin.Context) {
 			Err(err).
 			Str("provider", provider).
 			Msg("music album search failed")
-		renderMusicAlert(c, "Search failed: "+err.Error(), "danger")
+		renderMusicAlert(c, t("Search failed: ")+err.Error(), "danger")
 
 		return
 	}
 
 	if len(results) == 0 {
-		msg := "No albums found."
+		msg := t("No albums found.")
 		if fellBack {
-			msg = "No albums found (" + musicProviderLabel(provider) + " is not configured; MusicBrainz was searched instead)."
+			msg = tf("No albums found (%s is not configured; MusicBrainz was searched instead).", musicProviderLabel(provider))
 		}
 
 		renderMusicAlert(c, msg, "warning")
@@ -550,16 +551,16 @@ func SearchMusicMetadata(c *gin.Context) {
 	if fellBack {
 		nodes = append(nodes, html.Div(
 			html.Class("alert alert-info py-2 mb-2"),
-			gomponents.Textf(
+			gomponents.Text(tf(
 				"%s is not configured — these results come from MusicBrainz instead.",
 				musicProviderLabel(provider),
-			),
+			)),
 		))
 	}
 
 	nodes = append(
 		nodes,
-		html.H6(html.Class("mb-2"), gomponents.Textf("%d albums found", len(results))),
+		html.H6(html.Class("mb-2"), gomponents.Text(tf("%d albums found", len(results)))),
 	)
 
 	lists := haveLists(c, "music")
@@ -577,7 +578,7 @@ func SearchMusicMetadata(c *gin.Context) {
 func AddAlbumToDatabase(c *gin.Context) {
 	listName := c.PostForm("music_list")
 	if listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "List name is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("List name is required")})
 		return
 	}
 
@@ -585,7 +586,7 @@ func AddAlbumToDatabase(c *gin.Context) {
 	if cfgp == nil {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "List '" + listName + "' not found in music configuration"},
+			gin.H{"error": tf("List '%s' not found in music configuration", listName)},
 		)
 
 		return
@@ -598,7 +599,7 @@ func AddAlbumToDatabase(c *gin.Context) {
 	if releaseStr := c.PostForm("release"); releaseStr != "" {
 		var release apiexternal_v2.ReleaseSearchResult
 		if err := json.Unmarshal([]byte(releaseStr), &release); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid release data"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": t("Invalid release data")})
 			return
 		}
 
@@ -609,13 +610,13 @@ func AddAlbumToDatabase(c *gin.Context) {
 				Msg("Failed to add album")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to add album: " + err.Error()},
+				gin.H{"error": t("Failed to add album: ") + err.Error()},
 			)
 
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"success": "Added \"" + release.Title + "\" to " + listName})
+		c.JSON(http.StatusOK, gin.H{"success": t("Added \"") + release.Title + "\" to " + listName})
 
 		return
 	}
@@ -623,7 +624,7 @@ func AddAlbumToDatabase(c *gin.Context) {
 	// Legacy path: MusicBrainz id (+ optional series discovery).
 	mbid := c.PostForm("mbid")
 	if mbid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Release data or MusicBrainz ID is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Release data or MusicBrainz ID is required")})
 		return
 	}
 
@@ -631,13 +632,13 @@ func AddAlbumToDatabase(c *gin.Context) {
 		logger.Logtype("error", 0).Err(err).Str("mbid", mbid).Msg("Failed to add album")
 		c.JSON(
 			http.StatusInternalServerError,
-			gin.H{"error": "Failed to add album: " + err.Error()},
+			gin.H{"error": t("Failed to add album: ") + err.Error()},
 		)
 
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": "Album added successfully to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Album added successfully to ") + listName})
 }
 
 // ---------------------------------------------------------------------------
@@ -657,7 +658,7 @@ func SearchMusicArtists(c *gin.Context) {
 	query := c.PostForm("artist")
 
 	if query == "" {
-		renderMusicAlert(c, "Please enter an artist name", "warning")
+		renderMusicAlert(c, t("Please enter an artist name"), "warning")
 		return
 	}
 
@@ -667,13 +668,13 @@ func SearchMusicArtists(c *gin.Context) {
 	artists, err := musicSearchArtists(ctx, provider, query, 5)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Str("provider", provider).Msg("artist search failed")
-		renderMusicAlert(c, "Search failed: "+err.Error(), "danger")
+		renderMusicAlert(c, t("Search failed: ")+err.Error(), "danger")
 
 		return
 	}
 
 	if len(artists) == 0 {
-		renderMusicAlert(c, "No artists found for: "+query, "warning")
+		renderMusicAlert(c, tf("No artists found for: %s", query), "warning")
 		return
 	}
 
@@ -703,7 +704,7 @@ func SearchMusicArtists(c *gin.Context) {
 
 	nodes = append(
 		nodes,
-		html.H6(html.Class("mb-2"), gomponents.Text("Select the correct artist:")),
+		html.H6(html.Class("mb-2"), gomponents.Text(t("Select the correct artist:"))),
 	)
 
 	for i := range artists {
@@ -717,7 +718,7 @@ func SearchMusicArtists(c *gin.Context) {
 // lookups (see createArtistCard) run at once in SearchMusicArtists. Artist
 // search results are already capped at 5, so this is mostly a defensive
 // bound against that cap changing, expressed the same way as
-// maxConcurrentEpisodeSearches in series.go.
+// maxConcurrentEpisodeSearches in rest_series.go.
 const maxConcurrentArtistPreviewFetches = 5
 
 // createArtistCard renders an artist with album previews and the mode-specific action.
@@ -748,7 +749,7 @@ func createArtistCard(
 	} else {
 		previewBlock = html.Small(
 			html.Class("text-muted fst-italic"),
-			gomponents.Text("No album preview available"),
+			gomponents.Text(t("No album preview available")),
 		)
 	}
 
@@ -774,7 +775,7 @@ func createArtistCard(
 			html.Class("btn btn-sm btn-primary list-artist-albums-btn"),
 			html.Data("artist", string(artistJSON)),
 			html.I(html.Class("fas fa-list-check me-1"), gomponents.Attr("aria-hidden", "true")),
-			gomponents.Text("List Albums"),
+			gomponents.Text(t("List Albums")),
 		)
 	} else {
 		actionBtn = html.Button(
@@ -782,7 +783,7 @@ func createArtistCard(
 			html.Class("btn btn-sm btn-success add-artist-btn"),
 			html.Data("artist", string(artistJSON)),
 			html.I(html.Class("fas fa-user-plus me-1"), gomponents.Attr("aria-hidden", "true")),
-			gomponents.Text("Add Artist"),
+			gomponents.Text(t("Add Artist")),
 		)
 	}
 
@@ -840,13 +841,13 @@ func AddArtistAlbumsFiltered(c *gin.Context) {
 	artistStr := c.PostForm("artist")
 
 	if artistStr == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Artist and list are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Artist and list are required")})
 		return
 	}
 
 	var artist apiexternal_v2.ArtistSearchResult
 	if err := json.Unmarshal([]byte(artistStr), &artist); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid artist data"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Invalid artist data")})
 		return
 	}
 
@@ -854,7 +855,7 @@ func AddArtistAlbumsFiltered(c *gin.Context) {
 	if cfgp == nil {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "List '" + listName + "' not found in music configuration"},
+			gin.H{"error": tf("List '%s' not found in music configuration", listName)},
 		)
 
 		return
@@ -906,12 +907,12 @@ func AddArtistAlbumsFiltered(c *gin.Context) {
 		},
 		"Data",
 	); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": tf("Could not queue the import: %s", err.Error())})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": fmt.Sprintf(
+		"success": tf(
 			"Adding albums by \"%s\" to %s in the background.",
 			artist.Name,
 			listName,
@@ -926,13 +927,13 @@ func ListArtistReleasesForSelection(c *gin.Context) {
 	artistStr := c.PostForm("artist")
 
 	if artistStr == "" {
-		renderMusicAlert(c, "Missing artist data", "danger")
+		renderMusicAlert(c, t("Missing artist data"), "danger")
 		return
 	}
 
 	var artist apiexternal_v2.ArtistSearchResult
 	if err := json.Unmarshal([]byte(artistStr), &artist); err != nil {
-		renderMusicAlert(c, "Invalid artist data", "danger")
+		renderMusicAlert(c, t("Invalid artist data"), "danger")
 		return
 	}
 
@@ -943,7 +944,7 @@ func ListArtistReleasesForSelection(c *gin.Context) {
 
 	releases, err := musicArtistReleases(ctx, provider, &artist, 200)
 	if err != nil {
-		renderMusicAlert(c, "Failed to list releases: "+err.Error(), "danger")
+		renderMusicAlert(c, t("Failed to list releases: ")+err.Error(), "danger")
 		return
 	}
 
@@ -958,23 +959,23 @@ func ListArtistReleasesForSelection(c *gin.Context) {
 
 	if len(items) == 0 {
 		renderMusicHTML(c, html.Div(html.Class("alert alert-warning mb-0 mt-2"),
-			gomponents.Text("No releases match the selected filters.")))
+			gomponents.Text(t("No releases match the selected filters."))))
 
 		return
 	}
 
 	header := html.Div(
 		html.Class("d-flex justify-content-between align-items-center mb-2"),
-		html.Span(html.Class("fw-semibold"), gomponents.Textf("%d releases", len(items))),
+		html.Span(html.Class("fw-semibold"), gomponents.Text(tf("%d releases", len(items)))),
 		html.Div(
 			html.Button(
 				html.Type("button"),
 				html.Class("btn btn-sm btn-outline-secondary me-2 select-all-btn"),
-				gomponents.Text("Select all"),
+				gomponents.Text(t("Select all")),
 			),
 			html.Button(html.Type("button"), html.Class("btn btn-sm btn-success add-selected-btn"),
 				html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
-				gomponents.Text("Add Selected")),
+				gomponents.Text(t("Add Selected"))),
 		),
 	)
 
@@ -1006,7 +1007,7 @@ func musicReleaseCheckItem(r *apiexternal_v2.ReleaseSearchResult) gomponents.Nod
 func AddSelectedAlbums(c *gin.Context) {
 	listName := c.PostForm("music_list")
 	if listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "List name is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("List name is required")})
 		return
 	}
 
@@ -1014,7 +1015,7 @@ func AddSelectedAlbums(c *gin.Context) {
 	if cfgp == nil {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "List '" + listName + "' not found in music configuration"},
+			gin.H{"error": tf("List '%s' not found in music configuration", listName)},
 		)
 
 		return
@@ -1022,13 +1023,13 @@ func AddSelectedAlbums(c *gin.Context) {
 
 	releasesStr := c.PostForm("releases")
 	if releasesStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No albums selected"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("No albums selected")})
 		return
 	}
 
 	var releases []apiexternal_v2.ReleaseSearchResult
 	if err := json.Unmarshal([]byte(releasesStr), &releases); err != nil || len(releases) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid selection data"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Invalid selection data")})
 		return
 	}
 
@@ -1062,12 +1063,12 @@ func AddSelectedAlbums(c *gin.Context) {
 		},
 		"Data",
 	); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": tf("Could not queue the import: %s", err.Error())})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": fmt.Sprintf(
+		"success": tf(
 			"Adding %d selected album(s) to %s in the background.",
 			len(releases),
 			listName,
@@ -1085,7 +1086,7 @@ func SearchMusicSeriesMetadata(c *gin.Context) {
 	listName := c.PostForm("series_list")
 
 	if seriesName == "" {
-		renderMusicAlert(c, "Series name is required", "warning")
+		renderMusicAlert(c, t("Series name is required"), "warning")
 		return
 	}
 
@@ -1096,13 +1097,13 @@ func SearchMusicSeriesMetadata(c *gin.Context) {
 	results, _, err := musicSearchAlbums(ctx, provMusicBrainz, "", seriesName, 25)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Str("series", seriesName).Msg("series search failed")
-		renderMusicAlert(c, "Search failed: "+err.Error(), "danger")
+		renderMusicAlert(c, t("Search failed: ")+err.Error(), "danger")
 
 		return
 	}
 
 	if len(results) == 0 {
-		renderMusicAlert(c, "No releases found for series: "+seriesName, "warning")
+		renderMusicAlert(c, tf("No releases found for series: %s", seriesName), "warning")
 		return
 	}
 
@@ -1113,14 +1114,14 @@ func SearchMusicSeriesMetadata(c *gin.Context) {
 			),
 			html.H6(
 				html.Class("mb-0"),
-				gomponents.Textf("Preview: %d releases for \"%s\"", len(results), seriesName),
+				gomponents.Text(tf("Preview: %d releases for \"%s\"", len(results), seriesName)),
 			),
 			html.Button(
 				html.Class("btn btn-warning import-series-btn"),
 				html.Data("series-name", seriesName),
 				html.Data("series-list", listName),
 				html.I(html.Class("fas fa-download me-1"), gomponents.Attr("aria-hidden", "true")),
-				gomponents.Textf("Import All \"%s\"", seriesName),
+				gomponents.Text(tf("Import All \"%s\"", seriesName)),
 			),
 		),
 	}
@@ -1140,7 +1141,7 @@ func DiscoverSeriesAlbumsByName(c *gin.Context) {
 	listName := c.PostForm("series_list")
 
 	if seriesName == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Series name and list name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Series name and list name are required")})
 		return
 	}
 
@@ -1148,7 +1149,7 @@ func DiscoverSeriesAlbumsByName(c *gin.Context) {
 	if cfgp == nil {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "List '" + listName + "' not found in music configuration"},
+			gin.H{"error": tf("List '%s' not found in music configuration", listName)},
 		)
 
 		return
@@ -1175,12 +1176,12 @@ func DiscoverSeriesAlbumsByName(c *gin.Context) {
 		},
 		"Data",
 	); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": tf("Could not queue the import: %s", err.Error())})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"success": fmt.Sprintf(
+		"success": tf(
 			"Importing all \"%s\" albums in background, adding to %s",
 			seriesName,
 			listName,
@@ -1244,9 +1245,9 @@ function musicGetChecked(name) {
 // --- Mode 1: single album ---
 function musicSearchAlbum() {
 	var title = musicVal('m1_title'), artist = musicVal('m1_artist');
-	if (!title && !artist) { showToaster('warning', 'Enter an album title or artist'); return; }
+	if (!title && !artist) { showToaster('warning', _t('Enter an album title or artist')); return; }
 	var box = document.getElementById('m1_results');
-	musicSpinner(box, 'Searching...');
+	musicSpinner(box, _t('Searching...'));
 	var p = new URLSearchParams();
 	p.append('m1_provider', musicVal('m1_provider'));
 	p.append('m1_title', title);
@@ -1254,36 +1255,36 @@ function musicSearchAlbum() {
 	p.append('have_list', musicVal('m1_list') || '');
 	musicPost('/api/admin/search/music', p).then(function(r){return r.text();})
 		.then(function(html){ box.innerHTML = html; })
-		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">Search failed.</div>'; });
+		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">' + _t('Search failed.') + '</div>'; });
 }
 
 // --- Modes 2 & 3: artist search ---
 function musicSearchArtist(prefix) {
 	var artist = musicVal(prefix + '_artist');
-	if (!artist) { showToaster('warning', 'Enter an artist name'); return; }
+	if (!artist) { showToaster('warning', _t('Enter an artist name')); return; }
 	var box = document.getElementById(prefix + '_results');
-	musicSpinner(box, 'Searching artists...');
+	musicSpinner(box, _t('Searching artists...'));
 	var p = new URLSearchParams();
 	p.append('mode', prefix);
 	p.append('provider', musicVal(prefix + '_provider'));
 	p.append('artist', artist);
 	musicPost('/api/admin/search/music/artist', p).then(function(r){return r.text();})
 		.then(function(html){ box.innerHTML = html; })
-		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">Search failed.</div>'; });
+		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">' + _t('Search failed.') + '</div>'; });
 }
 
 // --- Mode 4: series ---
 function musicSearchSeries() {
 	var name = musicVal('series_name');
-	if (!name) { showToaster('warning', 'Enter a series name'); return; }
+	if (!name) { showToaster('warning', _t('Enter a series name')); return; }
 	var box = document.getElementById('m4_results');
-	musicSpinner(box, 'Searching...');
+	musicSpinner(box, _t('Searching...'));
 	var p = new URLSearchParams();
 	p.append('series_name', name);
 	p.append('series_list', musicVal('series_list'));
 	musicPost('/api/admin/search/music/series', p).then(function(r){return r.text();})
 		.then(function(html){ box.innerHTML = html; })
-		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">Search failed.</div>'; });
+		.catch(function(){ box.innerHTML = '<div class="alert alert-danger">' + _t('Search failed.') + '</div>'; });
 }
 
 // Delegated event handling for dynamically-injected result controls.
@@ -1294,23 +1295,23 @@ document.addEventListener('click', function(e) {
 		var pane = addBtn.closest('.tab-pane');
 		var listEl = pane ? pane.querySelector('[id$="_list"]') : null;
 		var list = listEl ? listEl.value : '';
-		if (!list) { showToaster('warning', 'Select a list first'); return; }
+		if (!list) { showToaster('warning', _t('Select a list first')); return; }
 		var original = addBtn.innerHTML;
 		addBtn.disabled = true;
-		addBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+		addBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 		var p = new URLSearchParams();
 		p.append('release', addBtn.getAttribute('data-release'));
 		p.append('music_list', list);
 		musicPost('/api/admin/add/album', p).then(function(r){return r.json();}).then(function(d){
 			if (d.success) {
 				showToaster('success', d.success);
-				addBtn.innerHTML = '<i class="fas fa-check me-1"></i>Added';
+				addBtn.innerHTML = '<i class="fas fa-check me-1"></i>' + _t('Added');
 				addBtn.classList.remove('btn-success'); addBtn.classList.add('btn-outline-success');
 			} else {
-				showToaster('error', d.error || 'Failed to add album');
+				showToaster('error', d.error || _t('Failed to add album'));
 				addBtn.innerHTML = original; addBtn.disabled = false;
 			}
-		}).catch(function(){ showToaster('error', 'Failed to add album'); addBtn.innerHTML = original; addBtn.disabled = false; });
+		}).catch(function(){ showToaster('error', _t('Failed to add album')); addBtn.innerHTML = original; addBtn.disabled = false; });
 		return;
 	}
 
@@ -1318,8 +1319,8 @@ document.addEventListener('click', function(e) {
 	var artistBtn = e.target.closest && e.target.closest('.add-artist-btn');
 	if (artistBtn) {
 		var list2 = musicVal('m2_list');
-		if (!list2) { showToaster('warning', 'Select a list first'); return; }
-		confirmAction('Add artist', 'Add all matching albums by this artist to "' + musicEscape(list2) + '"? This runs in the background.', function() {
+		if (!list2) { showToaster('warning', _t('Select a list first')); return; }
+		confirmAction(_t('Add artist'), _t('Add all matching albums by this artist to "') + musicEscape(list2) + '"? This runs in the background.', function() {
 			var p = new URLSearchParams();
 			p.append('provider', musicVal('m2_provider'));
 			p.append('music_list', list2);
@@ -1327,11 +1328,11 @@ document.addEventListener('click', function(e) {
 			musicGetChecked('m2_type').forEach(function(t){ p.append('types', t); });
 			musicGetChecked('m2_format').forEach(function(f){ p.append('formats', f); });
 			artistBtn.disabled = true;
-			artistBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Queuing...';
+			artistBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Queuing...');
 			musicPost('/api/admin/add/artist-albums', p).then(function(r){return r.json();}).then(function(d){
-				if (d.success) { showToaster('success', d.success); artistBtn.innerHTML = '<i class="fas fa-check me-1"></i>Queued'; artistBtn.classList.remove('btn-success'); artistBtn.classList.add('btn-outline-success'); }
-				else { showToaster('error', d.error || 'Failed'); artistBtn.disabled = false; artistBtn.innerHTML = 'Add Artist'; }
-			}).catch(function(){ showToaster('error', 'Failed to queue'); artistBtn.disabled = false; artistBtn.innerHTML = 'Add Artist'; });
+				if (d.success) { showToaster('success', d.success); artistBtn.innerHTML = '<i class="fas fa-check me-1"></i>' + _t('Queued'); artistBtn.classList.remove('btn-success'); artistBtn.classList.add('btn-outline-success'); }
+				else { showToaster('error', d.error || _t('Failed')); artistBtn.disabled = false; artistBtn.innerHTML = _t('Add Artist'); }
+			}).catch(function(){ showToaster('error', _t('Failed to queue')); artistBtn.disabled = false; artistBtn.innerHTML = _t('Add Artist'); });
 		});
 		return;
 	}
@@ -1340,7 +1341,7 @@ document.addEventListener('click', function(e) {
 	var listBtn = e.target.closest && e.target.closest('.list-artist-albums-btn');
 	if (listBtn) {
 		var container = listBtn.closest('.card-body').querySelector('[data-artist-albums]');
-		musicSpinner(container, 'Loading albums...');
+		musicSpinner(container, _t('Loading albums...'));
 		var p = new URLSearchParams();
 		p.append('provider', musicVal('m3_provider'));
 		p.append('artist', listBtn.getAttribute('data-artist'));
@@ -1348,7 +1349,7 @@ document.addEventListener('click', function(e) {
 		musicGetChecked('m3_format').forEach(function(f){ p.append('formats', f); });
 		musicPost('/api/admin/search/music/artist-releases', p).then(function(r){return r.text();})
 			.then(function(html){ container.innerHTML = html; })
-			.catch(function(){ container.innerHTML = '<div class="alert alert-danger">Failed to load albums.</div>'; });
+			.catch(function(){ container.innerHTML = '<div class="alert alert-danger">' + _t('Failed to load albums.') + '</div>'; });
 		return;
 	}
 
@@ -1366,23 +1367,23 @@ document.addEventListener('click', function(e) {
 	var addSel = e.target.closest && e.target.closest('.add-selected-btn');
 	if (addSel) {
 		var list4 = musicVal('m3_list');
-		if (!list4) { showToaster('warning', 'Select a list first'); return; }
+		if (!list4) { showToaster('warning', _t('Select a list first')); return; }
 		var wrap = addSel.closest('.artist-album-list');
 		var selected = [];
 		wrap.querySelectorAll('.album-select-check:checked').forEach(function(c){
 			try { selected.push(JSON.parse(c.getAttribute('data-release'))); } catch(err) {}
 		});
-		if (selected.length === 0) { showToaster('warning', 'Select at least one album'); return; }
-		confirmAction('Add selected', 'Add ' + selected.length + ' selected album(s) to "' + musicEscape(list4) + '"? This runs in the background.', function() {
+		if (selected.length === 0) { showToaster('warning', _t('Select at least one album')); return; }
+		confirmAction(_t('Add selected'), _t('Add ') + selected.length + ' selected album(s) to "' + musicEscape(list4) + '"? This runs in the background.', function() {
 			var p = new URLSearchParams();
 			p.append('music_list', list4);
 			p.append('releases', JSON.stringify(selected));
 			addSel.disabled = true;
-			addSel.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Queuing...';
+			addSel.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Queuing...');
 			musicPost('/api/admin/add/albums-selected', p).then(function(r){return r.json();}).then(function(d){
-				if (d.success) { showToaster('success', d.success); addSel.innerHTML = '<i class="fas fa-check me-1"></i>Queued'; }
-				else { showToaster('error', d.error || 'Failed'); addSel.disabled = false; addSel.innerHTML = 'Add Selected'; }
-			}).catch(function(){ showToaster('error', 'Failed to queue'); addSel.disabled = false; addSel.innerHTML = 'Add Selected'; });
+				if (d.success) { showToaster('success', d.success); addSel.innerHTML = '<i class="fas fa-check me-1"></i>' + _t('Queued'); }
+				else { showToaster('error', d.error || _t('Failed')); addSel.disabled = false; addSel.innerHTML = _t('Add Selected'); }
+			}).catch(function(){ showToaster('error', _t('Failed to queue')); addSel.disabled = false; addSel.innerHTML = _t('Add Selected'); });
 		});
 		return;
 	}
@@ -1392,17 +1393,17 @@ document.addEventListener('click', function(e) {
 	if (impBtn) {
 		var sName = impBtn.getAttribute('data-series-name');
 		var sList = impBtn.getAttribute('data-series-list') || musicVal('series_list');
-		if (!sList) { showToaster('warning', 'Select a list first'); return; }
-		confirmAction('Import series', 'Import all "' + musicEscape(sName) + '" albums into "' + musicEscape(sList) + '"? This runs in the background.', function() {
+		if (!sList) { showToaster('warning', _t('Select a list first')); return; }
+		confirmAction(_t('Import series'), _t('Import all "') + musicEscape(sName) + '" albums into "' + musicEscape(sList) + '"? This runs in the background.', function() {
 			var p = new URLSearchParams();
 			p.append('series_name', sName);
 			p.append('series_list', sList);
 			impBtn.disabled = true;
-			impBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Queuing...';
+			impBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Queuing...');
 			musicPost('/api/admin/discover/series-albums', p).then(function(r){return r.json();}).then(function(d){
-				if (d.success) { showToaster('success', d.success); impBtn.innerHTML = '<i class="fas fa-check me-1"></i>Queued'; impBtn.classList.remove('btn-warning'); impBtn.classList.add('btn-outline-success'); }
-				else { showToaster('error', d.error || 'Failed'); impBtn.disabled = false; }
-			}).catch(function(){ showToaster('error', 'Failed to queue'); impBtn.disabled = false; });
+				if (d.success) { showToaster('success', d.success); impBtn.innerHTML = '<i class="fas fa-check me-1"></i>' + _t('Queued'); impBtn.classList.remove('btn-warning'); impBtn.classList.add('btn-outline-success'); }
+				else { showToaster('error', d.error || _t('Failed')); impBtn.disabled = false; }
+			}).catch(function(){ showToaster('error', _t('Failed to queue')); impBtn.disabled = false; });
 		});
 		return;
 	}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"regexp"
@@ -142,7 +143,7 @@ func streamGuard(c *gin.Context, kind, id string) (done func(), ok bool) {
 	user := accessOf(c).Name
 
 	if streamBlocked(user, kind, id) {
-		c.String(http.StatusGone, "stopped by an admin")
+		c.String(http.StatusGone, t("stopped by an admin"))
 		return nil, false
 	}
 
@@ -243,10 +244,21 @@ type nowPlaying struct {
 	Updated  time.Time
 	stopMsg  string // set by an admin: the player stops and shows it
 
-	session   uint      // its play_sessions row
+	session   uint      // its play_sessions row (0 until counted)
 	lastState string    // the state of the previous report
 	lastAt    time.Time // when it came
+	played    float64   // seconds played of the current file
+	counted   bool      // the file played long enough to be recorded
 }
+
+// minPlayedShare is how much of a file has to be played before it counts
+// as played for the account (history, Continue, watched, statistics):
+// skipping through a shuffled list leaves no trace. minPlayedSeconds when
+// the length is unknown.
+const (
+	minPlayedShare   = 0.05
+	minPlayedSeconds = 30
+)
 
 // maxReportGap caps the time counted as played between two reports (they
 // come every 10 s while playing).
@@ -301,41 +313,104 @@ func HandlePlayerProgress(c *gin.Context) {
 
 	pos, _ := strconv.ParseFloat(c.PostForm("pos"), 64)
 	dur, _ := strconv.ParseFloat(c.PostForm("dur"), 64)
-	title := c.PostForm("title")
-	title = title[:min(len(title), 200)]
 
-	nowPlayingMu.Lock()
-
-	p := nowPlayingMap[sid]
-	if p != nil && !strings.EqualFold(p.User, acc.Name) {
-		nowPlayingMu.Unlock()
+	stopMsg, err := recordPlayProgress(acc.Name, playReport{
+		SID: sid, Kind: kind, FileID: fileID, State: state, Pos: pos, Dur: dur, Title: c.PostForm("title"),
+		Mode: c.PostForm("mode"), Quality: c.PostForm("quality"), Client: c.ClientIP(),
+	})
+	if errors.Is(err, errForeignSID) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid progress"})
-
 		return
 	}
 
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"stop": stopMsg != "", "message": stopMsg})
+}
+
+// playReport is a player's report of where it is in a file: the Library
+// player's and those of outside apps (Jellyfin, Subsonic).
+type playReport struct {
+	SID     string
+	Kind    string // movie, episode, track, audiobook
+	FileID  uint64
+	State   string // start, play, pause, end, stop
+	Pos     float64
+	Dur     float64
+	Title   string
+	Mode    string
+	Quality string
+	Client  string
+}
+
+// errForeignSID: the player session belongs to another account.
+var errForeignSID = errors.New("player session of another account")
+
+// recordPlayProgress records a report of an account's player: Now Playing,
+// the history and the statistics. It returns the message of an admin who
+// stopped the player ("" to go on).
+func recordPlayProgress(user string, r playReport) (string, error) {
+	title := r.Title[:min(len(r.Title), 200)]
+	id := strconv.FormatUint(r.FileID, 10)
+	pos, dur, state := r.Pos, r.Dur, r.State
+
+	nowPlayingMu.Lock()
+
+	p := nowPlayingMap[r.SID]
+	if p != nil && !strings.EqualFold(p.User, user) {
+		nowPlayingMu.Unlock()
+		return "", errForeignSID
+	}
+
 	if p == nil {
-		p = &nowPlaying{SID: sid, User: acc.Name, Started: time.Now()}
-		nowPlayingMap[sid] = p
+		p = &nowPlaying{SID: r.SID, User: user, Started: time.Now()}
+		nowPlayingMap[r.SID] = p
 	}
 
 	stopMsg := p.stopMsg
-	now, mode, quality := time.Now(), c.PostForm("mode"), c.PostForm("quality")
+	now := time.Now()
 
-	// The viewing statistics: a play per file, with the time it played.
-	if state == "start" || p.session == 0 || p.Kind != kind || p.ID != id {
-		p.Started = now
-		p.session = database.StartPlaySession(acc.Name, kind, uint(fileID), title, mode, quality)
+	// Time played of this file; a new file starts over.
+	delta := 0.0
+	if state == "start" || p.Kind != r.Kind || p.ID != id {
+		p.Started, p.played, p.counted, p.session = now, 0, false, 0
 	} else if p.lastState == "start" || p.lastState == "play" {
-		database.AddPlaySeconds(p.session, min(now.Sub(p.lastAt), maxReportGap).Seconds(), mode)
+		delta = min(now.Sub(p.lastAt), maxReportGap).Seconds()
+		p.played += delta
+	}
+
+	// The account's history and the statistics only from 5% played on (Now
+	// Playing shows the player at once).
+	enough := p.played >= minPlayedSeconds
+	if dur > 0 {
+		enough = p.played >= minPlayedShare*dur
+	}
+
+	newPlay := !p.counted && enough
+	record := p.counted || newPlay
+
+	// Playing on in an unfinished file continues that play: no new one.
+	fid := uint(r.FileID)
+	resumed := newPlay && database.ContinuesPlay(user, r.Kind, &fid)
+
+	switch {
+	case newPlay:
+		p.counted = true
+		p.session = database.StartPlaySession(user, r.Kind, fid, title, r.Mode, r.Quality, resumed)
+		database.AddPlaySeconds(p.session, p.played, r.Mode)
+	case record && delta > 0:
+		database.AddPlaySeconds(p.session, delta, r.Mode)
 	}
 
 	p.lastState, p.lastAt = state, now
-	p.Kind, p.ID, p.Title, p.State, p.Position, p.Duration = kind, id, title, state, pos, dur
-	p.Quality, p.Mode, p.Client, p.Updated = quality, mode, c.ClientIP(), now
+	p.Kind, p.ID, p.Title, p.State, p.Position, p.Duration = r.Kind, id, title, state, pos, dur
+	p.Quality, p.Mode, p.Client, p.Updated = r.Quality, r.Mode, r.Client, now
 
 	if state == "stop" || stopMsg != "" {
-		delete(nowPlayingMap, sid)
+		delete(nowPlayingMap, r.SID)
 	}
 
 	nowPlayingMu.Unlock()
@@ -344,33 +419,30 @@ func HandlePlayerProgress(c *gin.Context) {
 		pos = dur
 	}
 
-	if pos > 0 || state == "start" {
-		h := database.PlayHistory{Username: acc.Name, Kind: kind, FileID: uint(fileID), Title: title, Position: pos, Duration: dur}
-		if err := database.PlayProgress(&h, state == "start"); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+	if record {
+		h := database.PlayHistory{Username: user, Kind: r.Kind, FileID: fid, Title: title, Position: pos, Duration: dur}
+		if err := database.PlayProgress(&h, newPlay && !resumed); err != nil {
+			return stopMsg, err
 		}
 
 		// Finishing the last part finishes the book, parts skipped or not.
-		if kind == "audiobook" && dur > 0 && pos/dur >= database.Watched {
-			fid := uint(fileID)
-			database.FinishAudiobook(acc.Name, &fid)
+		if r.Kind == "audiobook" && dur > 0 && pos/dur >= database.Watched {
+			database.FinishAudiobook(user, &fid)
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"stop": stopMsg != "", "message": stopMsg})
+	return stopMsg, nil
 }
 
 // NowPlayingPage shows who plays what, with a stop button
 // (/admin/nowplaying, admins).
 func NowPlayingPage(c *gin.Context) {
 	renderPageIn(c, "Now Playing", true, html.Div(html.Class("config-section-enhanced"),
-		renderEnhancedPageHeader("fa-solid fa-circle-play", "Now Playing",
-			"Who is playing what in the Library player. Stop ends the playback; the account sees your message."),
+		renderEnhancedPageHeader("fa-solid fa-circle-play", t("Now Playing"), t("Who is playing what in the Library player. Stop ends the playback; the account sees your message.")),
 		html.Div(html.ID("nowPlaying"), hx.Get("/api/admin/nowplaying/list"), hx.Trigger("load, every 5s"), hx.Swap("innerHTML")),
 		// The play history and viewing stats of the Statistics page, loaded once.
 		html.Div(html.Class("mt-4"), hx.Get("/api/admin/statistics/plays"), hx.Trigger("load"), hx.Swap("innerHTML"),
-			html.P(html.Class("text-muted small"), gomponents.Text("Loading the play history...")))))
+			html.P(html.Class("text-muted small"), gomponents.Text(t("Loading the play history..."))))))
 }
 
 // HandleNowPlayingList renders the active players and the latest plays.
@@ -383,7 +455,7 @@ func HandleNowPlayingList(c *gin.Context) {
 func HandleNowPlayingStop(c *gin.Context) {
 	msg := strings.TrimSpace(c.PostForm("message"))
 	if msg == "" {
-		msg = "Playback was stopped by an admin."
+		msg = t("Playback was stopped by an admin.")
 	}
 
 	nowPlayingMu.Lock()
@@ -397,10 +469,10 @@ func HandleNowPlayingStop(c *gin.Context) {
 
 	nowPlayingMu.Unlock()
 
-	alert := renderAlert("That player is no longer playing.", "warning")
+	alert := renderAlert(t("That player is no longer playing."), "warning")
 	if p != nil {
 		stopStreams(stopped.User, stopped.Kind, stopped.ID)
-		alert = renderAlert("Stopped "+stopped.Title+" for "+stopped.User+".", "success")
+		alert = renderAlert(tf("Stopped %s for %s.", stopped.Title, stopped.User), "success")
 	}
 
 	c.Header("Content-Type", "text/html")
@@ -419,9 +491,9 @@ func renderNowPlaying(csrf, alert string) gomponents.Node {
 			pct = int(min(p.Position/p.Duration, 1) * 100)
 		}
 
-		state := map[string]string{"pause": "Paused", "end": "Next file"}[p.State]
+		state := map[string]string{"pause": t("Paused"), "end": t("Next file")}[p.State]
 		if state == "" {
-			state = "Playing"
+			state = t("Playing")
 		}
 
 		rows = append(rows, html.Tr(
@@ -436,17 +508,17 @@ func renderNowPlaying(csrf, alert string) gomponents.Node {
 				hx.Post("/api/admin/nowplaying/stop"), hx.Headers(wizardCSRFHeader(csrf)), hx.Target("#nowPlaying"), hx.Swap("innerHTML"),
 				html.Input(html.Type("hidden"), html.Name("sid"), html.Value(p.SID)),
 				html.Input(html.Type("text"), html.Class("form-control form-control-sm"), html.Name("message"),
-					html.Placeholder("Message (optional)"), gomponents.Attr("maxlength", "300")),
+					html.Placeholder(t("Message (optional)")), gomponents.Attr("maxlength", "300")),
 				html.Button(html.Type("submit"), html.Class("btn btn-sm btn-danger text-nowrap"),
-					html.I(html.Class("fa-solid fa-stop me-1")), gomponents.Text("Stop")))),
+					html.I(html.Class("fa-solid fa-stop me-1")), gomponents.Text(t("Stop"))))),
 		))
 	}
 
-	current := gomponents.Node(html.P(html.Class("text-muted mb-0"), gomponents.Text("Nobody is playing anything.")))
+	current := gomponents.Node(html.P(html.Class("text-muted mb-0"), gomponents.Text(t("Nobody is playing anything."))))
 	if len(rows) > 0 {
 		current = html.Div(html.Class("table-responsive"), html.Table(html.Class("table table-sm align-middle mb-0"),
-			html.THead(html.Tr(html.Th(gomponents.Text("Account")), html.Th(gomponents.Text("Playing")),
-				html.Th(gomponents.Text("Progress")), html.Th(gomponents.Text("Since")), html.Th())),
+			html.THead(html.Tr(html.Th(gomponents.Text(t("Account"))), html.Th(gomponents.Text(t("Playing"))),
+				html.Th(gomponents.Text(t("Progress"))), html.Th(gomponents.Text(t("Since"))), html.Th())),
 			html.TBody(gomponents.Group(rows))))
 	}
 
@@ -490,7 +562,7 @@ func HandleAccountSettings(c *gin.Context) {
 
 	var obj map[string]any
 	if err != nil || len(body) > maxSettingsBytes || json.Unmarshal(body, &obj) != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "settings must be a JSON object of at most 64 KB"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("settings must be a JSON object of at most 64 KB")})
 		return
 	}
 

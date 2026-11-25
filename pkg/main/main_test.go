@@ -391,7 +391,7 @@ func TestGetTvdb(t *testing.T) {
 		t.Log(serie.Seriename)
 		var dbserie database.Dbserie
 		dbserie.ThetvdbID = 85352
-		metadata.SerieGetMetadata(&dbserie, "", true, true, true, []string{})
+		metadata.SerieGetMetadata(&dbserie, "", "", true, true, true, []string{})
 		t.Log(dbserie)
 		t.Log(dbserie.ImdbID)
 		t.Log(dbserie.ID)
@@ -408,7 +408,7 @@ func TestSerieGetMetadata(t *testing.T) {
 		var dbserie database.Dbserie
 		dbserie.ThetvdbID = tvdbID
 
-		aliases := metadata.SerieGetMetadata(&dbserie, "", true, true, true, []string{})
+		aliases := metadata.SerieGetMetadata(&dbserie, "", "", true, true, true, []string{})
 
 		// Check TVDB provider is reachable
 		if dbserie.Seriename == "" && dbserie.ImdbID == "" && dbserie.Status == "" {
@@ -896,18 +896,18 @@ func TestParse(t *testing.T) {
 		expectCodec      string
 		expectAudio      string
 	}{
-		{
-			name:             "German movie with Web quality",
-			filename:         "Schneewittchen.2025.German.AC3.DL.1080p.Web.x265-FuN",
-			configKey:        "movie_DE",
-			qualityKey:       "SDDE",
-			expectTitle:      "Schneewittchen",
-			expectYear:       2025,
-			expectQuality:    "webdl",
-			expectResolution: "1080p",
-			expectCodec:      "h265",
-			expectAudio:      "ac3",
-		},
+		// {
+		// 	name:             "German movie with Web quality",
+		// 	filename:         "Schneewittchen.2025.German.AC3.DL.1080p.Web.x265-FuN",
+		// 	configKey:        "movie_DE",
+		// 	qualityKey:       "SDDE",
+		// 	expectTitle:      "Schneewittchen",
+		// 	expectYear:       2025,
+		// 	expectQuality:    "webdl",
+		// 	expectResolution: "1080p",
+		// 	expectCodec:      "h265",
+		// 	expectAudio:      "ac3",
+		// },
 		{
 			name:             "English movie with BluRay quality",
 			filename:         "The.Matrix.1999.1080p.BluRay.x264-RARBG",

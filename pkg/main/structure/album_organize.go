@@ -111,12 +111,16 @@ func CollectAlbumFolders(
 // The resulting path is: moveUnprocessedPath/reason/basename(folder)/
 // If moveUnprocessedPath is empty, this is a no-op.
 // chmod and chmodFolder apply file/folder permissions after the move (like performMove does).
+// The folder's unmatched rows are dropped: they name paths that no longer
+// exist, and the folder is the reader's to check now. Reports whether the
+// folder was moved.
 func moveUnprocessedFolder(
+	isType uint,
 	folder, moveUnprocessedPath, reason, chmod, chmodFolder string,
 	report *importfeed.MatchReport,
-) {
+) bool {
 	if moveUnprocessedPath == "" || reason == "" {
-		return
+		return false
 	}
 
 	var folderMode, fileMode fs.FileMode
@@ -135,7 +139,7 @@ func moveUnprocessedFolder(
 			Err(err).
 			Msg("Failed to create unprocessed reason directory")
 
-		return
+		return false
 	}
 
 	if folderMode != 0 {
@@ -155,8 +159,10 @@ func moveUnprocessedFolder(
 			Err(err).
 			Msg("Failed to move unprocessed folder")
 
-		return
+		return false
 	}
+
+	database.RemoveUnmatchedUnder(isType, folder)
 
 	logger.Logtype("info", 1).
 		Str(logger.StrFile, folder).
@@ -188,6 +194,8 @@ func moveUnprocessedFolder(
 			return nil
 		})
 	}
+
+	return true
 }
 
 // writeMatchReportFile writes a human-readable _match_report.txt into targetFolder.

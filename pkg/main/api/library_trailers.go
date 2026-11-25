@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/apiexternal_v2"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/database"
-	"github.com/Kellerman81/go_media_downloader/pkg/main/providers"
 	"github.com/gin-gonic/gin"
 )
 
@@ -100,53 +98,7 @@ func pickTrailer(videos []apiexternal_v2.Video, lang string) *libTrailer {
 
 // findTrailer looks the trailer up at TMDB.
 func findTrailer(ctx context.Context, typ string, id *uint64, lang string) (*libTrailer, error) {
-	tmdb := providers.GetTMDB()
-	if tmdb == nil {
-		return nil, nil
-	}
-
-	languages := []string{lang, "en"}
-	if lang == "en" {
-		languages = languages[:1]
-	}
-
-	var (
-		videos []apiexternal_v2.Video
-		err    error
-	)
-
-	switch typ {
-	case "movie":
-		tmdbID := database.Getdatarow[int](false, "SELECT COALESCE(moviedb_id, 0) FROM dbmovies WHERE id = ?", id)
-		if tmdbID == 0 {
-			imdb := database.Getdatarow[string](false, "SELECT COALESCE(imdb_id, '') FROM dbmovies WHERE id = ?", id)
-			if imdb == "" {
-				return nil, nil
-			}
-
-			found, err := tmdb.FindMovieByIMDbID(ctx, imdb)
-			if err != nil || len(found.MovieResults) == 0 {
-				return nil, err
-			}
-
-			tmdbID = found.MovieResults[0].ID
-		}
-
-		videos, err = tmdb.GetMovieVideos(ctx, tmdbID, languages...)
-	case "series":
-		tvdb := database.Getdatarow[int](false, "SELECT COALESCE(thetvdb_id, 0) FROM dbseries WHERE id = ?", id)
-		if tvdb == 0 {
-			return nil, nil
-		}
-
-		details, ferr := tmdb.FindSeriesByTVDbID(ctx, tvdb)
-		if ferr != nil {
-			return nil, ferr
-		}
-
-		videos, err = tmdb.GetSeriesVideos(ctx, details.ID, languages...)
-	}
-
+	videos, err := libVideos(ctx, typ, id, lang)
 	if err != nil {
 		return nil, err
 	}
@@ -165,25 +117,35 @@ func HandleLibraryTrailer(c *gin.Context) {
 		return
 	}
 
-	lang := listLanguage(c.Query("list"))
-	key := typ + "|" + c.Query("id") + "|" + lang
-
-	if v, ok := trailerCache.Load(key); ok && time.Now().Before(v.(trailerCacheEntry).until) {
-		replyTrailer(c, v.(trailerCacheEntry).trailer)
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	t, err := findTrailer(ctx, typ, &id, lang)
+	t, err := trailerOf(ctx, typ, id, listLanguage(c.Query("list")))
 	if err != nil {
 		c.Status(http.StatusNoContent)
 		return
 	}
 
-	trailerCache.Store(key, trailerCacheEntry{trailer: t, until: time.Now().Add(trailerCacheTime)})
 	replyTrailer(c, t)
+}
+
+// trailerOf returns the trailer of a movie or series (db ID) in lang,
+// cached for a day; nil without one.
+func trailerOf(ctx context.Context, typ string, id uint64, lang string) (*libTrailer, error) {
+	key := typ + "|" + strconv.FormatUint(id, 10) + "|" + lang
+
+	if v, ok := trailerCache.Load(key); ok && time.Now().Before(v.(trailerCacheEntry).until) {
+		return v.(trailerCacheEntry).trailer, nil
+	}
+
+	t, err := findTrailer(ctx, typ, &id, lang)
+	if err != nil {
+		return nil, err
+	}
+
+	trailerCache.Store(key, trailerCacheEntry{trailer: t, until: time.Now().Add(trailerCacheTime)})
+
+	return t, nil
 }
 
 func replyTrailer(c *gin.Context, t *libTrailer) {

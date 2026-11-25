@@ -7,7 +7,7 @@ require (
 	github.com/h2non/filetype v1.1.3
 	github.com/mozillazg/go-unidecode v0.2.0
 	github.com/pelletier/go-toml/v2 v2.4.3
-	modernc.org/sqlite v1.62.0 //imdb db (pure Go, no cgo)
+	modernc.org/sqlite v1.63.0 //imdb db (pure Go, no cgo)
 )
 
 require (

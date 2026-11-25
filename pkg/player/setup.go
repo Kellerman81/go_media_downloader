@@ -1,18 +1,21 @@
 package main
 
 import (
-	"context"
-	"html/template"
-	"net"
-	"net/http"
-	"time"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 )
 
-// The setup page asks for the portal address. It is served on 127.0.0.1
-// and opened in the app window; once the address works, the same window
-// goes on to the portal.
+// The start page is a file opened in the app window: it asks for the portal
+// address (remembered in the window's own browser profile), checks that the
+// portal answers and goes on to it. Nothing has to keep running in the
+// background, so it works however the browser is started.
 
-var setupPage = template.Must(template.New("setup").Parse(`<!doctype html>
+const setupFile = "go-media-player-start.html"
+
+const setupPage = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Go Media Player</title>
 <style>
@@ -23,74 +26,124 @@ h1{font-size:1.4rem;margin:0 0 .25rem}p{color:#adb5bd;margin:0 0 1.25rem;line-he
 label{display:block;font-size:.9rem;margin-bottom:.35rem}
 input{width:100%;box-sizing:border-box;padding:.65rem .75rem;border-radius:8px;border:1px solid #4b5d73;background:#1d2733;color:#fff;font-size:1rem}
 button{margin-top:1rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:#3b7ddd;color:#fff;font-size:1rem;cursor:pointer}
+button:disabled{opacity:.6;cursor:default}
 .err{background:#5c2b2f;color:#ffd7da;border-radius:8px;padding:.6rem .75rem;margin-bottom:1rem;font-size:.9rem}
 .hint{font-size:.8rem;color:#8a96a3;margin-top:1rem}
-</style></head><body><form class="box" method="post" action="/save">
+[hidden]{display:none}
+</style></head><body>
+<form class="box" id="f" hidden>
 <h1>Go Media Player</h1><p>Enter the address of your Go Media Downloader portal.</p>
-{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+<div class="err" id="err" hidden></div>
 <label for="url">Portal address</label>
-<input id="url" name="url" value="{{.URL}}" placeholder="https://media.example.com" autofocus required>
-<button type="submit">Connect</button>
-<div class="hint">Change it later by starting the player with -setup, or with -url &lt;address&gt;.</div>
-</form></body></html>`))
+<input id="url" placeholder="https://media.example.com or 192.168.1.10:9090" autocomplete="url" required>
+<button type="submit" id="go">Connect</button>
+<div class="hint">To change it later, start the player with -setup.</div>
+</form>
+<div class="box" id="wait" hidden><h1>Go Media Player</h1><p id="msg">Connecting…</p></div>
+<script>
+var KEY = 'gmd-portal', q = new URLSearchParams(location.search);
+var form = document.getElementById('f'), input = document.getElementById('url'), err = document.getElementById('err');
 
-var redirectPage = template.Must(template.New("go").Parse(`<!doctype html><meta charset="utf-8">
-<meta http-equiv="refresh" content="0;url={{.}}"><title>Go Media Player</title><a href="{{.}}">Continue</a>`))
+function stored() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+function remember(u) { try { localStorage.setItem(KEY, u); } catch (e) {} }
 
-// setup serves the setup page and returns its address; saved receives the
-// portal address once it was checked and stored.
-func setup(dir string, cfg config, problem string) (string, <-chan string, func(), error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return "", nil, nil, err
+// normalize cleans an address the way the player's -url does: http:// when
+// no scheme is given, without the web interface's own path.
+function normalize(raw) {
+	raw = (raw || '').trim();
+	if (!raw) { return ''; }
+	if (raw.indexOf('://') < 0) { raw = 'http://' + raw; }
+	try {
+		var u = new URL(raw);
+		if (u.protocol !== 'http:' && u.protocol !== 'https:') { return ''; }
+		var path = u.pathname, i = path.indexOf('/api');
+		if (i >= 0) { path = path.slice(0, i); }
+		return (u.origin + path).replace(/\/+$/, '');
+	} catch (e) { return ''; }
+}
+
+function showForm(value, problem) {
+	document.getElementById('wait').hidden = true;
+	form.hidden = false;
+	input.value = value || '';
+	err.hidden = !problem;
+	err.textContent = problem || '';
+	document.getElementById('go').disabled = false;
+	input.focus();
+}
+
+// connect checks that the portal answers (its app icon loads; works from a
+// file page without CORS) and opens it.
+function connect(portal) {
+	document.getElementById('msg').textContent = 'Connecting to ' + portal + '…';
+	form.hidden = true;
+	document.getElementById('wait').hidden = false;
+	var img = new Image(), done = false;
+	var fail = function () {
+		if (done) { return; } done = true;
+		showForm(portal, 'The portal at ' + portal + " can't be reached - check the address and that the server runs.");
+	};
+	var timer = setTimeout(fail, 10000);
+	img.onload = function () {
+		if (done) { return; } done = true; clearTimeout(timer);
+		remember(portal);
+		location.replace(portal + '/api/admin/library?app=1');
+	};
+	img.onerror = function () { clearTimeout(timer); fail(); };
+	img.src = portal + '/static/img/icons/icon-48x48.png?check=' + Date.now();
+}
+
+form.addEventListener('submit', function (e) {
+	e.preventDefault();
+	var portal = normalize(input.value);
+	if (!portal) { showForm(input.value, 'Enter the portal address, e.g. https://media.example.com or http://192.168.1.10:9090'); return; }
+	document.getElementById('go').disabled = true;
+	connect(portal);
+});
+
+// The address given to the player (-url) wins once; else the one used last.
+var given = normalize(q.get('url') || ''), portal = q.get('force') === '1' && given ? given : (stored() || given);
+if (portal && q.get('setup') !== '1') { connect(portal); } else { showForm(portal, ''); }
+</script></body></html>
+`
+
+// startPage writes the start page into dir and returns its address, with
+// the configured portal (url), whether that one must win over the address
+// the page remembers (force) and whether to ask again (setup).
+func startPage(dir, portal string, force, setup bool) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
 	}
 
-	saved := make(chan string, 1)
-	mux := http.NewServeMux()
-
-	show := func(w http.ResponseWriter, url, msg string) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = setupPage.Execute(w, map[string]string{"URL": url, "Error": msg})
+	path := filepath.Join(dir, setupFile)
+	if err := os.WriteFile(path, []byte(setupPage), 0o644); err != nil {
+		return "", err
 	}
 
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) { show(w, cfg.URL, problem) })
-	mux.HandleFunc("POST /save", func(w http.ResponseWriter, r *http.Request) {
-		raw := r.FormValue("url")
-
-		portal, err := normalizeURL(raw)
-		if err == nil {
-			err = reachable(portal)
-		}
-
-		if err != nil {
-			show(w, raw, err.Error())
-			return
-		}
-
-		cfg.URL = portal
-		if err := saveConfig(dir, cfg); err != nil {
-			show(w, raw, "The address works but can't be saved: "+err.Error())
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = redirectPage.Execute(w, appURL(portal))
-
-		select {
-		case saved <- portal:
-		default:
-		}
-	})
-
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = srv.Serve(ln) }()
-
-	stop := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		_ = srv.Shutdown(ctx)
+	q := url.Values{}
+	if portal != "" {
+		q.Set("url", portal)
 	}
 
-	return "http://" + ln.Addr().String() + "/", saved, stop, nil
+	if force {
+		q.Set("force", "1")
+	}
+
+	if setup {
+		q.Set("setup", "1")
+	}
+
+	return fileURL(path, q), nil
+}
+
+// fileURL is the file:// address of an absolute path (Windows: /C:/...).
+func fileURL(path string, q url.Values) string {
+	p := filepath.ToSlash(path)
+	if runtime.GOOS == "windows" || (len(p) > 1 && p[1] == ':') {
+		p = "/" + strings.TrimPrefix(p, "/")
+	}
+
+	u := url.URL{Scheme: "file", Path: p, RawQuery: q.Encode()}
+
+	return u.String()
 }

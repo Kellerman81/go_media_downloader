@@ -3,6 +3,7 @@ package structure
 import (
 	"context"
 	"errors"
+	"github.com/Kellerman81/go_media_downloader/pkg/main/mediatype"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1499,5 +1500,105 @@ func TestValidateAudiobookLanguage(t *testing.T) {
 		if n := remaining(album); n != tt.left {
 			t.Errorf("%s: %d of 3 files left, want %d", tt.name, n, tt.left)
 		}
+	}
+}
+
+// TestTranslateNamingData: a group names its files with the translations
+// into its metadata language, cleaned like the stored texts; without one,
+// or without a language, the stored text stays.
+func TestTranslateNamingData(t *testing.T) {
+	useTestDB(t)
+
+	for _, q := range []string{
+		"insert into dbmovies (id, title) values (1, 'The Boat'), (2, 'Other')",
+		"insert into dbseries (id, seriename) values (1, 'Saving Lives at Sea')",
+		"insert into dbserie_episodes (id, dbserie_id, title) values (1, 1, 'Searching for a Pulse')",
+	} {
+		if err := database.ExecNErr(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	database.SetTranslation("dbmovie", 1, "title", "de", "Das Boot: 1/2", "The Boat")
+	database.SetTranslation("dbserie", 1, "title", "de", "Lebensretter auf See", "Saving Lives at Sea")
+	database.SetTranslation("dbserie_episode", 1, "title", "de", "Suche nach dem Puls", "Searching for a Pulse")
+
+	d := mediatype.NamingData{
+		Dbmovie:        database.Dbmovie{ID: 1, Title: "The Boat"},
+		Dbserie:        database.Dbserie{ID: 1, Seriename: "Saving Lives at Sea"},
+		DbserieEpisode: database.DbserieEpisode{ID: 1, Title: "Searching for a Pulse"},
+	}
+	translateNamingData("de", &d)
+
+	if d.Dbmovie.Title == "The Boat" || strings.Contains(d.Dbmovie.Title, "/") ||
+		d.Dbserie.Seriename != "Lebensretter auf See" || d.DbserieEpisode.Title != "Suche nach dem Puls" {
+		t.Errorf("de: %q, %q, %q", d.Dbmovie.Title, d.Dbserie.Seriename, d.DbserieEpisode.Title)
+	}
+
+	other := mediatype.NamingData{Dbmovie: database.Dbmovie{ID: 2, Title: "Other"}}
+	translateNamingData("de", &other)
+
+	en := mediatype.NamingData{Dbmovie: database.Dbmovie{ID: 1, Title: "The Boat"}}
+	translateNamingData("", &en)
+
+	if other.Dbmovie.Title != "Other" || en.Dbmovie.Title != "The Boat" {
+		t.Errorf("kept: %q, %q", other.Dbmovie.Title, en.Dbmovie.Title)
+	}
+}
+
+// TestWrapLooseBookFiles: loose book files in an import folder get a
+// folder each, the formats of one book and its cover together; other
+// files, hidden ones and files still being written stay.
+func TestWrapLooseBookFiles(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-time.Hour)
+
+	for _, name := range []string{"30 Cupcakes.epub", "30 Cupcakes.pdf", "30 Cupcakes.jpg", "readme.nfo", ".hidden.epub", "fresh.epub"} {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if name != "fresh.epub" {
+			if err := os.Chtimes(p, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if err := os.Mkdir(filepath.Join(dir, "Existing - Book"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := WrapLooseBookFiles(dir); n != 1 {
+		t.Errorf("wrapped %d folders, want 1", n)
+	}
+
+	var got []string
+
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, _ error) error {
+		if p != dir {
+			rel, _ := filepath.Rel(dir, p)
+			got = append(got, rel)
+		}
+
+		return nil
+	})
+
+	want := []string{".hidden.epub", "30 Cupcakes", "30 Cupcakes/30 Cupcakes.epub", "30 Cupcakes/30 Cupcakes.jpg", "30 Cupcakes/30 Cupcakes.pdf",
+		"Existing - Book", "fresh.epub", "readme.nfo"}
+	if !slices.Equal(got, want) {
+		t.Errorf("after wrapping:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestSortBookFilesBestFirst: a folder's book files are organized best
+// format first, so the others are lower and not moved in to be replaced.
+func TestSortBookFilesBestFirst(t *testing.T) {
+	files := []string{"/b/x.azw3", "/b/x.epub", "/b/x.fb2", "/b/x.mobi", "/b/x.pdf", "/b/x.jpg"}
+	sortBookFilesBestFirst(files)
+
+	if want := []string{"/b/x.epub", "/b/x.azw3", "/b/x.mobi", "/b/x.pdf", "/b/x.fb2", "/b/x.jpg"}; !slices.Equal(files, want) {
+		t.Errorf("order %q, want %q", files, want)
 	}
 }

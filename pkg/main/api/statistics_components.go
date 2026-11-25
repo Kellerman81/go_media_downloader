@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/Kellerman81/go_media_downloader/pkg/main/worker"
@@ -52,22 +53,65 @@ func renderSeriesCard(stats SeriesStatistics) gomponents.Node {
 	)
 }
 
-// renderStorageCard renders the storage summary card.
+// storageStatsURL is the storage part of the statistics page.
+const storageStatsURL = "/api/admin/statistics/storage"
+
+// storageRefresh makes an element reload from url when a scan starts
+// (storageScan) and, while one runs, every few seconds.
+func storageRefresh(url, swap string, stats StorageStatistics) gomponents.Node {
+	trigger := "storageScan from:body"
+	if stats.Scanning {
+		trigger += ", every 3s"
+	}
+
+	return gomponents.Group([]gomponents.Node{gomponents.Attr("hx-get", url), gomponents.Attr("hx-trigger", trigger), gomponents.Attr("hx-swap", swap)})
+}
+
+// storageScanButton starts a scan and shows the details again.
+func storageScanButton(stats StorageStatistics, class string) gomponents.Node {
+	label := "Scan now"
+	if !stats.ScannedAt.IsZero() {
+		label = "Scan again"
+	}
+
+	return html.Button(html.Type("button"), html.Class("btn btn-sm "+class), gomponents.If(stats.Scanning, html.Disabled()),
+		gomponents.Attr("hx-get", storageStatsURL+"?type=detail&scan=1"), gomponents.Attr("hx-target", "#statStorage"), gomponents.Attr("hx-swap", "innerHTML"),
+		html.I(html.Class("fa-solid fa-magnifying-glass-chart me-1")), gomponents.Text(label))
+}
+
+// storageScanState is one line on the scan: running, never run, or when
+// the shown one ran.
+func storageScanState(stats StorageStatistics) string {
+	switch {
+	case stats.Scanning:
+		return fmt.Sprintf("Scanning… %d media files so far", stats.ScannedFiles)
+	case stats.ScannedAt.IsZero():
+		return "Not scanned yet"
+	default:
+		return fmt.Sprintf("Scanned %s ago (took %s)", formatDuration(int64(time.Since(stats.ScannedAt).Seconds())), stats.Took)
+	}
+}
+
 func renderStorageCard(stats StorageStatistics) gomponents.Node {
+	files := "–"
+	if !stats.ScannedAt.IsZero() {
+		files = strconv.FormatInt(stats.TotalFileCount, 10)
+	}
+
 	return html.Div(
 		html.Class("card-body text-center"),
-		html.H1(html.Class("display-4 text-info"), gomponents.Textf("%d", stats.TotalFileCount)),
+		storageRefresh(storageStatsURL+"?type=summary", "outerHTML", stats),
+		html.H1(html.Class("display-4 text-info"), gomponents.Text(files)),
 		html.P(
 			html.Class("text-muted mb-2"),
 			html.I(html.Class("fa-solid fa-hdd mr-2")),
-			gomponents.Text("Files"),
+			gomponents.Text("Files on disk"),
 		),
-		html.P(html.Class("mb-0"),
-			gomponents.Textf("%d Media Types", stats.TotalPaths),
-		),
+		html.P(html.Class("mb-0 small"), gomponents.Text(storageScanState(stats))),
 		gomponents.If(stats.Partial, html.P(html.Class("mb-0 text-warning small"),
-			gomponents.Text("Partial: scan timed out, counts are incomplete"),
+			gomponents.Text("Partial: the scan timed out, counts are incomplete"),
 		)),
+		gomponents.If(stats.ScannedAt.IsZero() && !stats.Scanning, html.A(html.Href("#stat-storage"), html.Class("small"), gomponents.Text("Scan in Storage"))),
 	)
 }
 
@@ -234,6 +278,31 @@ func renderSeriesDetails(stats SeriesStatistics) gomponents.Node {
 
 // renderStorageDetails renders the storage details section.
 func renderStorageDetails(stats StorageStatistics) gomponents.Node {
+	header := html.Div(
+		html.Class("card-header bg-info text-white d-flex flex-wrap align-items-center gap-2"),
+		html.H5(html.Class("mb-0 me-auto"), html.I(html.Class("fa-solid fa-hdd mr-2")), gomponents.Text("Storage Details")),
+		html.Span(html.Class("small text-body-secondary"), gomponents.Text(storageScanState(stats))),
+		storageScanButton(stats, "btn-outline-primary"),
+	)
+
+	// While a scan runs the details reload until it's done.
+	var poll gomponents.Node
+	if stats.Scanning {
+		poll = html.Div(gomponents.Attr("hx-get", storageStatsURL+"?type=detail"), gomponents.Attr("hx-trigger", "load delay:3s"),
+			gomponents.Attr("hx-target", "#statStorage"), gomponents.Attr("hx-swap", "innerHTML"))
+	}
+
+	if stats.ScannedAt.IsZero() {
+		text := "Counts the media files and their size in every configured media and import folder. " +
+			"It walks every folder, which can take minutes on a large library, so it only runs when you start it."
+		if stats.Scanning {
+			text = "The scan runs in the background; you can leave the page and come back."
+		}
+
+		return gomponents.Group([]gomponents.Node{header, html.Div(html.Class("card-body"),
+			html.P(html.Class("text-muted mb-0"), gomponents.Text(text)), poll)})
+	}
+
 	var totalSize int64
 	for _, path := range stats.ByPath {
 		totalSize += path.TotalSize
@@ -243,40 +312,39 @@ func renderStorageDetails(stats StorageStatistics) gomponents.Node {
 	if len(stats.ByPath) == 0 {
 		pathRows = append(pathRows, html.Tr(
 			html.Td(gomponents.Attr("colspan", "5"), html.Class("text-center text-muted"),
-				gomponents.Text("No storage paths configured")),
+				gomponents.Text("No media folders configured")),
 		))
-	} else {
-		for _, mediaType := range slices.Sorted(maps.Keys(stats.ByPath)) {
-			info := stats.ByPath[mediaType]
-			pathRows = append(pathRows, html.Tr(
-				html.Td(html.Strong(gomponents.Text(mediaType))),
-				html.Td(html.Small(html.Class("text-muted"), gomponents.Text(info.Path))),
-				html.Td(html.Class("text-right text-dark"), gomponents.Textf("%d", info.FileCount),
-					gomponents.If(info.Partial, html.Small(html.Class("text-warning"), gomponents.Text(" (partial - scan timed out)")))),
-				html.Td(
-					html.Class("text-right text-dark"),
-					gomponents.Textf("%d", info.FolderCount),
-				),
-				html.Td(
-					html.Class("text-right text-dark"),
-					gomponents.Text(
-						formatBytes(uint64(info.TotalSize)),
-					),
-				),
-			))
-		}
 	}
 
-	return html.Div(
-		html.Div(
-			html.Class("card-header bg-info text-white"),
-			html.H5(
-				html.Class("mb-0"),
-				html.I(html.Class("fa-solid fa-hdd mr-2")),
-				gomponents.Text("Storage Details"),
-			),
-		),
+	for _, mediaType := range slices.Sorted(maps.Keys(stats.ByPath)) {
+		info := stats.ByPath[mediaType]
+
+		var note gomponents.Node
+
+		switch {
+		case info.Error != "":
+			note = html.Div(html.Class("small text-danger"), gomponents.Text(info.Error))
+		case info.Partial:
+			note = html.Div(html.Class("small text-warning"), gomponents.Text("partial - the scan timed out"))
+		}
+
+		pathRows = append(pathRows, html.Tr(
+			html.Td(html.Strong(gomponents.Text(mediaType))),
+			html.Td(html.Small(html.Class("text-muted"), gomponents.Text(info.Path)), note,
+				gomponents.If(info.Unreadable > 0, html.Div(html.Class("small text-warning"),
+					gomponents.Textf("%d entries could not be read", info.Unreadable)))),
+			html.Td(html.Class("text-end"), gomponents.Textf("%d", info.FileCount)),
+			html.Td(html.Class("text-end"), gomponents.Textf("%d", info.FolderCount)),
+			html.Td(html.Class("text-end text-nowrap"), gomponents.Text(formatBytes(uint64(info.TotalSize)))),
+		))
+	}
+
+	return gomponents.Group([]gomponents.Node{
+		header,
 		html.Div(html.Class("card-body"),
+			poll,
+			gomponents.If(stats.Partial, html.Div(html.Class("alert alert-warning py-2"),
+				gomponents.Textf("The scan stopped after %s: the counts of the marked folders are incomplete.", storageScanTimeout))),
 			html.Div(html.Class("row mb-3"),
 				html.Div(html.Class("col-md-4"),
 					html.H6(html.Class("text-muted"), gomponents.Text("Total Files")),
@@ -292,20 +360,20 @@ func renderStorageDetails(stats StorageStatistics) gomponents.Node {
 				),
 			),
 			html.H6(html.Class("text-muted"), gomponents.Text("By Storage Path")),
-			html.Table(html.Class("table table-sm table-hover"),
+			html.Div(html.Class("table-responsive"), html.Table(html.Class("table table-sm table-hover"),
 				html.THead(
 					html.Tr(
 						html.Th(gomponents.Text("Media Type")),
 						html.Th(gomponents.Text("Path")),
-						html.Th(html.Class("text-right"), gomponents.Text("Files")),
-						html.Th(html.Class("text-right"), gomponents.Text("Folders")),
-						html.Th(html.Class("text-right"), gomponents.Text("Size")),
+						html.Th(html.Class("text-end"), gomponents.Text("Files")),
+						html.Th(html.Class("text-end"), gomponents.Text("Folders")),
+						html.Th(html.Class("text-end"), gomponents.Text("Size")),
 					),
 				),
 				html.TBody(pathRows...),
-			),
+			)),
 		),
-	)
+	})
 }
 
 // renderWorkerPoolStats renders the worker pool statistics.

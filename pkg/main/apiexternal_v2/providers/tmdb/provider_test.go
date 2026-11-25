@@ -43,3 +43,93 @@ func TestGetTMDBListMixedItemsAndStringID(t *testing.T) {
 		})
 	}
 }
+
+// TestWithLanguage: the language goes along with every request of the
+// copy, also after other parameters, never twice, and not with the
+// original provider.
+func TestWithLanguage(t *testing.T) {
+	var queries []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.Query().Get("language")+" "+r.URL.Query().Get("include_video_language"))
+		w.Write([]byte(`{"id":1,"results":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := NewProviderWithConfig(base.ClientConfig{Name: "tmdb", BaseURL: srv.URL + "/3"}, "key")
+	de := p.WithLanguage("de")
+	ctx := context.Background()
+
+	de.GetMovieByID(ctx, 1)
+	de.GetMovieVideos(ctx, 1, "de", "en")
+	de.FindMovieByIMDbID(ctx, "tt1")
+	p.GetMovieByID(ctx, 1)
+
+	want := []string{"de ", "de de,en", "de ", " "}
+	if len(queries) != len(want) {
+		t.Fatalf("requests: %q", queries)
+	}
+
+	for i := range want {
+		if queries[i] != want[i] {
+			t.Errorf("request %d: %q, want %q", i, queries[i], want[i])
+		}
+	}
+}
+
+// TestWithFallbackLanguage: a 404 or an empty answer is asked again in the
+// fallback language; a found one, English and an explicit language are not.
+func TestWithFallbackLanguage(t *testing.T) {
+	var requests []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lang := r.URL.Query().Get("language")
+		requests = append(requests, r.URL.Path+" "+lang)
+
+		switch {
+		case r.URL.Path == "/3/movie/1" && lang != "de":
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"status_code":34}`))
+		case r.URL.Path == "/3/movie/1":
+			w.Write([]byte(`{"id":1,"title":"Terra X"}`))
+		case r.URL.Path == "/3/find/tt1" && lang == "de":
+			w.Write([]byte(`{"movie_results":[{"id":1,"title":"Terra X"}]}`))
+		case r.URL.Path == "/3/find/tt1":
+			w.Write([]byte(`{"movie_results":[],"tv_results":[]}`))
+		default:
+			w.Write([]byte(`{"id":2,"cast":[{"id":1,"name":"A"}],"results":[{"id":3}]}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	p := NewProviderWithConfig(base.ClientConfig{Name: "tmdb", BaseURL: srv.URL + "/3"}, "key")
+	de := p.WithFallbackLanguage("de")
+	ctx := context.Background()
+
+	if d, err := de.GetMovieByID(ctx, 1); err != nil || d.Title != "Terra X" {
+		t.Errorf("404, then de: %+v, %v", d, err)
+	}
+
+	if f, err := de.FindMovieByIMDbID(ctx, "tt1"); err != nil || len(f.MovieResults) != 1 {
+		t.Errorf("empty, then de: %+v, %v", f, err)
+	}
+
+	requests = nil
+
+	if c, err := de.GetMovieCredits(ctx, 2); err != nil || len(c.Cast) != 1 || len(requests) != 1 {
+		t.Errorf("found at once: %v, requests %q", err, requests)
+	}
+
+	for name, q := range map[string]*Provider{"english": p.WithFallbackLanguage("en"), "none": p, "explicit": de.WithLanguage("fr")} {
+		requests = nil
+
+		if _, err := q.GetMovieByID(ctx, 1); err == nil || len(requests) != 1 {
+			t.Errorf("%s: %v, requests %q", name, err, requests)
+		}
+	}
+
+	var nilProvider *Provider
+	if nilProvider.WithFallbackLanguage("de") != nil || nilProvider.WithLanguage("de") != nil {
+		t.Error("nil provider")
+	}
+}

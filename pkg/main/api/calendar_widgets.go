@@ -33,11 +33,11 @@ var calendarTypeFilters = []struct {
 	Key, Label, Icon string
 	configured       func(*config.MediaConfig) bool
 }{
-	{"movies", "Movies", "fa-film", func(m *config.MediaConfig) bool { return len(m.Movies) > 0 }},
-	{"series", "Series", "fa-tv", func(m *config.MediaConfig) bool { return len(m.Series) > 0 }},
-	{"albums", "Albums", "fa-compact-disc", func(m *config.MediaConfig) bool { return len(m.Music) > 0 }},
-	{"audiobooks", "Audiobooks", "fa-headphones", func(m *config.MediaConfig) bool { return len(m.AudioBooks) > 0 }},
-	{"books", "Books", "fa-book", func(m *config.MediaConfig) bool { return len(m.Books) > 0 }},
+	{"movies", t("Movies"), "fa-film", func(m *config.MediaConfig) bool { return len(m.Movies) > 0 }},
+	{"series", t("Series"), "fa-tv", func(m *config.MediaConfig) bool { return len(m.Series) > 0 }},
+	{"albums", t("Albums"), "fa-compact-disc", func(m *config.MediaConfig) bool { return len(m.Music) > 0 }},
+	{"audiobooks", t("Audiobooks"), "fa-headphones", func(m *config.MediaConfig) bool { return len(m.AudioBooks) > 0 }},
+	{"books", t("Books"), "fa-book", func(m *config.MediaConfig) bool { return len(m.Books) > 0 }},
 }
 
 // calendarLink is a toolbar control that reloads the calendar with another state.
@@ -112,7 +112,7 @@ func calendarSearchButton(st calendarState, events []calendarEvent, label string
 	}
 
 	button := html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-danger"),
-		html.Title("Search everything that is released and still missing, one after the other"), run(false),
+		html.Title(t("Search everything that is released and still missing, one after the other")), run(false),
 		html.I(html.Class("fa-solid fa-magnifying-glass me-1")), gomponents.Text(main))
 	if !slices.ContainsFunc(events, func(e calendarEvent) bool { return e.Overdue && (e.Type == "movie" || e.Type == "series") }) {
 		return button
@@ -128,10 +128,10 @@ func calendarSearchButton(st calendarState, events []calendarEvent, label string
 		button,
 		html.Button(html.Type("button"), html.Class("btn btn-sm btn-outline-danger dropdown-toggle dropdown-toggle-split"),
 			html.Data("bs-toggle", "dropdown"), html.Aria("expanded", "false"),
-			html.Span(html.Class("visually-hidden"), gomponents.Text("Choose how to search"))),
+			html.Span(html.Class("visually-hidden"), gomponents.Text(t("Choose how to search")))),
 		html.Ul(html.Class("dropdown-menu dropdown-menu-end"),
-			item(false, "fa-magnifying-glass", "Search by ID (IMDb / TVDB)"),
-			item(true, "fa-magnifying-glass-plus", "Search by title")))
+			item(false, "fa-magnifying-glass", t("Search by ID (IMDb / TVDB)")),
+			item(true, "fa-magnifying-glass-plus", t("Search by title"))))
 }
 
 // calendarSelects are the media group and genre selects; they reload the
@@ -165,8 +165,8 @@ func calendarSelects(st calendarState, genres []string) gomponents.Node {
 	}
 
 	return html.Div(html.Class("d-flex flex-wrap gap-2"),
-		gomponents.If(len(groups) > 1, sel("group", "All media groups", st.Group, groups)),
-		gomponents.If(len(gen) > 0, sel("genre", "Any genre", st.Genre, gen)))
+		gomponents.If(len(groups) > 1, sel("group", t("All media groups"), st.Group, groups)),
+		gomponents.If(len(gen) > 0, sel("genre", t("Any genre"), st.Genre, gen)))
 }
 
 func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []string) gomponents.Node {
@@ -179,17 +179,18 @@ func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []st
 	}
 
 	views := []gomponents.Node{}
+	viewLabels := map[string]string{"month": t("Month"), "week": t("Week"), "agenda": t("Agenda")}
 	for _, v := range calendarViews {
 		views = append(views, calendarLink(st, func(s *calendarState) { s.View = v }, button(st.View == v),
-			gomponents.Text(strings.ToUpper(v[:1])+v[1:])))
+			gomponents.Text(viewLabels[v])))
 	}
 
-	types := []gomponents.Node{calendarLink(st, func(s *calendarState) { s.Filter = "all" }, button(st.Filter == "all"), gomponents.Text("All"))}
+	types := []gomponents.Node{calendarLink(st, func(s *calendarState) { s.Filter = "all" }, button(st.Filter == "all"), gomponents.Text(t("All")))}
 	if media := config.GetSettingsMediaAll(); media != nil {
-		for _, t := range calendarTypeFilters {
-			if t.configured(media) || st.Filter == t.Key {
-				types = append(types, calendarLink(st, func(s *calendarState) { s.Filter = t.Key }, button(st.Filter == t.Key),
-					html.I(html.Class("fa-solid "+t.Icon+" me-1")), gomponents.Text(t.Label)))
+		for _, tp := range calendarTypeFilters {
+			if tp.configured(media) || st.Filter == tp.Key {
+				types = append(types, calendarLink(st, func(s *calendarState) { s.Filter = tp.Key }, button(st.Filter == tp.Key),
+					html.I(html.Class("fa-solid "+tp.Icon+" me-1")), gomponents.Text(t(tp.Label))))
 			}
 		}
 	}
@@ -217,21 +218,21 @@ func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []st
 		}
 	}
 
-	summary := fmt.Sprintf("%d events", len(events))
+	summary := tf("%d events", len(events))
 	if !st.OnlyMissing {
-		summary += fmt.Sprintf(" · %d downloaded · %d missing", downloaded, len(events)-downloaded-partial)
+		summary += tf(" · %d downloaded · %d missing", downloaded, len(events)-downloaded-partial)
 	}
 
 	if partial > 0 {
-		summary += fmt.Sprintf(" · %d partly downloaded", partial)
+		summary += tf(" · %d partly downloaded", partial)
 	}
 
 	if overdue > 0 {
-		summary += fmt.Sprintf(" · %d overdue", overdue)
+		summary += tf(" · %d overdue", overdue)
 	}
 
 	if fresh > 0 {
-		summary += fmt.Sprintf(" · %d new since yesterday", fresh)
+		summary += tf(" · %d new since yesterday", fresh)
 	}
 
 	// Laid out explicitly: the theme's form-switch padding pushes the input
@@ -246,7 +247,7 @@ func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []st
 			hx.PushURL("/api/admin/calendar?"+st.Query(func(s *calendarState) { s.OnlyMissing = !s.OnlyMissing })),
 			hx.Trigger("change"),
 		),
-		html.Label(html.Class("form-check-label"), html.For("calOnlyMissing"), gomponents.Text("Only missing")),
+		html.Label(html.Class("form-check-label"), html.For("calOnlyMissing"), gomponents.Text(t("Only missing"))),
 	)
 
 	return html.Div(
@@ -257,10 +258,10 @@ func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []st
 			html.Div(
 				html.Class("d-flex align-items-center gap-2"),
 				calendarLink(st, func(s *calendarState) { s.Date = s.Step(-1) }, "btn btn-sm btn-outline-secondary",
-					gomponents.Attr("aria-label", "Previous"), html.I(html.Class("fas fa-chevron-left"))),
-				calendarLink(st, func(s *calendarState) { s.Date = todayDate }, "btn btn-sm btn-outline-secondary", gomponents.Text("Today")),
+					gomponents.Attr("aria-label", t("Previous")), html.I(html.Class("fas fa-chevron-left"))),
+				calendarLink(st, func(s *calendarState) { s.Date = todayDate }, "btn btn-sm btn-outline-secondary", gomponents.Text(t("Today"))),
 				calendarLink(st, func(s *calendarState) { s.Date = s.Step(1) }, "btn btn-sm btn-outline-secondary",
-					gomponents.Attr("aria-label", "Next"), html.I(html.Class("fas fa-chevron-right"))),
+					gomponents.Attr("aria-label", t("Next")), html.I(html.Class("fas fa-chevron-right"))),
 				html.H5(html.Class("mb-0 ms-2"), gomponents.Text(calendarPeriodLabel(st))),
 			),
 			html.Div(html.Class("btn-group flex-wrap"), gomponents.Attr("role", "group"), gomponents.Group(types)),
@@ -273,13 +274,13 @@ func renderCalendarToolbar(st calendarState, events []calendarEvent, genres []st
 				html.Small(html.Class("text-muted"), gomponents.Text(summary)),
 			),
 			html.Div(html.Class("d-flex flex-wrap gap-2"),
-				calendarSearchButton(st, events, "Search overdue"),
+				calendarSearchButton(st, events, t("Search overdue")),
 				html.A(
 					html.Class("btn btn-sm btn-outline-secondary"),
 					html.Href("/api/admin/calendar/ical?"+st.Query(nil)),
-					html.Title("Download the events shown here as an iCalendar file"),
+					html.Title(t("Download the events shown here as an iCalendar file")),
 					html.I(html.Class("fas fa-download me-1")),
-					gomponents.Text("Download .ics"),
+					gomponents.Text(t("Download .ics")),
 				),
 			),
 		),
@@ -331,7 +332,7 @@ func eventsByDay(events []calendarEvent) map[string][]calendarEvent {
 
 func renderAgendaView(events []calendarEvent) gomponents.Node {
 	if len(events) == 0 {
-		return html.P(html.Class("text-muted text-center py-4"), gomponents.Text("No events in this period."))
+		return html.P(html.Class("text-muted text-center py-4"), gomponents.Text(t("No events in this period.")))
 	}
 
 	byDay := eventsByDay(events)
@@ -357,7 +358,7 @@ func renderAgendaView(events []calendarEvent) gomponents.Node {
 		case day == today:
 			class = "text-primary border-bottom border-primary pb-1 mb-2"
 
-			heading = append(heading, html.Span(html.Class("badge bg-primary ms-2"), gomponents.Text("Today")))
+			heading = append(heading, html.Span(html.Class("badge bg-primary ms-2"), gomponents.Text(t("Today"))))
 		case day < today:
 			class += " opacity-75"
 		}
@@ -397,7 +398,7 @@ func renderEventRows(events []calendarEvent) []gomponents.Node {
 		}
 
 		if event.New {
-			title = append(title, html.Span(html.Class("badge bg-info ms-2"), gomponents.Text("New")))
+			title = append(title, html.Span(html.Class("badge bg-info ms-2"), gomponents.Text(t("New"))))
 		}
 
 		var thumb gomponents.Node = html.I(html.Class("fa-solid " + calendarTypeIcon(event.Type) + " text-muted mt-1"))
@@ -450,7 +451,7 @@ func renderMonthView(st calendarState, events []calendarEvent) gomponents.Node {
 	today := calendarToday()
 
 	header := make([]gomponents.Node, 0, 7)
-	for _, d := range []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"} {
+	for _, d := range []string{t("Sun"), t("Mon"), t("Tue"), t("Wed"), t("Thu"), t("Fri"), t("Sat")} {
 		header = append(header, html.Div(html.Class("col py-2"), gomponents.Text(d)))
 	}
 
@@ -491,7 +492,7 @@ func renderMonthCell(st calendarState, day time.Time, events []calendarEvent, in
 				html.Class("btn btn-link btn-sm p-0 small"),
 				html.Data("query", st.Query(nil)),
 				gomponents.Attr("onclick", fmt.Sprintf("showMoreEvents('%s', this.dataset.query)", dayKey(day))),
-				gomponents.Textf("+%d more", calendarEventCount(groups[monthMaxEvents:])),
+				gomponents.Text(tf("+%d more", calendarEventCount(groups[monthMaxEvents:]))),
 			))
 
 			break
@@ -552,7 +553,7 @@ func renderWeekView(st calendarState, events []calendarEvent) gomponents.Node {
 		card := func(event calendarEvent) gomponents.Node {
 			label := []gomponents.Node{html.Strong(gomponents.Text(event.Title))}
 			if event.New {
-				label = append(label, html.Span(html.Class("badge bg-info ms-1"), gomponents.Text("New")))
+				label = append(label, html.Span(html.Class("badge bg-info ms-1"), gomponents.Text(t("New"))))
 			}
 
 			if ep := episodeCode(event); ep != "" {
@@ -599,10 +600,10 @@ func CalendarDayEventsHandler(c *gin.Context) {
 
 	events := st.filter(getCalendarEvents(st.Date, st.Date, st.Filter), true)
 
-	var content gomponents.Node = html.P(html.Class("text-muted text-center"), gomponents.Text("No events on this day."))
+	var content gomponents.Node = html.P(html.Class("text-muted text-center"), gomponents.Text(t("No events on this day.")))
 	if len(events) > 0 {
 		content = gomponents.Group([]gomponents.Node{
-			gomponents.If(calendarSearchButton(st, events, "") != nil, html.Div(html.Class("mb-2 text-end"), calendarSearchButton(st, events, "Search all missing of this day"))),
+			gomponents.If(calendarSearchButton(st, events, "") != nil, html.Div(html.Class("mb-2 text-end"), calendarSearchButton(st, events, t("Search all missing of this day")))),
 			html.Div(html.Class("list-group"), gomponents.Group(renderEventRows(events))),
 		})
 	}
@@ -614,10 +615,12 @@ func CalendarDayEventsHandler(c *gin.Context) {
 // items still missing.
 func calendarStatusLabel(event calendarEvent) string {
 	if event.Overdue && !event.Partial {
-		return "Overdue"
+		return t("Overdue")
 	}
 
-	return event.Status
+	// The status stays English in the data (the calendar script maps it to
+	// its colors); only what is shown is translated.
+	return t(event.Status)
 }
 
 // groupCalendarEvents groups the episodes of one series (on one day) so a

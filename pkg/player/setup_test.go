@@ -1,67 +1,43 @@
 package main
 
 import (
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-// TestSetup: a wrong or unreachable address shows the page again with the
-// problem; a working one is saved and the window goes on to the portal.
-func TestSetup(t *testing.T) {
-	portal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusFound)
-	}))
-	defer portal.Close()
+// TestStartPage: the start page is written into the folder and opened as a
+// file:// address carrying the configured portal and the flags.
+func TestStartPage(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sandbox")
 
-	dir := t.TempDir()
-
-	page, saved, stop, err := setup(dir, config{}, "the portal can't be reached")
+	page, err := startPage(dir, "https://media.example.com", true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stop()
 
-	get := func(resp *http.Response, err error) string {
-		t.Helper()
-
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-
-		b, _ := io.ReadAll(resp.Body)
-
-		return string(b)
+	u, err := url.Parse(page)
+	if err != nil || u.Scheme != "file" || u.Path != filepath.ToSlash(filepath.Join(dir, setupFile)) {
+		t.Fatalf("page address %q, %v", page, err)
 	}
 
-	if body := get(http.Get(page)); !strings.Contains(body, "the portal can&#39;t be reached") {
-		t.Errorf("setup page without the problem: %s", body)
+	if q := u.Query(); q.Get("url") != "https://media.example.com" || q.Get("force") != "1" || q.Has("setup") {
+		t.Errorf("query %v", q)
 	}
 
-	if body := get(http.PostForm(page+"save", url.Values{"url": {"ftp://nope"}})); !strings.Contains(body, "enter the portal address") {
-		t.Errorf("bad address: %s", body)
+	b, err := os.ReadFile(filepath.Join(dir, setupFile))
+	if err != nil || !strings.Contains(string(b), "/api/admin/library?app=1") || !strings.Contains(string(b), "localStorage") {
+		t.Errorf("page content: %v", err)
 	}
 
-	if body := get(http.PostForm(page+"save", url.Values{"url": {"http://127.0.0.1:1"}})); !strings.Contains(body, "can&#39;t be reached") {
-		t.Errorf("unreachable address: %s", body)
+	if page, _ := startPage(dir, "", false, true); strings.Contains(page, "url=") || !strings.Contains(page, "setup=1") {
+		t.Errorf("setup page address %q", page)
 	}
 
-	body := get(http.PostForm(page+"save", url.Values{"url": {portal.URL + "/"}}))
-	if !strings.Contains(body, portal.URL+"/api/admin/library?app=1") {
-		t.Errorf("no redirect to the portal: %s", body)
-	}
-
-	select {
-	case got := <-saved:
-		if got != portal.URL || loadConfig(dir).URL != portal.URL {
-			t.Errorf("saved %q, config %+v", got, loadConfig(dir))
-		}
-	case <-time.After(time.Second):
-		t.Error("not saved")
+	if got := fileURL("C:/Users/me/go-media-player/"+setupFile, url.Values{"url": {"http://x"}}); !strings.HasPrefix(got, "file:///C:/Users/me/") ||
+		!strings.HasSuffix(got, "?url=http%3A%2F%2Fx") {
+		t.Errorf("windows file URL %q", got)
 	}
 }

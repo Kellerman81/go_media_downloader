@@ -665,6 +665,10 @@ func addAudiobookFilesToDatabase(
 			Uint("audiobook_id", album.DatabaseID).
 			Int("files_added", filesAdded).
 			Msg("Added audiobook files to database")
+
+		// quality_reached stays to the reached-flag jobs: scoring the files
+		// needs searcher, which imports this package.
+		database.ExecN("update audiobooks set missing = 0 where id = ?", &audiobookListID)
 	}
 
 	return true
@@ -799,6 +803,8 @@ func addAlbumFilesToDatabase(
 			Uint("album_id", album.DatabaseID).
 			Int("files_added", filesAdded).
 			Msg("Added album files to database")
+
+		database.ExecN("update albums set missing = 0 where id = ?", &albumListID)
 	}
 
 	return true

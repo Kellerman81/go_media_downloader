@@ -168,6 +168,11 @@ func structurefolders(ctx context.Context, cfgp *config.MediaTypeConfig) error {
 			continue
 		}
 
+		// Books are organized by folder; loose ones get one first.
+		if cfgp.IsType == config.MediaTypeBook {
+			structure.WrapLooseBookFiles(dataimport.CfgPath.Path)
+		}
+
 		entry, err := os.ReadDir(dataimport.CfgPath.Path)
 		if err != nil {
 			logger.Logtype("error", 1).

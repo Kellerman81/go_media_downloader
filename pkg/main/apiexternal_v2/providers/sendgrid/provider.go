@@ -73,7 +73,7 @@ func (p *Provider) SendNotification(
 	req apiexternal_v2.NotificationRequest,
 ) (*apiexternal_v2.NotificationResponse, error) {
 	body, err := json.Marshal(map[string]any{
-		"personalizations": []personalization{{To: p.to}},
+		"personalizations": []personalization{{To: recipients(p.to, req.Options["to"])}},
 		"from":             p.from,
 		"subject":          req.Title,
 		"content":          []content{{Type: "text/plain", Value: req.Message}},
@@ -106,4 +106,15 @@ func (p *Provider) TestConnection(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// recipients are the configured addresses, or the one request option "to"
+// names (a user's update mails).
+func recipients(configured []address, to string) []address {
+	a, err := mail.ParseAddress(to)
+	if to == "" || err != nil {
+		return configured
+	}
+
+	return []address{{Email: a.Address, Name: a.Name}}
 }

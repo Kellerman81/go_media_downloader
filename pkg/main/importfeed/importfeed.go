@@ -405,6 +405,59 @@ func JobImportMoviesByList(
 	return nil
 }
 
+// movieOfNewImdb finds a film the library has under another IMDb id (IMDb
+// merges and renumbers titles, lists then bring the new id): the dbmovies
+// row with the TMDB id TMDB gives for imdb. The row is switched to imdb, the
+// id TMDB confirms, so the film isn't added a second time. 0 when there is
+// none (or no TMDB); lang is the group's metadata language for the lookup.
+func movieOfNewImdb(imdb, lang string) uint {
+	p := providers.GetTMDB()
+	if p == nil {
+		return 0
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	found, err := p.WithFallbackLanguage(lang).FindMovieByIMDbID(ctx, imdb)
+	if err != nil || found == nil || len(found.MovieResults) == 0 || found.MovieResults[0].ID == 0 {
+		return 0
+	}
+
+	var row struct {
+		ID     uint   `db:"id"`
+		ImdbID string `db:"imdb_id"`
+		Title  string `db:"title"`
+		Slug   string `db:"slug"`
+		Year   int    `db:"year"`
+	}
+
+	tmdbID := found.MovieResults[0].ID
+
+	database.GetdatarowArgs("select id, coalesce(imdb_id, ''), coalesce(title, ''), coalesce(slug, ''), coalesce(year, 0) from dbmovies "+
+		"where moviedb_id = ? order by id limit 1", &tmdbID, &row.ID, &row.ImdbID, &row.Title, &row.Slug, &row.Year)
+
+	if row.ID == 0 {
+		return 0
+	}
+
+	if err := database.ExecNErr("update dbmovies set imdb_id = ? where id = ?", &imdb, &row.ID); err != nil {
+		logger.Logtype("error", 1).Err(err).Str(logger.StrImdb, imdb).Uint(logger.StrID, row.ID).Msg("IMDb id not switched")
+		return 0
+	}
+
+	logger.Logtype("info", 1).Str(logger.StrImdb, imdb).Str("old_imdb", row.ImdbID).Uint(logger.StrID, row.ID).
+		Int("tmdb", tmdbID).Msg("Movie known under another IMDb id: switched to the new one")
+
+	if config.GetSettingsGeneral().UseMediaCache {
+		database.AppendCacheThreeString(logger.CacheDBMovie, syncops.DbstaticThreeStringTwoInt{
+			Str1: row.Title, Str2: row.Slug, Str3: imdb, Num1: row.Year, Num2: row.ID,
+		})
+	}
+
+	return row.ID
+}
+
 // JobImportMovies imports a movie into the database and specified list
 // given its IMDb ID. It handles checking if the movie exists, adding
 // it if needed, updating metadata, and adding it to the target list.
@@ -459,6 +512,14 @@ func JobImportMovies(
 		}
 
 		if database.Getdatarow[uint](
+			false,
+			"select id from dbmovies where imdb_id = ?",
+			&dbmovie.ImdbID,
+		) == 0 {
+			dbmovie.ID = movieOfNewImdb(dbmovie.ImdbID, cfgp.MetadataLanguage)
+		}
+
+		if dbmovie.ID == 0 && database.Getdatarow[uint](
 			false,
 			"select id from dbmovies where imdb_id = ?",
 			&dbmovie.ImdbID,
@@ -1271,8 +1332,15 @@ func jobImportDBSeries(
 					Int(logger.StrTvdb, serieconfig.TvdbID).
 					Msg("Get metadata for")
 
+				// Always the source's default language (English), like the
+				// manual refreshes: a series can be in groups of different
+				// metadata languages, and its texts in those languages are
+				// metadata_translations (TranslateSerie below). Fetching in
+				// the importing group's language made the stored texts flip
+				// with every import.
 				tbl := metadata.SerieGetMetadata(
 					&dbserie,
+					"",
 					cfgp.MetadataLanguage,
 					config.GetSettingsGeneral().SerieMetaSourceTmdb,
 					config.GetSettingsGeneral().SerieMetaSourceTrakt,
@@ -1430,10 +1498,7 @@ func jobImportDBSeries(
 					if dbserie.ThetvdbID != 0 && slices.Contains(priorities, logger.StrTvdb) {
 						var err error
 
-						episodes, err = collectTvdbSeriesEpisodes(
-							dbserie.ThetvdbID,
-							cfgp.MetadataLanguage,
-						)
+						episodes, err = collectTvdbSeriesEpisodes(dbserie.ThetvdbID)
 						if err != nil {
 							// Genuine fetch failure (network/auth/etc) - do not treat as
 							// "series has zero episodes". Skip this series for this run
@@ -1464,6 +1529,7 @@ func jobImportDBSeries(
 
 					// Write all collected episodes to the database
 					writeCollectedEpisodesToDB(episodes, &dbserie.ID)
+					metadata.TranslateSerie(context.Background(), &dbserie)
 				}
 			}
 		}

@@ -76,13 +76,13 @@ func TestCleanupFileCache(t *testing.T) {
 
 	covers := coverCacheDir()
 	for _, n := range []string{
-		"movie-1-aaa.jpg", "movie-2-bbb.jpg", "movie-3-ccc.jpg", "series-1-ddd.png",
-		"epthumb-7-eee.jpg", "epthumb-8-fff.jpg", "audiobook-5-ggg.jpg", "notes.txt", "movie-1-hhh-123.tmp",
+		"movie-1.jpg", "movie-1-t400.jpg", "movie-2.jpg", "movie-2-t400.jpg", "movie-3.jpg", "series-1.png",
+		"epthumb-7.jpg", "epthumb-8.jpg", "audiobook-5.jpg", "notes.txt", "movie-1-123.tmp",
 	} {
 		write(covers, n, time.Time{})
 	}
 
-	write(covers, "movie-9-iii-456.tmp", old)
+	write(covers, "movie-9-456.tmp", old)
 
 	st, _ := os.Stat(video)
 	subs := subCacheDir()
@@ -132,7 +132,7 @@ func TestCleanupFileCache(t *testing.T) {
 		return out
 	}
 
-	wantCovers := []string{"epthumb-7-eee.jpg", "movie-1-aaa.jpg", "movie-1-hhh-123.tmp", "notes.txt", "series-1-ddd.png"}
+	wantCovers := []string{"epthumb-7.jpg", "movie-1-123.tmp", "movie-1-t400.jpg", "movie-1.jpg", "notes.txt", "series-1.png"}
 	if got := names(covers); !slices.Equal(got, wantCovers) {
 		t.Errorf("covers left: %v, want %v", got, wantCovers)
 	}
@@ -147,7 +147,7 @@ func TestCleanupFileCache(t *testing.T) {
 		t.Errorf("subtitles left: %v, want %v", got, wantSubs)
 	}
 
-	if res.Covers != 4 || res.Subtitles != 5 || res.Temp != 2 || res.Bytes == 0 {
+	if res.Covers != 5 || res.Subtitles != 5 || res.Temp != 2 || res.Bytes == 0 {
 		t.Errorf("result %+v", res)
 	}
 }

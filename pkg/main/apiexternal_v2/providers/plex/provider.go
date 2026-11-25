@@ -36,8 +36,6 @@ type WatchlistItem struct {
 	OriginalTitle         string `json:"originalTitle,omitempty"`
 	Year                  int    `json:"year"`
 	Summary               string `json:"summary,omitempty"`
-	Rating                string `json:"rating,omitempty"`
-	UserRating            string `json:"userRating,omitempty"`
 	Duration              int    `json:"duration,omitempty"`
 	AddedAt               int64  `json:"addedAt"`
 	UpdatedAt             int64  `json:"updatedAt"`

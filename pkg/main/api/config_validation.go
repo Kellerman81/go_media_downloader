@@ -206,8 +206,9 @@ func validateGeneralConfig(config *config.GeneralConfig) error {
 		return errors.New("log level must be 'info', 'debug' or 'warning'")
 	}
 
-	if config.LogFileSize <= 0 {
-		return errors.New("log file size must be greater than 0")
+	// 0 is the default (10 MB, logger.InitLogger).
+	if config.LogFileSize < 0 {
+		return errors.New("log file size must not be negative")
 	}
 
 	if config.WebPort == "" {

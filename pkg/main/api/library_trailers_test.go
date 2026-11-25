@@ -39,6 +39,8 @@ func TestPickTrailer(t *testing.T) {
 // region tag or a language name (as config.toml has them) - English
 // without one.
 func TestListLanguage(t *testing.T) {
+	t.Chdir(t.TempDir()) // the names are rewritten as codes, after a backup to ./backup
+
 	groups := []config.MediaTypeConfig{}
 	for name, lang := range map[string]string{"A": "de-DE", "B": "German", "C": "ger", "D": "English", "E": "", "F": "Klingon"} {
 		g := mediaGroup(name)

@@ -153,7 +153,7 @@ func TestPlayerTracks(t *testing.T) {
 		t.Fatalf("info: %d %s", w.Code, w.Body)
 	}
 
-	if len(info.AudioTracks) != 2 || info.AudioTracks[0].Lang != "en" || info.AudioTracks[1].Label != "German · AAC mono · Dub" {
+	if len(info.AudioTracks) != 2 || info.AudioTracks[0].Lang != "en" || plain(info.AudioTracks[1].Label) != "German · AAC mono · Dub" {
 		t.Fatalf("audio tracks: %+v", info.AudioTracks)
 	}
 

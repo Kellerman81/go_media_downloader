@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -32,6 +33,38 @@ type Provider struct {
 	apiKey     string
 	bearerAuth string            // "Bearer <apiKey>" pre-computed to avoid per-request allocation
 	headers    map[string]string // pre-allocated, constant across all requests
+	language   string            // added to every GET as language= (WithLanguage); "" TMDB's default, English
+	fallback   string            // asked again in this language when TMDB finds nothing (WithFallbackLanguage)
+}
+
+// WithFallbackLanguage returns the provider that, when a lookup finds
+// nothing (HTTP 404 or no results), asks TMDB once more in lang: a media
+// group's metadata_language. English and "" ask only once.
+func (p *Provider) WithFallbackLanguage(lang string) *Provider {
+	if p == nil {
+		return nil
+	}
+
+	cp := *p
+	if !strings.HasPrefix(lang, "en") {
+		cp.fallback = lang
+	}
+
+	return &cp
+}
+
+// WithLanguage returns the provider asking for texts in lang (ISO 639-1
+// such as "de", or "de-DE"): titles, overviews and taglines come in that
+// language where TMDB has them. The copy shares the client and its limits.
+func (p *Provider) WithLanguage(lang string) *Provider {
+	if p == nil {
+		return nil
+	}
+
+	cp := *p
+	cp.language = lang
+
+	return &cp
 }
 
 // NewProviderWithConfig creates a new TMDB metadata provider with full configuration including
@@ -102,10 +135,10 @@ func (p *Provider) SearchMovies(
 
 // GetMovieByID retrieves detailed movie information by TMDB ID.
 func (p *Provider) GetMovieByID(ctx context.Context, id int) (*apiexternal_v2.MovieDetails, error) {
-	url := fmt.Sprintf("%s/movie/%d?append_to_response=alternative_titles,credits", p.baseURL, id)
+	url := fmt.Sprintf("%s/movie/%d?append_to_response=alternative_titles,credits,recommendations,similar", p.baseURL, id)
 
 	var response tmdbMovieDetails
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, nil); err != nil {
 		return nil, err
 	}
 
@@ -124,7 +157,7 @@ func (p *Provider) FindMovieByIMDbID(
 		TVResults    []tmdbSeriesSearchResult `json:"tv_results"`
 	}
 
-	if err := p.makeRequest(ctx, reqURL, &response); err != nil {
+	if err := p.request(ctx, reqURL, &response, func() bool { return len(response.MovieResults) == 0 && len(response.TVResults) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -181,13 +214,13 @@ func (p *Provider) GetSeriesByID(
 	id int,
 ) (*apiexternal_v2.SeriesDetails, error) {
 	url := fmt.Sprintf(
-		"%s/tv/%d?append_to_response=alternative_titles,credits,external_ids",
+		"%s/tv/%d?append_to_response=alternative_titles,credits,external_ids,recommendations,similar",
 		p.baseURL,
 		id,
 	)
 
 	var response tmdbSeriesDetails
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, nil); err != nil {
 		return nil, err
 	}
 
@@ -214,7 +247,7 @@ func (p *Provider) FindSeriesByTVDbID(
 		TVResults []tmdbSeriesSearchResult `json:"tv_results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.TVResults) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -288,7 +321,7 @@ func (p *Provider) GetEpisodeDetails(
 		p.baseURL, seriesID, seasonNumber, episodeNumber)
 
 	var response tmdbEpisode
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, nil); err != nil {
 		return nil, err
 	}
 
@@ -478,7 +511,7 @@ func (p *Provider) GetMovieCredits(ctx context.Context, id int) (*apiexternal_v2
 	url := fmt.Sprintf("%s/movie/%d/credits", p.baseURL, id)
 
 	var response tmdbCredits
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Cast) == 0 && len(response.Crew) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -490,7 +523,7 @@ func (p *Provider) GetSeriesCredits(ctx context.Context, id int) (*apiexternal_v
 	url := fmt.Sprintf("%s/tv/%d/credits", p.baseURL, id)
 
 	var response tmdbCredits
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Cast) == 0 && len(response.Crew) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -509,7 +542,9 @@ func (p *Provider) GetMovieImages(
 	url := fmt.Sprintf("%s/movie/%d/images", p.baseURL, id)
 
 	var response tmdbImageCollection
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool {
+		return len(response.Backdrops) == 0 && len(response.Posters) == 0 && len(response.Logos) == 0
+	}); err != nil {
 		return nil, err
 	}
 
@@ -524,7 +559,9 @@ func (p *Provider) GetSeriesImages(
 	url := fmt.Sprintf("%s/tv/%d/images", p.baseURL, id)
 
 	var response tmdbImageCollection
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool {
+		return len(response.Backdrops) == 0 && len(response.Posters) == 0 && len(response.Logos) == 0
+	}); err != nil {
 		return nil, err
 	}
 
@@ -549,7 +586,7 @@ func (p *Provider) GetMovieVideos(ctx context.Context, id int, languages ...stri
 		Results []tmdbVideo `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -565,7 +602,7 @@ func (p *Provider) GetSeriesVideos(ctx context.Context, id int, languages ...str
 		Results []tmdbVideo `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -587,7 +624,7 @@ func (p *Provider) GetSimilarMovies(
 		Results []tmdbMovieSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -605,7 +642,7 @@ func (p *Provider) GetSimilarSeries(
 		Results []tmdbSeriesSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -623,7 +660,7 @@ func (p *Provider) GetMovieRecommendations(
 		Results []tmdbMovieSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -641,7 +678,7 @@ func (p *Provider) GetSeriesRecommendations(
 		Results []tmdbSeriesSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -756,7 +793,7 @@ func (p *Provider) DiscoverMovies(
 		Results      []tmdbMovieSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -805,7 +842,7 @@ func (p *Provider) DiscoverTV(
 		Results      []tmdbSeriesSearchResult `json:"results"`
 	}
 
-	if err := p.makeRequest(ctx, url, &response); err != nil {
+	if err := p.request(ctx, url, &response, func() bool { return len(response.Results) == 0 }); err != nil {
 		return nil, err
 	}
 
@@ -821,17 +858,47 @@ func (p *Provider) DiscoverTV(
 // HTTP Helper
 //
 
+// request is makeRequest asking again in the fallback language when the
+// answer is a 404 or empty (empty: nil for "only a 404 is nothing"). The
+// target is cleared before the second answer is read into it.
+func (p *Provider) request(ctx context.Context, reqURL string, target any, empty func() bool) error {
+	err := p.makeRequest(ctx, reqURL, target)
+	if p.fallback == "" || p.language != "" {
+		return err
+	}
+
+	switch {
+	case err != nil && !strings.Contains(err.Error(), "HTTP 404"):
+		return err
+	case err == nil && (empty == nil || !empty()):
+		return nil
+	}
+
+	reflect.ValueOf(target).Elem().SetZero()
+
+	return p.WithLanguage(p.fallback).makeRequest(ctx, reqURL, target)
+}
+
 // makeRequest performs an HTTP GET request and decodes the JSON response
 // Uses the base client for rate limiting, circuit breaker, and other infrastructure
 // Automatically adds Bearer token authentication via Authorization header.
-func (p *Provider) makeRequest(ctx context.Context, url string, target any) error {
+func (p *Provider) makeRequest(ctx context.Context, reqURL string, target any) error {
 	// Extract just the path from the full URL
 	// TMDB URLs come in as full URLs like "https://api.themoviedb.org/3/search/movie?..."
 	// We need to extract the path AFTER "/3/" since BaseURL already includes "/3"
-	endpoint := url
-	if _, after, ok := strings.Cut(url, "/3/"); ok {
+	endpoint := reqURL
+	if _, after, ok := strings.Cut(reqURL, "/3/"); ok {
 		// Extract everything AFTER "/3/", not including "/3/"
 		endpoint = after // +3 to skip over "/3/"
+	}
+
+	if p.language != "" && !strings.Contains(endpoint, "?language=") && !strings.Contains(endpoint, "&language=") {
+		sep := "?"
+		if strings.Contains(endpoint, "?") {
+			sep = "&"
+		}
+
+		endpoint += sep + "language=" + url.QueryEscape(p.language)
 	}
 
 	return p.baseClient.MakeRequestWithHeaders(
@@ -913,4 +980,53 @@ func (p *Provider) GetCollection(ctx context.Context, id int) (*MovieCollection,
 	})
 
 	return &response, nil
+}
+
+// Review is a user review of a movie or series.
+type Review struct {
+	Author    string  `json:"author"`
+	Rating    float64 `json:"rating"` // 0-10, 0 = none
+	Content   string  `json:"content"`
+	CreatedAt string  `json:"created_at"`
+	URL       string  `json:"url"`
+}
+
+// GetMovieReviews retrieves the reviews of a movie (first page).
+func (p *Provider) GetMovieReviews(ctx context.Context, id int) ([]Review, error) {
+	return p.reviews(ctx, fmt.Sprintf("%s/movie/%d/reviews", p.baseURL, id))
+}
+
+// GetSeriesReviews retrieves the reviews of a TV series (first page).
+func (p *Provider) GetSeriesReviews(ctx context.Context, id int) ([]Review, error) {
+	return p.reviews(ctx, fmt.Sprintf("%s/tv/%d/reviews", p.baseURL, id))
+}
+
+func (p *Provider) reviews(ctx context.Context, url string) ([]Review, error) {
+	var response struct {
+		Results []struct {
+			Author        string `json:"author"`
+			AuthorDetails struct {
+				Rating *float64 `json:"rating"`
+			} `json:"author_details"`
+			Content   string `json:"content"`
+			CreatedAt string `json:"created_at"`
+			URL       string `json:"url"`
+		} `json:"results"`
+	}
+
+	if err := p.makeRequest(ctx, url, &response); err != nil {
+		return nil, err
+	}
+
+	out := make([]Review, 0, len(response.Results))
+	for _, r := range response.Results {
+		rv := Review{Author: r.Author, Content: r.Content, CreatedAt: r.CreatedAt, URL: r.URL}
+		if r.AuthorDetails.Rating != nil {
+			rv.Rating = *r.AuthorDetails.Rating
+		}
+
+		out = append(out, rv)
+	}
+
+	return out, nil
 }

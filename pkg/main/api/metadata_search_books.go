@@ -40,7 +40,7 @@ func optionsSelectCol(id, label string, values, labels []string, cols int) gompo
 	}
 
 	if len(values) == 0 {
-		opts = append(opts, html.Option(html.Value(""), gomponents.Text("(none configured)")))
+		opts = append(opts, html.Option(html.Value(""), gomponents.Text(t("(none configured)"))))
 	}
 
 	return html.Div(
@@ -88,11 +88,11 @@ func bookMetadataSearchContent(
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Add Books")),
+					html.H2(html.Class("header-title"), gomponents.Text(t("Add Books"))),
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Search book metadata providers and add single titles or an author's catalogue to your library",
+							t("Search book metadata providers and add single titles or an author's catalogue to your library"),
 						),
 					),
 				),
@@ -105,10 +105,10 @@ func bookMetadataSearchContent(
 
 			html.Ul(
 				html.Class("nav nav-tabs mb-3"), html.Role("tablist"),
-				musicTab("bk1", "fas fa-book", "Single Book", true),
-				musicTab("bk2", "fas fa-user-plus", "Full Author", false),
-				musicTab("bk3", "fas fa-list-check", "Selected Books", false),
-				musicTab("bk4", "fas fa-edit", "Manual Entry", false),
+				musicTab("bk1", "fas fa-book", t("Single Book"), true),
+				musicTab("bk2", "fas fa-user-plus", t("Full Author"), false),
+				musicTab("bk3", "fas fa-list-check", t("Selected Books"), false),
+				musicTab("bk4", "fas fa-edit", t("Manual Entry"), false),
 			),
 
 			html.Div(
@@ -116,21 +116,21 @@ func bookMetadataSearchContent(
 
 				musicTabPane("bk1", true,
 					musicCardWrap(
-						"Search for a single book",
-						"Enter a title (and optionally an author), pick a provider, then add any match.",
+						t("Search for a single book"),
+						t("Enter a title (and optionally an author), pick a provider, then add any match."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							optionsSelectCol("bk1_provider", "Provider", provVals, provLabels, 2),
-							musicInputCol("bk1_title", "Title", "Enter book title...", 3, true),
+							optionsSelectCol("bk1_provider", t("Provider"), provVals, provLabels, 2),
+							musicInputCol("bk1_title", t("Title"), t("Enter book title..."), 3, true),
 							musicInputCol(
 								"bk1_author",
-								"Author (optional)",
-								"Enter author...",
+								t("Author (optional)"),
+								t("Enter author..."),
 								3,
 								false,
 							),
 							musicListSelectCol("bk1_list", mediaConfigs, 2),
-							musicButtonCol("Search", "fas fa-search", "bookSearch('bk1')"),
+							musicButtonCol(t("Search"), "fas fa-search", "bookSearch('bk1')"),
 						),
 					),
 					html.Div(html.ID("bk1_results"), html.Class("mt-3")),
@@ -138,15 +138,15 @@ func bookMetadataSearchContent(
 
 				musicTabPane("bk2", false,
 					musicCardWrap(
-						"Add a complete author",
-						"Enter an author name and add their whole catalogue. A background job imports every book found for that author.",
+						t("Add a complete author"),
+						t("Enter an author name and add their whole catalogue. A background job imports every book found for that author."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							optionsSelectCol("bk2_provider", "Provider", provVals, provLabels, 2),
+							optionsSelectCol("bk2_provider", t("Provider"), provVals, provLabels, 2),
 							musicInputCol(
 								"bk2_author",
-								"Author Name",
-								"Enter author name...",
+								t("Author Name"),
+								t("Enter author name..."),
 								4,
 								true,
 							),
@@ -160,7 +160,7 @@ func bookMetadataSearchContent(
 										html.Class("fas fa-user-plus me-1"),
 										gomponents.Attr("aria-hidden", "true"),
 									),
-									gomponents.Text("Add Author"),
+									gomponents.Text(t("Add Author")),
 								),
 							),
 						),
@@ -174,7 +174,7 @@ func bookMetadataSearchContent(
 									html.Class("fas fa-eye me-1"),
 									gomponents.Attr("aria-hidden", "true"),
 								),
-								gomponents.Text("Preview books by this author"),
+								gomponents.Text(t("Preview books by this author")),
 							),
 						),
 					),
@@ -182,42 +182,42 @@ func bookMetadataSearchContent(
 				),
 
 				musicTabPane("bk3", false,
-					musicCardWrap("Add selected books of an author",
-						"Search an author's books, then pick exactly which titles to add.",
+					musicCardWrap(t("Add selected books of an author"),
+						t("Search an author's books, then pick exactly which titles to add."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							optionsSelectCol("bk3_provider", "Provider", provVals, provLabels, 2),
+							optionsSelectCol("bk3_provider", t("Provider"), provVals, provLabels, 2),
 							musicInputCol(
 								"bk3_author",
-								"Author Name",
-								"Enter author name...",
+								t("Author Name"),
+								t("Enter author name..."),
 								4,
 								true,
 							),
 							musicListSelectCol("bk3_list", mediaConfigs, 3),
-							musicButtonCol("Search", "fas fa-search", "bookSearch('bk3')"),
+							musicButtonCol(t("Search"), "fas fa-search", "bookSearch('bk3')"),
 						),
 					),
 					html.Div(html.ID("bk3_results"), html.Class("mt-3")),
 				),
 
 				musicTabPane("bk4", false,
-					musicCardWrap("Add a book manually",
-						"Add a book with no provider match by entering its details directly.",
+					musicCardWrap(t("Add a book manually"),
+						t("Add a book with no provider match by entering its details directly."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							musicInputCol("bk4_title", "Title", "Enter book title...", 4, true),
-							musicInputCol("bk4_year", "Year", "YYYY", 2, false),
-							musicInputCol("bk4_author", "Author", "Enter author...", 3, false),
+							musicInputCol("bk4_title", t("Title"), t("Enter book title..."), 4, true),
+							musicInputCol("bk4_year", t("Year"), "YYYY", 2, false),
+							musicInputCol("bk4_author", t("Author"), t("Enter author..."), 3, false),
 							musicListSelectCol("bk4_list", mediaConfigs, 3),
 						),
 						html.Div(
 							html.Class("row g-3 align-items-end mt-1"),
 							musicInputCol("bk4_isbn", "ISBN", "ISBN-13 or ISBN-10", 3, false),
-							musicInputCol("bk4_publisher", "Publisher", "Enter publisher...", 3, false),
+							musicInputCol("bk4_publisher", t("Publisher"), t("Enter publisher..."), 3, false),
 							optionsSelectCol(
 								"bk4_quality_profile",
-								"Quality Profile",
+								t("Quality Profile"),
 								qualityProfiles,
 								qualityProfiles,
 								3,
@@ -231,7 +231,7 @@ func bookMetadataSearchContent(
 										html.Class("fas fa-plus me-1"),
 										gomponents.Attr("aria-hidden", "true"),
 									),
-									gomponents.Text("Add Book Manually"),
+									gomponents.Text(t("Add Book Manually")),
 								),
 							),
 						),
@@ -270,11 +270,11 @@ func audiobookMetadataSearchContent(
 				),
 				html.Div(
 					html.Class("header-text"),
-					html.H2(html.Class("header-title"), gomponents.Text("Add Audiobooks")),
+					html.H2(html.Class("header-title"), gomponents.Text(t("Add Audiobooks"))),
 					html.P(
 						html.Class("header-subtitle"),
 						gomponents.Text(
-							"Search Audible and add single audiobooks or an author's catalogue to your library",
+							t("Search Audible and add single audiobooks or an author's catalogue to your library"),
 						),
 					),
 				),
@@ -287,10 +287,10 @@ func audiobookMetadataSearchContent(
 
 			html.Ul(
 				html.Class("nav nav-tabs mb-3"), html.Role("tablist"),
-				musicTab("ab1", "fas fa-headphones", "Single Audiobook", true),
-				musicTab("ab2", "fas fa-user-plus", "Full Author", false),
-				musicTab("ab3", "fas fa-list-check", "Selected Audiobooks", false),
-				musicTab("ab4", "fas fa-edit", "Manual Entry", false),
+				musicTab("ab1", "fas fa-headphones", t("Single Audiobook"), true),
+				musicTab("ab2", "fas fa-user-plus", t("Full Author"), false),
+				musicTab("ab3", "fas fa-list-check", t("Selected Audiobooks"), false),
+				musicTab("ab4", "fas fa-edit", t("Manual Entry"), false),
 			),
 
 			html.Div(
@@ -298,27 +298,27 @@ func audiobookMetadataSearchContent(
 
 				musicTabPane("ab1", true,
 					musicCardWrap(
-						"Search for a single audiobook",
-						"Enter a title (and optionally an author), pick an Audible region, then add any match.",
+						t("Search for a single audiobook"),
+						t("Enter a title (and optionally an author), pick an Audible region, then add any match."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							optionsSelectCol("ab1_region", "Region", regionVals, regionLabels, 2),
+							optionsSelectCol("ab1_region", t("Region"), regionVals, regionLabels, 2),
 							musicInputCol(
 								"ab1_title",
-								"Title",
-								"Enter audiobook title...",
+								t("Title"),
+								t("Enter audiobook title..."),
 								3,
 								true,
 							),
 							musicInputCol(
 								"ab1_author",
-								"Author (optional)",
-								"Enter author...",
+								t("Author (optional)"),
+								t("Enter author..."),
 								3,
 								false,
 							),
 							musicListSelectCol("ab1_list", mediaConfigs, 2),
-							musicButtonCol("Search", "fas fa-search", "audiobookSearch('ab1')"),
+							musicButtonCol(t("Search"), "fas fa-search", "audiobookSearch('ab1')"),
 						),
 					),
 					html.Div(html.ID("ab1_results"), html.Class("mt-3")),
@@ -326,15 +326,15 @@ func audiobookMetadataSearchContent(
 
 				musicTabPane("ab2", false,
 					musicCardWrap(
-						"Add a complete author",
-						"Enter an author name and add their whole catalogue. A background job imports every audiobook found for that author.",
+						t("Add a complete author"),
+						t("Enter an author name and add their whole catalogue. A background job imports every audiobook found for that author."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							optionsSelectCol("ab2_region", "Region", regionVals, regionLabels, 2),
+							optionsSelectCol("ab2_region", t("Region"), regionVals, regionLabels, 2),
 							musicInputCol(
 								"ab2_author",
-								"Author Name",
-								"Enter author name...",
+								t("Author Name"),
+								t("Enter author name..."),
 								4,
 								true,
 							),
@@ -348,7 +348,7 @@ func audiobookMetadataSearchContent(
 										html.Class("fas fa-user-plus me-1"),
 										gomponents.Attr("aria-hidden", "true"),
 									),
-									gomponents.Text("Add Author"),
+									gomponents.Text(t("Add Author")),
 								),
 							),
 						),
@@ -362,7 +362,7 @@ func audiobookMetadataSearchContent(
 									html.Class("fas fa-eye me-1"),
 									gomponents.Attr("aria-hidden", "true"),
 								),
-								gomponents.Text("Preview audiobooks by this author"),
+								gomponents.Text(t("Preview audiobooks by this author")),
 							),
 						),
 					),
@@ -370,42 +370,42 @@ func audiobookMetadataSearchContent(
 				),
 
 				musicTabPane("ab3", false,
-					musicCardWrap("Add selected audiobooks of an author",
-						"Search an author's audiobooks, then pick exactly which titles to add.",
+					musicCardWrap(t("Add selected audiobooks of an author"),
+						t("Search an author's audiobooks, then pick exactly which titles to add."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							optionsSelectCol("ab3_region", "Region", regionVals, regionLabels, 2),
+							optionsSelectCol("ab3_region", t("Region"), regionVals, regionLabels, 2),
 							musicInputCol(
 								"ab3_author",
-								"Author Name",
-								"Enter author name...",
+								t("Author Name"),
+								t("Enter author name..."),
 								4,
 								true,
 							),
 							musicListSelectCol("ab3_list", mediaConfigs, 3),
-							musicButtonCol("Search", "fas fa-search", "audiobookSearch('ab3')"),
+							musicButtonCol(t("Search"), "fas fa-search", "audiobookSearch('ab3')"),
 						),
 					),
 					html.Div(html.ID("ab3_results"), html.Class("mt-3")),
 				),
 
 				musicTabPane("ab4", false,
-					musicCardWrap("Add an audiobook manually",
-						"Add an audiobook with no provider match by entering its details directly.",
+					musicCardWrap(t("Add an audiobook manually"),
+						t("Add an audiobook with no provider match by entering its details directly."),
 						html.Div(
 							html.Class("row g-3 align-items-end"),
-							musicInputCol("ab4_title", "Title", "Enter audiobook title...", 4, true),
-							musicInputCol("ab4_author", "Author", "Enter author...", 3, false),
-							musicInputCol("ab4_narrator", "Narrator", "Enter narrator...", 3, false),
+							musicInputCol("ab4_title", t("Title"), t("Enter audiobook title..."), 4, true),
+							musicInputCol("ab4_author", t("Author"), t("Enter author..."), 3, false),
+							musicInputCol("ab4_narrator", t("Narrator"), t("Enter narrator..."), 3, false),
 							musicListSelectCol("ab4_list", mediaConfigs, 2),
 						),
 						html.Div(
 							html.Class("row g-3 align-items-end mt-1"),
-							musicInputCol("ab4_asin", "ASIN", "Audible ASIN", 3, false),
-							musicInputCol("ab4_runtime", "Runtime (minutes)", "e.g. 480", 2, false),
+							musicInputCol("ab4_asin", "ASIN", t("Audible ASIN"), 3, false),
+							musicInputCol("ab4_runtime", t("Runtime (minutes)"), "e.g. 480", 2, false),
 							optionsSelectCol(
 								"ab4_quality_profile",
-								"Quality Profile",
+								t("Quality Profile"),
 								qualityProfiles,
 								qualityProfiles,
 								3,
@@ -419,7 +419,7 @@ func audiobookMetadataSearchContent(
 										html.Class("fas fa-plus me-1"),
 										gomponents.Attr("aria-hidden", "true"),
 									),
-									gomponents.Text("Add Audiobook Manually"),
+									gomponents.Text(t("Add Audiobook Manually")),
 								),
 							),
 						),
@@ -465,7 +465,7 @@ func SearchBookMetadata(c *gin.Context) {
 	selectView := c.PostForm("view") == "select"
 
 	if title == "" && author == "" {
-		renderMusicAlert(c, "Please enter a title or author", "warning")
+		renderMusicAlert(c, t("Please enter a title or author"), "warning")
 		return
 	}
 
@@ -475,13 +475,13 @@ func SearchBookMetadata(c *gin.Context) {
 	results, err := bookSearchDispatch(ctx, provider, title, author, 25)
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Str("provider", provider).Msg("book search failed")
-		renderMusicAlert(c, "Search failed: "+err.Error(), "danger")
+		renderMusicAlert(c, t("Search failed: ")+err.Error(), "danger")
 
 		return
 	}
 
 	if len(results) == 0 {
-		renderMusicAlert(c, "No books found.", "warning")
+		renderMusicAlert(c, t("No books found."), "warning")
 		return
 	}
 
@@ -494,7 +494,7 @@ func SearchBookMetadata(c *gin.Context) {
 
 	nodes = append(
 		nodes,
-		html.H6(html.Class("mb-2"), gomponents.Textf("%d books found", len(results))),
+		html.H6(html.Class("mb-2"), gomponents.Text(tf("%d books found", len(results)))),
 	)
 
 	lists := haveLists(c, "book")
@@ -558,7 +558,7 @@ func createBookResultCard(book apiexternal_v2.BookSearchResult, have bool) gompo
 					html.Data("openlibrary-id", openLibraryWorkID(book.ID)),
 					html.Data("isbn", book.ISBN13),
 					html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
-					gomponents.Text("Add Book"),
+					gomponents.Text(t("Add Book")),
 				),
 			),
 		),
@@ -589,12 +589,12 @@ func bookSelectionList(results []apiexternal_v2.BookSearchResult) gomponents.Nod
 	return html.Div(
 		html.Class("border rounded p-2 mt-2 book-select-list"),
 		html.Div(html.Class("d-flex justify-content-between align-items-center mb-2"),
-			html.Span(html.Class("fw-semibold"), gomponents.Textf("%d books", len(items))),
+			html.Span(html.Class("fw-semibold"), gomponents.Text(tf("%d books", len(items)))),
 			html.Div(
 				html.Button(
 					html.Type("button"),
 					html.Class("btn btn-sm btn-outline-secondary me-2 select-all-books"),
-					gomponents.Text("Select all"),
+					gomponents.Text(t("Select all")),
 				),
 				html.Button(
 					html.Type("button"),
@@ -603,7 +603,7 @@ func bookSelectionList(results []apiexternal_v2.BookSearchResult) gomponents.Nod
 						html.Class("fas fa-plus me-1"),
 						gomponents.Attr("aria-hidden", "true"),
 					),
-					gomponents.Text("Add Selected"),
+					gomponents.Text(t("Add Selected")),
 				),
 			),
 		),
@@ -617,7 +617,7 @@ func AddBooksByAuthor(c *gin.Context) {
 	listName := c.PostForm("book_list")
 
 	if author == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Author and list are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Author and list are required")})
 		return
 	}
 
@@ -625,7 +625,7 @@ func AddBooksByAuthor(c *gin.Context) {
 	if cfgp == nil {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "List '" + listName + "' not found in book configuration"},
+			gin.H{"error": tf("List '%s' not found in book configuration", listName)},
 		)
 
 		return
@@ -652,14 +652,14 @@ func AddBooksByAuthor(c *gin.Context) {
 		},
 		"Data",
 	); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": tf("Could not queue the import: %s", err.Error())})
 		return
 	}
 
 	c.JSON(
 		http.StatusOK,
 		gin.H{
-			"success": fmt.Sprintf(
+			"success": tf(
 				"Importing books by \"%s\" into %s in the background.",
 				author,
 				listName,
@@ -693,7 +693,7 @@ func SearchAudiobookMetadata(c *gin.Context) {
 	selectView := c.PostForm("view") == "select"
 
 	if title == "" && author == "" {
-		renderMusicAlert(c, "Please enter a title or author", "warning")
+		renderMusicAlert(c, t("Please enter a title or author"), "warning")
 		return
 	}
 
@@ -720,13 +720,13 @@ func SearchAudiobookMetadata(c *gin.Context) {
 
 	if err != nil {
 		logger.Logtype("error", 0).Err(err).Msg("audiobook search failed")
-		renderMusicAlert(c, "Search failed: "+err.Error(), "danger")
+		renderMusicAlert(c, t("Search failed: ")+err.Error(), "danger")
 
 		return
 	}
 
 	if len(results) == 0 {
-		renderMusicAlert(c, "No audiobooks found.", "warning")
+		renderMusicAlert(c, t("No audiobooks found."), "warning")
 		return
 	}
 
@@ -739,7 +739,7 @@ func SearchAudiobookMetadata(c *gin.Context) {
 
 	nodes = append(
 		nodes,
-		html.H6(html.Class("mb-2"), gomponents.Textf("%d audiobooks found", len(results))),
+		html.H6(html.Class("mb-2"), gomponents.Text(tf("%d audiobooks found", len(results)))),
 	)
 
 	lists := haveLists(c, "audiobook")
@@ -792,7 +792,7 @@ func createAudiobookResultCard(ab apiexternal_v2.AudiobookSearchResult, have boo
 						if narratorStr != "" {
 							return html.Small(
 								html.Class("text-muted d-block mb-1"),
-								gomponents.Text("Narrated by: "+narratorStr),
+								gomponents.Text(tf("Narrated by: %s", narratorStr)),
 							)
 						}
 
@@ -816,7 +816,7 @@ func createAudiobookResultCard(ab apiexternal_v2.AudiobookSearchResult, have boo
 				metaAddButton(have, "btn btn-success btn-sm add-audiobook-btn ms-3",
 					html.Data("asin", ab.ASIN),
 					html.I(html.Class("fas fa-plus me-1"), gomponents.Attr("aria-hidden", "true")),
-					gomponents.Text("Add Audiobook"),
+					gomponents.Text(t("Add Audiobook")),
 				),
 			),
 		),
@@ -847,12 +847,12 @@ func audiobookSelectionList(results []apiexternal_v2.AudiobookSearchResult) gomp
 	return html.Div(
 		html.Class("border rounded p-2 mt-2 ab-select-list"),
 		html.Div(html.Class("d-flex justify-content-between align-items-center mb-2"),
-			html.Span(html.Class("fw-semibold"), gomponents.Textf("%d audiobooks", len(items))),
+			html.Span(html.Class("fw-semibold"), gomponents.Text(tf("%d audiobooks", len(items)))),
 			html.Div(
 				html.Button(
 					html.Type("button"),
 					html.Class("btn btn-sm btn-outline-secondary me-2 select-all-ab"),
-					gomponents.Text("Select all"),
+					gomponents.Text(t("Select all")),
 				),
 				html.Button(
 					html.Type("button"),
@@ -861,7 +861,7 @@ func audiobookSelectionList(results []apiexternal_v2.AudiobookSearchResult) gomp
 						html.Class("fas fa-plus me-1"),
 						gomponents.Attr("aria-hidden", "true"),
 					),
-					gomponents.Text("Add Selected"),
+					gomponents.Text(t("Add Selected")),
 				),
 			),
 		),
@@ -875,7 +875,7 @@ func AddAudiobooksByAuthor(c *gin.Context) {
 	listName := c.PostForm("audiobook_list")
 
 	if author == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Author and list are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Author and list are required")})
 		return
 	}
 
@@ -883,7 +883,7 @@ func AddAudiobooksByAuthor(c *gin.Context) {
 	if cfgp == nil {
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "List '" + listName + "' not found in audiobook configuration"},
+			gin.H{"error": tf("List '%s' not found in audiobook configuration", listName)},
 		)
 
 		return
@@ -910,14 +910,14 @@ func AddAudiobooksByAuthor(c *gin.Context) {
 		},
 		"Data",
 	); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Could not queue the import: " + err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": tf("Could not queue the import: %s", err.Error())})
 		return
 	}
 
 	c.JSON(
 		http.StatusOK,
 		gin.H{
-			"success": fmt.Sprintf(
+			"success": tf(
 				"Importing audiobooks by \"%s\" into %s in the background.",
 				author,
 				listName,
@@ -953,7 +953,7 @@ func AddBookToDatabase(c *gin.Context) {
 	isbn := c.PostForm("isbn")
 
 	if listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "List name is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("List name is required")})
 		return
 	}
 
@@ -967,7 +967,7 @@ func AddBookToDatabase(c *gin.Context) {
 	}
 
 	if openlibraryID == "" && isbn == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "OpenLibrary ID or ISBN is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("OpenLibrary ID or ISBN is required")})
 		return
 	}
 
@@ -991,7 +991,7 @@ func AddBookToDatabase(c *gin.Context) {
 		logger.Logtype("error", 0).Err(err).Msg("Failed to get book details")
 		c.JSON(
 			http.StatusInternalServerError,
-			gin.H{"error": "Failed to get book details: " + err.Error()},
+			gin.H{"error": t("Failed to get book details: ") + err.Error()},
 		)
 
 		return
@@ -1052,13 +1052,14 @@ func AddBookToDatabase(c *gin.Context) {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert book")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to add book to database: " + err.Error()},
+				gin.H{"error": t("Failed to add book to database: ") + err.Error()},
 			)
 
 			return
 		}
 
 		dbBookID = int(newID)
+		importfeed.TranslateBook(c.Request.Context(), uint(newID))
 	} else {
 		dbBookID = bookExists[0]
 	}
@@ -1074,7 +1075,7 @@ func AddBookToDatabase(c *gin.Context) {
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
 			http.StatusConflict,
-			gin.H{"error": "Book already exists in list '" + listName + "'"},
+			gin.H{"error": tf("Book already exists in list '%s'", listName)},
 		)
 
 		return
@@ -1106,13 +1107,13 @@ func AddBookToDatabase(c *gin.Context) {
 		// ExecN (the fire-and-forget variant previously used here) has no
 		// return value - a write failure here was reported to the user as
 		// success even though the book was never linked into the list.
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add book: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("book", listName, uint(dbBookID), len(bookExists) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Book added successfully to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Book added successfully to ") + listName})
 }
 
 // AddAudiobookToDatabase handles adding an audiobook from metadata sources to the database.
@@ -1121,7 +1122,7 @@ func AddAudiobookToDatabase(c *gin.Context) {
 	listName := c.PostForm("audiobook_list")
 
 	if asin == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ASIN and list name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("ASIN and list name are required")})
 		return
 	}
 
@@ -1159,7 +1160,7 @@ func AddAudiobookToDatabase(c *gin.Context) {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to get audiobook details")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to get audiobook details: " + err.Error()},
+				gin.H{"error": t("Failed to get audiobook details: ") + err.Error()},
 			)
 
 			return
@@ -1193,7 +1194,7 @@ func AddAudiobookToDatabase(c *gin.Context) {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert audiobook")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to add audiobook to database: " + err.Error()},
+				gin.H{"error": t("Failed to add audiobook to database: ") + err.Error()},
 			)
 
 			return
@@ -1215,7 +1216,7 @@ func AddAudiobookToDatabase(c *gin.Context) {
 	if len(listExists) > 0 && listExists[0] > 0 {
 		c.JSON(
 			http.StatusConflict,
-			gin.H{"error": "Audiobook already exists in list '" + listName + "'"},
+			gin.H{"error": tf("Audiobook already exists in list '%s'", listName)},
 		)
 
 		return
@@ -1241,13 +1242,13 @@ func AddAudiobookToDatabase(c *gin.Context) {
 		&nowTime,
 		&nowTime,
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add audiobook: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("audiobook", listName, uint(dbAudiobookID), len(audiobookExists) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added successfully to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Audiobook added successfully to ") + listName})
 }
 
 // AddBookManual handles manual book entry.
@@ -1260,7 +1261,7 @@ func AddBookManual(c *gin.Context) {
 	publisher := c.PostForm("manualBook_publisher")
 
 	if title == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Title and list name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Title and list name are required")})
 		return
 	}
 
@@ -1301,7 +1302,7 @@ func AddBookManual(c *gin.Context) {
 		inList := database.GetrowsN[int](false, 1,
 			"SELECT count() FROM books WHERE dbbook_id = ? AND listname = ? COLLATE NOCASE", &dbBookID, &listName)
 		if len(inList) > 0 && inList[0] > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "Book already exists in list '" + listName + "'"})
+			c.JSON(http.StatusConflict, gin.H{"error": tf("Book already exists in list '%s'", listName)})
 			return
 		}
 	} else {
@@ -1339,11 +1340,12 @@ func AddBookManual(c *gin.Context) {
 		)
 		if err != nil {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual book")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book to database"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add book to database")})
 			return
 		}
 
 		dbBookID = int(newID)
+		importfeed.TranslateBook(c.Request.Context(), uint(newID))
 	}
 
 	// Resolve the wanted quality for this list, matching AddBookToDatabase -
@@ -1366,13 +1368,13 @@ func AddBookManual(c *gin.Context) {
 		&nowTime,
 		&nowTime,
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add book: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add book: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("book", listName, uint(dbBookID), len(existing) == 0) //nolint:gosec // row ids are positive
 
-	c.JSON(http.StatusOK, gin.H{"success": "Book added manually to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Book added manually to ") + listName})
 }
 
 // Lookups of AddAudiobookManual for an existing dbaudiobooks row. The title
@@ -1393,7 +1395,7 @@ func AddAudiobookManual(c *gin.Context) {
 	runtimeStr := c.PostForm("manualAudiobook_runtime")
 
 	if title == "" || listName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Title and list name are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": t("Title and list name are required")})
 		return
 	}
 
@@ -1442,7 +1444,7 @@ func AddAudiobookManual(c *gin.Context) {
 		inList := database.GetrowsN[int](false, 1,
 			"SELECT count() FROM audiobooks WHERE dbaudiobook_id = ? AND listname = ? COLLATE NOCASE", &existing[0], &listName)
 		if len(inList) > 0 && inList[0] > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "Audiobook already exists in list '" + listName + "'"})
+			c.JSON(http.StatusConflict, gin.H{"error": tf("Audiobook already exists in list '%s'", listName)})
 			return
 		}
 	} else {
@@ -1472,7 +1474,7 @@ func AddAudiobookManual(c *gin.Context) {
 			logger.Logtype("error", 0).Err(err).Msg("Failed to insert manual audiobook")
 			c.JSON(
 				http.StatusInternalServerError,
-				gin.H{"error": "Failed to add audiobook to database"},
+				gin.H{"error": t("Failed to add audiobook to database")},
 			)
 
 			return
@@ -1503,13 +1505,13 @@ func AddAudiobookManual(c *gin.Context) {
 		&nowTime,
 		&nowTime,
 	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add audiobook: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": t("Failed to add audiobook: ") + err.Error()})
 		return
 	}
 
 	notifyManualAdd("audiobook", listName, dbaudiobookID, len(existing) == 0)
 
-	c.JSON(http.StatusOK, gin.H{"success": "Audiobook added manually to " + listName})
+	c.JSON(http.StatusOK, gin.H{"success": t("Audiobook added manually to ") + listName})
 }
 
 // linkManualAudiobookPeople links (or creates) the author/narrator of a new
@@ -1556,9 +1558,9 @@ function bkSpin(el,l){ el.innerHTML='<div class="text-center p-4"><div class="sp
 function bookSearch(mode){
 	var author=bkVal(mode+'_author');
 	var title=bkVal(mode+'_title');
-	if(!title && !author){ showToaster('warning','Enter a title or author'); return; }
+	if(!title && !author){ showToaster('warning',_t('Enter a title or author')); return; }
 	var box=document.getElementById(mode+'_results');
-	bkSpin(box,'Searching...');
+	bkSpin(box,_t('Searching...'));
 	var p=new URLSearchParams();
 	p.append('provider', bkVal(mode+'_provider'));
 	p.append('book_title', title);
@@ -1567,30 +1569,30 @@ function bookSearch(mode){
 	p.append('have_list', bkVal(mode+'_list') || '');
 	bkPost('/api/admin/search/books', p).then(function(r){return r.text();})
 		.then(function(h){ box.innerHTML=h; })
-		.catch(function(){ box.innerHTML='<div class="alert alert-danger">Search failed.</div>'; });
+		.catch(function(){ box.innerHTML='<div class="alert alert-danger">' + _t('Search failed.') + '</div>'; });
 }
 
 function bookAddAuthor(){
 	var author=bkVal('bk2_author'), list=bkVal('bk2_list');
-	if(!author){ showToaster('warning','Enter an author name'); return; }
-	if(!list){ showToaster('warning','Select a list'); return; }
+	if(!author){ showToaster('warning',_t('Enter an author name')); return; }
+	if(!list){ showToaster('warning',_t('Select a list')); return; }
 	var esc=function(v){var d=document.createElement('div');d.textContent=v;return d.innerHTML;};
-	confirmAction('Add author','Import all books by "'+esc(author)+'" into "'+esc(list)+'"? This runs in the background.',function(){
+	confirmAction(_t('Add author'),_t('Import all books by "')+esc(author)+'" into "'+esc(list)+'"? This runs in the background.',function(){
 		var p=new URLSearchParams();
 		p.append('book_author',author); p.append('book_list',list);
 		bkPost('/api/admin/add/book/author',p).then(function(r){return r.json();}).then(function(d){
-			if(d.success){ showToaster('success',d.success); } else { showToaster('error',d.error||'Failed'); }
-		}).catch(function(){ showToaster('error','Failed to queue'); });
+			if(d.success){ showToaster('success',d.success); } else { showToaster('error',d.error||_t('Failed')); }
+		}).catch(function(){ showToaster('error',_t('Failed to queue')); });
 	});
 }
 
 function bookAddManual(){
 	var title=bkVal('bk4_title'), list=bkVal('bk4_list');
-	if(!title){ showToaster('warning','Enter a title'); return; }
-	if(!list){ showToaster('warning','Select a list'); return; }
+	if(!title){ showToaster('warning',_t('Enter a title')); return; }
+	if(!list){ showToaster('warning',_t('Select a list')); return; }
 	var btn=document.querySelector('[onclick="bookAddManual()"]');
 	var orig=btn?btn.innerHTML:'';
-	if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...'; }
+	if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...'); }
 	var p=new URLSearchParams();
 	p.append('manualBook_title',title);
 	p.append('manualBook_year',bkVal('bk4_year'));
@@ -1607,8 +1609,8 @@ function bookAddManual(){
 			document.getElementById('bk4_author').value='';
 			document.getElementById('bk4_isbn').value='';
 			document.getElementById('bk4_publisher').value='';
-		} else { showToaster('error',d.error||'Failed to add book'); }
-	}).catch(function(){ showToaster('error','Failed to add book'); }).finally(function(){
+		} else { showToaster('error',d.error||_t('Failed to add book')); }
+	}).catch(function(){ showToaster('error',_t('Failed to add book')); }).finally(function(){
 		if(btn){ btn.disabled=false; btn.innerHTML=orig; }
 	});
 }
@@ -1619,16 +1621,16 @@ document.addEventListener('click', function(e){
 		var pane=add.closest('.tab-pane');
 		var listEl=pane?pane.querySelector('[id$="_list"]'):null;
 		var list=listEl?listEl.value:'';
-		if(!list){ showToaster('warning','Select a list first'); return; }
-		var orig=add.innerHTML; add.disabled=true; add.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+		if(!list){ showToaster('warning',_t('Select a list first')); return; }
+		var orig=add.innerHTML; add.disabled=true; add.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 		var p=new URLSearchParams();
 		p.append('openlibrary_id', add.getAttribute('data-openlibrary-id')||'');
 		p.append('isbn', add.getAttribute('data-isbn')||'');
 		p.append('book_list', list);
 		bkPost('/api/admin/add/book',p).then(function(r){return r.json();}).then(function(d){
-			if(d.success){ showToaster('success',d.success); add.innerHTML='<i class="fas fa-check me-1"></i>Added'; add.classList.remove('btn-success'); add.classList.add('btn-outline-success'); }
-			else { showToaster('error',d.error||'Failed to add book'); add.innerHTML=orig; add.disabled=false; }
-		}).catch(function(){ showToaster('error','Failed to add book'); add.innerHTML=orig; add.disabled=false; });
+			if(d.success){ showToaster('success',d.success); add.innerHTML='<i class="fas fa-check me-1"></i>' + _t('Added'); add.classList.remove('btn-success'); add.classList.add('btn-outline-success'); }
+			else { showToaster('error',d.error||_t('Failed to add book')); add.innerHTML=orig; add.disabled=false; }
+		}).catch(function(){ showToaster('error',_t('Failed to add book')); add.innerHTML=orig; add.disabled=false; });
 		return;
 	}
 	var selAll=e.target.closest && e.target.closest('.select-all-books');
@@ -1642,12 +1644,12 @@ document.addEventListener('click', function(e){
 	if(addSel){
 		var pane2=addSel.closest('.tab-pane'); var listEl2=pane2?pane2.querySelector('[id$="_list"]'):null;
 		var list2=listEl2?listEl2.value:'';
-		if(!list2){ showToaster('warning','Select a list first'); return; }
+		if(!list2){ showToaster('warning',_t('Select a list first')); return; }
 		var wrap2=addSel.closest('.book-select-list');
 		var chosen=[]; wrap2.querySelectorAll('.book-select-check:checked').forEach(function(c){ chosen.push(c); });
-		if(chosen.length===0){ showToaster('warning','Select at least one book'); return; }
-		confirmAction('Add selected','Add '+chosen.length+' selected book(s) to "'+list2+'"?',function(){
-			addSel.disabled=true; addSel.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+		if(chosen.length===0){ showToaster('warning',_t('Select at least one book')); return; }
+		confirmAction(_t('Add selected'),_t('Add ')+chosen.length+' selected book(s) to "'+list2+'"?',function(){
+			addSel.disabled=true; addSel.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 			var jobs=chosen.map(function(c){
 				var p=new URLSearchParams();
 				p.append('openlibrary_id', c.getAttribute('data-openlibrary-id')||'');
@@ -1657,8 +1659,8 @@ document.addEventListener('click', function(e){
 			});
 			Promise.all(jobs).then(function(res){
 				var ok=res.filter(Boolean).length;
-				showToaster(ok>0?'success':'error', 'Added '+ok+' of '+res.length+' book(s)');
-				addSel.innerHTML='<i class="fas fa-check me-1"></i>Done';
+				showToaster(ok>0?'success':'error', _t('Added ')+ok+' of '+res.length+' book(s)');
+				addSel.innerHTML='<i class="fas fa-check me-1"></i>' + _t('Done');
 			});
 		});
 		return;
@@ -1678,9 +1680,9 @@ function abSpin(el,l){ el.innerHTML='<div class="text-center p-4"><div class="sp
 function audiobookSearch(mode){
 	var author=abVal(mode+'_author');
 	var title=abVal(mode+'_title');
-	if(!title && !author){ showToaster('warning','Enter a title or author'); return; }
+	if(!title && !author){ showToaster('warning',_t('Enter a title or author')); return; }
 	var box=document.getElementById(mode+'_results');
-	abSpin(box,'Searching...');
+	abSpin(box,_t('Searching...'));
 	var p=new URLSearchParams();
 	p.append('audiobook_region', abVal(mode+'_region'));
 	p.append('audiobook_title', title);
@@ -1690,30 +1692,30 @@ function audiobookSearch(mode){
 	p.append('have_list', abVal(mode+'_list') || '');
 	abPost('/api/admin/search/audiobooks', p).then(function(r){return r.text();})
 		.then(function(h){ box.innerHTML=h; })
-		.catch(function(){ box.innerHTML='<div class="alert alert-danger">Search failed.</div>'; });
+		.catch(function(){ box.innerHTML='<div class="alert alert-danger">' + _t('Search failed.') + '</div>'; });
 }
 
 function audiobookAddAuthor(){
 	var author=abVal('ab2_author'), list=abVal('ab2_list');
-	if(!author){ showToaster('warning','Enter an author name'); return; }
-	if(!list){ showToaster('warning','Select a list'); return; }
+	if(!author){ showToaster('warning',_t('Enter an author name')); return; }
+	if(!list){ showToaster('warning',_t('Select a list')); return; }
 	var esc=function(v){var d=document.createElement('div');d.textContent=v;return d.innerHTML;};
-	confirmAction('Add author','Import all audiobooks by "'+esc(author)+'" into "'+esc(list)+'"? This runs in the background.',function(){
+	confirmAction(_t('Add author'),_t('Import all audiobooks by "')+esc(author)+'" into "'+esc(list)+'"? This runs in the background.',function(){
 		var p=new URLSearchParams();
 		p.append('audiobook_author',author); p.append('audiobook_list',list);
 		abPost('/api/admin/add/audiobook/author',p).then(function(r){return r.json();}).then(function(d){
-			if(d.success){ showToaster('success',d.success); } else { showToaster('error',d.error||'Failed'); }
-		}).catch(function(){ showToaster('error','Failed to queue'); });
+			if(d.success){ showToaster('success',d.success); } else { showToaster('error',d.error||_t('Failed')); }
+		}).catch(function(){ showToaster('error',_t('Failed to queue')); });
 	});
 }
 
 function audiobookAddManual(){
 	var title=abVal('ab4_title'), list=abVal('ab4_list');
-	if(!title){ showToaster('warning','Enter a title'); return; }
-	if(!list){ showToaster('warning','Select a list'); return; }
+	if(!title){ showToaster('warning',_t('Enter a title')); return; }
+	if(!list){ showToaster('warning',_t('Select a list')); return; }
 	var btn=document.querySelector('[onclick="audiobookAddManual()"]');
 	var orig=btn?btn.innerHTML:'';
-	if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...'; }
+	if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...'); }
 	var p=new URLSearchParams();
 	p.append('manualAudiobook_title',title);
 	p.append('manualAudiobook_author',abVal('ab4_author'));
@@ -1730,8 +1732,8 @@ function audiobookAddManual(){
 			document.getElementById('ab4_narrator').value='';
 			document.getElementById('ab4_asin').value='';
 			document.getElementById('ab4_runtime').value='';
-		} else { showToaster('error',d.error||'Failed to add audiobook'); }
-	}).catch(function(){ showToaster('error','Failed to add audiobook'); }).finally(function(){
+		} else { showToaster('error',d.error||_t('Failed to add audiobook')); }
+	}).catch(function(){ showToaster('error',_t('Failed to add audiobook')); }).finally(function(){
 		if(btn){ btn.disabled=false; btn.innerHTML=orig; }
 	});
 }
@@ -1742,17 +1744,17 @@ document.addEventListener('click', function(e){
 		var pane=add.closest('.tab-pane');
 		var listEl=pane?pane.querySelector('[id$="_list"]'):null;
 		var list=listEl?listEl.value:'';
-		if(!list){ showToaster('warning','Select a list first'); return; }
-		var orig=add.innerHTML; add.disabled=true; add.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+		if(!list){ showToaster('warning',_t('Select a list first')); return; }
+		var orig=add.innerHTML; add.disabled=true; add.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 		var regionEl=pane?pane.querySelector('[id$="_region"]'):null;
 		var p=new URLSearchParams();
 		p.append('asin', add.getAttribute('data-asin')||'');
 		p.append('audiobook_list', list);
 		p.append('audiobook_region', regionEl?regionEl.value:'');
 		abPost('/api/admin/add/audiobook',p).then(function(r){return r.json();}).then(function(d){
-			if(d.success){ showToaster('success',d.success); add.innerHTML='<i class="fas fa-check me-1"></i>Added'; add.classList.remove('btn-success'); add.classList.add('btn-outline-success'); }
-			else { showToaster('error',d.error||'Failed to add audiobook'); add.innerHTML=orig; add.disabled=false; }
-		}).catch(function(){ showToaster('error','Failed to add audiobook'); add.innerHTML=orig; add.disabled=false; });
+			if(d.success){ showToaster('success',d.success); add.innerHTML='<i class="fas fa-check me-1"></i>' + _t('Added'); add.classList.remove('btn-success'); add.classList.add('btn-outline-success'); }
+			else { showToaster('error',d.error||_t('Failed to add audiobook')); add.innerHTML=orig; add.disabled=false; }
+		}).catch(function(){ showToaster('error',_t('Failed to add audiobook')); add.innerHTML=orig; add.disabled=false; });
 		return;
 	}
 	var selAll=e.target.closest && e.target.closest('.select-all-ab');
@@ -1768,12 +1770,12 @@ document.addEventListener('click', function(e){
 		var list2=listEl2?listEl2.value:'';
 		var regionEl2=pane2?pane2.querySelector('[id$="_region"]'):null;
 		var region2=regionEl2?regionEl2.value:'';
-		if(!list2){ showToaster('warning','Select a list first'); return; }
+		if(!list2){ showToaster('warning',_t('Select a list first')); return; }
 		var wrap2=addSel.closest('.ab-select-list');
 		var chosen=[]; wrap2.querySelectorAll('.ab-select-check:checked').forEach(function(c){ chosen.push(c); });
-		if(chosen.length===0){ showToaster('warning','Select at least one audiobook'); return; }
-		confirmAction('Add selected','Add '+chosen.length+' selected audiobook(s) to "'+list2+'"?',function(){
-			addSel.disabled=true; addSel.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Adding...';
+		if(chosen.length===0){ showToaster('warning',_t('Select at least one audiobook')); return; }
+		confirmAction(_t('Add selected'),_t('Add ')+chosen.length+' selected audiobook(s) to "'+list2+'"?',function(){
+			addSel.disabled=true; addSel.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>' + _t('Adding...');
 			var jobs=chosen.map(function(c){
 				var p=new URLSearchParams();
 				p.append('asin', c.getAttribute('data-asin')||'');
@@ -1783,8 +1785,8 @@ document.addEventListener('click', function(e){
 			});
 			Promise.all(jobs).then(function(res){
 				var ok=res.filter(Boolean).length;
-				showToaster(ok>0?'success':'error', 'Added '+ok+' of '+res.length+' audiobook(s)');
-				addSel.innerHTML='<i class="fas fa-check me-1"></i>Done';
+				showToaster(ok>0?'success':'error', _t('Added ')+ok+' of '+res.length+' audiobook(s)');
+				addSel.innerHTML='<i class="fas fa-check me-1"></i>' + _t('Done');
 			});
 		});
 		return;

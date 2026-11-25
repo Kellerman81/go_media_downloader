@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Kellerman81/go_media_downloader/pkg/main/config"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/logger"
 	"github.com/Kellerman81/go_media_downloader/pkg/main/tags"
 	"github.com/gin-gonic/gin"
@@ -56,18 +57,6 @@ var videoFileExts = map[string]bool{
 	".ts": true, ".m2ts": true, ".mpg": true, ".mpeg": true, ".divx": true, ".flv": true,
 }
 
-// langCodes maps three-letter codes and language names to two-letter codes.
-var langCodes = map[string]string{
-	"eng": "en", "english": "en", "ger": "de", "deu": "de", "german": "de", "deutsch": "de",
-	"fre": "fr", "fra": "fr", "french": "fr", "spa": "es", "spanish": "es", "ita": "it", "italian": "it",
-	"jpn": "ja", "japanese": "ja", "dut": "nl", "nld": "nl", "dutch": "nl", "por": "pt", "portuguese": "pt",
-	"rus": "ru", "russian": "ru", "pol": "pl", "polish": "pl", "swe": "sv", "swedish": "sv", "dan": "da", "danish": "da",
-	"nor": "no", "nob": "no", "norwegian": "no", "fin": "fi", "finnish": "fi", "tur": "tr", "turkish": "tr",
-	"kor": "ko", "korean": "ko", "chi": "zh", "zho": "zh", "chinese": "zh", "cze": "cs", "ces": "cs", "czech": "cs",
-	"hun": "hu", "hungarian": "hu", "gre": "el", "ell": "el", "greek": "el", "ara": "ar", "arabic": "ar",
-	"heb": "he", "hebrew": "he", "hin": "hi", "hindi": "hi",
-}
-
 var langNames = map[string]string{
 	"en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "ja": "Japanese", "nl": "Dutch",
 	"pt": "Portuguese", "ru": "Russian", "pl": "Polish", "sv": "Swedish", "da": "Danish", "no": "Norwegian",
@@ -78,16 +67,18 @@ var langNames = map[string]string{
 // langCode normalises a language tag ("eng", "English", "en") to two
 // letters; "" for undetermined.
 func langCode(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "" || s == "und" {
-		return ""
-	}
+	return config.LanguageCode(s)
+}
 
-	if c, ok := langCodes[s]; ok {
-		return c
-	}
+// langLabel is a language name (langNames) for the page; trackLabel's
+// parameter t hides t().
+func langLabel(name string) string {
+	return t(name)
+}
 
-	return s
+// trackNumberLabel is "Track 3" for a track without a language.
+func trackNumberLabel(n int) string {
+	return tf("Track %d", n)
 }
 
 // trackLabel is "English · AC3 5.1 · Director's comments".
@@ -96,11 +87,11 @@ func trackLabel(t playTrack, n int, audio bool) string {
 
 	switch name := langNames[t.Lang]; {
 	case name != "":
-		parts = append(parts, name)
+		parts = append(parts, langLabel(name))
 	case t.Lang != "":
 		parts = append(parts, t.Lang)
 	default:
-		parts = append(parts, "Track "+strconv.Itoa(n+1))
+		parts = append(parts, trackNumberLabel(n+1))
 	}
 
 	if audio && t.Codec != "" {
@@ -167,10 +158,10 @@ func subInfos(path string, p playProbe) []playSubInfo {
 	for i, f := range externalSubs(path) {
 		label := f.Label
 		if name := langNames[f.Lang]; name != "" {
-			label = name + " (" + f.Label + ")"
+			label = langLabel(name) + " (" + f.Label + ")"
 		}
 
-		out = append(out, playSubInfo{ID: "x" + strconv.Itoa(i), Label: label + " – file", Lang: f.Lang, Forced: f.Forced})
+		out = append(out, playSubInfo{ID: "x" + strconv.Itoa(i), Label: label + t(" – file"), Lang: f.Lang, Forced: f.Forced})
 	}
 
 	return out
@@ -236,7 +227,7 @@ func externalSubs(video string) []extSub {
 			switch {
 			case tok == "forced":
 				s.Forced = true
-			case s.Lang == "" && (langCodes[tok] != "" || langNames[tok] != ""):
+			case s.Lang == "" && (config.IsLanguageName(tok) || langNames[tok] != ""):
 				s.Lang = langCode(tok)
 			}
 		}
@@ -381,7 +372,7 @@ func HandlePlayerSub(c *gin.Context) {
 	cues, err := subtitleCues(c.Request.Context(), src, mapArg, all)
 	if err != nil {
 		logger.Logtype("warn", 0).Err(err).Str("file", src).Msg("Player: subtitle conversion failed")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "the subtitle can't be read: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": tf("The subtitle can't be read: %s", err.Error())})
 
 		return
 	}
